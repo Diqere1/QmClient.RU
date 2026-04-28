@@ -58,9 +58,13 @@
 static constexpr int QMCLIENT_SYNC_INTERVAL_SECONDS = 30;
 static constexpr int QMCLIENT_VOICE_SYNC_INTERVAL_SECONDS = 10;
 static constexpr const char *QMCLIENT_DEFAULT_VOICE_SERVER = "42.194.185.210:9987";
+// Recognition, online-user distribution and voice presence are served by the
+// voice service itself (default :9987) and use the /qm/* namespace.
 static constexpr const char *QMCLIENT_TOKEN_PATH = "/qm/token";
 static constexpr const char *QMCLIENT_REPORT_PATH = "/qm/report";
 static constexpr const char *QMCLIENT_USERS_PATH = "/qm/users.json";
+// Version/health/playtime endpoints are provided by the separate center HTTP
+// service (:8080) and intentionally do not use the /qm/* prefix.
 static constexpr const char *QMCLIENT_HEALTH_URL = "http://42.194.185.210:8080/healthz";
 static constexpr const char *QMCLIENT_PLAYTIME_START_URL = "http://42.194.185.210:8080/playtime/start";
 static constexpr const char *QMCLIENT_PLAYTIME_STOP_URL = "http://42.194.185.210:8080/playtime/stop";

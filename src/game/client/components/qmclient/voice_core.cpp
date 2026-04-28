@@ -1396,11 +1396,9 @@ void CRClientVoice::UpdateClientSnapshot(bool Force) NO_THREAD_SAFETY_ANALYSIS
 
 void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 {
-	if(!m_CaptureDevice)
-		return;
-
 	SRClientVoiceConfigSnapshot Config;
 	GetConfigSnapshot(Config);
+	const bool HaveCaptureDevice = m_CaptureDevice != 0;
 	const int TestMode = std::clamp(Config.m_QmVoiceTestMode, 0, 2);
 	const bool TestLocal = TestMode == 1;
 	const bool NeedNetwork = !TestLocal;
@@ -1418,8 +1416,6 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		m_RoomMemberTokenHash.store(Config.m_QmVoiceTokenHash);
 	}
 
-	if(!m_pEncoder)
-		return;
 	if(NeedNetwork && (!m_ServerAddrValid.load() || !m_Socket))
 		return;
 
@@ -1507,7 +1503,6 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		VoiceUtils::WriteU32(aPacket + Offset, m_ContextHash.load());
 		Offset += sizeof(uint32_t);
 		VoiceUtils::WriteU32(aPacket + Offset, Config.m_QmVoiceTokenHash);
-		WriteU32(aPacket + Offset, Config.m_QmVoiceTokenHash);
 		Offset += sizeof(uint32_t);
 		aPacket[Offset++] = TxFlags;
 		const uint16_t PingSequence = m_Sequence++;
@@ -1525,6 +1520,16 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		m_LastPingSeq = PingSequence;
 		m_LastKeepalive = Now;
 		m_LastTokenHashSent = Config.m_QmVoiceTokenHash;
+	}
+
+	if(!HaveCaptureDevice)
+	{
+		UpdateMicLevel(0.0f);
+		m_VadActive = false;
+		m_VadReleaseDeadline = 0;
+		m_PttReleaseDeadline.store(0);
+		m_TxWasActive = false;
+		return;
 	}
 
 	if(MicMuted)
@@ -1572,6 +1577,12 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 
 	const int ClientId = LocalClientId;
 	const vec2 Pos = LocalPos;
+	if(!m_pEncoder)
+	{
+		UpdateMicLevel(0.0f);
+		m_TxWasActive = false;
+		return;
+	}
 	const float VadThreshold = std::clamp(Config.m_QmVoiceVadThreshold / 100.0f, 0.0f, 1.0f);
 	const int VadReleaseMs = std::clamp(Config.m_QmVoiceVadReleaseDelayMs, 0, 1000);
 	const int64_t VadReleaseTicks = (int64_t)time_freq() * VadReleaseMs / 1000;
@@ -1664,7 +1675,6 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		VoiceUtils::WriteU32(aPacket + Offset, m_ContextHash.load());
 		Offset += sizeof(uint32_t);
 		VoiceUtils::WriteU32(aPacket + Offset, Config.m_QmVoiceTokenHash);
-		WriteU32(aPacket + Offset, Config.m_QmVoiceTokenHash);
 		Offset += sizeof(uint32_t);
 		aPacket[Offset++] = TxFlags;
 		VoiceUtils::WriteU16(aPacket + Offset, (uint16_t)ClientId);
