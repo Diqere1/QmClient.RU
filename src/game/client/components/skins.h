@@ -19,7 +19,6 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -127,7 +126,7 @@ public:
 		/**
 		 * Request that this skin should be loaded and should stay loaded.
 		 */
-		void RequestLoad();
+		void RequestLoad(bool Immediate = false);
 
 	private:
 		CSkins *m_pSkins;
@@ -153,9 +152,10 @@ public:
 		/**
 		 * Iterator into @link CSkins::m_SkinsUsageList @endlink for this skin container.
 		 */
-		std::optional<std::list<std::string_view>::iterator> m_UsageEntryIterator;
+		std::optional<std::list<std::string>::iterator> m_UsageEntryIterator;
 
 		EState DetermineInitialState() const;
+		void TouchUsage();
 		void SetState(EState State);
 	};
 
@@ -190,7 +190,7 @@ public:
 		/**
 		 * Request that this skin should be loaded and should stay loaded.
 		 */
-		void RequestLoad();
+		void RequestLoad(bool Immediate = false);
 
 	private:
 		CSkinContainer *m_pSkinContainer;
@@ -339,13 +339,13 @@ private:
 		std::shared_ptr<CHttpRequest> m_pGetRequest GUARDED_BY(m_Lock);
 	};
 
-	std::unordered_map<std::string_view, std::unique_ptr<CSkinContainer>> m_Skins;
+	std::unordered_map<std::string, std::unique_ptr<CSkinContainer>> m_Skins;
 	std::optional<std::chrono::nanoseconds> m_ContainerUpdateTime;
 	/**
 	 * Sorted from most recently to least recently used. Must be kept synchronized with the skin containers.
-	 * Only contains pending and loaded skins as only these are unloaded.
+	 * Contains prioritized skins in pending/loading/loaded states so visible items can be started and finished first.
 	 */
-	std::list<std::string_view> m_SkinsUsageList;
+	std::list<std::string> m_SkinsUsageList;
 
 	CSkinList m_SkinList;
 	std::set<std::string> m_Favorites;

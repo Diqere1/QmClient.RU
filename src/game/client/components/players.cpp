@@ -250,7 +250,8 @@ void CPlayers::RenderHookCollLine(
 	if(HideFocusOverheadIndicators)
 		return;
 
-	if(GameClient()->m_TClient.ShouldHideGoresGuides())
+	const bool ManualHookCollVisible = GameClient()->m_Controls.m_aShowHookColl[g_Config.m_ClDummy] != 0;
+	if(GameClient()->m_TClient.ShouldHideGoresGuides(ManualHookCollVisible))
 		return;
 
 	// TClient
@@ -559,7 +560,8 @@ void CPlayers::RenderWeaponTrajectory(
 	if(HideFocusOverheadIndicators)
 		return;
 
-	if(GameClient()->m_TClient.ShouldHideGoresGuides())
+	const bool ManualTrajectoryVisible = GameClient()->m_Controls.m_aShowWeaponTrajectory[g_Config.m_ClDummy] != 0;
+	if(GameClient()->m_TClient.ShouldHideGoresGuides(ManualTrajectoryVisible))
 		return;
 
 	if(ClientId < 0 || !g_Config.m_QmWeaponTrajectory || !GameClient()->m_Controls.m_aShowWeaponTrajectory[g_Config.m_ClDummy])

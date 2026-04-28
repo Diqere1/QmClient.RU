@@ -75,6 +75,7 @@
 #include "components/tclient/bindchat.h"
 #include "components/tclient/bindwheel.h"
 #include "components/qmclient/collision_hitbox.h"
+#include "components/qmclient/monitoring.h"
 #include "components/tclient/custom_communities.h"
 #include "components/qmclient/data_version.h"
 #include "components/tclient/fast_practice.h"
@@ -258,6 +259,7 @@ public:
 	CBindWheel m_BindWheel;
 	CBgDraw m_BgDraw;
 	CQmClient m_QmClient;
+	CQmMonitoring m_QmMonitoring;
 	CTClient m_TClient;
 	CFastPractice m_FastPractice;
 	CVoiceComponent m_Voice;
@@ -769,6 +771,7 @@ public:
 	void HandleLanguageChanged();
 
 	void ForceUpdateConsoleRemoteCompletionSuggestions() override;
+	void RenderQmMonitoringHud(float GraphX, float GraphSpacing) override;
 
 	void RefreshSkin(const std::shared_ptr<CManagedTeeRenderInfo> &pManagedTeeRenderInfo);
 	void RefreshSkins(int SkinDescriptorFlags);

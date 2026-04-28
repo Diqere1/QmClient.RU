@@ -131,6 +131,7 @@ class CTClient : public CComponent
 	void UpdateAxiomAutoLogin();
 	void HandleAxiomAutoLoginMessage(const char *pText);
 	void TrySendAxiomLogin();
+	void TrySendAxiomDummyLogin();
 	void StartUpdateDownload();
 	void ResetUpdateExeTask();
 	bool ReplaceClientFromUpdate();
@@ -366,7 +367,7 @@ public:
 	const char *GetMapNote(const char *pMapName) const;
 	void SetMapNote(const char *pMapName, const char *pNote);
 	bool IsGoresMapProgressEnabled() const;
-	bool ShouldHideGoresGuides() const;
+	bool ShouldHideGoresGuides(bool ManualGuideVisible = false) const;
 	bool HasGoresMapProgress(int Dummy = 0) const
 	{
 		const int Idx = Dummy < 0 ? 0 : (Dummy >= NUM_DUMMIES ? NUM_DUMMIES - 1 : Dummy);
@@ -434,6 +435,9 @@ public:
 	int m_AxiomAutoLoginAttempts = 0;
 	int64_t m_AxiomAutoLoginNextTryTick = 0;
 	char m_aAxiomAutoLoginServer[NETADDR_MAXSTRSIZE] = "";
+	bool m_AxiomDummyAutoLoginSent = false;
+	bool m_AxiomDummyWasConnected = false;
+	char m_aAxiomDummyAutoLoginServer[NETADDR_MAXSTRSIZE] = "";
 	void ApplyGoresFastInputLink();
 
 };

@@ -7,6 +7,7 @@
 #include "message.h"
 
 #include <base/hash.h>
+#include <base/types.h>
 
 #include <engine/client/enums.h>
 #include <engine/demo.h>
@@ -17,6 +18,7 @@
 #include <generated/protocol7.h>
 
 #include <functional>
+#include <chrono>
 #include <optional>
 
 #define CONNECTLINK_DOUBLE_SLASH "ddnet://"
@@ -239,6 +241,14 @@ public:
 	virtual int GetPredictionTime() = 0;
 	virtual int GetPredictionTick() = 0;
 	virtual EPredictionMarginState PredictionMarginState() const = 0;
+	virtual float SnapshotLatencyMs() const = 0;
+	virtual float PredictionLatencyMs() const = 0;
+	virtual float PredictionMarginMs() const = 0;
+	virtual float PredictionJitterMs() const = 0;
+	virtual float GameTimeMarginMs() const = 0;
+	virtual bool IsGameConnectionAlive() const = 0;
+	virtual void NetStatsSnapshot(NETSTATS &Prev, NETSTATS &Current, std::chrono::nanoseconds &LastUpdate) const = 0;
+	virtual int PendingResendCount() const = 0;
 
 	// snapshot interface
 
@@ -432,6 +442,7 @@ public:
 	virtual void InitializeLanguage() = 0;
 
 	virtual void ForceUpdateConsoleRemoteCompletionSuggestions() = 0;
+	virtual void RenderQmMonitoringHud(float GraphX, float GraphSpacing) = 0;
 };
 
 extern IGameClient *CreateGameClient();

@@ -429,6 +429,64 @@ float CClient::PacketLoss() const
 	return m_aNetClient[g_Config.m_ClDummy].PacketLoss();
 }
 
+void CClient::UpdateNetStatsSnapshot() const
+{
+	const std::chrono::nanoseconds Now = time_get_nanoseconds();
+	if(Now - m_NetstatsLastUpdate <= 1s)
+		return;
+
+	m_NetstatsSampleInterval = m_NetstatsLastUpdate.count() > 0 ? Now - m_NetstatsLastUpdate : std::chrono::nanoseconds::zero();
+	m_NetstatsLastUpdate = Now;
+	m_NetstatsPrev = m_NetstatsCurrent;
+	net_stats(&m_NetstatsCurrent);
+}
+
+float CClient::SnapshotLatencyMs() const
+{
+	if(State() != IClient::STATE_ONLINE || m_CurrentServerInfo.m_Latency < 0)
+		return 0.0f;
+	return (float)m_CurrentServerInfo.m_Latency;
+}
+
+float CClient::PredictionLatencyMs() const
+{
+	const int64_t Now = time_get();
+	return (float)((m_PredictedTime.Get(Now) - m_aGameTime[g_Config.m_ClDummy].Get(Now)) * 1000 / (float)time_freq());
+}
+
+float CClient::PredictionMarginMs() const
+{
+	return (float)PredictionMargin();
+}
+
+float CClient::PredictionJitterMs() const
+{
+	return std::max(0.0f, m_AutoMarginLatencyJitterMs);
+}
+
+float CClient::GameTimeMarginMs() const
+{
+	return m_aLastGameTimeMarginMs[g_Config.m_ClDummy];
+}
+
+bool CClient::IsGameConnectionAlive() const
+{
+	return State() == IClient::STATE_ONLINE;
+}
+
+void CClient::NetStatsSnapshot(NETSTATS &Prev, NETSTATS &Current, std::chrono::nanoseconds &LastUpdate) const
+{
+	UpdateNetStatsSnapshot();
+	Prev = m_NetstatsPrev;
+	Current = m_NetstatsCurrent;
+	LastUpdate = m_NetstatsSampleInterval;
+}
+
+int CClient::PendingResendCount() const
+{
+	return m_aNetClient[g_Config.m_ClDummy].PendingResendCount();
+}
+
 void CClient::SendInput()
 {
 	int64_t Now = time_get();
@@ -1060,13 +1118,7 @@ void CClient::RenderDebug()
 		return;
 	}
 
-	const std::chrono::nanoseconds Now = time_get_nanoseconds();
-	if(Now - m_NetstatsLastUpdate > 1s)
-	{
-		m_NetstatsLastUpdate = Now;
-		m_NetstatsPrev = m_NetstatsCurrent;
-		net_stats(&m_NetstatsCurrent);
-	}
+	UpdateNetStatsSnapshot();
 
 	char aBuffer[512];
 	const float FontSize = 16.0f;
@@ -1185,22 +1237,12 @@ void CClient::RenderGraphs()
 	if(!g_Config.m_DbgGraphs)
 		return;
 
-	// Make sure graph positions and sizes are aligned with pixels to avoid lines overlapping graph edges
 	Graphics()->MapScreen(0, 0, Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
-	const float GraphW = std::round(Graphics()->ScreenWidth() / 4.0f);
-	const float GraphH = std::round(Graphics()->ScreenHeight() / 6.0f);
 	const float GraphSpacing = std::round(Graphics()->ScreenWidth() / 100.0f);
-	const float GraphX = Graphics()->ScreenWidth() - GraphW - GraphSpacing;
+	const float GraphX = Graphics()->ScreenWidth() - GraphSpacing;
 
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
-	TextRender()->Text(GraphX, GraphSpacing * 5 - 12.0f - 10.0f, 12.0f, Localize("Press Ctrl+Shift+G to toggle debug graphs"));
-
-	m_FpsGraph.Scale(time_freq());
-	m_FpsGraph.Render(Graphics(), TextRender(), GraphX, GraphSpacing * 5, GraphW, GraphH, Localize("FPS"));
-	m_InputtimeMarginGraph.Scale(5 * time_freq());
-	m_InputtimeMarginGraph.Render(Graphics(), TextRender(), GraphX, GraphSpacing * 6 + GraphH, GraphW, GraphH, Localize("Prediction margin"));
-	m_aGametimeMarginGraphs[g_Config.m_ClDummy].Scale(5 * time_freq());
-	m_aGametimeMarginGraphs[g_Config.m_ClDummy].Render(Graphics(), TextRender(), GraphX, GraphSpacing * 7 + GraphH * 2, GraphW, GraphH, Localize("Game time margin"));
+	GameClient()->RenderQmMonitoringHud(GraphX, GraphSpacing);
 }
 
 void CClient::Restart()
@@ -2445,6 +2487,7 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 						int64_t Now = m_aGameTime[Conn].Get(time_get());
 						int64_t TickStart = GameTick * time_freq() / GameTickSpeed();
 						int64_t TimeLeft = (TickStart - Now) * 1000 / time_freq();
+						m_aLastGameTimeMarginMs[Conn] = (float)TimeLeft;
 						m_aGameTime[Conn].Update(&m_aGametimeMarginGraphs[Conn], (GameTick - 1) * time_freq() / GameTickSpeed(), TimeLeft, CSmoothTime::ADJUSTDIRECTION_DOWN);
 					}
 

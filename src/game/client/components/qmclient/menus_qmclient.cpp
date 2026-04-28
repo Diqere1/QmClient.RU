@@ -1809,14 +1809,24 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	SyncQmModuleCollapsed();
 	SyncQmModuleUsage();
 
-	auto RenderSliderWithValueInput = [this, UiScale](const void *pId, const CUIRect &ControlColumn, int *pValue, int MinValue, int MaxValue) {
-		CUIRect SliderRect, InputRect;
+	auto RenderSliderWithValueInput = [this, UiScale](const void *pId, const CUIRect &ControlColumn, int *pValue, int MinValue, int MaxValue, const char *pSuffix = "") {
+		CUIRect SliderRect, InputRect, SuffixRect;
 		const float InputWidth = std::clamp(58.0f * UiScale, 44.0f, 58.0f);
 		const float GapWidth = std::clamp(6.0f * UiScale, 3.0f, 6.0f);
+		const float SuffixWidth = pSuffix[0] != '\0' ? std::clamp(18.0f * UiScale, 14.0f, 20.0f) : 0.0f;
 		const float MinSliderWidth = std::clamp(46.0f * UiScale, 36.0f, 46.0f);
-		if(ControlColumn.w > InputWidth + GapWidth + MinSliderWidth)
+		if(ControlColumn.w > InputWidth + GapWidth + SuffixWidth + MinSliderWidth)
 		{
-			ControlColumn.VSplitRight(InputWidth, &SliderRect, &InputRect);
+			if(SuffixWidth > 0.0f)
+			{
+				ControlColumn.VSplitRight(InputWidth + GapWidth + SuffixWidth, &SliderRect, &InputRect);
+				InputRect.VSplitRight(SuffixWidth, &InputRect, &SuffixRect);
+				InputRect.VSplitRight(GapWidth, &InputRect, nullptr);
+			}
+			else
+			{
+				ControlColumn.VSplitRight(InputWidth, &SliderRect, &InputRect);
+			}
 			SliderRect.VSplitRight(GapWidth, &SliderRect, nullptr);
 			SliderRect.VMargin(1.0f, &SliderRect);
 
@@ -1835,6 +1845,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		Props.m_SelectAllOnActivate = false;
 		const auto Result = Ui()->DoValueSelectorWithState(pId, &InputRect, "", *pValue, MinValue, MaxValue, Props);
 		*pValue = (int)Result.m_Value;
+		if(SuffixWidth > 0.0f)
+			Ui()->DoLabel(&SuffixRect, pSuffix, SuffixRect.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
 	};
 
 	struct SQmModuleDragState
@@ -2998,14 +3010,14 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("Duration"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmChatBubbleDurationInputId;
-					RenderSliderWithValueInput(&s_QmChatBubbleDurationInputId, ControlCol, &g_Config.m_QmChatBubbleDuration, 1, 30);
+					RenderSliderWithValueInput(&s_QmChatBubbleDurationInputId, ControlCol, &g_Config.m_QmChatBubbleDuration, 1, 30, "s");
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("Bubble opacity"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmChatBubbleAlphaInputId;
-					RenderSliderWithValueInput(&s_QmChatBubbleAlphaInputId, ControlCol, &g_Config.m_QmChatBubbleAlpha, 0, 100);
+					RenderSliderWithValueInput(&s_QmChatBubbleAlphaInputId, ControlCol, &g_Config.m_QmChatBubbleAlpha, 0, 100, "%");
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
@@ -3100,6 +3112,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				DoModuleHeadline(CardContent, 2, Localize("Gores 模式"), Localize("King of Gores 自动切换枪"));
 
 				static CButtonContainer s_ReaderButtonGoresToggle, s_ClearButtonGoresToggle;
+				static CButtonContainer s_AxiomPasswordToggleButton, s_AxiomDummyPasswordToggleButton;
+				static bool s_ShowAxiomPassword = false;
+				static bool s_ShowAxiomDummyPassword = false;
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGores, Localize("启用 Gores 模式"), &g_Config.m_QmGores, &Row, LG_LineHeight);
@@ -3113,10 +3128,26 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				{
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("Axiom 登录密码"), LG_BodySize, TEXTALIGN_ML);
+					Ui()->DoLabel(&LabelCol, Localize("Axiom 主号密码"), LG_BodySize, TEXTALIGN_ML);
+					CUIRect PasswordEditRect, PasswordToggleRect;
+					ControlCol.VSplitRight(ControlCol.h, &PasswordEditRect, &PasswordToggleRect);
 					static CLineInput s_AxiomLoginPassword(g_Config.m_QmAxiomLoginPassword, sizeof(g_Config.m_QmAxiomLoginPassword));
-					s_AxiomLoginPassword.SetHidden(true);
-					Ui()->DoEditBox(&s_AxiomLoginPassword, &ControlCol, LG_BodySize);
+					s_AxiomLoginPassword.SetHidden(!s_ShowAxiomPassword);
+					Ui()->DoEditBox(&s_AxiomLoginPassword, &PasswordEditRect, LG_BodySize);
+					if(Ui()->DoButton_FontIcon(&s_AxiomPasswordToggleButton, s_ShowAxiomPassword ? FONT_ICON_EYE_SLASH : FONT_ICON_EYE, 0, &PasswordToggleRect, BUTTONFLAG_LEFT))
+						s_ShowAxiomPassword = !s_ShowAxiomPassword;
+					CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("Axiom 分身密码"), LG_BodySize, TEXTALIGN_ML);
+					CUIRect DummyPasswordEditRect, DummyPasswordToggleRect;
+					ControlCol.VSplitRight(ControlCol.h, &DummyPasswordEditRect, &DummyPasswordToggleRect);
+					static CLineInput s_AxiomDummyLoginPassword(g_Config.m_QmAxiomDummyLoginPassword, sizeof(g_Config.m_QmAxiomDummyLoginPassword));
+					s_AxiomDummyLoginPassword.SetHidden(!s_ShowAxiomDummyPassword);
+					Ui()->DoEditBox(&s_AxiomDummyLoginPassword, &DummyPasswordEditRect, LG_BodySize);
+					if(Ui()->DoButton_FontIcon(&s_AxiomDummyPasswordToggleButton, s_ShowAxiomDummyPassword ? FONT_ICON_EYE_SLASH : FONT_ICON_EYE, 0, &DummyPasswordToggleRect, BUTTONFLAG_LEFT))
+						s_ShowAxiomDummyPassword = !s_ShowAxiomDummyPassword;
 					CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
 				}
 
@@ -3129,15 +3160,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInputOthers, Localize("Auto-toggle fast input others"), &g_Config.m_QmGoresFastInputOthers, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInput, Localize("快速输入"), &g_Config.m_QmGoresFastInput, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
-					if(g_Config.m_QmGoresFastInput)
-					{
-						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-						DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInputOthers, Localize("其他人快速输入"), &g_Config.m_QmGoresFastInputOthers, &Row, LG_LineHeight);
-						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-					}
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresDisableIfWeapons, Localize("拾取其他武器后禁用"), &g_Config.m_QmGoresDisableIfWeapons, &Row, LG_LineHeight);
@@ -3152,13 +3174,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
 				}
 
-				CardContent.HSplitTop(LG_LineHeight * 0.85f, &Row, &CardContent);
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				{
 					CUIRect BindLabel, BindKey;
 					Row.VSplitLeft(LG_LabelWidth, &BindLabel, &BindKey);
-					Ui()->DoLabel(&BindLabel, Localize("Gores mode bind:"), LG_BodySize, TEXTALIGN_ML);
-					Row.VSplitLeft(Row.w * 0.45f, &BindLabel, &BindKey);
-					Ui()->DoLabel(&BindLabel, Localize("Gores 模式按键:"), LG_BodySize, TEXTALIGN_ML);
+					Ui()->DoLabel(&BindLabel, Localize("Gores 模式按键"), LG_BodySize, TEXTALIGN_ML);
 					CBindSlot GoresBind(KEY_UNKNOWN, KeyModifier::NONE);
 					{
 						const auto GoresIt = CommandBindCache.find("toggle qm_gores 0 1");
@@ -3241,7 +3261,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
 				}
 
-				CardContent.HSplitTop(LG_LineHeight * 0.85f, &Row, &CardContent);
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				{
 					CUIRect BindLabel, BindKey;
 					Row.VSplitLeft(LG_LabelWidth, &BindLabel, &BindKey);
@@ -3505,7 +3525,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("Refresh interval"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmFriendOnlineRefreshSecondsInputId;
-					RenderSliderWithValueInput(&s_QmFriendOnlineRefreshSecondsInputId, ControlCol, &g_Config.m_QmFriendOnlineRefreshSeconds, 5, 300);
+					RenderSliderWithValueInput(&s_QmFriendOnlineRefreshSecondsInputId, ControlCol, &g_Config.m_QmFriendOnlineRefreshSeconds, 5, 300, "s");
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				}
 
@@ -3655,14 +3675,14 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Column.HSplitTop(LG_CardPadding, nullptr, &Column);
 				Column.VSplitLeft(LG_CardPadding, nullptr, &CardContent);
 				CardContent.VSplitRight(LG_CardPadding, &CardContent, nullptr);
-				DoModuleHeadline(CardContent, 8, Localize("翻译"), Localize("Chat translation settings"));
+				DoModuleHeadline(CardContent, 8, Localize("翻译"), Localize("聊天翻译设置"));
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmTranslateAuto, Localize("自动翻译其他人的"), &g_Config.m_QmTranslateAuto, &Row, LG_LineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmTranslateAuto, Localize("自动翻译收到的消息"), &g_Config.m_QmTranslateAuto, &Row, LG_LineHeight);
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmTranslateAutoOutgoing, Localize("自动翻译自己的消息"), &g_Config.m_QmTranslateAutoOutgoing, &Row, LG_LineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmTranslateAutoOutgoing, Localize("自动翻译发送的消息"), &g_Config.m_QmTranslateAutoOutgoing, &Row, LG_LineHeight);
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 				static std::vector<const char *> s_TranslateBackendDropDownNames;
@@ -3681,7 +3701,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-				Ui()->DoLabel(&LabelCol, Localize("翻译后端"), LG_BodySize, TEXTALIGN_ML);
+				Ui()->DoLabel(&LabelCol, Localize("翻译服务"), LG_BodySize, TEXTALIGN_ML);
 				const int BackendSelectedNew = Ui()->DoDropDown(&ControlCol, BackendSelectedOld, s_TranslateBackendDropDownNames.data(), s_TranslateBackendDropDownNames.size(), s_TranslateBackendDropDownState);
 				if(BackendSelectedNew != BackendSelectedOld)
 				{
@@ -3761,8 +3781,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						str_copy(pConfigValue, LineInput.GetString(), ConfigValueSize);
 					}
 				};
-				auto RenderSliderWithNumberInput = [&RenderSliderWithValueInput](const void *pId, const CUIRect &ControlColumn, int *pValue, int MinValue, int MaxValue) {
-					RenderSliderWithValueInput(pId, ControlColumn, pValue, MinValue, MaxValue);
+				auto RenderSliderWithNumberInput = [&RenderSliderWithValueInput](const void *pId, const CUIRect &ControlColumn, int *pValue, int MinValue, int MaxValue, const char *pSuffix = "") {
+					RenderSliderWithValueInput(pId, ControlColumn, pValue, MinValue, MaxValue, pSuffix);
 				};
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -3782,7 +3802,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-				Ui()->DoLabel(&LabelCol, Localize("目标语言的最小字符数"), LG_BodySize, TEXTALIGN_ML);
+				Ui()->DoLabel(&LabelCol, Localize("最少匹配字符数"), LG_BodySize, TEXTALIGN_ML);
 				{
 					static int s_LocalDetectMinCharsSelectorId;
 					RenderSliderWithNumberInput(&s_LocalDetectMinCharsSelectorId, ControlCol, &g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
@@ -3791,13 +3811,21 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-				Ui()->DoLabel(&LabelCol, Localize("目标语言比例"), LG_BodySize, TEXTALIGN_ML);
+				Ui()->DoLabel(&LabelCol, Localize("目标语言占比阈值"), LG_BodySize, TEXTALIGN_ML);
 				{
 					static int s_LocalDetectRatioSelectorId;
 					RenderSliderWithNumberInput(&s_LocalDetectRatioSelectorId, ControlCol, &g_Config.m_QmTranslateLocalDetectRatio, 50, 100);
 				}
 				CardContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &CardContent);
 
+				CardContent.HSplitTop(LG_LineHeight * 0.8f, &Row, &CardContent);
+				Row.VMargin(LG_LabelWidth, &Row);
+				Ui()->DoLabel(&Row, Localize("看起来已经是目标语言的消息会跳过自动翻译"), LG_BodySize * 0.8f, TEXTALIGN_ML);
+				CardContent.HSplitTop(LG_LineSpacing * 0.35f, nullptr, &CardContent);
+				CardContent.HSplitTop(LG_LineHeight * 0.8f, &Row, &CardContent);
+				Row.VMargin(LG_LabelWidth, &Row);
+				Ui()->DoLabel(&Row, Localize("纯数字消息会直接跳过"), LG_BodySize * 0.8f, TEXTALIGN_ML);
+				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				// Endpoint 配置 - 根据后端类型显示不同的端点输入
 				if(IsTencentCloudBackend)
 				{
@@ -4004,16 +4032,16 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					// LLM 并发数配置
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("Concurrency (1 = automatic)"), LG_BodySize, TEXTALIGN_ML);
+					Ui()->DoLabel(&LabelCol, Localize("并发数（0 = 自动）"), LG_BodySize, TEXTALIGN_ML);
 					static int s_LlmConcurrencySelectorId;
-					RenderSliderWithNumberInput(&s_LlmConcurrencySelectorId, ControlCol, &g_Config.m_QmTranslateLlmConcurrency, 1, 20);
+					RenderSliderWithNumberInput(&s_LlmConcurrencySelectorId, ControlCol, &g_Config.m_QmTranslateLlmConcurrency, 0, 20);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					// 显示当前有效并发数
 					{
 						// 计算智能默认值（与 GetEffectiveConcurrency 逻辑一致）
 						int EffectiveConcurrency = 3; // 默认值
-						if(g_Config.m_QmTranslateLlmConcurrency != 1)
+						if(g_Config.m_QmTranslateLlmConcurrency != 0)
 						{
 							// 用户手动设置
 							EffectiveConcurrency = g_Config.m_QmTranslateLlmConcurrency;
@@ -4039,15 +4067,15 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 						// 显示有效并发数
 						char aBuf[64];
-						if(g_Config.m_QmTranslateLlmConcurrency == 1)
+						if(g_Config.m_QmTranslateLlmConcurrency == 0)
 						{
-							str_format(aBuf, sizeof(aBuf), Localize("Automatic concurrency: %d (smart default)"), EffectiveConcurrency);
+							str_format(aBuf, sizeof(aBuf), Localize("自动并发数：%d（智能默认）"), EffectiveConcurrency);
 						}
 						else
 						{
-							str_format(aBuf, sizeof(aBuf), Localize("Manual concurrency: %d"), EffectiveConcurrency);
+							str_format(aBuf, sizeof(aBuf), Localize("手动并发数：%d"), EffectiveConcurrency);
 						}
-						CardContent.HSplitTop(LG_LineHeight * 0.85f, &Row, &CardContent);
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 						Row.VSplitLeft(LG_LabelWidth, nullptr, &ControlCol);
 						Ui()->DoLabel(&ControlCol, aBuf, LG_BodySize * 0.85f, TEXTALIGN_ML);
 					}
@@ -4055,7 +4083,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 					// 思考模式开关
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmTranslateLlmEnableThinking, Localize("Enable thinking mode (slower)"), &g_Config.m_QmTranslateLlmEnableThinking, &Row, LG_LineHeight);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmTranslateLlmEnableThinking, Localize("启用思考模式（较慢）"), &g_Config.m_QmTranslateLlmEnableThinking, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					// 思考模式提示
@@ -4083,9 +4111,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					// 自定义提示词配置
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("Custom prompt template"), LG_BodySize, TEXTALIGN_ML);
+					Ui()->DoLabel(&LabelCol, Localize("自定义提示词模板"), LG_BodySize, TEXTALIGN_ML);
 					static CLineInput s_CustomPrompt(g_Config.m_QmTranslateSystemPrompt, sizeof(g_Config.m_QmTranslateSystemPrompt));
-					s_CustomPrompt.SetEmptyText(Localize("Leave empty to use default prompt"));
+					s_CustomPrompt.SetEmptyText(Localize("留空使用默认提示词"));
 					Ui()->DoEditBox(&s_CustomPrompt, &ControlCol, LG_BodySize);
 					CardContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &CardContent);
 				}
@@ -4123,10 +4151,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-				Ui()->DoLabel(&LabelCol, Localize("发送自动翻译模式"), LG_BodySize, TEXTALIGN_ML);
+				Ui()->DoLabel(&LabelCol, Localize("发送翻译方式"), LG_BodySize, TEXTALIGN_ML);
 				{
 					static const char *s_apOutgoingModeNames[] = {
-						Localize("仅常见源语言输入时触发"),
+						Localize("仅在需要时翻译"),
 						Localize("始终翻译"),
 					};
 					static CUi::SDropDownState s_OutgoingModeDropDown;
@@ -4188,7 +4216,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 				Ui()->DoLabel(&LabelCol, Localize("Auto reply cooldown"), LG_BodySize, TEXTALIGN_ML);
 				static int s_QmAutoReplyCooldownInputId;
-				RenderSliderWithValueInput(&s_QmAutoReplyCooldownInputId, ControlCol, &g_Config.m_QmAutoReplyCooldown, 0, 30);
+					RenderSliderWithValueInput(&s_QmAutoReplyCooldownInputId, ControlCol, &g_Config.m_QmAutoReplyCooldown, 0, 30, "s");
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 				auto SyncRuleRowsFromConfig = [](std::vector<std::unique_ptr<SAutoReplyRuleInputRow>> &vRows, bool &Inited, const char *pConfigRules) {
@@ -4337,13 +4365,13 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("UI scale"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmPieMenuScaleInputId;
-					RenderSliderWithValueInput(&s_QmPieMenuScaleInputId, ControlCol, &g_Config.m_QmPieMenuScale, 50, 200);
+					RenderSliderWithValueInput(&s_QmPieMenuScaleInputId, ControlCol, &g_Config.m_QmPieMenuScale, 50, 200, "%");
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("Pie menu opacity"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmPieMenuOpacityInputId;
-					RenderSliderWithValueInput(&s_QmPieMenuOpacityInputId, ControlCol, &g_Config.m_QmPieMenuOpacity, 0, 100);
+					RenderSliderWithValueInput(&s_QmPieMenuOpacityInputId, ControlCol, &g_Config.m_QmPieMenuOpacity, 0, 100, "%");
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
@@ -4632,7 +4660,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 								Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 								Ui()->DoLabel(&LabelColValue, Localize("Drift smoothness"), LG_BodySize, TEXTALIGN_ML);
 								static int s_QmCameraDriftSmoothnessInputId;
-								RenderSliderWithValueInput(&s_QmCameraDriftSmoothnessInputId, ControlColValue, &g_Config.m_QmCameraDriftSmoothness, 0, 100);
+								RenderSliderWithValueInput(&s_QmCameraDriftSmoothnessInputId, ControlColValue, &g_Config.m_QmCameraDriftSmoothness, 0, 100, "%");
 								CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 								CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -4680,7 +4708,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 								Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 								Ui()->DoLabel(&LabelColValue, Localize("Dynamic FOV smoothness"), LG_BodySize, TEXTALIGN_ML);
 								static int s_QmDynamicFovSmoothnessInputId;
-								RenderSliderWithValueInput(&s_QmDynamicFovSmoothnessInputId, ControlColValue, &g_Config.m_QmDynamicFovSmoothness, 0, 100);
+								RenderSliderWithValueInput(&s_QmDynamicFovSmoothnessInputId, ControlColValue, &g_Config.m_QmDynamicFovSmoothness, 0, 100, "%");
 								CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 							}
 						}
@@ -4824,7 +4852,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 									Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 									Ui()->DoLabel(&LabelCol, pTitle, LG_BodySize, TEXTALIGN_ML);
 
-									RenderSliderWithValueInput(pInputId, ControlCol, pValue, 0, 100);
+									RenderSliderWithValueInput(pInputId, ControlCol, pValue, 0, 100, "%");
 								}
 								CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 							}
@@ -4879,7 +4907,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 					Ui()->DoLabel(&LabelColValue, Localize("Glow intensity"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmLaserGlowIntensityInputId;
-					RenderSliderWithValueInput(&s_QmLaserGlowIntensityInputId, ControlColValue, &g_Config.m_QmLaserGlowIntensity, 0, 100);
+					RenderSliderWithValueInput(&s_QmLaserGlowIntensityInputId, ControlColValue, &g_Config.m_QmLaserGlowIntensity, 0, 100, "%");
 				}
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -4888,7 +4916,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 					Ui()->DoLabel(&LabelColValue, Localize("Laser size"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmLaserSizeInputId;
-					RenderSliderWithValueInput(&s_QmLaserSizeInputId, ControlColValue, &g_Config.m_QmLaserSize, 50, 200);
+					RenderSliderWithValueInput(&s_QmLaserSizeInputId, ControlColValue, &g_Config.m_QmLaserSize, 50, 200, "%");
 				}
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -4897,7 +4925,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 					Ui()->DoLabel(&LabelColValue, Localize("Transparency"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmLaserAlphaInputId;
-					RenderSliderWithValueInput(&s_QmLaserAlphaInputId, ControlColValue, &g_Config.m_QmLaserAlpha, 0, 100);
+					RenderSliderWithValueInput(&s_QmLaserAlphaInputId, ControlColValue, &g_Config.m_QmLaserAlpha, 0, 100, "%");
 				}
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -4922,7 +4950,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("Pulse amplitude"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmLaserPulseAmplitudeInputId;
-						RenderSliderWithValueInput(&s_QmLaserPulseAmplitudeInputId, ControlColValue, &g_Config.m_QmLaserPulseAmplitude, 0, 100);
+						RenderSliderWithValueInput(&s_QmLaserPulseAmplitudeInputId, ControlColValue, &g_Config.m_QmLaserPulseAmplitude, 0, 100, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				}
@@ -5018,7 +5046,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 							Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 							Ui()->DoLabel(&LabelColValue, Localize("Horizontal position"), LG_BodySize, TEXTALIGN_ML);
 							static int s_QmPlayerStatsMapProgressPosXInputId;
-							RenderSliderWithValueInput(&s_QmPlayerStatsMapProgressPosXInputId, ControlColValue, &g_Config.m_QmPlayerStatsMapProgressPosX, 0, 100);
+							RenderSliderWithValueInput(&s_QmPlayerStatsMapProgressPosXInputId, ControlColValue, &g_Config.m_QmPlayerStatsMapProgressPosX, 0, 100, "%");
 						}
 						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
@@ -5028,7 +5056,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 							Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 							Ui()->DoLabel(&LabelColValue, Localize("Vertical position"), LG_BodySize, TEXTALIGN_ML);
 							static int s_QmPlayerStatsMapProgressPosYInputId;
-							RenderSliderWithValueInput(&s_QmPlayerStatsMapProgressPosYInputId, ControlColValue, &g_Config.m_QmPlayerStatsMapProgressPosY, 0, 100);
+							RenderSliderWithValueInput(&s_QmPlayerStatsMapProgressPosYInputId, ControlColValue, &g_Config.m_QmPlayerStatsMapProgressPosY, 0, 100, "%");
 						}
 						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					}
@@ -5075,7 +5103,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("Hitbox opacity"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmCollisionHitboxAlphaInputId;
-					RenderSliderWithValueInput(&s_QmCollisionHitboxAlphaInputId, ControlCol, &g_Config.m_QmCollisionHitboxAlpha, 0, 100);
+					RenderSliderWithValueInput(&s_QmCollisionHitboxAlphaInputId, ControlCol, &g_Config.m_QmCollisionHitboxAlpha, 0, 100, "%");
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				}
 
@@ -5393,7 +5421,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("Lock delay"), LG_BodySize, TEXTALIGN_ML);
 					static int s_QmAutoTeamLockDelayInputId;
-					RenderSliderWithValueInput(&s_QmAutoTeamLockDelayInputId, ControlCol, &g_Config.m_QmAutoTeamLockDelay, 0, 30);
+					RenderSliderWithValueInput(&s_QmAutoTeamLockDelayInputId, ControlCol, &g_Config.m_QmAutoTeamLockDelay, 0, 30, "s");
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				}
 
@@ -5483,7 +5511,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("Size"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmInputOverlayScaleInputId;
-						RenderSliderWithValueInput(&s_QmInputOverlayScaleInputId, ControlColValue, &g_Config.m_QmInputOverlayScale, 1, 200);
+						RenderSliderWithValueInput(&s_QmInputOverlayScaleInputId, ControlColValue, &g_Config.m_QmInputOverlayScale, 1, 200, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -5492,7 +5520,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("Input overlay opacity"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmInputOverlayOpacityInputId;
-						RenderSliderWithValueInput(&s_QmInputOverlayOpacityInputId, ControlColValue, &g_Config.m_QmInputOverlayOpacity, 0, 100);
+						RenderSliderWithValueInput(&s_QmInputOverlayOpacityInputId, ControlColValue, &g_Config.m_QmInputOverlayOpacity, 0, 100, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -5501,7 +5529,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("Horizontal position"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmInputOverlayPosXInputId;
-						RenderSliderWithValueInput(&s_QmInputOverlayPosXInputId, ControlColValue, &g_Config.m_QmInputOverlayPosX, 0, 100);
+						RenderSliderWithValueInput(&s_QmInputOverlayPosXInputId, ControlColValue, &g_Config.m_QmInputOverlayPosX, 0, 100, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -5510,7 +5538,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("Vertical position"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmInputOverlayPosYInputId;
-						RenderSliderWithValueInput(&s_QmInputOverlayPosYInputId, ControlColValue, &g_Config.m_QmInputOverlayPosY, 0, 100);
+						RenderSliderWithValueInput(&s_QmInputOverlayPosYInputId, ControlColValue, &g_Config.m_QmInputOverlayPosY, 0, 100, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
@@ -5682,6 +5710,107 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("输出设备"), LG_BodySize, TEXTALIGN_ML);
+					static std::vector<std::string> s_VoiceOutputDeviceDisplayNames;
+					static std::vector<std::string> s_VoiceOutputDeviceConfigValues;
+					static std::vector<const char *> s_VoiceOutputDeviceDropDownNames;
+					static CUi::SDropDownState s_VoiceOutputDeviceDropDownState;
+					static CScrollRegion s_VoiceOutputDeviceDropDownScrollRegion;
+					static bool s_VoiceOutputDevicesInitialized = false;
+					s_VoiceOutputDeviceDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceOutputDeviceDropDownScrollRegion;
+					auto RefreshVoiceOutputDeviceList = [&]() {
+						CPerfTimer StageTimer;
+						s_VoiceOutputDeviceDisplayNames.clear();
+						s_VoiceOutputDeviceConfigValues.clear();
+						s_VoiceOutputDeviceDropDownNames.clear();
+
+						s_VoiceOutputDeviceDisplayNames.emplace_back(Localize("默认"));
+						s_VoiceOutputDeviceConfigValues.emplace_back("");
+
+						const int NumOutputs = SDL_GetNumAudioDevices(0);
+						for(int i = 0; i < NumOutputs; i++)
+						{
+							const char *pName = SDL_GetAudioDeviceName(i, 0);
+							if(!pName || pName[0] == '\0')
+								continue;
+
+							bool Exists = false;
+							for(const auto &DeviceName : s_VoiceOutputDeviceConfigValues)
+							{
+								if(str_comp_nocase(DeviceName.c_str(), pName) == 0)
+								{
+									Exists = true;
+									break;
+								}
+							}
+							if(Exists)
+								continue;
+							s_VoiceOutputDeviceDisplayNames.emplace_back(pName);
+							s_VoiceOutputDeviceConfigValues.emplace_back(pName);
+						}
+
+						if(g_Config.m_QmVoiceOutputDevice[0] != '\0')
+						{
+							bool FoundCurrent = false;
+							for(const auto &DeviceName : s_VoiceOutputDeviceConfigValues)
+							{
+								if(str_comp_nocase(DeviceName.c_str(), g_Config.m_QmVoiceOutputDevice) == 0)
+								{
+									FoundCurrent = true;
+									break;
+								}
+							}
+							if(!FoundCurrent)
+							{
+								char aDisplay[160];
+								str_format(aDisplay, sizeof(aDisplay), "%s (%s)", g_Config.m_QmVoiceOutputDevice, Localize("已断开"));
+								s_VoiceOutputDeviceDisplayNames.emplace_back(aDisplay);
+								s_VoiceOutputDeviceConfigValues.emplace_back(g_Config.m_QmVoiceOutputDevice);
+							}
+						}
+
+						s_VoiceOutputDeviceDropDownNames.reserve(s_VoiceOutputDeviceDisplayNames.size());
+						for(const auto &DisplayName : s_VoiceOutputDeviceDisplayNames)
+							s_VoiceOutputDeviceDropDownNames.push_back(DisplayName.c_str());
+
+						char aVoiceExtra[96];
+						str_format(aVoiceExtra, sizeof(aVoiceExtra), "devices=%d", (int)s_VoiceOutputDeviceDisplayNames.size());
+						LogQmPerfStage("voice_output_device_enum", StageTimer.ElapsedMs(), false, aVoiceExtra);
+					};
+					if(!s_VoiceOutputDevicesInitialized)
+					{
+						RefreshVoiceOutputDeviceList();
+						s_VoiceOutputDevicesInitialized = true;
+					}
+
+					CUIRect VoiceOutputDropDownRect;
+					CUIRect VoiceOutputRefreshButton;
+					ControlCol.VSplitRight(maximum(68.0f, 68.0f * UiScale), &VoiceOutputDropDownRect, &VoiceOutputRefreshButton);
+
+					int VoiceOutputSelectedOld = 0;
+					if(g_Config.m_QmVoiceOutputDevice[0] != '\0')
+					{
+						for(size_t i = 1; i < s_VoiceOutputDeviceConfigValues.size(); ++i)
+						{
+							if(str_comp_nocase(s_VoiceOutputDeviceConfigValues[i].c_str(), g_Config.m_QmVoiceOutputDevice) == 0)
+							{
+								VoiceOutputSelectedOld = (int)i;
+								break;
+							}
+						}
+					}
+
+					const int VoiceOutputSelectedNew = Ui()->DoDropDown(&VoiceOutputDropDownRect, VoiceOutputSelectedOld, s_VoiceOutputDeviceDropDownNames.data(), s_VoiceOutputDeviceDropDownNames.size(), s_VoiceOutputDeviceDropDownState);
+					if(VoiceOutputSelectedNew >= 0 && VoiceOutputSelectedNew != VoiceOutputSelectedOld && (size_t)VoiceOutputSelectedNew < s_VoiceOutputDeviceConfigValues.size())
+						str_copy(g_Config.m_QmVoiceOutputDevice, s_VoiceOutputDeviceConfigValues[VoiceOutputSelectedNew].c_str(), sizeof(g_Config.m_QmVoiceOutputDevice));
+
+					static CButtonContainer s_VoiceOutputRefreshButton;
+					if(DoButton_Menu(&s_VoiceOutputRefreshButton, Localize("刷新"), 0, &VoiceOutputRefreshButton))
+						RefreshVoiceOutputDeviceList();
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceMicMute, Localize("静音麦克风"), &g_Config.m_QmVoiceMicMute, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
@@ -5691,7 +5820,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("麦克风音量"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmVoiceMicVolumeInputId;
-						RenderSliderWithValueInput(&s_QmVoiceMicVolumeInputId, ControlColValue, &g_Config.m_QmVoiceMicVolume, 0, 300);
+						RenderSliderWithValueInput(&s_QmVoiceMicVolumeInputId, ControlColValue, &g_Config.m_QmVoiceMicVolume, 0, 300, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
@@ -5707,7 +5836,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 							Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 							Ui()->DoLabel(&LabelColValue, Localize("语音激活阈值"), LG_BodySize, TEXTALIGN_ML);
 							static int s_QmVoiceVadThresholdInputId;
-							RenderSliderWithValueInput(&s_QmVoiceVadThresholdInputId, ControlColValue, &g_Config.m_QmVoiceVadThreshold, 0, 100);
+							RenderSliderWithValueInput(&s_QmVoiceVadThresholdInputId, ControlColValue, &g_Config.m_QmVoiceVadThreshold, 0, 100, "%");
 						}
 						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
@@ -5717,7 +5846,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 							Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 							Ui()->DoLabel(&LabelColValue, Localize("语音激活释放延迟"), LG_BodySize, TEXTALIGN_ML);
 							static int s_QmVoiceVadReleaseDelayMsInputId;
-							RenderSliderWithValueInput(&s_QmVoiceVadReleaseDelayMsInputId, ControlColValue, &g_Config.m_QmVoiceVadReleaseDelayMs, 0, 1000);
+							RenderSliderWithValueInput(&s_QmVoiceVadReleaseDelayMsInputId, ControlColValue, &g_Config.m_QmVoiceVadReleaseDelayMs, 0, 1000, "ms");
 						}
 						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					}
@@ -5730,7 +5859,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("播放音量"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmVoiceVolumeInputId;
-						RenderSliderWithValueInput(&s_QmVoiceVolumeInputId, ControlColValue, &g_Config.m_QmVoiceVolume, 0, 400);
+						RenderSliderWithValueInput(&s_QmVoiceVolumeInputId, ControlColValue, &g_Config.m_QmVoiceVolume, 0, 400, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
@@ -5746,7 +5875,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 							Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 							Ui()->DoLabel(&LabelColValue, Localize("左右声道宽度"), LG_BodySize, TEXTALIGN_ML);
 							static int s_QmVoiceStereoWidthInputId;
-							RenderSliderWithValueInput(&s_QmVoiceStereoWidthInputId, ControlColValue, &g_Config.m_QmVoiceStereoWidth, 0, 200);
+							RenderSliderWithValueInput(&s_QmVoiceStereoWidthInputId, ControlColValue, &g_Config.m_QmVoiceStereoWidth, 0, 200, "%");
 						}
 						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					}
@@ -5803,7 +5932,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("分身小窗大小"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmDummyMiniViewSizeInputId;
-						RenderSliderWithValueInput(&s_QmDummyMiniViewSizeInputId, ControlColValue, &g_Config.m_QmDummyMiniViewSize, 50, 200);
+						RenderSliderWithValueInput(&s_QmDummyMiniViewSizeInputId, ControlColValue, &g_Config.m_QmDummyMiniViewSize, 50, 200, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
@@ -5813,7 +5942,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("分身小窗缩放"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmDummyMiniViewZoomInputId;
-						RenderSliderWithValueInput(&s_QmDummyMiniViewZoomInputId, ControlColValue, &g_Config.m_QmDummyMiniViewZoom, 10, 300);
+						RenderSliderWithValueInput(&s_QmDummyMiniViewZoomInputId, ControlColValue, &g_Config.m_QmDummyMiniViewZoom, 10, 300, "%");
 					}
 				}
 
@@ -5851,7 +5980,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
 						Ui()->DoLabel(&LabelColValue, Localize("Background opacity"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmHudIslandBgOpacityInputId;
-						RenderSliderWithValueInput(&s_QmHudIslandBgOpacityInputId, ControlColValue, &g_Config.m_QmHudIslandBgOpacity, 0, 100);
+						RenderSliderWithValueInput(&s_QmHudIslandBgOpacityInputId, ControlColValue, &g_Config.m_QmHudIslandBgOpacity, 0, 100, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 

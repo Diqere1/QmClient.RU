@@ -1607,7 +1607,9 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			continue;
 		}
 
-		SkinListEntry.RequestLoad();
+		// Keep the selected preview responsive via FindContainerImpl(), but let the list itself
+		// ramp visible skins in gradually so opening settings doesn't burst-load textures.
+		SkinListEntry.RequestLoad(false);
 		const CSkin *pSkin = pSkinContainer->State() == CSkins::CSkinContainer::EState::LOADED ? pSkinContainer->Skin().get() : pDefaultSkin;
 
 		Item.m_Rect.VSplitLeft(60.0f, &Button, &Label);
@@ -1754,6 +1756,37 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	char aBuf[128];
 	bool CheckSettings = false;
 	const bool DeferHeavyGraphics = ShouldDeferSettingsTailSection(SETTINGS_GRAPHICS);
+	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "") {
+		CUIRect Label, Controls, Slider, Input, SuffixRect;
+		const float InputWidth = 58.0f;
+		const float GapWidth = 6.0f;
+		const float SuffixWidth = pSuffix[0] != '\0' ? 18.0f : 0.0f;
+		Rect.VSplitLeft(minimum(180.0f, Rect.w * 0.42f), &Label, &Controls);
+		if(SuffixWidth > 0.0f)
+		{
+			Controls.VSplitRight(InputWidth + GapWidth + SuffixWidth, &Slider, &Input);
+			Input.VSplitRight(SuffixWidth, &Input, &SuffixRect);
+			Input.VSplitRight(GapWidth, &Input, nullptr);
+		}
+		else
+		{
+			Controls.VSplitRight(InputWidth, &Slider, &Input);
+			SuffixRect = {};
+		}
+		Slider.VSplitRight(GapWidth, &Slider, nullptr);
+		Slider.VMargin(1.0f, &Slider);
+		Input.VMargin(1.0f, &Input);
+		Ui()->DoLabel(&Label, pStr, Label.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_ML);
+		*pOption = pScale->ToAbsolute(Ui()->DoScrollbarH(pId, &Slider, pScale->ToRelative(*pOption, Min, Max)), Min, Max);
+		SValueSelectorProperties Props;
+		Props.m_UseScroll = false;
+		Props.m_TextAlign = TEXTALIGN_MC;
+		Props.m_SelectAllOnActivate = false;
+		const auto Result = Ui()->DoValueSelectorWithState(reinterpret_cast<const void *>((uintptr_t)pId ^ 0x1), &Input, "", *pOption, Min, Max, Props);
+		*pOption = (int)Result.m_Value;
+		if(SuffixWidth > 0.0f)
+			Ui()->DoLabel(&SuffixRect, pSuffix, SuffixRect.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
+	};
 
 	static const int MAX_RESOLUTIONS = 256;
 	static CVideoMode s_aModes[MAX_RESOLUTIONS];
@@ -1969,7 +2002,7 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	MainView.HSplitTop(20.0f, &Button, &MainView);
 	str_copy(aBuf, " ");
 	str_append(aBuf, Localize("Hz", "Hertz"));
-	Ui()->DoScrollbarOption(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, &Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE | CUi::SCROLLBAR_OPTION_DELAYUPDATE, aBuf);
+	DoSliderWithValueInput(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, aBuf);
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	static CButtonContainer s_UiColorResetId;
@@ -2928,6 +2961,37 @@ void CMenus::RenderSettingsSound(CUIRect MainView)
 	}
 
 	CUIRect Button;
+	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "") {
+		CUIRect Label, Controls, Slider, Input, SuffixRect;
+		const float InputWidth = 58.0f;
+		const float GapWidth = 6.0f;
+		const float SuffixWidth = pSuffix[0] != '\0' ? 18.0f : 0.0f;
+		Rect.VSplitLeft(minimum(180.0f, Rect.w * 0.42f), &Label, &Controls);
+		if(SuffixWidth > 0.0f)
+		{
+			Controls.VSplitRight(InputWidth + GapWidth + SuffixWidth, &Slider, &Input);
+			Input.VSplitRight(SuffixWidth, &Input, &SuffixRect);
+			Input.VSplitRight(GapWidth, &Input, nullptr);
+		}
+		else
+		{
+			Controls.VSplitRight(InputWidth, &Slider, &Input);
+			SuffixRect = {};
+		}
+		Slider.VSplitRight(GapWidth, &Slider, nullptr);
+		Slider.VMargin(1.0f, &Slider);
+		Input.VMargin(1.0f, &Input);
+		Ui()->DoLabel(&Label, pStr, Label.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_ML);
+		*pOption = pScale->ToAbsolute(Ui()->DoScrollbarH(pId, &Slider, pScale->ToRelative(*pOption, Min, Max)), Min, Max);
+		SValueSelectorProperties Props;
+		Props.m_UseScroll = false;
+		Props.m_TextAlign = TEXTALIGN_MC;
+		Props.m_SelectAllOnActivate = false;
+		const auto Result = Ui()->DoValueSelectorWithState(reinterpret_cast<const void *>((uintptr_t)pId ^ 0x1), &Input, "", *pOption, Min, Max, Props);
+		*pOption = (int)Result.m_Value;
+		if(SuffixWidth > 0.0f)
+			Ui()->DoLabel(&SuffixRect, pSuffix, SuffixRect.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
+	};
 	MainView.HSplitTop(20.0f, &Button, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_SndEnable, Localize("启用声音"), g_Config.m_SndEnable, &Button))
 	{
@@ -3142,35 +3206,35 @@ void CMenus::RenderSettingsSound(CUIRect MainView)
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndVolume, &g_Config.m_SndVolume, &Button, Localize("总音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndVolume, &g_Config.m_SndVolume, Button, Localize("总音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 
 	// volume slider game sounds
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndGameVolume, &g_Config.m_SndGameVolume, &Button, Localize("游戏音效音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndGameVolume, &g_Config.m_SndGameVolume, Button, Localize("游戏音效音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 
 	// volume slider gui sounds
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndChatVolume, &g_Config.m_SndChatVolume, &Button, Localize("聊天提示音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndChatVolume, &g_Config.m_SndChatVolume, Button, Localize("聊天提示音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 
 	// volume slider map sounds
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndMapVolume, &g_Config.m_SndMapVolume, &Button, Localize("地图声音音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndMapVolume, &g_Config.m_SndMapVolume, Button, Localize("地图声音音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 
 	// volume slider background music
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndBackgroundMusicVolume, &g_Config.m_SndBackgroundMusicVolume, &Button, Localize("背景音乐音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndBackgroundMusicVolume, &g_Config.m_SndBackgroundMusicVolume, Button, Localize("背景音乐音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 }
 

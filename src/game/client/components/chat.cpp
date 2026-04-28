@@ -2717,7 +2717,7 @@ CUi::EPopupMenuFunctionResult CChat::PopupLanguageMenu(void *pContext, CUIRect V
 	// 标题
 	CUIRect TitleRect;
 	View.HSplitTop(TitleHeight, &TitleRect, &View);
-	DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_TITLE], TitleRect, Localize("Translation Settings"), FontSize, TEXTALIGN_MC);
+	DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_TITLE], TitleRect, Localize("翻译设置"), FontSize, TEXTALIGN_MC);
 	View.HSplitTop(SectionSpacing, nullptr, &View);
 
 	// 自动入站翻译开关
@@ -2737,7 +2737,7 @@ CUi::EPopupMenuFunctionResult CChat::PopupLanguageMenu(void *pContext, CUIRect V
 		}
 
 		char aBuf[64];
-		str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Auto Inbound Translation"), InboundEnabled ? Localize("On") : Localize("Off"));
+		str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("自动翻译收到的消息"), InboundEnabled ? Localize("开") : Localize("关"));
 		DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_INBOUND_TOGGLE], ToggleRect, aBuf, FontSize, TEXTALIGN_MC);
 	}
 	View.HSplitTop(SectionSpacing, nullptr, &View);
@@ -2759,7 +2759,7 @@ CUi::EPopupMenuFunctionResult CChat::PopupLanguageMenu(void *pContext, CUIRect V
 		}
 
 		char aBuf[64];
-		str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Auto Outbound Translation"), OutboundEnabled ? Localize("On") : Localize("Off"));
+		str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("自动翻译发送的消息"), OutboundEnabled ? Localize("开") : Localize("关"));
 		DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_OUTBOUND_TOGGLE], ToggleRect, aBuf, FontSize, TEXTALIGN_MC);
 	}
 	View.HSplitTop(SectionSpacing, nullptr, &View);
@@ -2781,7 +2781,7 @@ CUi::EPopupMenuFunctionResult CChat::PopupLanguageMenu(void *pContext, CUIRect V
 	{
 		CUIRect LabelRect, DropdownRect;
 		View.HSplitTop(DropdownLabelHeight, &LabelRect, &View);
-		DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_INBOUND_LANG], LabelRect, Localize("Inbound Language"), FontSize, TEXTALIGN_ML);
+		DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_INBOUND_LANG], LabelRect, Localize("接收语言"), FontSize, TEXTALIGN_ML);
 		View.HSplitTop(DropdownHeight, &DropdownRect, &View);
 
 		const int OldSel = FindIndex(g_Config.m_QmTranslateTarget, s_apLangCodes, std::size(s_apLangCodes));
@@ -2795,7 +2795,7 @@ CUi::EPopupMenuFunctionResult CChat::PopupLanguageMenu(void *pContext, CUIRect V
 	{
 		CUIRect LabelRect, DropdownRect;
 		View.HSplitTop(DropdownLabelHeight, &LabelRect, &View);
-		DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_OUTBOUND_LANG], LabelRect, Localize("Outbound Language"), FontSize, TEXTALIGN_ML);
+		DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_OUTBOUND_LANG], LabelRect, Localize("发送语言"), FontSize, TEXTALIGN_ML);
 		View.HSplitTop(DropdownHeight, &DropdownRect, &View);
 
 		const int OldSel = FindIndex(g_Config.m_QmTranslateOutgoingTarget, s_apLangCodes, std::size(s_apLangCodes));
@@ -2809,7 +2809,7 @@ CUi::EPopupMenuFunctionResult CChat::PopupLanguageMenu(void *pContext, CUIRect V
 	{
 		CUIRect LabelRect, DropdownRect;
 		View.HSplitTop(DropdownLabelHeight, &LabelRect, &View);
-		DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_BACKEND], LabelRect, Localize("Translate Backend"), FontSize, TEXTALIGN_ML);
+		DoCachedChatPopupLabel(pUi, pPopupContext->m_aLabelUiElements[CLanguagePopupContext::LABEL_BACKEND], LabelRect, Localize("翻译服务"), FontSize, TEXTALIGN_ML);
 		View.HSplitTop(DropdownHeight, &DropdownRect, &View);
 
 		const int OldSel = FindIndex(g_Config.m_QmTranslateBackend, s_apBackendCodes, std::size(s_apBackendCodes));

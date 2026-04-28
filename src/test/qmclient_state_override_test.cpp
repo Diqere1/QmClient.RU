@@ -126,6 +126,14 @@ TEST(QmClientConfigOverride, GoresDisableTransitionDoesNotClearAutoTogglePrefere
 	EXPECT_EQ(DeriveGoresAutoTogglePreference(false, true, 1, 1, 1, 1), 1);
 }
 
+TEST(QmClientConfigOverride, GoresGuideHideAllowsManualReveal)
+{
+	EXPECT_TRUE(ShouldHideGoresGuide(true, true, false));
+	EXPECT_FALSE(ShouldHideGoresGuide(true, true, true));
+	EXPECT_FALSE(ShouldHideGoresGuide(true, false, false));
+	EXPECT_FALSE(ShouldHideGoresGuide(false, true, false));
+}
+
 TEST(QmClientConfigOverride, FocusUiOverlayHidingDependsOnHideUiToggle)
 {
 	EXPECT_FALSE(ShouldHideFocusUiOverlays(true, false));

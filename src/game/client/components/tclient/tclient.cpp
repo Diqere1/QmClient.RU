@@ -1222,6 +1222,9 @@ void CTClient::ResetAxiomAutoLoginState()
 	m_AxiomAutoLoginAttempts = 0;
 	m_AxiomAutoLoginNextTryTick = 0;
 	m_aAxiomAutoLoginServer[0] = '\0';
+	m_AxiomDummyAutoLoginSent = false;
+	m_AxiomDummyWasConnected = false;
+	m_aAxiomDummyAutoLoginServer[0] = '\0';
 }
 
 void CTClient::TrySendAxiomLogin()
@@ -1251,6 +1254,27 @@ void CTClient::TrySendAxiomLogin()
 		GameClient()->Echo(Localize("Attempting Axiom auto login"));
 		m_AxiomAutoLoginAnnounced = true;
 	}
+}
+
+void CTClient::TrySendAxiomDummyLogin()
+{
+	if(g_Config.m_QmAxiomAutoLogin == 0 || g_Config.m_QmAxiomDummyLoginPassword[0] == '\0')
+		return;
+	if(Client()->State() != IClient::STATE_ONLINE || !Client()->DummyConnected() || !IsAxiomCommunity())
+		return;
+	if(m_AxiomDummyAutoLoginSent)
+		return;
+
+	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
+	net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	if(aServerAddress[0] != '\0')
+		str_copy(m_aAxiomDummyAutoLoginServer, aServerAddress, sizeof(m_aAxiomDummyAutoLoginServer));
+
+	char aLoginCommand[192];
+	str_format(aLoginCommand, sizeof(aLoginCommand), "/login %s", g_Config.m_QmAxiomDummyLoginPassword);
+	GameClient()->m_Chat.SendChatOnConn(IClient::CONN_DUMMY, 0, aLoginCommand);
+	m_AxiomDummyAutoLoginSent = true;
+	GameClient()->Echo(Localize("Attempting Axiom dummy auto login"));
 }
 
 void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
@@ -1290,7 +1314,7 @@ void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
 
 void CTClient::UpdateAxiomAutoLogin()
 {
-	if(Client()->State() != IClient::STATE_ONLINE || g_Config.m_QmAxiomAutoLogin == 0 || g_Config.m_QmAxiomLoginPassword[0] == '\0')
+	if(Client()->State() != IClient::STATE_ONLINE || g_Config.m_QmAxiomAutoLogin == 0)
 	{
 		ResetAxiomAutoLoginState();
 		return;
@@ -1306,12 +1330,40 @@ void CTClient::UpdateAxiomAutoLogin()
 	if(m_aAxiomAutoLoginServer[0] != '\0' && aServerAddress[0] != '\0' && str_comp(m_aAxiomAutoLoginServer, aServerAddress) != 0)
 		ResetAxiomAutoLoginState();
 
-	if(m_AxiomAutoLoginSucceeded || m_AxiomAutoLoginWaitingReply)
-		return;
+	if(g_Config.m_QmAxiomLoginPassword[0] == '\0')
+	{
+		m_AxiomAutoLoginAnnounced = false;
+		m_AxiomAutoLoginSucceeded = false;
+		m_AxiomAutoLoginWaitingReply = false;
+		m_AxiomAutoLoginAttempts = 0;
+		m_AxiomAutoLoginNextTryTick = 0;
+		m_aAxiomAutoLoginServer[0] = '\0';
+	}
+	else if(!m_AxiomAutoLoginSucceeded && !m_AxiomAutoLoginWaitingReply)
+	{
+		const int64_t Now = time_get();
+		if(m_AxiomAutoLoginAttempts == 0 || (m_AxiomAutoLoginNextTryTick > 0 && Now >= m_AxiomAutoLoginNextTryTick))
+			TrySendAxiomLogin();
+	}
 
-	const int64_t Now = time_get();
-	if(m_AxiomAutoLoginAttempts == 0 || (m_AxiomAutoLoginNextTryTick > 0 && Now >= m_AxiomAutoLoginNextTryTick))
-		TrySendAxiomLogin();
+	const bool DummyConnected = Client()->DummyConnected();
+	if(!DummyConnected || g_Config.m_QmAxiomDummyLoginPassword[0] == '\0')
+	{
+		m_AxiomDummyAutoLoginSent = false;
+		m_aAxiomDummyAutoLoginServer[0] = '\0';
+	}
+	else
+	{
+		if(m_aAxiomDummyAutoLoginServer[0] != '\0' && aServerAddress[0] != '\0' && str_comp(m_aAxiomDummyAutoLoginServer, aServerAddress) != 0)
+		{
+			m_AxiomDummyAutoLoginSent = false;
+			m_aAxiomDummyAutoLoginServer[0] = '\0';
+		}
+
+		if(!m_AxiomDummyWasConnected || !m_AxiomDummyAutoLoginSent)
+			TrySendAxiomDummyLogin();
+	}
+	m_AxiomDummyWasConnected = DummyConnected;
 }
 
 void CTClient::OnMessage(int MsgType, void *pRawMsg)
@@ -3584,9 +3636,9 @@ bool CTClient::IsGoresModuleEnabled() const
 	return g_Config.m_QmGores != 0 || (g_Config.m_QmGoresAutoEnable != 0 && IsGoresGameMode());
 }
 
-bool CTClient::ShouldHideGoresGuides() const
+bool CTClient::ShouldHideGoresGuides(bool ManualGuideVisible) const
 {
-	return IsGoresModuleEnabled() && g_Config.m_QmGoresHideGuides != 0;
+	return ShouldHideGoresGuide(IsGoresModuleEnabled(), g_Config.m_QmGoresHideGuides != 0, ManualGuideVisible);
 }
 
 bool CTClient::HasBlockingGoresWeapon() const

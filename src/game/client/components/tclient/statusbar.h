@@ -38,9 +38,9 @@ public:
 	CStatusItem m_Ping = CStatusItem([this] { PingRender(); }, std::bind(&CStatusBar::PingWidth, this),
 		"p", "Ping", "", "Displays your ping to the current server");
 	CStatusItem m_Prediction = CStatusItem([this] { PredictionRender(); }, std::bind(&CStatusBar::PredictionWidth, this),
-		"d", "Prediction", "Pred", "Displays your current prediction amount");
+		"d", "Prediction", "预测值", "显示当前预测值");
 	CStatusItem m_Position = CStatusItem([this] { PositionRender(); }, std::bind(&CStatusBar::PositionWidth, this),
-		"c", "Position", "Pos", "Displays position");
+		"c", "Position", "坐标", "显示当前位置");
 	CStatusItem m_LocalTime = CStatusItem([this] { LocalTimeRender(); }, std::bind(&CStatusBar::LocalTimeWidth, this),
 		"l", "Local Time", "", "Displays your local time", false);
 	CStatusItem m_RaceTime = CStatusItem([this] { RaceTimeRender(); }, std::bind(&CStatusBar::RaceTimeWidth, this),
@@ -51,10 +51,28 @@ public:
 		"v", "Velocity", "", "Displays X and Y velocity");
 	CStatusItem m_Zoom = CStatusItem([this] { ZoomRender(); }, std::bind(&CStatusBar::ZoomWidth, this),
 		"z", "Zoom", "", "Displays current zoom value");
+	CStatusItem m_Downstream = CStatusItem([this] { DownstreamRender(); }, std::bind(&CStatusBar::DownstreamWidth, this),
+		"u", "Downstream", "下行", "显示下行延迟");
+	CStatusItem m_Upstream = CStatusItem([this] { UpstreamRender(); }, std::bind(&CStatusBar::UpstreamWidth, this),
+		"n", "Upstream", "上行", "显示上行延迟");
+	CStatusItem m_Jitter = CStatusItem([this] { JitterRender(); }, std::bind(&CStatusBar::JitterWidth, this),
+		"j", "Jitter", "抖动", "显示连接抖动");
+	CStatusItem m_PacketLoss = CStatusItem([this] { PacketLossRender(); }, std::bind(&CStatusBar::PacketLossWidth, this),
+		"k", "Packet Loss", "丢包", "显示诊断丢包率");
+	CStatusItem m_DownRate = CStatusItem([this] { DownRateRender(); }, std::bind(&CStatusBar::DownRateWidth, this),
+		"i", "Down Rate", "下速", "显示下行网速");
+	CStatusItem m_UpRate = CStatusItem([this] { UpRateRender(); }, std::bind(&CStatusBar::UpRateWidth, this),
+		"o", "Up Rate", "上速", "显示上行网速");
+	CStatusItem m_ConnectionGrade = CStatusItem([this] { ConnectionGradeRender(); }, std::bind(&CStatusBar::ConnectionGradeWidth, this),
+		"q", "Connection Grade", "连接", "显示连接等级");
+	CStatusItem m_Cpu = CStatusItem([this] { CpuRender(); }, std::bind(&CStatusBar::CpuWidth, this),
+		"x", "CPU", "CPU", "显示 CPU 使用率");
+	CStatusItem m_Memory = CStatusItem([this] { MemoryRender(); }, std::bind(&CStatusBar::MemoryWidth, this),
+		"y", "Memory", "内存", "显示内存占用");
 	CStatusItem m_Space = CStatusItem([this] { SpaceRender(); }, std::bind(&CStatusBar::SpaceWidth, this),
 		" _", "Space", " ", "Gap between statusbar items", false);
 
-	std::vector<CStatusItem> m_StatusItemTypes = {m_Angle, m_Ping, m_Prediction, m_Position, m_LocalTime, m_RaceTime, m_FPS, m_Velocity, m_Zoom, m_Space};
+	std::vector<CStatusItem> m_StatusItemTypes = {m_Angle, m_Ping, m_Prediction, m_Position, m_LocalTime, m_RaceTime, m_FPS, m_Velocity, m_Zoom, m_Downstream, m_Upstream, m_Jitter, m_PacketLoss, m_DownRate, m_UpRate, m_ConnectionGrade, m_Cpu, m_Memory, m_Space};
 	std::vector<CStatusItem *> m_StatusBarItems = {&m_LocalTime, &m_FPS, &m_Space, &m_Angle, &m_Space, &m_Ping};
 
 	void UpdateStatusBarSize();
@@ -100,6 +118,33 @@ private:
 
 	float ZoomWidth();
 	void ZoomRender();
+
+	float DownstreamWidth();
+	void DownstreamRender();
+
+	float UpstreamWidth();
+	void UpstreamRender();
+
+	float JitterWidth();
+	void JitterRender();
+
+	float PacketLossWidth();
+	void PacketLossRender();
+
+	float DownRateWidth();
+	void DownRateRender();
+
+	float UpRateWidth();
+	void UpRateRender();
+
+	float ConnectionGradeWidth();
+	void ConnectionGradeRender();
+
+	float CpuWidth();
+	void CpuRender();
+
+	float MemoryWidth();
+	void MemoryRender();
 
 	float SpaceWidth();
 	void SpaceRender();

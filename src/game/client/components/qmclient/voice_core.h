@@ -220,6 +220,7 @@ class CRClientVoice
 	int m_RxPackets = 0;
 	int m_RxDropContext = 0;
 	int m_RxDropRadius = 0;
+	int64_t m_DebugStateLastLog = 0;
 
 	std::thread m_Worker;
 	std::atomic<bool> m_WorkerStop = false;

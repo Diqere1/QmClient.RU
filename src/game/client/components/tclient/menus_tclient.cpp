@@ -3828,13 +3828,22 @@ void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 		const char *apCodes[] = {
 			Localize("a = Angle"),
 			Localize("p = Ping"),
-			Localize("d = Prediction"),
-			Localize("c = Position"),
+			Localize("d = 预测值"),
+			Localize("c = 坐标"),
 			Localize("l = Local Time"),
 			Localize("r = Race Time"),
 			Localize("f = FPS"),
 			Localize("v = Velocity"),
 			Localize("z = Zoom"),
+			Localize("u = 下行"),
+			Localize("n = 上行"),
+			Localize("j = 抖动"),
+			Localize("k = 丢包"),
+			Localize("i = 下速"),
+			Localize("o = 上速"),
+			Localize("q = 连接"),
+			Localize("x = CPU"),
+			Localize("y = 内存"),
 			Localize("_ or ' ' = Space"),
 		};
 		View.HSplitTop(HeadlineHeight, &Label, &View);
@@ -4021,7 +4030,7 @@ void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 		s_DropDownNames.reserve(GameClient()->m_StatusBar.m_StatusItemTypes.size());
 		for(const CStatusItem &StatusItemType : GameClient()->m_StatusBar.m_StatusItemTypes)
 		{
-			s_DropDownNameStorage.emplace_back(Localize(StatusItemType.m_aName));
+			s_DropDownNameStorage.emplace_back(Localize(GetStatusBarEditorLabel(&StatusItemType)));
 			s_DropDownNames.push_back(s_DropDownNameStorage.back().c_str());
 		}
 	}

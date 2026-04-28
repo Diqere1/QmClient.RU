@@ -2615,6 +2615,8 @@ if(CLIENT)
     components/qmclient/jelly_tee.h
     components/qmclient/lyrics_component.cpp
     components/qmclient/lyrics_component.h
+    components/qmclient/monitoring.cpp
+    components/qmclient/monitoring.h
     components/qmclient/menus_qmclient.cpp
     components/qmclient/qmclient.cpp
     components/qmclient/qmclient.h
@@ -3347,6 +3349,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     packer_test.cpp
     prng_test.cpp
     qmclient_state_override_test.cpp
+    qmclient_monitoring_test.cpp
     score_test.cpp
     secure_random_test.cpp
     server_test.cpp

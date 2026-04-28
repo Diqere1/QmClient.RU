@@ -254,6 +254,7 @@ void CGameClient::OnConsoleInit()
 					      &m_Translate,
 					      &m_Ghost,
 					      &m_QmClient,
+					      &m_QmMonitoring,
 					      &m_TClient, // Must be before chat and players
 					      &m_FastPractice,
 					      &m_Voice,
@@ -1517,6 +1518,19 @@ void CGameClient::FormatStreamerName(int ClientId, char *pBuf, int BufSize) cons
 	{
 		pBuf[0] = '\0';
 	}
+}
+
+void CGameClient::RenderQmMonitoringHud(float GraphX, float GraphSpacing)
+{
+	if(!g_Config.m_DbgGraphs)
+		return;
+
+	const SQmMonitoringHudLayout Layout = QmComputeMonitoringHudLayout(
+		Graphics()->ScreenWidth(),
+		Graphics()->ScreenHeight(),
+		GraphX,
+		GraphSpacing);
+	m_QmMonitoring.RenderHud(Layout.m_PanelRect);
 }
 
 void CGameClient::FormatStreamerClan(int ClientId, char *pBuf, int BufSize) const

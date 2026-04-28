@@ -1,0 +1,379 @@
+#ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_MONITORING_H
+#define GAME_CLIENT_COMPONENTS_QMCLIENT_MONITORING_H
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+
+#include <base/system.h>
+#include <base/types.h>
+
+#include <game/client/component.h>
+#include <game/client/ui_rect.h>
+
+enum class EQmConnectionGrade
+{
+	NORMAL,
+	ELEVATED,
+	SEVERE,
+	DISCONNECTED,
+};
+
+enum class EQmDiagnosticCause
+{
+	NONE,
+	DOWNSTREAM,
+	UPSTREAM,
+	JITTER,
+	PACKET_LOSS,
+	CLIENT_PERFORMANCE,
+};
+
+struct SQmNetworkMetrics
+{
+	float m_SnapshotLatencyMs = 0.0f;
+	float m_PredictionLatencyMs = 0.0f;
+	float m_PredictionMarginMs = 0.0f;
+	float m_JitterMs = 0.0f;
+	float m_GameTimeMarginMs = 0.0f;
+	float m_ServerRollbackMs = 0.0f;
+	float m_PacketLossPct = 0.0f;
+	float m_ServerRollbackRatePct = 0.0f;
+	float m_DownBytesPerSec = 0.0f;
+	float m_UpBytesPerSec = 0.0f;
+	bool m_ConnectionProblems = false;
+	bool m_Connected = false;
+};
+
+struct SQmPerformanceMetrics
+{
+	float m_Fps = 0.0f;
+	float m_FrameTimeMs = 0.0f;
+	float m_FrameTimeSpikeMs = 0.0f;
+	float m_CpuUsagePct = -1.0f;
+	float m_MemoryUsageMb = -1.0f;
+	float m_PredictionTimeMs = 0.0f;
+	float m_PredictionStress = 0.0f;
+};
+
+struct SQmDiagnosticVerdict
+{
+	EQmConnectionGrade m_Grade = EQmConnectionGrade::DISCONNECTED;
+	EQmDiagnosticCause m_PrimaryCause = EQmDiagnosticCause::NONE;
+	const char *m_pSummary = "";
+	const char *m_pDetail = "";
+};
+
+struct SQmMonitoringSnapshot
+{
+	SQmNetworkMetrics m_Network;
+	SQmPerformanceMetrics m_Performance;
+	SQmDiagnosticVerdict m_Verdict;
+};
+
+struct SQmMonitoringHudLayout
+{
+	CUIRect m_PanelRect = {0.0f, 0.0f, 0.0f, 0.0f};
+	CUIRect m_ContentRect = {0.0f, 0.0f, 0.0f, 0.0f};
+};
+
+struct SQmMonitoringBodyLayout
+{
+	float m_MainGraphHeight = 0.0f;
+	float m_FpsGraphHeight = 0.0f;
+	float m_PrimaryCardsHeight = 0.0f;
+	float m_SecondaryCardsHeight = 0.0f;
+};
+
+struct SQmHistoryStats
+{
+	float m_Current = 0.0f;
+	float m_Average = 0.0f;
+	float m_Min = 0.0f;
+	float m_Max = 0.0f;
+	bool m_HasData = false;
+};
+
+inline constexpr float QM_MONITORING_PANEL_PADDING = 14.0f;
+inline constexpr float QM_MONITORING_HEADER_HEIGHT = 60.0f;
+inline constexpr float QM_MONITORING_SECTION_GAP = 10.0f;
+inline constexpr float QM_MONITORING_MAIN_GRAPH_HEIGHT = 330.0f;
+inline constexpr float QM_MONITORING_FPS_GRAPH_HEIGHT = 220.0f;
+inline constexpr float QM_MONITORING_PRIMARY_CARDS_HEIGHT = 150.0f;
+inline constexpr float QM_MONITORING_SECONDARY_CARDS_HEIGHT = 140.0f;
+inline constexpr int QM_MONITORING_HISTORY_CAPACITY = 180;
+
+inline float QmComputeMonitoringUiScale(float ScreenWidth, float ScreenHeight)
+{
+	const float WidthScale = ScreenWidth / 1920.0f;
+	const float HeightScale = ScreenHeight / 1080.0f;
+	const float AreaScale = std::sqrt(std::max(WidthScale * HeightScale, 0.0f));
+	return std::clamp(AreaScale, 0.65f, 1.8f);
+}
+
+inline float QmComputeRateKibPerSec(float BytesPerSec)
+{
+	return BytesPerSec <= 0.0f ? 0.0f : BytesPerSec / 1024.0f;
+}
+
+inline float QmComputeRollbackMs(float GameTimeMarginMs)
+{
+	return GameTimeMarginMs < 0.0f ? -GameTimeMarginMs : 0.0f;
+}
+
+inline void FormatMetricValue(char *pBuf, int BufSize, const char *pUnit, float Value, int Precision = 0)
+{
+	if(Value < 0.0f)
+	{
+		str_copy(pBuf, "--", BufSize);
+		return;
+	}
+	if(Precision <= 0)
+		str_format(pBuf, BufSize, "%.0f%s", Value, pUnit);
+	else
+		str_format(pBuf, BufSize, "%.*f%s", Precision, Value, pUnit);
+}
+
+inline void FormatRateValue(char *pBuf, int BufSize, float BytesPerSec)
+{
+	if(BytesPerSec < 0.0f)
+	{
+		str_copy(pBuf, "--", BufSize);
+		return;
+	}
+
+	const float KibPerSec = QmComputeRateKibPerSec(BytesPerSec);
+	if(KibPerSec >= 1024.0f)
+		str_format(pBuf, BufSize, "%.2fMiB/s", KibPerSec / 1024.0f);
+	else
+		str_format(pBuf, BufSize, "%.1fKiB/s", KibPerSec);
+}
+
+template<size_t N>
+inline SQmHistoryStats QmComputeHistoryStats(const std::array<float, N> &aHistory, int HistoryHead, int HistoryCount)
+{
+	SQmHistoryStats Stats;
+	if(HistoryCount <= 0)
+		return Stats;
+
+	const int Start = (HistoryHead - HistoryCount + (int)aHistory.size()) % (int)aHistory.size();
+	Stats.m_Current = aHistory[(Start + HistoryCount - 1) % (int)aHistory.size()];
+	Stats.m_Min = Stats.m_Current;
+	Stats.m_Max = Stats.m_Current;
+	float Sum = 0.0f;
+	for(int i = 0; i < HistoryCount; ++i)
+	{
+		const float Value = aHistory[(Start + i) % (int)aHistory.size()];
+		Stats.m_Min = std::min(Stats.m_Min, Value);
+		Stats.m_Max = std::max(Stats.m_Max, Value);
+		Sum += Value;
+	}
+	Stats.m_Average = Sum / (float)HistoryCount;
+	Stats.m_HasData = true;
+	return Stats;
+}
+
+template<size_t N>
+inline int QmFindLatestPeakIndex(const std::array<float, N> &aHistory, int HistoryHead, int HistoryCount)
+{
+	if(HistoryCount <= 0)
+		return 0;
+
+	const int Start = (HistoryHead - HistoryCount + (int)aHistory.size()) % (int)aHistory.size();
+	float PeakValue = aHistory[Start];
+	for(int i = 1; i < HistoryCount; ++i)
+		PeakValue = std::max(PeakValue, aHistory[(Start + i) % (int)aHistory.size()]);
+
+	const float Tolerance = std::max(0.05f, std::abs(PeakValue) * 0.005f);
+	for(int i = HistoryCount - 1; i >= 0; --i)
+	{
+		const float Value = aHistory[(Start + i) % (int)aHistory.size()];
+		if(Value >= PeakValue - Tolerance)
+			return i;
+	}
+	return 0;
+}
+
+template<size_t N>
+inline int QmFindLatestAbsolutePeakIndex(const std::array<float, N> &aHistory, int HistoryHead, int HistoryCount)
+{
+	if(HistoryCount <= 0)
+		return 0;
+
+	const int Start = (HistoryHead - HistoryCount + (int)aHistory.size()) % (int)aHistory.size();
+	float PeakValue = std::abs(aHistory[Start]);
+	for(int i = 1; i < HistoryCount; ++i)
+		PeakValue = std::max(PeakValue, std::abs(aHistory[(Start + i) % (int)aHistory.size()]));
+
+	const float Tolerance = std::max(0.05f, PeakValue * 0.005f);
+	for(int i = HistoryCount - 1; i >= 0; --i)
+	{
+		const float Value = std::abs(aHistory[(Start + i) % (int)aHistory.size()]);
+		if(Value >= PeakValue - Tolerance)
+			return i;
+	}
+	return 0;
+}
+
+inline float QmComputeDiagnosticPacketLossPct(uint64_t SendPacketsDelta, int PendingResendCount)
+{
+	if(SendPacketsDelta == 0)
+		return PendingResendCount > 0 ? 100.0f : 0.0f;
+	return std::clamp(((float)std::max(PendingResendCount, 0) / std::max((float)SendPacketsDelta, 1.0f)) * 100.0f, 0.0f, 100.0f);
+}
+
+inline float QmComputeDiagnosticPacketLossPct(const NETSTATS &Prev, const NETSTATS &Current, int PendingResendCount)
+{
+	const uint64_t SendPacketsDelta = Current.sent_packets >= Prev.sent_packets ? Current.sent_packets - Prev.sent_packets : 0;
+	return QmComputeDiagnosticPacketLossPct(SendPacketsDelta, PendingResendCount);
+}
+
+inline EQmConnectionGrade QmDetermineConnectionGrade(const SQmNetworkMetrics &Net)
+{
+	if(!Net.m_Connected)
+		return EQmConnectionGrade::DISCONNECTED;
+	if(Net.m_JitterMs >= 25.0f || Net.m_SnapshotLatencyMs >= 180.0f || Net.m_PredictionLatencyMs >= 180.0f || Net.m_ConnectionProblems)
+		return EQmConnectionGrade::SEVERE;
+	if((Net.m_PacketLossPct >= 5.0f && Net.m_ConnectionProblems) || Net.m_JitterMs >= 10.0f || Net.m_SnapshotLatencyMs >= 90.0f || Net.m_PredictionLatencyMs >= 90.0f)
+		return EQmConnectionGrade::ELEVATED;
+	return EQmConnectionGrade::NORMAL;
+}
+
+inline EQmDiagnosticCause QmDeterminePrimaryCause(const SQmNetworkMetrics &Net, const SQmPerformanceMetrics &Perf, EQmConnectionGrade Grade)
+{
+	if(Grade == EQmConnectionGrade::DISCONNECTED)
+		return EQmDiagnosticCause::NONE;
+	if(Net.m_PacketLossPct >= 5.0f)
+		return EQmDiagnosticCause::PACKET_LOSS;
+	if(Net.m_JitterMs >= 25.0f)
+		return EQmDiagnosticCause::JITTER;
+	if(Net.m_PacketLossPct >= 1.0f)
+		return EQmDiagnosticCause::PACKET_LOSS;
+	if(Net.m_JitterMs >= 10.0f)
+		return EQmDiagnosticCause::JITTER;
+	if(Net.m_SnapshotLatencyMs >= Net.m_PredictionLatencyMs + 20.0f)
+		return EQmDiagnosticCause::DOWNSTREAM;
+	if(Net.m_PredictionLatencyMs >= Net.m_SnapshotLatencyMs + 20.0f)
+		return EQmDiagnosticCause::UPSTREAM;
+	if(Grade == EQmConnectionGrade::NORMAL &&
+		(Perf.m_FrameTimeMs > 16.7f || Perf.m_CpuUsagePct >= 75.0f || Perf.m_PredictionStress >= 12.0f))
+		return EQmDiagnosticCause::CLIENT_PERFORMANCE;
+	if(Net.m_ConnectionProblems)
+		return EQmDiagnosticCause::DOWNSTREAM;
+	return EQmDiagnosticCause::NONE;
+}
+
+inline SQmMonitoringHudLayout QmComputeMonitoringHudLayout(float ScreenWidth, float ScreenHeight, float GraphX, float GraphSpacing)
+{
+	SQmMonitoringHudLayout Layout;
+	const float UiScale = QmComputeMonitoringUiScale(ScreenWidth, ScreenHeight);
+	const float Padding = std::round(QM_MONITORING_PANEL_PADDING * UiScale);
+
+	float PanelW = std::round(ScreenWidth * 0.48f);
+	float PanelH = std::round(ScreenHeight * 0.78f);
+	PanelW = std::max(PanelW, 760.0f * UiScale);
+	PanelH = std::max(PanelH, 760.0f * UiScale);
+	PanelW = std::min(PanelW, 1040.0f * UiScale);
+	PanelH = std::min(PanelH, 1220.0f * UiScale);
+	PanelW = std::min(PanelW, ScreenWidth);
+	PanelH = std::min(PanelH, ScreenHeight);
+
+	Layout.m_PanelRect.w = PanelW;
+	Layout.m_PanelRect.h = PanelH;
+	Layout.m_PanelRect.x = std::clamp(GraphX - PanelW - GraphSpacing, 0.0f, std::max(ScreenWidth - PanelW, 0.0f));
+	Layout.m_PanelRect.y = std::clamp(GraphSpacing * 2.0f, 0.0f, std::max(ScreenHeight - PanelH, 0.0f));
+
+	Layout.m_ContentRect = Layout.m_PanelRect;
+	Layout.m_ContentRect.x += Padding;
+	Layout.m_ContentRect.y += Padding;
+	Layout.m_ContentRect.w = std::max(0.0f, Layout.m_ContentRect.w - Padding * 2.0f);
+	Layout.m_ContentRect.h = std::max(0.0f, Layout.m_ContentRect.h - Padding * 2.0f);
+	return Layout;
+}
+
+inline SQmMonitoringBodyLayout QmComputeMonitoringBodyLayout(float ContentHeight, float UiScale)
+{
+	SQmMonitoringBodyLayout Layout;
+	const float HeaderHeight = QM_MONITORING_HEADER_HEIGHT * UiScale;
+	const float SectionGap = QM_MONITORING_SECTION_GAP * UiScale;
+	const float MainGraphHeight = QM_MONITORING_MAIN_GRAPH_HEIGHT * UiScale;
+	const float FpsGraphHeight = QM_MONITORING_FPS_GRAPH_HEIGHT * UiScale;
+	const float PrimaryCardsHeight = QM_MONITORING_PRIMARY_CARDS_HEIGHT * UiScale;
+	const float SecondaryCardsHeight = QM_MONITORING_SECONDARY_CARDS_HEIGHT * UiScale;
+	const float MainGraphMinHeight = 235.0f * UiScale;
+	const float FpsGraphMinHeight = 150.0f * UiScale;
+	const float AvailableBodyHeight = std::max(ContentHeight - HeaderHeight - SectionGap * 4.0f, 0.0f);
+	if(AvailableBodyHeight <= 0.0f)
+		return Layout;
+
+	const float PreferredGraphTotal = MainGraphHeight + FpsGraphHeight;
+	const float MinimumGraphTotal = MainGraphMinHeight + FpsGraphMinHeight;
+	const float ReservedCardTotal = PrimaryCardsHeight + SecondaryCardsHeight;
+
+	Layout.m_PrimaryCardsHeight = PrimaryCardsHeight;
+	Layout.m_SecondaryCardsHeight = SecondaryCardsHeight;
+
+	if(AvailableBodyHeight >= ReservedCardTotal + PreferredGraphTotal)
+	{
+		Layout.m_MainGraphHeight = MainGraphHeight;
+		Layout.m_FpsGraphHeight = FpsGraphHeight;
+		return Layout;
+	}
+
+	const float AvailableGraphHeight = std::max(AvailableBodyHeight - ReservedCardTotal, 0.0f);
+	if(AvailableGraphHeight >= MinimumGraphTotal && PreferredGraphTotal > MinimumGraphTotal)
+	{
+		const float GraphScale = (AvailableGraphHeight - MinimumGraphTotal) / (PreferredGraphTotal - MinimumGraphTotal);
+		Layout.m_MainGraphHeight = MainGraphMinHeight + (MainGraphHeight - MainGraphMinHeight) * GraphScale;
+		Layout.m_FpsGraphHeight = FpsGraphMinHeight + (FpsGraphHeight - FpsGraphMinHeight) * GraphScale;
+		Layout.m_SecondaryCardsHeight = std::max(AvailableBodyHeight - Layout.m_MainGraphHeight - Layout.m_FpsGraphHeight - Layout.m_PrimaryCardsHeight, 0.0f);
+		return Layout;
+	}
+
+	const float FallbackTotal = MinimumGraphTotal + ReservedCardTotal;
+	const float FallbackScale = FallbackTotal > 0.0f ? std::clamp(AvailableBodyHeight / FallbackTotal, 0.0f, 1.0f) : 0.0f;
+	Layout.m_MainGraphHeight = MainGraphMinHeight * FallbackScale;
+	Layout.m_FpsGraphHeight = FpsGraphMinHeight * FallbackScale;
+	Layout.m_PrimaryCardsHeight = PrimaryCardsHeight * FallbackScale;
+	Layout.m_SecondaryCardsHeight = std::max(AvailableBodyHeight - Layout.m_MainGraphHeight - Layout.m_FpsGraphHeight - Layout.m_PrimaryCardsHeight, 0.0f);
+	return Layout;
+}
+
+class CQmMonitoring : public CComponent
+{
+	SQmMonitoringSnapshot m_Snapshot;
+	std::array<float, QM_MONITORING_HISTORY_CAPACITY> m_aPingHistory = {};
+	std::array<float, QM_MONITORING_HISTORY_CAPACITY> m_aPredHistory = {};
+	std::array<float, QM_MONITORING_HISTORY_CAPACITY> m_aPredictionMarginHistory = {};
+	std::array<float, QM_MONITORING_HISTORY_CAPACITY> m_aJitterHistory = {};
+	std::array<float, QM_MONITORING_HISTORY_CAPACITY> m_aGameTimeMarginHistory = {};
+	std::array<float, QM_MONITORING_HISTORY_CAPACITY> m_aFpsHistory = {};
+	int m_HistoryHead = 0;
+	int m_HistoryCount = 0;
+	int64_t m_LastSampleTick = 0;
+
+	void ResetHistory();
+	void UpdateNetworkMetrics(SQmNetworkMetrics &Net);
+	void UpdatePerformanceMetrics(SQmPerformanceMetrics &Perf);
+	void UpdateDiagnosticVerdict(SQmDiagnosticVerdict &Verdict, const SQmNetworkMetrics &Net, const SQmPerformanceMetrics &Perf);
+	void PushHistorySample(float PingMs, float PredMs, float PredictionMarginMs, float JitterMs, float GameTimeMarginMs, float Fps);
+	void RenderHeader(CUIRect Rect) const;
+	void RenderMainGraph(CUIRect Rect) const;
+	void RenderFpsGraph(CUIRect Rect) const;
+	void RenderPrimaryCards(CUIRect Rect) const;
+	void RenderSecondaryCards(CUIRect Rect) const;
+
+public:
+	int Sizeof() const override { return sizeof(*this); }
+	void OnInit() override;
+	void OnStateChange(int NewState, int OldState) override;
+	void OnRender() override;
+
+	void UpdateSnapshot();
+	void RenderHud(CUIRect View) const;
+
+	const SQmMonitoringSnapshot &Snapshot() const { return m_Snapshot; }
+};
+
+#endif

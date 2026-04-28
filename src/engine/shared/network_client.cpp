@@ -173,7 +173,7 @@ int CNetClient::Send(CNetChunk *pChunk)
 	return 0;
 }
 
-int CNetClient::State()
+int CNetClient::State() const
 {
 	if(m_Connection.State() == CNetConnection::EState::ONLINE)
 		return NETSTATE_ONLINE;
@@ -195,6 +195,17 @@ bool CNetClient::GotProblems(int64_t MaxLatency) const
 float CNetClient::PacketLoss() const
 {
 	return m_Connection.PacketLoss();
+}
+
+int CNetClient::PendingResendCount() const
+{
+	int Count = 0;
+	auto *pResendBuffer = const_cast<CStaticRingBuffer<CNetChunkResend, NET_CONN_BUFFERSIZE> *>(m_Connection.ResendBuffer());
+	for(CNetChunkResend *pResend = pResendBuffer->First(); pResend != nullptr; pResend = pResendBuffer->Next(pResend))
+	{
+		++Count;
+	}
+	return Count;
 }
 
 const char *CNetClient::ErrorString() const

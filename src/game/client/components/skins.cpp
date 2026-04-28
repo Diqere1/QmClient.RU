@@ -126,14 +126,14 @@ bool CSkins::CSkinContainer::operator<(const CSkinContainer &Other) const
 	return str_comp(m_aName, Other.m_aName) < 0;
 }
 
-static constexpr std::chrono::nanoseconds MIN_REQUESTED_TIME_FOR_PENDING = 250ms;
-static constexpr std::chrono::nanoseconds MAX_REQUESTED_TIME_FOR_PENDING = 500ms;
+static constexpr std::chrono::nanoseconds MIN_REQUESTED_TIME_FOR_PENDING = 100ms;
+static constexpr std::chrono::nanoseconds MAX_REQUESTED_TIME_FOR_PENDING = 220ms;
 static constexpr std::chrono::nanoseconds MIN_UNLOAD_TIME_PENDING = 1s;
 static constexpr std::chrono::nanoseconds MIN_UNLOAD_TIME_LOADED = 2s;
 static_assert(MIN_REQUESTED_TIME_FOR_PENDING < MAX_REQUESTED_TIME_FOR_PENDING);
 static_assert(MIN_REQUESTED_TIME_FOR_PENDING < MIN_UNLOAD_TIME_PENDING, "Unloading pending skins must take longer than adding more pending skins");
 
-void CSkins::CSkinContainer::RequestLoad()
+void CSkins::CSkinContainer::RequestLoad(bool Immediate)
 {
 	if(m_AlwaysLoaded)
 	{
@@ -144,17 +144,24 @@ void CSkins::CSkinContainer::RequestLoad()
 	// when quickly scrolling through lists or if a player with a new skin quickly joins and leaves.
 	if(m_State == EState::UNLOADED)
 	{
-		const std::chrono::nanoseconds Now = time_get_nanoseconds();
-		if(!m_FirstLoadRequest.has_value() ||
-			!m_LastLoadRequest.has_value() ||
-			Now - m_LastLoadRequest.value() > MAX_REQUESTED_TIME_FOR_PENDING)
-		{
-			m_FirstLoadRequest = Now;
-			m_LastLoadRequest = m_FirstLoadRequest;
-		}
-		else if(Now - m_FirstLoadRequest.value() > MIN_REQUESTED_TIME_FOR_PENDING)
+		if(Immediate)
 		{
 			m_State = EState::PENDING;
+		}
+		else
+		{
+			const std::chrono::nanoseconds Now = time_get_nanoseconds();
+			if(!m_FirstLoadRequest.has_value() ||
+				!m_LastLoadRequest.has_value() ||
+				Now - m_LastLoadRequest.value() > MAX_REQUESTED_TIME_FOR_PENDING)
+			{
+				m_FirstLoadRequest = Now;
+				m_LastLoadRequest = m_FirstLoadRequest;
+			}
+			else if(Now - m_FirstLoadRequest.value() > MIN_REQUESTED_TIME_FOR_PENDING)
+			{
+				m_State = EState::PENDING;
+			}
 		}
 	}
 	else if(m_State == EState::PENDING ||
@@ -165,14 +172,10 @@ void CSkins::CSkinContainer::RequestLoad()
 	}
 
 	if(m_State == EState::PENDING ||
+		m_State == EState::LOADING ||
 		m_State == EState::LOADED)
 	{
-		if(m_UsageEntryIterator.has_value())
-		{
-			m_pSkins->m_SkinsUsageList.erase(m_UsageEntryIterator.value());
-		}
-		m_pSkins->m_SkinsUsageList.emplace_front(Name());
-		m_UsageEntryIterator = m_pSkins->m_SkinsUsageList.begin();
+		TouchUsage();
 	}
 }
 
@@ -203,7 +206,16 @@ void CSkins::CSkinContainer::SetState(EState State)
 		m_State == EState::LOADING ||
 		m_State == EState::LOADED)
 	{
-		RequestLoad();
+		const auto Now = time_get_nanoseconds();
+		if(!m_FirstLoadRequest.has_value())
+		{
+			m_FirstLoadRequest = Now;
+		}
+		m_LastLoadRequest = Now;
+		if(!m_UsageEntryIterator.has_value())
+		{
+			TouchUsage();
+		}
 	}
 	else
 	{
@@ -212,6 +224,7 @@ void CSkins::CSkinContainer::SetState(EState State)
 	}
 
 	if(m_State != EState::PENDING &&
+		m_State != EState::LOADING &&
 		m_State != EState::LOADED &&
 		m_UsageEntryIterator.has_value())
 	{
@@ -220,6 +233,16 @@ void CSkins::CSkinContainer::SetState(EState State)
 	}
 
 	m_pSkins->m_SkinList.ForceRefresh();
+}
+
+void CSkins::CSkinContainer::TouchUsage()
+{
+	if(m_UsageEntryIterator.has_value())
+	{
+		m_pSkins->m_SkinsUsageList.erase(m_UsageEntryIterator.value());
+	}
+	m_pSkins->m_SkinsUsageList.emplace_front(Name());
+	m_UsageEntryIterator = m_pSkins->m_SkinsUsageList.begin();
 }
 
 bool CSkins::CSkinListEntry::operator<(const CSkins::CSkinListEntry &Other) const
@@ -235,9 +258,9 @@ bool CSkins::CSkinListEntry::operator<(const CSkins::CSkinListEntry &Other) cons
 	return str_comp(m_pSkinContainer->Name(), Other.m_pSkinContainer->Name()) < 0;
 }
 
-void CSkins::CSkinListEntry::RequestLoad()
+void CSkins::CSkinListEntry::RequestLoad(bool Immediate)
 {
-	m_pSkinContainer->RequestLoad();
+	m_pSkinContainer->RequestLoad(Immediate);
 }
 
 CSkins::CSkins() :
@@ -823,9 +846,20 @@ void CSkins::UpdateUnloadSkins(CSkinLoadingStats &Stats)
 	size_t NumToUnload = std::min<size_t>(Stats.m_NumPending + Stats.m_NumLoaded + Stats.m_NumLoading - (size_t)g_Config.m_ClSkinsLoadedMax, 16);
 	const size_t MaxSkipped = m_SkinsUsageList.size() / 8;
 	size_t NumSkipped = 0;
-	for(auto It = m_SkinsUsageList.rbegin(); It != m_SkinsUsageList.rend() && NumToUnload != 0 && NumSkipped < MaxSkipped; ++It)
+	std::vector<std::string> vUsageSnapshot;
+	vUsageSnapshot.reserve(m_SkinsUsageList.size());
+	for(auto It = m_SkinsUsageList.rbegin(); It != m_SkinsUsageList.rend(); ++It)
 	{
-		auto SkinIt = m_Skins.find(*It);
+		vUsageSnapshot.push_back(*It);
+	}
+	for(const std::string &SkinName : vUsageSnapshot)
+	{
+		if(NumToUnload == 0 || NumSkipped >= MaxSkipped)
+		{
+			break;
+		}
+
+		auto SkinIt = m_Skins.find(SkinName);
 		dbg_assert(SkinIt != m_Skins.end(), "m_SkinsUsageList contains skin not in m_Skins");
 		auto &pSkinContainer = SkinIt->second;
 		dbg_assert(!pSkinContainer->m_AlwaysLoaded, "m_SkinsUsageList contains skins with m_AlwaysLoaded");
@@ -861,16 +895,16 @@ void CSkins::UpdateUnloadSkins(CSkinLoadingStats &Stats)
 
 void CSkins::UpdateStartLoading(CSkinLoadingStats &Stats)
 {
-	for(auto &[_, pSkinContainer] : m_Skins)
-	{
+	auto StartLoadJob = [&](CSkinContainer *pSkinContainer) {
 		if(Stats.m_NumPending == 0 || Stats.m_NumLoading + Stats.m_NumLoaded >= (size_t)g_Config.m_ClSkinsLoadedMax)
 		{
-			break;
+			return false;
 		}
 		if(pSkinContainer->m_State != CSkinContainer::EState::PENDING)
 		{
-			continue;
+			return true;
 		}
+
 		switch(pSkinContainer->Type())
 		{
 		case CSkinContainer::EType::LOCAL:
@@ -886,6 +920,34 @@ void CSkins::UpdateStartLoading(CSkinLoadingStats &Stats)
 		pSkinContainer->SetState(CSkinContainer::EState::LOADING);
 		Stats.m_NumPending--;
 		Stats.m_NumLoading++;
+		return true;
+	};
+
+	std::vector<std::string> vPrioritizedSkinNames;
+	vPrioritizedSkinNames.reserve(m_SkinsUsageList.size());
+	for(const std::string &SkinName : m_SkinsUsageList)
+	{
+		vPrioritizedSkinNames.push_back(SkinName);
+	}
+	for(const std::string &SkinName : vPrioritizedSkinNames)
+	{
+		auto It = m_Skins.find(SkinName);
+		if(It == m_Skins.end())
+		{
+			continue;
+		}
+		if(!StartLoadJob(It->second.get()))
+		{
+			return;
+		}
+	}
+
+	for(auto &[_, pSkinContainer] : m_Skins)
+	{
+		if(!StartLoadJob(pSkinContainer.get()))
+		{
+			break;
+		}
 	}
 }
 
@@ -952,10 +1014,16 @@ CSkins::ESkinProcessResult CSkins::ProcessSkinContainer(CSkinContainer *pSkinCon
 void CSkins::UpdateFinishLoading(CSkinLoadingStats &Stats, std::chrono::nanoseconds StartTime, std::chrono::nanoseconds MaxTime)
 {
 	int SkinsProcessedThisFrame = 0;
+	std::vector<std::string> vUsageSnapshot;
+	vUsageSnapshot.reserve(m_SkinsUsageList.size());
+	for(const std::string &SkinName : m_SkinsUsageList)
+	{
+		vUsageSnapshot.push_back(SkinName);
+	}
 
 	// First, try to process skins from the usage list (most recently used first)
 	// This prioritizes visible/commonly used skins for better perceived performance
-	for(const std::string_view &SkinName : m_SkinsUsageList)
+	for(const std::string &SkinName : vUsageSnapshot)
 	{
 		if(Stats.m_NumLoading == 0 || SkinsProcessedThisFrame >= MAX_SKINS_PER_FRAME)
 		{
@@ -1172,7 +1240,7 @@ const CSkins::CSkinContainer *CSkins::FindContainerImpl(const char *pName)
 		pSkinContainer->SetState(pSkinContainer->DetermineInitialState());
 		ExistingSkin = m_Skins.insert({pSkinContainer->Name(), std::move(pSkinContainer)}).first;
 	}
-	ExistingSkin->second->RequestLoad();
+	ExistingSkin->second->RequestLoad(true);
 	return ExistingSkin->second.get();
 }
 

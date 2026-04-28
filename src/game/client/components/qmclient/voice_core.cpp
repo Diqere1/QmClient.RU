@@ -1126,8 +1126,9 @@ void CRClientVoice::ExportOverlayState(CVoiceOverlayState &Overlay) const NO_THR
 
 		if(IsLocalSpeaker)
 		{
-			if(LastSeen <= 0)
-				LastSeen = Now;
+			if(!LocalTxActive)
+				continue;
+			LastSeen = Now;
 			if(PreferredLocalId >= 0 && ClientId != PreferredLocalId)
 				continue;
 			if(PreferredLocalId < 0 && LocalEntryAdded)
@@ -2271,6 +2272,44 @@ void CRClientVoice::WorkerLoop()
 		DecodeJitter();
 		UpdateEncoderParams();
 		ProcessCapture();
+
+		SRClientVoiceConfigSnapshot Config;
+		GetConfigSnapshot(Config);
+		if(Config.m_QmVoiceDebug)
+		{
+			const int64_t Now = time_get();
+			if(m_DebugStateLastLog == 0 || Now - m_DebugStateLastLog >= time_freq())
+			{
+				int ActivePeers = 0;
+				int QueuedPackets = 0;
+				int QueuedFrames = 0;
+				if(m_pPeers)
+				{
+					for(const auto &Peer : *m_pPeers)
+					{
+						if(Peer.m_QueuedPackets > 0 || Peer.m_FrameCount > 0)
+							ActivePeers++;
+						QueuedPackets += Peer.m_QueuedPackets;
+						QueuedFrames += Peer.m_FrameCount;
+					}
+				}
+
+				log_info("voice", "state server_valid=%d ping=%d out=%d cap=%d tx=%d mic=%.2f rx=%d drop_ctx=%d drop_radius=%d peers=%d queued_packets=%d queued_frames=%d",
+					m_ServerAddrValid.load() ? 1 : 0,
+					m_PingMs.load(),
+					m_OutputDevice != 0 ? 1 : 0,
+					m_CaptureDevice != 0 ? 1 : 0,
+					m_TxWasActive.load() ? 1 : 0,
+					(double)m_MicLevel.load(),
+					m_RxPackets,
+					m_RxDropContext,
+					m_RxDropRadius,
+					ActivePeers,
+					QueuedPackets,
+					QueuedFrames);
+				m_DebugStateLastLog = Now;
+			}
+		}
 
 		std::this_thread::sleep_for(5ms);
 	}

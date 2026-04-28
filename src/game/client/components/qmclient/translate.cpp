@@ -1865,7 +1865,7 @@ void CTranslate::StartAutoOutgoingTranslate(int Team, const char *pText)
 int CTranslate::GetEffectiveConcurrency() const
 {
 	// 如果用户手动设置（不等于默认值 1），使用用户值
-	if(g_Config.m_QmTranslateLlmConcurrency != 1)
+	if(g_Config.m_QmTranslateLlmConcurrency != 0)
 		return g_Config.m_QmTranslateLlmConcurrency;
 
 	// 根据后端类型提供智能默认值
