@@ -11,6 +11,24 @@
 namespace VoiceUtils
 {
 
+static constexpr char VOICE_MAGIC[4] = {'R', 'V', '0', '1'};
+static constexpr uint32_t VOICE_GROUP_MASK = 0x3fffffff;
+
+static bool VoiceContainsNoCase(const char *pHaystack, const char *pNeedle)
+{
+	return pHaystack && pNeedle && pNeedle[0] != '\0' && str_find_nocase(pHaystack, pNeedle) != nullptr;
+}
+
+uint32_t VoiceTokenGroupHash(uint32_t TokenHash)
+{
+	return TokenHash & VOICE_GROUP_MASK;
+}
+
+static bool VoiceShouldHear(uint32_t SenderGroup, uint32_t ReceiverGroup)
+{
+	return SenderGroup == ReceiverGroup;
+}
+
 void WriteU16(uint8_t *pBuf, uint16_t Value)
 {
 	pBuf[0] = Value & 0xff;
@@ -49,6 +67,607 @@ float ReadFloat(const uint8_t *pBuf)
 	float Value = 0.0f;
 	mem_copy(&Value, &Bits, sizeof(Value));
 	return Value;
+}
+
+bool WriteVoicePacketHeader(uint8_t *pBuf, size_t BufSize, const SVoicePacketHeader &Header)
+{
+	if(!pBuf || BufSize < VOICE_PACKET_HEADER_SIZE)
+		return false;
+
+	size_t Offset = 0;
+	mem_copy(pBuf + Offset, VOICE_MAGIC, sizeof(VOICE_MAGIC));
+	Offset += sizeof(VOICE_MAGIC);
+	pBuf[Offset++] = Header.m_Version;
+	pBuf[Offset++] = Header.m_Type;
+	WriteU16(pBuf + Offset, Header.m_PayloadSize);
+	Offset += sizeof(uint16_t);
+	WriteU32(pBuf + Offset, Header.m_ContextHash);
+	Offset += sizeof(uint32_t);
+	WriteU32(pBuf + Offset, Header.m_TokenHash);
+	Offset += sizeof(uint32_t);
+	pBuf[Offset++] = Header.m_Flags;
+	WriteU16(pBuf + Offset, Header.m_SenderId);
+	Offset += sizeof(uint16_t);
+	WriteU16(pBuf + Offset, Header.m_Sequence);
+	Offset += sizeof(uint16_t);
+	WriteFloat(pBuf + Offset, Header.m_PosX);
+	Offset += sizeof(float);
+	WriteFloat(pBuf + Offset, Header.m_PosY);
+	return true;
+}
+
+bool ReadVoicePacketHeader(const uint8_t *pBuf, size_t BufSize, SVoicePacketHeader &OutHeader)
+{
+	if(!pBuf || BufSize < VOICE_PACKET_HEADER_SIZE)
+		return false;
+	if(mem_comp(pBuf, VOICE_MAGIC, sizeof(VOICE_MAGIC)) != 0)
+		return false;
+
+	size_t Offset = sizeof(VOICE_MAGIC);
+	OutHeader.m_Version = pBuf[Offset++];
+	OutHeader.m_Type = pBuf[Offset++];
+	OutHeader.m_PayloadSize = ReadU16(pBuf + Offset);
+	Offset += sizeof(uint16_t);
+	OutHeader.m_ContextHash = ReadU32(pBuf + Offset);
+	Offset += sizeof(uint32_t);
+	OutHeader.m_TokenHash = ReadU32(pBuf + Offset);
+	Offset += sizeof(uint32_t);
+	OutHeader.m_Flags = pBuf[Offset++];
+	OutHeader.m_SenderId = ReadU16(pBuf + Offset);
+	Offset += sizeof(uint16_t);
+	OutHeader.m_Sequence = ReadU16(pBuf + Offset);
+	Offset += sizeof(uint16_t);
+	OutHeader.m_PosX = ReadFloat(pBuf + Offset);
+	Offset += sizeof(float);
+	OutHeader.m_PosY = ReadFloat(pBuf + Offset);
+	return true;
+}
+
+const char *VoicePacketTypeName(uint8_t Type)
+{
+	switch(Type)
+	{
+	case VOICE_TYPE_AUDIO:
+		return "audio";
+	case VOICE_TYPE_PING:
+		return "ping";
+	case VOICE_TYPE_PONG:
+		return "pong";
+	default:
+		return "unknown";
+	}
+}
+
+bool VoiceAudioDeviceConfigEquals(const SVoiceAudioDeviceConfig &Left, const SVoiceAudioDeviceConfig &Right)
+{
+	return str_comp(Left.m_aBackend, Right.m_aBackend) == 0 &&
+		str_comp(Left.m_aInputDevice, Right.m_aInputDevice) == 0 &&
+		str_comp(Left.m_aOutputDevice, Right.m_aOutputDevice) == 0 &&
+		Left.m_OutputStereo == Right.m_OutputStereo;
+}
+
+int VoiceDesiredOutputChannels(const SVoiceAudioDeviceConfig &Config)
+{
+	return Config.m_OutputStereo ? 2 : 1;
+}
+
+void BuildVoiceDeviceDropdownEntries(
+	const std::vector<std::string> &vDetectedDeviceNames,
+	const char *pCurrentDevice,
+	const char *pDefaultLabel,
+	const char *pDisconnectedSuffix,
+	std::vector<SVoiceDeviceDropdownEntry> &vEntries)
+{
+	vEntries.clear();
+	vEntries.push_back({pDefaultLabel ? pDefaultLabel : "", "", false});
+
+	for(const auto &DeviceName : vDetectedDeviceNames)
+	{
+		if(DeviceName.empty())
+			continue;
+
+		bool Exists = false;
+		for(const auto &Entry : vEntries)
+		{
+			if(str_comp_nocase(Entry.m_ConfigValue.c_str(), DeviceName.c_str()) == 0)
+			{
+				Exists = true;
+				break;
+			}
+		}
+		if(Exists)
+			continue;
+
+		vEntries.push_back({DeviceName, DeviceName, false});
+	}
+
+	if(!pCurrentDevice || pCurrentDevice[0] == '\0')
+		return;
+
+	for(const auto &Entry : vEntries)
+	{
+		if(str_comp_nocase(Entry.m_ConfigValue.c_str(), pCurrentDevice) == 0)
+			return;
+	}
+
+	char aDisplay[160];
+	if(pDisconnectedSuffix && pDisconnectedSuffix[0] != '\0')
+		str_format(aDisplay, sizeof(aDisplay), "%s (%s)", pCurrentDevice, pDisconnectedSuffix);
+	else
+		str_copy(aDisplay, pCurrentDevice, sizeof(aDisplay));
+	vEntries.push_back({aDisplay, pCurrentDevice, true});
+}
+
+int VoiceFindSelectedDeviceIndex(const std::vector<SVoiceDeviceDropdownEntry> &vEntries, const char *pCurrentDevice)
+{
+	if(!pCurrentDevice || pCurrentDevice[0] == '\0')
+		return 0;
+
+	for(size_t i = 1; i < vEntries.size(); i++)
+	{
+		if(str_comp_nocase(vEntries[i].m_ConfigValue.c_str(), pCurrentDevice) == 0)
+			return (int)i;
+	}
+	return 0;
+}
+
+int ResolveNoiseSuppressMode(int ConfigValue, bool RnnoiseRuntimeAvailable, bool *pFallbackUsed)
+{
+	if(pFallbackUsed)
+		*pFallbackUsed = false;
+
+	const int Mode = std::clamp(ConfigValue, VOICE_NOISE_SUPPRESS_OFF, VOICE_NOISE_SUPPRESS_RNNOISE);
+	if(Mode != VOICE_NOISE_SUPPRESS_RNNOISE || RnnoiseRuntimeAvailable)
+		return Mode;
+
+	if(pFallbackUsed)
+		*pFallbackUsed = true;
+	return VOICE_NOISE_SUPPRESS_SIMPLE;
+}
+
+bool IsRnnoiseCompiledIn()
+{
+#if defined(CONF_RNNOISE)
+	return true;
+#else
+	return false;
+#endif
+}
+
+EVoiceIncomingPacketDecision ClassifyVoiceIncomingPacket(const SVoicePacketHeader &Header, size_t PacketSize, const SVoiceIncomingPacketContext &Context)
+{
+	if(PacketSize < VOICE_PACKET_HEADER_SIZE)
+		return EVoiceIncomingPacketDecision::DROP_HEADER;
+	if(Header.m_Version != Context.m_ProtocolVersion)
+		return EVoiceIncomingPacketDecision::DROP_VERSION;
+	if(Header.m_Type != VOICE_TYPE_AUDIO && Header.m_Type != VOICE_TYPE_PING && Header.m_Type != VOICE_TYPE_PONG)
+		return EVoiceIncomingPacketDecision::DROP_TYPE;
+	if(Header.m_ContextHash == 0 || Header.m_ContextHash != Context.m_LocalContextHash)
+		return EVoiceIncomingPacketDecision::DROP_CONTEXT;
+
+	const uint32_t LocalGroup = VoiceTokenGroupHash(Context.m_LocalTokenHash);
+	const uint32_t SenderGroup = VoiceTokenGroupHash(Header.m_TokenHash);
+	if(!VoiceShouldHear(SenderGroup, LocalGroup))
+		return EVoiceIncomingPacketDecision::DROP_GROUP;
+	if(Header.m_SenderId >= Context.m_MaxClients)
+		return EVoiceIncomingPacketDecision::DROP_SENDER;
+
+	if(Header.m_Type == VOICE_TYPE_PING || Header.m_Type == VOICE_TYPE_PONG)
+	{
+		if(Header.m_TokenHash != 0 && Header.m_TokenHash != Context.m_LocalTokenHash)
+			return EVoiceIncomingPacketDecision::DROP_KEEPALIVE_TOKEN;
+		return Header.m_Type == VOICE_TYPE_PING ? EVoiceIncomingPacketDecision::HANDLE_PING : EVoiceIncomingPacketDecision::HANDLE_PONG;
+	}
+
+	if(Header.m_PayloadSize > (uint16_t)VOICE_MAX_PAYLOAD)
+		return EVoiceIncomingPacketDecision::DROP_PAYLOAD;
+	if((size_t)VOICE_PACKET_HEADER_SIZE + Header.m_PayloadSize > PacketSize)
+		return EVoiceIncomingPacketDecision::DROP_PAYLOAD;
+	if(Header.m_PayloadSize == 0)
+		return EVoiceIncomingPacketDecision::DROP_PAYLOAD;
+
+	return EVoiceIncomingPacketDecision::HANDLE_AUDIO;
+}
+
+bool VoiceShouldUpdatePingRtt(uint16_t Sequence, uint16_t LastPingSeq, int64_t LastPingSentTime)
+{
+	return LastPingSentTime != 0 && Sequence == LastPingSeq;
+}
+
+bool VoiceShouldIgnoreDistance(bool IgnoreDistanceConfig, bool GroupGlobal, uint32_t LocalTokenHash, uint32_t SenderTokenHash)
+{
+	if(IgnoreDistanceConfig)
+		return true;
+
+	const uint32_t LocalGroup = VoiceTokenGroupHash(LocalTokenHash);
+	const uint32_t SenderGroup = VoiceTokenGroupHash(SenderTokenHash);
+	const bool SameGroup = LocalGroup != 0 && SenderGroup == LocalGroup;
+	return GroupGlobal && SameGroup;
+}
+
+vec2 VoiceResolveListenerPosition(vec2 LocalPos, bool SpecActive, vec2 SpecPos, bool HearOnSpecPos)
+{
+	if(SpecActive && HearOnSpecPos)
+		return SpecPos;
+	return LocalPos;
+}
+
+EVoiceReceiveAudibility EvaluateVoiceReceiveAudibility(const SVoiceReceiveAudibilityContext &Context, const char *pSenderName)
+{
+	if(Context.m_IsSelf)
+		return Context.m_TestServer ? EVoiceReceiveAudibility::ALLOW : EVoiceReceiveAudibility::DROP_SELF;
+
+	const bool AllowObserver = Context.m_HearPeoplesInSpectate && !Context.m_SenderActive && !Context.m_SenderSpec;
+	if(Context.m_VisibilityMode == 0)
+	{
+		if(!Context.m_IgnoreDistance && !Context.m_SenderActive && !AllowObserver)
+			return EVoiceReceiveAudibility::DROP_INACTIVE;
+	}
+	else if(Context.m_VisibilityMode == 1)
+	{
+		if(Context.m_SenderOtherTeam && !AllowObserver)
+			return EVoiceReceiveAudibility::DROP_OTHER_TEAM;
+	}
+
+	if(VoiceListMatch(Context.m_pMuteList, pSenderName))
+		return EVoiceReceiveAudibility::DROP_MUTED;
+	if(Context.m_ListMode == 1 && !VoiceListMatch(Context.m_pWhitelist, pSenderName))
+		return EVoiceReceiveAudibility::DROP_NOT_WHITELISTED;
+	if(Context.m_ListMode == 2 && VoiceListMatch(Context.m_pBlacklist, pSenderName))
+		return EVoiceReceiveAudibility::DROP_BLACKLISTED;
+	if(Context.m_SenderUsesVad && !Context.m_HearVad && !VoiceListMatch(Context.m_pVadAllow, pSenderName))
+		return EVoiceReceiveAudibility::DROP_VAD_BLOCKED;
+	return EVoiceReceiveAudibility::ALLOW;
+}
+
+bool VoiceIsPacketWithinAudibleRadius(vec2 LocalPos, vec2 SenderPos, float Radius, bool IgnoreDistance)
+{
+	if(IgnoreDistance)
+		return true;
+	return distance(LocalPos, SenderPos) <= Radius;
+}
+
+uint32_t VoiceTransmitBlockers(const SVoiceTransmitPreconditions &Preconditions)
+{
+	uint32_t Blockers = 0;
+	if(Preconditions.m_NeedNetwork)
+	{
+		if(!Preconditions.m_ServerAddrValid)
+			Blockers |= VOICE_TX_BLOCK_SERVER_ADDR;
+		if(!Preconditions.m_HaveSocket)
+			Blockers |= VOICE_TX_BLOCK_SOCKET;
+		if(!Preconditions.m_Online)
+			Blockers |= VOICE_TX_BLOCK_ONLINE;
+	}
+	if(!Preconditions.m_HaveCaptureDevice)
+		Blockers |= VOICE_TX_BLOCK_CAPTURE;
+	if(!Preconditions.m_HaveEncoder)
+		Blockers |= VOICE_TX_BLOCK_ENCODER;
+	if(Preconditions.m_MicMuted)
+		Blockers |= VOICE_TX_BLOCK_MIC_MUTED;
+	return Blockers;
+}
+
+void FormatVoiceTransmitBlockers(uint32_t Blockers, char *pBuf, size_t BufSize)
+{
+	if(!pBuf || BufSize == 0)
+		return;
+
+	if(Blockers == 0)
+	{
+		str_copy(pBuf, "none", BufSize);
+		return;
+	}
+
+	struct SBlockerName
+	{
+		uint32_t m_Bit;
+		const char *m_pName;
+	};
+	static constexpr SBlockerName s_aNames[] = {
+		{VOICE_TX_BLOCK_SERVER_ADDR, "server_addr"},
+		{VOICE_TX_BLOCK_SOCKET, "socket"},
+		{VOICE_TX_BLOCK_ONLINE, "online"},
+		{VOICE_TX_BLOCK_CAPTURE, "capture"},
+		{VOICE_TX_BLOCK_ENCODER, "encoder"},
+		{VOICE_TX_BLOCK_MIC_MUTED, "mic_muted"},
+	};
+
+	pBuf[0] = '\0';
+	bool First = true;
+	for(const auto &Name : s_aNames)
+	{
+		if((Blockers & Name.m_Bit) == 0)
+			continue;
+
+		if(!First)
+			str_append(pBuf, ",", BufSize);
+		str_append(pBuf, Name.m_pName, BufSize);
+		First = false;
+	}
+
+	if(pBuf[0] == '\0')
+		str_copy(pBuf, "unknown", BufSize);
+}
+
+bool VoiceNeedsAudioRefresh(const SVoiceAudioRefreshState &State)
+{
+	if(State.m_BackendChanged || State.m_InputDeviceChanged || State.m_OutputDeviceChanged || State.m_StereoChanged)
+		return true;
+	if(State.m_CurrentOutputChannels > 0 && State.m_DesiredOutputChannels > 0 && State.m_CurrentOutputChannels != State.m_DesiredOutputChannels)
+		return true;
+	if(!State.m_EncoderReady)
+		return true;
+	if(!State.m_OutputReady && !State.m_OutputUnavailable)
+		return true;
+	if(!State.m_CaptureReady && !State.m_CaptureUnavailable)
+		return true;
+	return false;
+}
+
+void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec)
+{
+	if(!pTargetBitrate || !pTargetLoss || !pTargetFec)
+		return;
+
+	const int ClampedLoss = std::clamp(LossPerc, 0, 30);
+	const float ClampedJitter = std::isfinite(JitterMax) ? std::max(0.0f, JitterMax) : 0.0f;
+
+	if(ClampedLoss <= 2 && ClampedJitter < 8.0f)
+	{
+		*pTargetBitrate = 36000;
+		*pTargetLoss = 0;
+		*pTargetFec = false;
+	}
+	else if(ClampedLoss <= 5 && ClampedJitter < 16.0f)
+	{
+		*pTargetBitrate = 28000;
+		*pTargetLoss = 5;
+		*pTargetFec = true;
+	}
+	else if(ClampedLoss <= 10 && ClampedJitter < 28.0f)
+	{
+		*pTargetBitrate = 22000;
+		*pTargetLoss = 10;
+		*pTargetFec = true;
+	}
+	else
+	{
+		*pTargetBitrate = 17000;
+		*pTargetLoss = 20;
+		*pTargetFec = true;
+	}
+}
+
+uint32_t VoiceRuntimeResetFlags(bool ContextChanged, bool Online, uint32_t PreviousRoomTokenHash, uint32_t CurrentRoomTokenHash)
+{
+	uint32_t Flags = 0;
+	if(ContextChanged || !Online)
+		Flags |= VOICE_RUNTIME_RESET_CONNECTION;
+	if((Flags & VOICE_RUNTIME_RESET_CONNECTION) != 0 || PreviousRoomTokenHash != CurrentRoomTokenHash)
+		Flags |= VOICE_RUNTIME_RESET_PEERS;
+	return Flags;
+}
+
+const char *VoiceUiMicStatus(const SVoiceUiStatus &Status)
+{
+	if(!Status.m_Enabled)
+		return "disabled";
+	if(Status.m_MicMuted)
+		return "muted";
+	if(Status.m_CaptureReady)
+		return "ready";
+	if(Status.m_CaptureUnavailable)
+		return "unavailable";
+	return "waiting";
+}
+
+const char *VoiceUiOutputStatus(const SVoiceUiStatus &Status)
+{
+	if(!Status.m_Enabled)
+		return "disabled";
+	if(Status.m_OutputReady)
+		return "ready";
+	if(Status.m_OutputUnavailable)
+		return "unavailable";
+	return "waiting";
+}
+
+const char *VoiceUiServerStatus(const SVoiceUiStatus &Status)
+{
+	if(!Status.m_Enabled)
+		return "disabled";
+	if(!Status.m_NeedNetwork)
+		return "local_test";
+	if(!Status.m_Online)
+		return "offline";
+	if(!Status.m_ServerAddrValid)
+		return "resolving";
+	if(!Status.m_HaveSocket)
+		return "socket_error";
+	if(Status.m_PingMs >= 0)
+		return "connected";
+	return "connected_no_ping";
+}
+
+const char *VoiceUiRoomStatus(const SVoiceUiStatus &Status)
+{
+	if(!Status.m_Enabled)
+		return "disabled";
+	if(!Status.m_NeedNetwork)
+		return "local_test";
+	if(!Status.m_Online)
+		return "offline";
+	if(Status.m_HaveRecentPeers)
+		return "matched";
+	return "waiting_peer";
+}
+
+const char *VoiceUiTransportStatus(const SVoiceUiStatus &Status)
+{
+	if(!Status.m_Enabled)
+		return "disabled";
+	if(Status.m_TxActive && Status.m_HaveRecentRx)
+		return "tx_rx_active";
+	if(Status.m_TxActive)
+		return "tx_active";
+	if(Status.m_HaveRecentRx)
+		return "rx_active";
+	if(Status.m_HaveRecentPeers)
+		return "idle_with_peer";
+	return "idle_no_peer";
+}
+
+const char *VoiceUiActionHint(const SVoiceUiStatus &Status)
+{
+	if(!Status.m_Enabled)
+		return "enable_voice";
+	const char *pAudioHint = VoiceUiAudioFailureHint(Status);
+	if(pAudioHint[0] != '\0')
+		return pAudioHint;
+	if(Status.m_CaptureUnavailable)
+		return "check_input";
+	if(Status.m_OutputUnavailable)
+		return "check_output";
+	if(Status.m_NeedNetwork && !Status.m_Online)
+		return "join_server";
+	if(Status.m_NeedNetwork && !Status.m_ServerAddrValid)
+		return "check_server";
+	if(Status.m_NeedNetwork && !Status.m_HaveSocket)
+		return "retry_socket";
+	if(Status.m_NeedNetwork && !Status.m_HaveRecentPeers)
+		return "check_room";
+	if(!Status.m_HaveRecentRx && Status.m_TxActive)
+		return "wait_peer";
+	return "ok";
+}
+
+const char *VoiceUiPrimaryError(const SVoiceUiStatus &Status)
+{
+	if(Status.m_aAudioError[0] != '\0')
+		return Status.m_aAudioError;
+	if(Status.m_aNetworkError[0] != '\0')
+		return Status.m_aNetworkError;
+	if(Status.m_aCodecError[0] != '\0')
+		return Status.m_aCodecError;
+	return "";
+}
+
+const char *VoiceUiInputRouteStatus(const SVoiceUiStatus &Status)
+{
+	if(!Status.m_Enabled)
+		return "disabled";
+	if(Status.m_CaptureUnavailable)
+	{
+		if(ClassifyVoiceAudioIssue(Status) == EVoiceAudioIssue::PERMISSION_DENIED)
+			return "permission_denied";
+		return Status.m_aRequestedInputDevice[0] != '\0' ? "selected_failed" : "default_failed";
+	}
+	if(Status.m_CaptureReady)
+		return Status.m_aRequestedInputDevice[0] != '\0' ? "using_selected" : "using_default";
+	if(Status.m_AudioRefreshPending)
+		return Status.m_aRequestedInputDevice[0] != '\0' ? "switching_selected" : "switching_default";
+	return "waiting";
+}
+
+const char *VoiceUiOutputRouteStatus(const SVoiceUiStatus &Status)
+{
+	if(!Status.m_Enabled)
+		return "disabled";
+	if(Status.m_OutputUnavailable)
+		return Status.m_aRequestedOutputDevice[0] != '\0' ? "selected_failed" : "default_failed";
+	if(Status.m_OutputReady)
+		return Status.m_aRequestedOutputDevice[0] != '\0' ? "using_selected" : "using_default";
+	if(Status.m_AudioRefreshPending)
+		return Status.m_aRequestedOutputDevice[0] != '\0' ? "switching_selected" : "switching_default";
+	return "waiting";
+}
+
+bool VoiceAudioErrorLooksLikePermissionDenied(const char *pError)
+{
+	return VoiceContainsNoCase(pError, "permission denied") ||
+		VoiceContainsNoCase(pError, "not permitted") ||
+		VoiceContainsNoCase(pError, "not authorized") ||
+		VoiceContainsNoCase(pError, "microphone access") ||
+		VoiceContainsNoCase(pError, "privacy") ||
+		VoiceContainsNoCase(pError, "kAudioHardwareNotPermittedError");
+}
+
+EVoiceAudioIssue ClassifyVoiceAudioIssue(const SVoiceUiStatus &Status)
+{
+	if(Status.m_aAudioError[0] == '\0')
+		return EVoiceAudioIssue::NONE;
+	if(VoiceAudioErrorLooksLikePermissionDenied(Status.m_aAudioError))
+		return EVoiceAudioIssue::PERMISSION_DENIED;
+	if(str_startswith_nocase(Status.m_aAudioError, "Input device not found:"))
+		return EVoiceAudioIssue::INPUT_DEVICE_NOT_FOUND;
+	if(str_startswith_nocase(Status.m_aAudioError, "Output device not found:"))
+		return EVoiceAudioIssue::OUTPUT_DEVICE_NOT_FOUND;
+	if(str_comp_nocase(Status.m_aAudioError, "No capture devices available") == 0)
+		return EVoiceAudioIssue::NO_CAPTURE_DEVICES;
+	if(str_comp_nocase(Status.m_aAudioError, "No output devices available") == 0)
+		return EVoiceAudioIssue::NO_OUTPUT_DEVICES;
+	if(str_startswith_nocase(Status.m_aAudioError, "Failed to open capture device:"))
+		return EVoiceAudioIssue::OPEN_CAPTURE_FAILED;
+	if(str_startswith_nocase(Status.m_aAudioError, "Failed to open output device:"))
+		return EVoiceAudioIssue::OPEN_OUTPUT_FAILED;
+	if(str_startswith_nocase(Status.m_aAudioError, "Failed to init audio"))
+		return EVoiceAudioIssue::BACKEND_INIT_FAILED;
+	return EVoiceAudioIssue::UNKNOWN;
+}
+
+const char *VoiceUiAudioFailureHint(const SVoiceUiStatus &Status)
+{
+	switch(ClassifyVoiceAudioIssue(Status))
+	{
+	case EVoiceAudioIssue::NONE:
+		return "";
+	case EVoiceAudioIssue::INPUT_DEVICE_NOT_FOUND:
+	case EVoiceAudioIssue::NO_CAPTURE_DEVICES:
+		return "select_input_device";
+	case EVoiceAudioIssue::OUTPUT_DEVICE_NOT_FOUND:
+	case EVoiceAudioIssue::NO_OUTPUT_DEVICES:
+		return "select_output_device";
+	case EVoiceAudioIssue::OPEN_CAPTURE_FAILED:
+		return "retry_input_open";
+	case EVoiceAudioIssue::OPEN_OUTPUT_FAILED:
+		return "retry_output_open";
+	case EVoiceAudioIssue::PERMISSION_DENIED:
+		return "grant_mic_permission";
+	case EVoiceAudioIssue::BACKEND_INIT_FAILED:
+		return "check_audio_backend";
+	case EVoiceAudioIssue::UNKNOWN:
+		return "inspect_audio_log";
+	}
+	return "inspect_audio_log";
+}
+
+const char *VoiceUiAudioIssueKey(const SVoiceUiStatus &Status)
+{
+	switch(ClassifyVoiceAudioIssue(Status))
+	{
+	case EVoiceAudioIssue::NONE:
+		return "none";
+	case EVoiceAudioIssue::INPUT_DEVICE_NOT_FOUND:
+		return "input_device_not_found";
+	case EVoiceAudioIssue::OUTPUT_DEVICE_NOT_FOUND:
+		return "output_device_not_found";
+	case EVoiceAudioIssue::NO_CAPTURE_DEVICES:
+		return "no_capture_devices";
+	case EVoiceAudioIssue::NO_OUTPUT_DEVICES:
+		return "no_output_devices";
+	case EVoiceAudioIssue::OPEN_CAPTURE_FAILED:
+		return "open_capture_failed";
+	case EVoiceAudioIssue::OPEN_OUTPUT_FAILED:
+		return "open_output_failed";
+	case EVoiceAudioIssue::PERMISSION_DENIED:
+		return "permission_denied";
+	case EVoiceAudioIssue::BACKEND_INIT_FAILED:
+		return "backend_init_failed";
+	case EVoiceAudioIssue::UNKNOWN:
+		return "unknown";
+	}
+	return "unknown";
 }
 
 float SanitizeFloat(float Value)
@@ -203,6 +822,28 @@ void ApplyMicGain(float Gain, int16_t *pSamples, int Count)
 		const float Out = pSamples[i] * Gain;
 		const int Sample = (int)std::clamp(Out, -32768.0f, 32767.0f);
 		pSamples[i] = (int16_t)Sample;
+	}
+}
+
+void BlendDenoisedFrame(const int16_t *pDrySamples, int16_t *pWetSamples, int Count, float WetMix)
+{
+	if(!pDrySamples || !pWetSamples || Count <= 0)
+		return;
+
+	const float ClampedWetMix = std::clamp(WetMix, 0.0f, 1.0f);
+	if(ClampedWetMix >= 0.999f)
+		return;
+	if(ClampedWetMix <= 0.001f)
+	{
+		mem_copy(pWetSamples, pDrySamples, Count * sizeof(int16_t));
+		return;
+	}
+
+	const float DryMix = 1.0f - ClampedWetMix;
+	for(int i = 0; i < Count; i++)
+	{
+		const float Out = pDrySamples[i] * DryMix + pWetSamples[i] * ClampedWetMix;
+		pWetSamples[i] = (int16_t)std::clamp(Out, -32768.0f, 32767.0f);
 	}
 }
 

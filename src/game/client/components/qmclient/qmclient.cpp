@@ -63,6 +63,40 @@ static constexpr const char *QMCLIENT_DEFAULT_VOICE_SERVER = "42.194.185.210:998
 static constexpr const char *QMCLIENT_TOKEN_PATH = "/qm/token";
 static constexpr const char *QMCLIENT_REPORT_PATH = "/qm/report";
 static constexpr const char *QMCLIENT_USERS_PATH = "/qm/users.json";
+static void LogQmClientRecognitionEvent(const char *pStage, const char *pDetail)
+{
+	log_info("qmclient", "recognition %s: %s", pStage, pDetail ? pDetail : "");
+}
+
+static void LogQmClientDistributionRequestEvent(const char *pStage, const char *pDetail)
+{
+	log_info("qmclient", "distribution %s: %s", pStage, pDetail ? pDetail : "");
+}
+
+static void LogQmClientDistributionEvent(const char *pStage, int Users, int Dummies, int LocalMarks)
+{
+	log_info("qmclient", "distribution %s: users=%d dummies=%d local_marks=%d", pStage, Users, Dummies, LocalMarks);
+}
+
+static void LogQmClientDistributionFailureEvent(const char *pStage, const char *pDetail)
+{
+	log_warn("qmclient", "distribution %s: %s", pStage, pDetail ? pDetail : "");
+}
+
+static void LogQmClientVoicePresenceEvent(const char *pStage, const char *pServerAddress, int Players)
+{
+	log_info("qmclient", "voice_presence %s: server='%s' players=%d", pStage, pServerAddress ? pServerAddress : "", Players);
+}
+
+static void LogQmClientVoicePresenceResultEvent(const char *pStage, const char *pServerAddress, int Players, int StatusCode, EHttpState State)
+{
+	log_info("qmclient", "voice_presence %s: server='%s' players=%d status=%d state=%d",
+		pStage,
+		pServerAddress ? pServerAddress : "",
+		Players,
+		StatusCode,
+		(int)State);
+}
 // Version/health/playtime endpoints are provided by the separate center HTTP
 // service (:8080) and intentionally do not use the /qm/* prefix.
 static constexpr const char *QMCLIENT_HEALTH_URL = "http://42.194.185.210:8080/healthz";
@@ -130,7 +164,6 @@ static constexpr const char *s_pFriendEnterBroadcastDefaultText = "%s joined thi
 [[maybe_unused]] static bool AppendAutoReplyRuleBlock(char *pOutRules, size_t OutRulesSize, const char *pRules);
 static const json_value *JsonObjectField(const json_value *pObject, const char *pName);
 static bool JsonReadNonNegativeInt64(const json_value *pValue, int64_t &OutValue);
-static bool JsonReadBoolean(const json_value *pValue, bool &OutValue);
 
 namespace
 {
@@ -160,23 +193,7 @@ struct STextPopupDefinition
 class CQmClientUsersParseJob : public IJob
 {
 public:
-	struct SClientMark
-	{
-		int m_ClientId = -1;
-		bool m_FootParticlesEnabled = false;
-		bool m_RemoteParticlesEnabled = false;
-		bool m_VoiceSupported = false;
-		std::string m_Qid;
-	};
-
-	struct SResult
-	{
-		bool m_Parsed = false;
-		std::vector<SQmClientServerDistribution> m_vServerDistribution;
-		std::vector<SClientMark> m_vLocalServerMarks;
-		int m_OnlineUserCount = 0;
-		int m_OnlineDummyCount = 0;
-	};
+	using SResult = SQmClientUsersParseResult;
 
 private:
 	std::shared_ptr<CHttpRequest> m_pTask;
@@ -193,94 +210,7 @@ private:
 			json_value *pRoot = m_pTask->ResultJson();
 			if(pRoot != nullptr)
 			{
-				const json_value *pUsers = pRoot;
-				if(pUsers->type == json_object)
-				{
-					const json_value *pUsersField = JsonObjectField(pUsers, "users");
-					if(pUsersField != &json_value_none)
-						pUsers = pUsersField;
-				}
-
-				if(pUsers->type == json_array)
-				{
-					Result.m_Parsed = true;
-					std::unordered_map<std::string, size_t> ServerIndexByAddress;
-					ServerIndexByAddress.reserve(pUsers->u.array.length);
-					Result.m_vServerDistribution.reserve(pUsers->u.array.length);
-
-					for(unsigned Index = 0; Index < pUsers->u.array.length; ++Index)
-					{
-						const json_value *pEntry = pUsers->u.array.values[Index];
-						if(!pEntry || pEntry->type != json_object)
-							continue;
-
-						const json_value *pServerAddress = JsonObjectField(pEntry, "server_address");
-						if(pServerAddress == &json_value_none)
-							pServerAddress = JsonObjectField(pEntry, "server");
-						if(pServerAddress == &json_value_none || pServerAddress->type != json_string)
-							continue;
-
-						const json_value *pPlayerId = JsonObjectField(pEntry, "player_id");
-						if(pPlayerId == &json_value_none)
-							pPlayerId = JsonObjectField(pEntry, "id");
-						if(pPlayerId == &json_value_none || (pPlayerId->type != json_integer && pPlayerId->type != json_double))
-							continue;
-
-						const int ClientId = json_int_get(pPlayerId);
-						bool Dummy = false;
-						const json_value *pDummy = JsonObjectField(pEntry, "dummy");
-						if(pDummy != &json_value_none)
-							JsonReadBoolean(pDummy, Dummy);
-
-						const std::string ServerAddress = pServerAddress->u.string.ptr;
-						const auto ItServer = ServerIndexByAddress.find(ServerAddress);
-						if(ItServer == ServerIndexByAddress.end())
-						{
-							ServerIndexByAddress[ServerAddress] = Result.m_vServerDistribution.size();
-							Result.m_vServerDistribution.push_back({ServerAddress, 0, 0});
-						}
-						SQmClientServerDistribution &ServerDistribution = Result.m_vServerDistribution[ServerIndexByAddress[ServerAddress]];
-						if(Dummy)
-						{
-							++ServerDistribution.m_DummyCount;
-							++Result.m_OnlineDummyCount;
-						}
-						else
-						{
-							++ServerDistribution.m_UserCount;
-							++Result.m_OnlineUserCount;
-						}
-
-						if(str_comp(ServerAddress.c_str(), m_aServerAddress) != 0)
-							continue;
-
-						SClientMark &Mark = Result.m_vLocalServerMarks.emplace_back();
-						Mark.m_ClientId = ClientId;
-
-						const json_value *pQidField = JsonObjectField(pEntry, "qid");
-						if(pQidField != &json_value_none && pQidField->type == json_string)
-							Mark.m_Qid = pQidField->u.string.ptr;
-
-						const json_value *pFootParticlesEnabled = JsonObjectField(pEntry, "foot_particles_enabled");
-						JsonReadBoolean(pFootParticlesEnabled, Mark.m_FootParticlesEnabled);
-
-						const json_value *pRemoteParticlesEnabled = JsonObjectField(pEntry, "remote_particles_enabled");
-						JsonReadBoolean(pRemoteParticlesEnabled, Mark.m_RemoteParticlesEnabled);
-
-						Mark.m_VoiceSupported = true;
-						const json_value *pVoiceSupported = JsonObjectField(pEntry, "voice_supported");
-						if(pVoiceSupported != &json_value_none)
-							JsonReadBoolean(pVoiceSupported, Mark.m_VoiceSupported);
-					}
-
-					std::sort(Result.m_vServerDistribution.begin(), Result.m_vServerDistribution.end(), [](const SQmClientServerDistribution &Left, const SQmClientServerDistribution &Right) {
-						if(Left.m_UserCount != Right.m_UserCount)
-							return Left.m_UserCount > Right.m_UserCount;
-						if(Left.m_DummyCount != Right.m_DummyCount)
-							return Left.m_DummyCount > Right.m_DummyCount;
-						return str_comp(Left.m_ServerAddress.c_str(), Right.m_ServerAddress.c_str()) < 0;
-					});
-				}
+				ParseQmClientUsersJson(pRoot, m_aServerAddress, Result);
 				json_value_free(pRoot);
 			}
 		}
@@ -881,29 +811,6 @@ static bool JsonReadNonNegativeInt64(const json_value *pValue, int64_t &OutValue
 		if(pValue->u.dbl < 0.0)
 			return false;
 		OutValue = (int64_t)pValue->u.dbl;
-		return true;
-	}
-	return false;
-}
-
-static bool JsonReadBoolean(const json_value *pValue, bool &OutValue)
-{
-	if(!pValue)
-		return false;
-
-	if(pValue->type == json_boolean)
-	{
-		OutValue = json_boolean_get(pValue) != 0;
-		return true;
-	}
-	if(pValue->type == json_integer)
-	{
-		OutValue = pValue->u.integer != 0;
-		return true;
-	}
-	if(pValue->type == json_double)
-	{
-		OutValue = pValue->u.dbl != 0.0;
 		return true;
 	}
 	return false;
@@ -1516,6 +1423,8 @@ void CQmClient::ResetQmClientRecognitionTasks()
 	AbortTask(m_pQmClientUsersSendTask);
 	m_pQmClientUsersParseJob = nullptr;
 	m_aQmClientAuthToken[0] = '\0';
+	m_aQmClientPendingVoicePresenceServerAddress[0] = '\0';
+	m_QmClientPendingVoicePresencePlayers = 0;
 	m_QmClientLastSync = 0;
 	ClearQmClientServerDistribution();
 }
@@ -1650,6 +1559,7 @@ void CQmClient::FetchQmClientAuthToken()
 	m_pQmClientAuthTokenTask->IpResolve(IPRESOLVE::V4);
 	m_pQmClientAuthTokenTask->LogProgress(HTTPLOG::FAILURE);
 	Http()->Run(m_pQmClientAuthTokenTask);
+	LogQmClientRecognitionEvent("token_request", aUrl);
 }
 
 void CQmClient::SendQmClientPlayerData()
@@ -1679,6 +1589,7 @@ void CQmClient::SendQmClientPlayerData()
 	JsonWriter.WriteIntValue((int)time_timestamp());
 	JsonWriter.WriteAttribute("players");
 	JsonWriter.BeginArray();
+	int PlayerCount = 0;
 
 	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
 	{
@@ -1701,6 +1612,7 @@ void CQmClient::SendQmClientPlayerData()
 		JsonWriter.WriteAttribute("voice_supported");
 		JsonWriter.WriteBoolValue(true);
 		JsonWriter.EndObject();
+		PlayerCount++;
 	}
 
 	JsonWriter.EndArray();
@@ -1717,6 +1629,9 @@ void CQmClient::SendQmClientPlayerData()
 	m_pQmClientUsersSendTask->IpResolve(IPRESOLVE::V4);
 	m_pQmClientUsersSendTask->LogProgress(HTTPLOG::FAILURE);
 	Http()->Run(m_pQmClientUsersSendTask);
+	str_copy(m_aQmClientPendingVoicePresenceServerAddress, aServerAddress, sizeof(m_aQmClientPendingVoicePresenceServerAddress));
+	m_QmClientPendingVoicePresencePlayers = PlayerCount;
+	LogQmClientVoicePresenceEvent("report_request", aServerAddress, PlayerCount);
 }
 
 void CQmClient::FetchQmClientUsers()
@@ -1734,6 +1649,7 @@ void CQmClient::FetchQmClientUsers()
 	m_pQmClientUsersTask->IpResolve(IPRESOLVE::V4);
 	m_pQmClientUsersTask->LogProgress(HTTPLOG::FAILURE);
 	Http()->Run(m_pQmClientUsersTask);
+	LogQmClientDistributionRequestEvent("request", aUrl);
 }
 
 void CQmClient::FinishQmClientAuthToken()
@@ -1754,6 +1670,11 @@ void CQmClient::FinishQmClientAuthToken()
 	{
 		str_copy(m_aQmClientAuthToken, pToken->u.string.ptr, sizeof(m_aQmClientAuthToken));
 		m_QmClientLastSync = 0;
+		LogQmClientRecognitionEvent("token_ok", "auth token updated");
+	}
+	else
+	{
+		LogQmClientRecognitionEvent("token_missing", "response did not contain auth token");
 	}
 	json_value_free(pRoot);
 }
@@ -1775,11 +1696,15 @@ void CQmClient::FinishQmClientUsers()
 		ClearQmClientServerDistribution();
 
 		if(!Result.m_Parsed)
+		{
+			LogQmClientDistributionFailureEvent("parse_failed", "users payload could not be parsed");
 			return;
+		}
 
 		m_vQmClientServerDistribution = std::move(Result.m_vServerDistribution);
 		m_QmClientOnlineUserCount = Result.m_OnlineUserCount;
 		m_QmClientOnlineDummyCount = Result.m_OnlineDummyCount;
+		LogQmClientDistributionEvent("parse_ok", Result.m_OnlineUserCount, Result.m_OnlineDummyCount, (int)Result.m_vLocalServerMarks.size());
 		for(const auto &Mark : Result.m_vLocalServerMarks)
 		{
 			GameClient()->MarkQ1menGSyncClient(Mark.m_ClientId, ExpireTick, Mark.m_FootParticlesEnabled, Mark.m_RemoteParticlesEnabled, Mark.m_Qid.c_str());
@@ -1803,7 +1728,11 @@ void CQmClient::FinishQmClientUsers()
 		GameClient()->ClearQ1menGSyncMarks();
 		GameClient()->ClearQmVoiceSyncMarks();
 		ClearQmClientServerDistribution();
+		const int StatusCode = m_pQmClientUsersTask->StatusCode();
+		char aFailure[128];
+		str_format(aFailure, sizeof(aFailure), "state=%d status=%d", (int)m_pQmClientUsersTask->State(), StatusCode);
 		m_pQmClientUsersTask = nullptr;
+		LogQmClientDistributionFailureEvent("request_failed", aFailure);
 		return;
 	}
 
@@ -1864,8 +1793,21 @@ void CQmClient::UpdateQmClientRecognition()
 	{
 		// Report can fail after center service restart (stale auth token).
 		// Clear token to force refetch on the next sync cycle.
-		if(m_pQmClientUsersSendTask->State() != EHttpState::DONE || m_pQmClientUsersSendTask->StatusCode() == 401)
-			m_aQmClientAuthToken[0] = '\0';
+		const int StatusCode = m_pQmClientUsersSendTask->StatusCode();
+		const EHttpState State = m_pQmClientUsersSendTask->State();
+		const bool HttpOk = StatusCode >= 200 && StatusCode < 300;
+		if(State != EHttpState::DONE || !HttpOk)
+		{
+			LogQmClientVoicePresenceResultEvent("report_failed", m_aQmClientPendingVoicePresenceServerAddress, m_QmClientPendingVoicePresencePlayers, StatusCode, State);
+			if(StatusCode == 401)
+				m_aQmClientAuthToken[0] = '\0';
+		}
+		else
+		{
+			LogQmClientVoicePresenceResultEvent("report_ok", m_aQmClientPendingVoicePresenceServerAddress, m_QmClientPendingVoicePresencePlayers, StatusCode, State);
+		}
+		m_aQmClientPendingVoicePresenceServerAddress[0] = '\0';
+		m_QmClientPendingVoicePresencePlayers = 0;
 		m_pQmClientUsersSendTask = nullptr;
 	}
 

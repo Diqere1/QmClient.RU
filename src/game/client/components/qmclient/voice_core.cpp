@@ -45,23 +45,6 @@ const char *GetEffectiveQmVoiceServer();
 // !!WARNING!!
 // Voice full wrote by AI don't use that pls
 
-static bool VoiceRememberLogMessage(char *pLastMessage, size_t LastMessageSize, const char *pMessage)
-{
-	if(str_comp(pLastMessage, pMessage) == 0)
-		return false;
-
-	str_copy(pLastMessage, pMessage, LastMessageSize);
-	return true;
-}
-
-static void VoiceLogErrorOnce(char *pLastMessage, size_t LastMessageSize, const char *pMessage)
-{
-	if(!VoiceRememberLogMessage(pLastMessage, LastMessageSize, pMessage))
-		return;
-
-	log_error("voice", "%s", pMessage);
-}
-
 void CVoiceOverlayState::Reset()
 {
 	m_aLastHeard.fill(0);
@@ -150,21 +133,11 @@ int CVoiceOverlayState::CollectVisible(int64_t Now, int64_t VisibleWindow, bool 
 	return EntryCount;
 }
 
-static constexpr char VOICE_MAGIC[4] = {'R', 'V', '0', '1'};
-static constexpr uint8_t VOICE_VERSION = 3;
-static constexpr uint8_t VOICE_TYPE_AUDIO = 1;
-static constexpr uint8_t VOICE_TYPE_PING = 2;
-static constexpr uint8_t VOICE_TYPE_PONG = 3;
 static constexpr int VOICE_CHANNELS = 1;
 static constexpr int VOICE_FRAME_BYTES = VOICE_FRAME_SAMPLES * sizeof(int16_t);
-static constexpr int VOICE_MAX_PACKET = 1200;
-static constexpr int VOICE_HEADER_SIZE = sizeof(VOICE_MAGIC) + 1 + 1 + 2 + 4 + 4 + 1 + 2 + 2 + 4 + 4;
-static constexpr int VOICE_MAX_PAYLOAD = VOICE_MAX_PACKET - VOICE_HEADER_SIZE;
 static constexpr uint32_t VOICE_GROUP_MASK = 0x3fffffff;
 static constexpr uint32_t VOICE_MODE_SHIFT = 30;
 static constexpr uint32_t VOICE_MODE_MASK = 0x3u;
-static constexpr uint8_t VOICE_FLAG_VAD = 1 << 0;
-static constexpr uint8_t VOICE_FLAG_LOOPBACK = 1 << 1;
 #if defined(CONF_RNNOISE)
 static constexpr int RNNOISE_FRAME_SAMPLES = 480;
 #endif
@@ -183,59 +156,9 @@ static uint32_t VoicePackToken(uint32_t GroupHash, uint32_t Mode)
 	return GroupHash & VOICE_GROUP_MASK;
 }
 
-static uint32_t VoiceTokenGroup(uint32_t TokenHash)
-{
-	return TokenHash & VOICE_GROUP_MASK;
-}
-
 [[maybe_unused]] static uint32_t VoiceTokenMode(uint32_t TokenHash)
 {
 	return (TokenHash >> VOICE_MODE_SHIFT) & VOICE_MODE_MASK;
-}
-
-static bool VoiceShouldHear(uint32_t SenderGroup, uint32_t ReceiverGroup)
-{
-	return SenderGroup == ReceiverGroup;
-}
-
-[[maybe_unused]] static void WriteU16(uint8_t *pBuf, uint16_t Value)
-{
-	pBuf[0] = Value & 0xff;
-	pBuf[1] = (Value >> 8) & 0xff;
-}
-
-static void WriteU32(uint8_t *pBuf, uint32_t Value)
-{
-	pBuf[0] = Value & 0xff;
-	pBuf[1] = (Value >> 8) & 0xff;
-	pBuf[2] = (Value >> 16) & 0xff;
-	pBuf[3] = (Value >> 24) & 0xff;
-}
-
-[[maybe_unused]] static void WriteFloat(uint8_t *pBuf, float Value)
-{
-	static_assert(sizeof(float) == 4, "float must be 4 bytes");
-	uint32_t Bits = 0;
-	mem_copy(&Bits, &Value, sizeof(Bits));
-	WriteU32(pBuf, Bits);
-}
-
-[[maybe_unused]] static uint16_t ReadU16(const uint8_t *pBuf)
-{
-	return (uint16_t)pBuf[0] | ((uint16_t)pBuf[1] << 8);
-}
-
-static uint32_t ReadU32(const uint8_t *pBuf)
-{
-	return (uint32_t)pBuf[0] | ((uint32_t)pBuf[1] << 8) | ((uint32_t)pBuf[2] << 16) | ((uint32_t)pBuf[3] << 24);
-}
-
-[[maybe_unused]] static float ReadFloat(const uint8_t *pBuf)
-{
-	uint32_t Bits = ReadU32(pBuf);
-	float Value = 0.0f;
-	mem_copy(&Value, &Bits, sizeof(Value));
-	return Value;
 }
 
 [[maybe_unused]] static float SanitizeFloat(float Value)
@@ -323,9 +246,6 @@ static void ApplyHpfCompressor(const SRClientVoiceConfigSnapshot &Config, int16_
 
 static void ApplyNoiseSuppressorSimple(const SRClientVoiceConfigSnapshot &Config, int16_t *pSamples, int Count, float &NoiseFloor, float &Gate)
 {
-	if(!Config.m_QmVoiceNoiseSuppressEnable)
-		return;
-
 	const float Strength = std::clamp(Config.m_QmVoiceNoiseSuppressStrength / 100.0f, 0.0f, 1.0f);
 	if(Strength <= 0.0f)
 		return;
@@ -386,48 +306,88 @@ static void ApplyNoiseSuppressorSimple(const SRClientVoiceConfigSnapshot &Config
 	}
 }
 
-static void ApplyNoiseSuppressor(const SRClientVoiceConfigSnapshot &Config, int16_t *pSamples, int Count, float &NoiseFloor, float &Gate, DenoiseState *&pState)
+static bool EnsureRnnoiseState(DenoiseState *&pState)
 {
-	if(!Config.m_QmVoiceNoiseSuppressEnable)
-		return;
-
-	const float Strength = std::clamp(Config.m_QmVoiceNoiseSuppressStrength / 100.0f, 0.0f, 1.0f);
-	if(Strength <= 0.0f)
-		return;
-
 #if defined(CONF_RNNOISE)
 	if(!pState)
 		pState = rnnoise_create(nullptr);
-	if(!pState)
+	return pState != nullptr;
+#else
+	(void)pState;
+	return false;
+#endif
+}
+
+// Keep the runtime dispatch explicit so mode 2 can fall back to the simpler
+// suppressor without changing transport behaviour or UI-facing config keys.
+static void ApplyNoiseSuppressor(const SRClientVoiceConfigSnapshot &Config, int16_t *pSamples, int Count, float &NoiseFloor, float &Gate, DenoiseState *&pState, bool &FallbackLogged)
+{
+	if(Config.m_QmVoiceNoiseSuppressEnable == VOICE_NOISE_SUPPRESS_OFF)
+	{
+		FallbackLogged = false;
+		return;
+	}
+
+	const float Strength = std::clamp(Config.m_QmVoiceNoiseSuppressStrength / 100.0f, 0.0f, 1.0f);
+	if(Strength <= 0.0f)
+	{
+		FallbackLogged = false;
+		return;
+	}
+
+	bool FallbackUsed = false;
+	const bool WantsRnnoise = Config.m_QmVoiceNoiseSuppressEnable == VOICE_NOISE_SUPPRESS_RNNOISE;
+	const int Mode = VoiceUtils::ResolveNoiseSuppressMode(Config.m_QmVoiceNoiseSuppressEnable, WantsRnnoise && EnsureRnnoiseState(pState), &FallbackUsed);
+	if(FallbackUsed)
+	{
+		if(!FallbackLogged)
+		{
+			log_warn("voice", "RNNoise mode requested but unavailable, falling back to simple noise suppression");
+			FallbackLogged = true;
+		}
+	}
+	else
+	{
+		FallbackLogged = false;
+	}
+
+	if(Mode == VOICE_NOISE_SUPPRESS_SIMPLE)
 	{
 		ApplyNoiseSuppressorSimple(Config, pSamples, Count, NoiseFloor, Gate);
 		return;
 	}
 
+#if defined(CONF_RNNOISE)
 	const int FrameSize = rnnoise_get_frame_size();
 	if(FrameSize != RNNOISE_FRAME_SAMPLES || Count < FrameSize)
+	{
+		ApplyNoiseSuppressorSimple(Config, pSamples, Count, NoiseFloor, Gate);
 		return;
+	}
 
 	const int Frames = Count / FrameSize;
 	for(int f = 0; f < Frames; f++)
 	{
+		int16_t aDry[RNNOISE_FRAME_SAMPLES];
 		float aIn[RNNOISE_FRAME_SAMPLES];
 		float aOut[RNNOISE_FRAME_SAMPLES];
 		const int Base = f * FrameSize;
 		for(int i = 0; i < FrameSize; i++)
+		{
+			aDry[i] = pSamples[Base + i];
 			aIn[i] = (float)pSamples[Base + i];
+		}
 
 		rnnoise_process_frame(pState, aOut, aIn);
 
 		for(int i = 0; i < FrameSize; i++)
 		{
-			// Use RNNoise output only to avoid combing/doubling from dry+wet mix.
 			const float y = aOut[i];
 			pSamples[Base + i] = (int16_t)std::clamp(y, -32768.0f, 32767.0f);
 		}
+		// Strength maps to wet/dry blend so the RNNoise slider has real runtime effect.
+		VoiceUtils::BlendDenoisedFrame(aDry, pSamples + Base, FrameSize, Strength);
 	}
-#else
-	ApplyNoiseSuppressorSimple(Config, pSamples, Count, NoiseFloor, Gate);
 #endif
 }
 
@@ -492,6 +452,10 @@ bool CRClientVoice::Init()
 	m_ShutdownDone = false;
 	m_LastConfigSnapshotUpdate = 0;
 	m_LastClientSnapshotUpdate = 0;
+	UpdateConfigSnapshot(true);
+	VoiceUtils::SVoiceAudioDeviceConfig RequestedAudioConfig;
+	BuildRequestedAudioDeviceConfig(RequestedAudioConfig);
+	SetRequestedAudioDeviceConfig(RequestedAudioConfig);
 	return true;
 }
 
@@ -516,12 +480,65 @@ void CRClientVoice::SetPttActive(bool Active)
 
 	if(WasActive)
 	{
-		const int DelayMs = std::clamp(g_Config.m_QmVoicePttReleaseDelayMs, 0, 1000);
+		UpdateConfigSnapshot(true);
+		SRClientVoiceConfigSnapshot Config;
+		GetConfigSnapshot(Config);
+		const int DelayMs = std::clamp(Config.m_QmVoicePttReleaseDelayMs, 0, 1000);
 		if(DelayMs > 0)
 			m_PttReleaseDeadline.store(time_get() + (int64_t)time_freq() * DelayMs / 1000);
 		else
 			m_PttReleaseDeadline.store(0);
 	}
+}
+
+void CRClientVoice::BuildRequestedAudioDeviceConfig(VoiceUtils::SVoiceAudioDeviceConfig &Out) const
+{
+	str_copy(Out.m_aBackend, g_Config.m_QmVoiceAudioBackend, sizeof(Out.m_aBackend));
+	str_copy(Out.m_aInputDevice, g_Config.m_QmVoiceInputDevice, sizeof(Out.m_aInputDevice));
+	str_copy(Out.m_aOutputDevice, g_Config.m_QmVoiceOutputDevice, sizeof(Out.m_aOutputDevice));
+	Out.m_OutputStereo = g_Config.m_QmVoiceStereo != 0;
+}
+
+void CRClientVoice::SetRequestedAudioDeviceConfig(const VoiceUtils::SVoiceAudioDeviceConfig &Config) NO_THREAD_SAFETY_ANALYSIS
+{
+	const CLockScope Guard(m_RequestedAudioDeviceConfigMutex);
+	m_RequestedAudioDeviceConfigMain = Config;
+}
+
+void CRClientVoice::GetRequestedAudioDeviceConfig(VoiceUtils::SVoiceAudioDeviceConfig &Out) const NO_THREAD_SAFETY_ANALYSIS
+{
+	const CLockScope Guard(m_RequestedAudioDeviceConfigMutex);
+	Out = m_RequestedAudioDeviceConfigMain;
+}
+
+bool CRClientVoice::RememberDiagnosticLogMessage(char *pField, size_t FieldSize, const char *pMessage) NO_THREAD_SAFETY_ANALYSIS
+{
+	const CLockScope Guard(m_DiagnosticLogMutex);
+	if(str_comp(pField, pMessage) == 0)
+		return false;
+
+	str_copy(pField, pMessage, FieldSize);
+	return true;
+}
+
+void CRClientVoice::LogDiagnosticErrorOnce(char *pField, size_t FieldSize, const char *pMessage) NO_THREAD_SAFETY_ANALYSIS
+{
+	if(!RememberDiagnosticLogMessage(pField, FieldSize, pMessage))
+		return;
+
+	log_error("voice", "%s", pMessage);
+}
+
+void CRClientVoice::ClearDiagnosticLogMessage(char *pField) NO_THREAD_SAFETY_ANALYSIS
+{
+	const CLockScope Guard(m_DiagnosticLogMutex);
+	pField[0] = '\0';
+}
+
+void CRClientVoice::CopyDiagnosticLogMessage(const char *pField, char *pBuf, size_t BufSize) const NO_THREAD_SAFETY_ANALYSIS
+{
+	const CLockScope Guard(m_DiagnosticLogMutex);
+	str_copy(pBuf, pField, BufSize);
 }
 
 static int ClampJitterTarget(float JitterMs)
@@ -557,15 +574,20 @@ bool CRClientVoice::EnsureSocket()
 	m_Socket = net_udp_create(BindAddr);
 	if(!m_Socket)
 	{
-		VoiceLogErrorOnce(m_aSocketErrorLog, sizeof(m_aSocketErrorLog), "Failed to open UDP socket");
+		m_SocketReady.store(false);
+		LogDiagnosticErrorOnce(m_aSocketErrorLog, sizeof(m_aSocketErrorLog), "Failed to open UDP socket");
 		return false;
 	}
-	m_aSocketErrorLog[0] = '\0';
+	m_SocketReady.store(true);
+	ClearDiagnosticLogMessage(m_aSocketErrorLog);
 	return true;
 }
 
 bool CRClientVoice::EnsureAudio()
 {
+	VoiceUtils::SVoiceAudioDeviceConfig RequestedAudioConfig;
+	GetRequestedAudioDeviceConfig(RequestedAudioConfig);
+
 	SDL_AudioSpec WantCapture = {};
 	WantCapture.freq = VOICE_SAMPLE_RATE;
 	WantCapture.format = AUDIO_S16;
@@ -573,8 +595,8 @@ bool CRClientVoice::EnsureAudio()
 	WantCapture.samples = VOICE_FRAME_SAMPLES;
 	WantCapture.callback = nullptr;
 
-	const bool WantStereo = g_Config.m_QmVoiceStereo != 0;
-	const int DesiredOutputChannels = WantStereo ? 2 : 1;
+	const bool WantStereo = RequestedAudioConfig.m_OutputStereo;
+	const int DesiredOutputChannels = VoiceUtils::VoiceDesiredOutputChannels(RequestedAudioConfig);
 
 	SDL_AudioSpec WantOutput = {};
 	WantOutput.freq = VOICE_SAMPLE_RATE;
@@ -584,36 +606,43 @@ bool CRClientVoice::EnsureAudio()
 	WantOutput.callback = SDLAudioCallback;
 	WantOutput.userdata = this;
 
-	const bool BackendChanged = str_comp(m_aAudioBackend, g_Config.m_QmVoiceAudioBackend) != 0;
+	const bool BackendChanged = str_comp(m_aAudioBackend, RequestedAudioConfig.m_aBackend) != 0;
 	if(BackendChanged)
 	{
 		if(m_CaptureDevice)
 		{
 			SDL_CloseAudioDevice(m_CaptureDevice);
 			m_CaptureDevice = 0;
+			m_CaptureReady.store(false);
 		}
 		if(m_OutputDevice)
 		{
 			SDL_CloseAudioDevice(m_OutputDevice);
 			m_OutputDevice = 0;
+			m_OutputReady.store(false);
 		}
 		m_CaptureSpec = {};
 		m_OutputSpec = {};
 		m_OutputChannels.store(0);
 		ClearPeerFrames();
-		str_copy(m_aAudioBackend, g_Config.m_QmVoiceAudioBackend, sizeof(m_aAudioBackend));
+		str_copy(m_aAudioBackend, RequestedAudioConfig.m_aBackend, sizeof(m_aAudioBackend));
 		m_aAudioBackendMismatchReq[0] = '\0';
 		m_aAudioBackendMismatchCur[0] = '\0';
 		m_aAudioInitLoggedBackend[0] = '\0';
-		m_aAudioErrorLog[0] = '\0';
-		m_aEncoderErrorLog[0] = '\0';
+		{
+			const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+			m_aResolvedInputDeviceName[0] = '\0';
+			m_aResolvedOutputDeviceName[0] = '\0';
+		}
+		ClearDiagnosticLogMessage(m_aAudioErrorLog);
+		ClearDiagnosticLogMessage(m_aEncoderErrorLog);
 		m_LogDeviceChange = true;
 		m_CaptureUnavailable = false;
 		m_OutputUnavailable = false;
 		m_LastAudioRetryAttempt = 0;
 	}
 
-	const char *pRequestedBackend = g_Config.m_QmVoiceAudioBackend[0] ? g_Config.m_QmVoiceAudioBackend : nullptr;
+	const char *pRequestedBackend = RequestedAudioConfig.m_aBackend[0] ? RequestedAudioConfig.m_aBackend : nullptr;
 	if((SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO) == 0)
 	{
 		if(SDL_AudioInit(pRequestedBackend) < 0)
@@ -622,13 +651,13 @@ bool CRClientVoice::EnsureAudio()
 			{
 				char aError[256];
 				str_format(aError, sizeof(aError), "Failed to init audio backend '%s': %s", pRequestedBackend, SDL_GetError());
-				VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
+				LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
 			}
 			else
 			{
 				char aError[256];
 				str_format(aError, sizeof(aError), "Failed to init audio: %s", SDL_GetError());
-				VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
+				LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
 			}
 			return false;
 		}
@@ -673,27 +702,37 @@ bool CRClientVoice::EnsureAudio()
 	const bool HadOutput = m_OutputDevice != 0;
 	const bool HadEncoder = m_pEncoder != nullptr;
 
-	if(str_comp(m_aInputDeviceName, g_Config.m_QmVoiceInputDevice) != 0)
+	if(str_comp(m_aInputDeviceName, RequestedAudioConfig.m_aInputDevice) != 0)
 	{
 		if(m_CaptureDevice)
 		{
 			SDL_CloseAudioDevice(m_CaptureDevice);
 			m_CaptureDevice = 0;
+			m_CaptureReady.store(false);
 		}
-		str_copy(m_aInputDeviceName, g_Config.m_QmVoiceInputDevice, sizeof(m_aInputDeviceName));
+		str_copy(m_aInputDeviceName, RequestedAudioConfig.m_aInputDevice, sizeof(m_aInputDeviceName));
+		{
+			const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+			m_aResolvedInputDeviceName[0] = '\0';
+		}
 		m_LogDeviceChange = true;
 		m_CaptureUnavailable = false;
 		m_LastAudioRetryAttempt = 0;
 	}
 
-	if(str_comp(m_aOutputDeviceName, g_Config.m_QmVoiceOutputDevice) != 0)
+	if(str_comp(m_aOutputDeviceName, RequestedAudioConfig.m_aOutputDevice) != 0)
 	{
 		if(m_OutputDevice)
 		{
 			SDL_CloseAudioDevice(m_OutputDevice);
 			m_OutputDevice = 0;
+			m_OutputReady.store(false);
 		}
-		str_copy(m_aOutputDeviceName, g_Config.m_QmVoiceOutputDevice, sizeof(m_aOutputDeviceName));
+		str_copy(m_aOutputDeviceName, RequestedAudioConfig.m_aOutputDevice, sizeof(m_aOutputDeviceName));
+		{
+			const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+			m_aResolvedOutputDeviceName[0] = '\0';
+		}
 		m_LogDeviceChange = true;
 		m_OutputUnavailable = false;
 		m_LastAudioRetryAttempt = 0;
@@ -705,8 +744,13 @@ bool CRClientVoice::EnsureAudio()
 		{
 			SDL_CloseAudioDevice(m_OutputDevice);
 			m_OutputDevice = 0;
+			m_OutputReady.store(false);
 		}
 		m_OutputStereo = WantStereo;
+		{
+			const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+			m_aResolvedOutputDeviceName[0] = '\0';
+		}
 		m_LogDeviceChange = true;
 		m_OutputUnavailable = false;
 		m_LastAudioRetryAttempt = 0;
@@ -717,8 +761,8 @@ bool CRClientVoice::EnsureAudio()
 		return true;
 	}
 
-	const char *pInputName = FindDeviceName(true, m_aInputDeviceName);
-	const char *pOutputName = FindDeviceName(false, m_aOutputDeviceName);
+	const char *pInputName = FindDeviceName(true, RequestedAudioConfig.m_aInputDevice);
+	const char *pOutputName = FindDeviceName(false, RequestedAudioConfig.m_aOutputDevice);
 
 	if(!m_pEncoder)
 	{
@@ -726,15 +770,15 @@ bool CRClientVoice::EnsureAudio()
 		m_pEncoder = opus_encoder_create(VOICE_SAMPLE_RATE, VOICE_CHANNELS, OPUS_APPLICATION_VOIP, &Error);
 		if(!m_pEncoder || Error != OPUS_OK)
 		{
+			m_EncoderReady.store(false);
 			char aError[256];
 			str_format(aError, sizeof(aError), "Failed to create Opus encoder: %d", Error);
-			VoiceLogErrorOnce(m_aEncoderErrorLog, sizeof(m_aEncoderErrorLog), aError);
+			LogDiagnosticErrorOnce(m_aEncoderErrorLog, sizeof(m_aEncoderErrorLog), aError);
 			return false;
 		}
-		m_aEncoderErrorLog[0] = '\0';
-		m_EncBitrate = 24000;
-		m_EncLossPerc = 0;
-		m_EncFec = false;
+		m_EncoderReady.store(true);
+		ClearDiagnosticLogMessage(m_aEncoderErrorLog);
+		VoiceUtils::ComputeVoiceEncoderTargets(0, 0.0f, &m_EncBitrate, &m_EncLossPerc, &m_EncFec);
 		m_LastEncUpdate = 0;
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_BITRATE(m_EncBitrate));
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_PACKET_LOSS_PERC(m_EncLossPerc));
@@ -747,23 +791,25 @@ bool CRClientVoice::EnsureAudio()
 
 	if(!m_OutputDevice)
 	{
-		const bool OutputMissing = m_aOutputDeviceName[0] != '\0' && pOutputName == nullptr;
+		const bool OutputMissing = RequestedAudioConfig.m_aOutputDevice[0] != '\0' && pOutputName == nullptr;
 		const bool NoOutputDevices = SDL_GetNumAudioDevices(0) <= 0;
 
 		if(OutputMissing)
 		{
-			if(!m_OutputUnavailable)
+			if(!m_OutputUnavailable.load())
 			{
 				char aError[256];
-				str_format(aError, sizeof(aError), "Output device not found: '%s'", m_aOutputDeviceName);
-				VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
+				str_format(aError, sizeof(aError), "Output device not found: '%s'", RequestedAudioConfig.m_aOutputDevice);
+				LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
 			}
+			m_OutputReady.store(false);
 			m_OutputUnavailable = true;
 		}
 		else if(NoOutputDevices)
 		{
-			if(!m_OutputUnavailable)
-				VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), "No output devices available");
+			if(!m_OutputUnavailable.load())
+				LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), "No output devices available");
+			m_OutputReady.store(false);
 			m_OutputUnavailable = true;
 		}
 		else
@@ -772,12 +818,13 @@ bool CRClientVoice::EnsureAudio()
 			m_OutputDevice = SDL_OpenAudioDevice(pOutputName, 0, &WantOutput, &m_OutputSpec, 0);
 			if(!m_OutputDevice)
 			{
-				if(!m_OutputUnavailable)
+				if(!m_OutputUnavailable.load())
 				{
 					char aError[256];
 					str_format(aError, sizeof(aError), "Failed to open output device: %s", SDL_GetError());
-					VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
+					LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
 				}
+				m_OutputReady.store(false);
 				m_OutputUnavailable = true;
 			}
 			else
@@ -787,15 +834,24 @@ bool CRClientVoice::EnsureAudio()
 					pOutputName ? pOutputName : "<default>",
 					Channels,
 					m_OutputSpec.freq);
+				{
+					const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+					if(pOutputName && pOutputName[0] != '\0')
+						str_copy(m_aResolvedOutputDeviceName, pOutputName, sizeof(m_aResolvedOutputDeviceName));
+					else
+						m_aResolvedOutputDeviceName[0] = '\0';
+				}
 				m_OutputChannels.store(Channels);
 				SDL_PauseAudioDevice(m_OutputDevice, 0);
 				ClearPeerFrames();
+				m_OutputReady.store(true);
 				m_OutputUnavailable = false;
 			}
 		}
 	}
 	else
 	{
+		m_OutputReady.store(true);
 		m_OutputUnavailable = false;
 	}
 
@@ -804,28 +860,31 @@ bool CRClientVoice::EnsureAudio()
 #if defined(CONF_PLATFORM_ANDROID)
 		if(m_AndroidRecordPermissionKnown && !m_AndroidRecordPermissionGranted)
 		{
+			m_CaptureReady.store(false);
 			m_CaptureUnavailable = true;
 		}
 		else
 #endif
 		{
-		const bool InputMissing = m_aInputDeviceName[0] != '\0' && pInputName == nullptr;
+		const bool InputMissing = RequestedAudioConfig.m_aInputDevice[0] != '\0' && pInputName == nullptr;
 		const bool NoCaptureDevices = SDL_GetNumAudioDevices(1) <= 0;
 
 		if(InputMissing)
 		{
-			if(!m_CaptureUnavailable)
+			if(!m_CaptureUnavailable.load())
 			{
 				char aError[256];
-				str_format(aError, sizeof(aError), "Input device not found: '%s'", m_aInputDeviceName);
-				VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
+				str_format(aError, sizeof(aError), "Input device not found: '%s'", RequestedAudioConfig.m_aInputDevice);
+				LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
 			}
+			m_CaptureReady.store(false);
 			m_CaptureUnavailable = true;
 		}
 		else if(NoCaptureDevices)
 		{
-			if(!m_CaptureUnavailable)
-				VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), "No capture devices available");
+			if(!m_CaptureUnavailable.load())
+				LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), "No capture devices available");
+			m_CaptureReady.store(false);
 			m_CaptureUnavailable = true;
 		}
 		else
@@ -834,12 +893,13 @@ bool CRClientVoice::EnsureAudio()
 			m_CaptureDevice = SDL_OpenAudioDevice(pInputName, 1, &WantCapture, &m_CaptureSpec, 0);
 			if(!m_CaptureDevice)
 			{
-				if(!m_CaptureUnavailable)
+				if(!m_CaptureUnavailable.load())
 				{
 					char aError[256];
 					str_format(aError, sizeof(aError), "Failed to open capture device: %s", SDL_GetError());
-					VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
+					LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
 				}
+				m_CaptureReady.store(false);
 				m_CaptureUnavailable = true;
 			}
 			else
@@ -848,7 +908,15 @@ bool CRClientVoice::EnsureAudio()
 					pInputName ? pInputName : "<default>",
 					m_CaptureSpec.channels,
 					m_CaptureSpec.freq);
+				{
+					const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+					if(pInputName && pInputName[0] != '\0')
+						str_copy(m_aResolvedInputDeviceName, pInputName, sizeof(m_aResolvedInputDeviceName));
+					else
+						m_aResolvedInputDeviceName[0] = '\0';
+				}
 				SDL_PauseAudioDevice(m_CaptureDevice, 0);
+				m_CaptureReady.store(true);
 				m_CaptureUnavailable = false;
 			}
 		}
@@ -856,6 +924,7 @@ bool CRClientVoice::EnsureAudio()
 	}
 	else
 	{
+		m_CaptureReady.store(true);
 		m_CaptureUnavailable = false;
 	}
 
@@ -872,13 +941,14 @@ bool CRClientVoice::EnsureAudio()
 		m_LogDeviceChange = false;
 	}
 
-	if(m_CaptureUnavailable || m_OutputUnavailable)
+	if(m_CaptureUnavailable.load() || m_OutputUnavailable.load())
 		m_LastAudioRetryAttempt = time_get();
 	else
+	{
 		m_LastAudioRetryAttempt = 0;
-
-	m_aAudioErrorLog[0] = '\0';
-	m_aEncoderErrorLog[0] = '\0';
+		ClearDiagnosticLogMessage(m_aAudioErrorLog);
+	}
+	ClearDiagnosticLogMessage(m_aEncoderErrorLog);
 	return true;
 }
 
@@ -1147,6 +1217,73 @@ void CRClientVoice::ExportOverlayState(CVoiceOverlayState &Overlay) const NO_THR
 	}
 }
 
+void CRClientVoice::ExportUiStatus(VoiceUtils::SVoiceUiStatus &Out) const NO_THREAD_SAFETY_ANALYSIS
+{
+	Out = {};
+	Out.m_Enabled = g_Config.m_QmVoiceEnable != 0;
+
+	SRClientVoiceConfigSnapshot Config;
+	GetConfigSnapshot(Config);
+	Out.m_NeedNetwork = std::clamp(Config.m_QmVoiceTestMode, 0, 2) != 1;
+	Out.m_AudioRefreshPending = m_AudioRefreshRequested.load();
+	Out.m_ServerAddrValid = m_ServerAddrValid.load();
+	Out.m_HaveSocket = m_SocketReady.load();
+	Out.m_CaptureReady = m_CaptureReady.load();
+	Out.m_CaptureUnavailable = m_CaptureUnavailable.load();
+	Out.m_OutputReady = m_OutputReady.load();
+	Out.m_OutputUnavailable = m_OutputUnavailable.load();
+	Out.m_EncoderReady = m_EncoderReady.load();
+	Out.m_MicMuted = Config.m_QmVoiceMicMute != 0;
+	Out.m_TxActive = m_TxWasActive.load();
+	Out.m_PingMs = m_PingMs.load();
+	Out.m_MicLevel = m_MicLevel.load();
+	VoiceUtils::SVoiceAudioDeviceConfig RequestedAudioConfig;
+	GetRequestedAudioDeviceConfig(RequestedAudioConfig);
+	str_copy(Out.m_aRequestedInputDevice, RequestedAudioConfig.m_aInputDevice, sizeof(Out.m_aRequestedInputDevice));
+	str_copy(Out.m_aRequestedOutputDevice, RequestedAudioConfig.m_aOutputDevice, sizeof(Out.m_aRequestedOutputDevice));
+	{
+		const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+		str_copy(Out.m_aResolvedInputDevice, m_aResolvedInputDeviceName, sizeof(Out.m_aResolvedInputDevice));
+		str_copy(Out.m_aResolvedOutputDevice, m_aResolvedOutputDeviceName, sizeof(Out.m_aResolvedOutputDevice));
+	}
+
+	const int64_t Now = time_get();
+	const int64_t RecentWindow = time_freq() * 3;
+	const int64_t LastTxPacketTime = m_LastTxPacketTime.load();
+	const int64_t LastMediaRxPacketTime = m_LastMediaRxPacketTime.load();
+	Out.m_TxAgeMs = LastTxPacketTime > 0 ? (int)std::clamp((Now - LastTxPacketTime) * 1000 / time_freq(), (int64_t)0, (int64_t)999999) : -1;
+	Out.m_RxAgeMs = LastMediaRxPacketTime > 0 ? (int)std::clamp((Now - LastMediaRxPacketTime) * 1000 / time_freq(), (int64_t)0, (int64_t)999999) : -1;
+	Out.m_HaveRecentRx = LastMediaRxPacketTime > 0 && Now - LastMediaRxPacketTime <= RecentWindow;
+
+	int aLocalClientIds[2] = {-1, -1};
+	{
+		const CLockScope Guard(m_SnapshotMutex);
+		Out.m_Online = m_OnlineSnap;
+		aLocalClientIds[0] = m_aLocalClientIdsSnap[0];
+		aLocalClientIds[1] = m_aLocalClientIdsSnap[1];
+	}
+
+	int ActivePeerCount = 0;
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ClientId++)
+	{
+		if(ClientId == aLocalClientIds[0] || ClientId == aLocalClientIds[1])
+			continue;
+
+		const int64_t Seen = m_aRoomMemberSeen[ClientId].load();
+		if(Seen > 0 && Now - Seen <= RecentWindow)
+			ActivePeerCount++;
+	}
+	Out.m_ActivePeerCount = ActivePeerCount;
+	Out.m_HaveRecentPeers = ActivePeerCount > 0;
+	CopyDiagnosticLogMessage(m_aAudioErrorLog, Out.m_aAudioError, sizeof(Out.m_aAudioError));
+	CopyDiagnosticLogMessage(m_aServerAddrErrorLog, Out.m_aNetworkError, sizeof(Out.m_aNetworkError));
+	if(Out.m_aNetworkError[0] == '\0')
+		CopyDiagnosticLogMessage(m_aSocketErrorLog, Out.m_aNetworkError, sizeof(Out.m_aNetworkError));
+	CopyDiagnosticLogMessage(m_aEncoderErrorLog, Out.m_aCodecError, sizeof(Out.m_aCodecError));
+	if(Out.m_aCodecError[0] == '\0')
+		CopyDiagnosticLogMessage(m_aDecoderErrorLog, Out.m_aCodecError, sizeof(Out.m_aCodecError));
+}
+
 void CRClientVoice::UpdateMicLevel(float Peak)
 {
 	const float Prev = m_MicLevel.load();
@@ -1173,12 +1310,19 @@ void CRClientVoice::Shutdown()
 		SDL_CloseAudioDevice(m_CaptureDevice);
 		m_CaptureDevice = 0;
 	}
+	m_CaptureReady.store(false);
 	if(m_OutputDevice)
 	{
 		SDL_CloseAudioDevice(m_OutputDevice);
 		m_OutputDevice = 0;
 	}
+	m_OutputReady.store(false);
 	m_OutputChannels.store(0);
+	{
+		const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+		m_aResolvedInputDeviceName[0] = '\0';
+		m_aResolvedOutputDeviceName[0] = '\0';
+	}
 	m_CaptureUnavailable = false;
 	m_OutputUnavailable = false;
 #if defined(CONF_PLATFORM_ANDROID)
@@ -1192,7 +1336,8 @@ void CRClientVoice::Shutdown()
 		opus_encoder_destroy(m_pEncoder);
 		m_pEncoder = nullptr;
 	}
-	ClearPeerFrames();
+	m_EncoderReady.store(false);
+	ResetRuntimeState(VoiceUtils::VOICE_RUNTIME_RESET_CONNECTION | VoiceUtils::VOICE_RUNTIME_RESET_PEERS, 0);
 	for(auto &Peer : *m_pPeers)
 	{
 		if(Peer.m_pDecoder)
@@ -1207,6 +1352,7 @@ void CRClientVoice::Shutdown()
 		net_udp_close(m_Socket);
 		m_Socket = nullptr;
 	}
+	m_SocketReady.store(false);
 	m_ServerAddrValid.store(false);
 	m_ServerAddrResolveRequested.store(true);
 	m_aServerAddrStr[0] = '\0';
@@ -1216,6 +1362,8 @@ void CRClientVoice::Shutdown()
 	m_CompEnv = 0.0f;
 	m_NsNoiseFloor = 0.0f;
 	m_NsGain = 1.0f;
+	m_AudioPausedForInactive = false;
+	m_NoiseSuppressFallbackLogged = false;
 #if defined(CONF_RNNOISE)
 	if(m_pNoiseSuppress)
 	{
@@ -1227,21 +1375,13 @@ void CRClientVoice::Shutdown()
 	m_aAudioBackendMismatchReq[0] = '\0';
 	m_aAudioBackendMismatchCur[0] = '\0';
 	m_aAudioInitLoggedBackend[0] = '\0';
-	m_aSocketErrorLog[0] = '\0';
-	m_aAudioErrorLog[0] = '\0';
-	m_aEncoderErrorLog[0] = '\0';
-	m_aServerAddrErrorLog[0] = '\0';
-	m_aDecoderErrorLog[0] = '\0';
+	ClearDiagnosticLogMessage(m_aSocketErrorLog);
+	ClearDiagnosticLogMessage(m_aAudioErrorLog);
+	ClearDiagnosticLogMessage(m_aEncoderErrorLog);
+	ClearDiagnosticLogMessage(m_aServerAddrErrorLog);
+	ClearDiagnosticLogMessage(m_aDecoderErrorLog);
 	m_AudioSubsystemInitializedByVoice = false;
-	m_PingMs.store(-1);
 	m_MicLevel.store(0.0f);
-	for(auto &RoomMemberSeen : m_aRoomMemberSeen)
-		RoomMemberSeen.store(0);
-	for(auto &SpeakerLevel : m_aSpeakerLevel)
-		SpeakerLevel.store(0.0f);
-	m_RoomMemberTokenHash.store(0);
-	m_LastPingSentTime = 0;
-	m_LastPingSeq = 0;
 	m_LastConfigSnapshotUpdate = 0;
 	m_LastClientSnapshotUpdate = 0;
 }
@@ -1295,7 +1435,7 @@ void CRClientVoice::ResolveServerAddr() NO_THREAD_SAFETY_ANALYSIS
 			m_ServerAddr = NewAddr;
 		}
 		m_ServerAddrValid.store(true);
-		m_aServerAddrErrorLog[0] = '\0';
+		ClearDiagnosticLogMessage(m_aServerAddrErrorLog);
 		return;
 	}
 
@@ -1305,7 +1445,7 @@ void CRClientVoice::ResolveServerAddr() NO_THREAD_SAFETY_ANALYSIS
 	{
 		char aError[256];
 		str_format(aError, sizeof(aError), "Invalid voice server address '%s'", aServerAddrStr);
-		VoiceLogErrorOnce(m_aServerAddrErrorLog, sizeof(m_aServerAddrErrorLog), aError);
+		LogDiagnosticErrorOnce(m_aServerAddrErrorLog, sizeof(m_aServerAddrErrorLog), aError);
 		return;
 	}
 
@@ -1317,13 +1457,13 @@ void CRClientVoice::ResolveServerAddr() NO_THREAD_SAFETY_ANALYSIS
 			m_ServerAddr = NewAddr;
 		}
 		m_ServerAddrValid.store(true);
-		m_aServerAddrErrorLog[0] = '\0';
+		ClearDiagnosticLogMessage(m_aServerAddrErrorLog);
 		return;
 	}
 
 	char aError[256];
 	str_format(aError, sizeof(aError), "Failed to resolve voice server '%s'", aServerAddrStr);
-	VoiceLogErrorOnce(m_aServerAddrErrorLog, sizeof(m_aServerAddrErrorLog), aError);
+	LogDiagnosticErrorOnce(m_aServerAddrErrorLog, sizeof(m_aServerAddrErrorLog), aError);
 }
 
 bool CRClientVoice::UpdateContext()
@@ -1394,6 +1534,66 @@ void CRClientVoice::UpdateClientSnapshot(bool Force) NO_THREAD_SAFETY_ANALYSIS
 	}
 }
 
+void CRClientVoice::ResetTransmitState(bool ClearQueuedCapture) NO_THREAD_SAFETY_ANALYSIS
+{
+	UpdateMicLevel(0.0f);
+	m_VadActive = false;
+	m_VadReleaseDeadline = 0;
+	m_PttReleaseDeadline.store(0);
+	m_TxWasActive = false;
+	if(ClearQueuedCapture && m_CaptureDevice)
+		SDL_ClearQueuedAudio(m_CaptureDevice);
+}
+
+bool CRClientVoice::HasConnectionRuntimeState() const
+{
+	return m_PingMs.load() >= 0 ||
+		m_LastTxPacketTime.load() > 0 ||
+		m_LastRxPacketTime.load() > 0 ||
+		m_LastMediaRxPacketTime.load() > 0 ||
+		m_LastPingSentTime != 0 ||
+		m_LastPingSeq != 0 ||
+		m_LastTokenHashSent != 0 ||
+		m_TxWasActive.load();
+}
+
+bool CRClientVoice::HasPeerRuntimeState(uint32_t RoomTokenHash) const
+{
+	if(m_RoomMemberTokenHash.load() != RoomTokenHash)
+		return true;
+	for(const auto &RoomMemberSeen : m_aRoomMemberSeen)
+	{
+		if(RoomMemberSeen.load() > 0)
+			return true;
+	}
+	return false;
+}
+
+void CRClientVoice::ResetRuntimeState(uint32_t Flags, uint32_t RoomTokenHash) NO_THREAD_SAFETY_ANALYSIS
+{
+	if((Flags & VoiceUtils::VOICE_RUNTIME_RESET_CONNECTION) != 0)
+	{
+		ResetTransmitState(true);
+		m_PingMs.store(-1);
+		m_LastTxPacketTime.store(0);
+		m_LastRxPacketTime.store(0);
+		m_LastMediaRxPacketTime.store(0);
+		m_LastPingSentTime = 0;
+		m_LastPingSeq = 0;
+		m_LastTokenHashSent = 0;
+	}
+
+	if((Flags & VoiceUtils::VOICE_RUNTIME_RESET_PEERS) != 0)
+	{
+		ClearPeerFrames();
+		for(auto &RoomMemberSeen : m_aRoomMemberSeen)
+			RoomMemberSeen.store(0);
+		for(auto &SpeakerLevel : m_aSpeakerLevel)
+			SpeakerLevel.store(0.0f);
+		m_RoomMemberTokenHash.store(RoomTokenHash);
+	}
+}
+
 void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 {
 	SRClientVoiceConfigSnapshot Config;
@@ -1405,19 +1605,6 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 	const bool ShowMicLevel = true;
 	const bool MicMuted = Config.m_QmVoiceMicMute != 0;
 	const float TestGain = std::clamp(Config.m_QmVoiceVolume / 100.0f, 0.0f, 4.0f);
-
-	const uint32_t CachedRoomTokenHash = m_RoomMemberTokenHash.load();
-	if(CachedRoomTokenHash != Config.m_QmVoiceTokenHash)
-	{
-		for(auto &RoomMemberSeen : m_aRoomMemberSeen)
-			RoomMemberSeen.store(0);
-		for(auto &SpeakerLevel : m_aSpeakerLevel)
-			SpeakerLevel.store(0.0f);
-		m_RoomMemberTokenHash.store(Config.m_QmVoiceTokenHash);
-	}
-
-	if(NeedNetwork && (!m_ServerAddrValid.load() || !m_Socket))
-		return;
 
 	int LocalClientId = -1;
 	std::array<int, 2> aLocalClientIds = {};
@@ -1432,8 +1619,28 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		if(LocalClientId >= 0 && LocalClientId < MAX_CLIENTS)
 			LocalPos = m_aClientPosSnap[LocalClientId];
 	}
-	if((!Online || LocalClientId < 0 || LocalClientId >= MAX_CLIENTS) && !TestLocal)
+	VoiceUtils::SVoiceTransmitPreconditions Preconditions;
+	Preconditions.m_NeedNetwork = NeedNetwork;
+	Preconditions.m_ServerAddrValid = m_ServerAddrValid.load();
+	Preconditions.m_HaveSocket = m_Socket != nullptr;
+	Preconditions.m_Online = Online && LocalClientId >= 0 && LocalClientId < MAX_CLIENTS;
+	Preconditions.m_HaveCaptureDevice = HaveCaptureDevice;
+	Preconditions.m_HaveEncoder = m_pEncoder != nullptr;
+	Preconditions.m_MicMuted = MicMuted;
+
+	const uint32_t NetworkBlockers = VoiceUtils::VoiceTransmitBlockers(Preconditions) &
+		(VoiceUtils::VOICE_TX_BLOCK_SERVER_ADDR | VoiceUtils::VOICE_TX_BLOCK_SOCKET | VoiceUtils::VOICE_TX_BLOCK_ONLINE);
+	if(NetworkBlockers != 0)
+	{
+		ResetTransmitState(false);
 		return;
+	}
+
+	if((!Online || LocalClientId < 0 || LocalClientId >= MAX_CLIENTS) && !TestLocal)
+	{
+		ResetTransmitState(false);
+		return;
+	}
 	if(LocalClientId < 0 || LocalClientId >= MAX_CLIENTS)
 		LocalClientId = 0;
 
@@ -1493,28 +1700,20 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 			ServerAddrLocal = m_ServerAddr;
 		}
 		uint8_t aPacket[VOICE_MAX_PACKET];
-		size_t Offset = 0;
-		mem_copy(aPacket + Offset, VOICE_MAGIC, sizeof(VOICE_MAGIC));
-		Offset += sizeof(VOICE_MAGIC);
-		aPacket[Offset++] = ProtocolVersion;
-		aPacket[Offset++] = VOICE_TYPE_PING;
-		VoiceUtils::WriteU16(aPacket + Offset, 0);
-		Offset += sizeof(uint16_t);
-		VoiceUtils::WriteU32(aPacket + Offset, m_ContextHash.load());
-		Offset += sizeof(uint32_t);
-		VoiceUtils::WriteU32(aPacket + Offset, Config.m_QmVoiceTokenHash);
-		Offset += sizeof(uint32_t);
-		aPacket[Offset++] = TxFlags;
 		const uint16_t PingSequence = m_Sequence++;
-		VoiceUtils::WriteU16(aPacket + Offset, (uint16_t)LocalClientId);
-		Offset += sizeof(uint16_t);
-		VoiceUtils::WriteU16(aPacket + Offset, PingSequence);
-		Offset += sizeof(uint16_t);
-		VoiceUtils::WriteFloat(aPacket + Offset, 0.0f);
-		Offset += sizeof(float);
-		VoiceUtils::WriteFloat(aPacket + Offset, 0.0f);
-		Offset += sizeof(float);
-		net_udp_send(m_Socket, &ServerAddrLocal, aPacket, (int)Offset);
+		VoiceUtils::SVoicePacketHeader Header;
+		Header.m_Version = ProtocolVersion;
+		Header.m_Type = VOICE_TYPE_PING;
+		Header.m_ContextHash = m_ContextHash.load();
+		Header.m_TokenHash = Config.m_QmVoiceTokenHash;
+		Header.m_Flags = TxFlags;
+		Header.m_SenderId = (uint16_t)LocalClientId;
+		Header.m_Sequence = PingSequence;
+		if(VoiceUtils::WriteVoicePacketHeader(aPacket, sizeof(aPacket), Header))
+		{
+			net_udp_send(m_Socket, &ServerAddrLocal, aPacket, VOICE_PACKET_HEADER_SIZE);
+			m_LastTxPacketTime.store(Now);
+		}
 		MarkLocalRoomMemberSeen(Now);
 		m_LastPingSentTime = Now;
 		m_LastPingSeq = PingSequence;
@@ -1524,22 +1723,13 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 
 	if(!HaveCaptureDevice)
 	{
-		UpdateMicLevel(0.0f);
-		m_VadActive = false;
-		m_VadReleaseDeadline = 0;
-		m_PttReleaseDeadline.store(0);
-		m_TxWasActive = false;
+		ResetTransmitState(false);
 		return;
 	}
 
 	if(MicMuted)
 	{
-		UpdateMicLevel(0.0f);
-		m_VadActive = false;
-		m_VadReleaseDeadline = 0;
-		m_PttReleaseDeadline.store(0);
-		m_TxWasActive = false;
-		SDL_ClearQueuedAudio(m_CaptureDevice);
+		ResetTransmitState(true);
 		return;
 	}
 
@@ -1553,7 +1743,7 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 				int16_t aPcm[VOICE_FRAME_SAMPLES];
 				SDL_DequeueAudio(m_CaptureDevice, aPcm, VOICE_FRAME_BYTES);
 				VoiceUtils::ApplyMicGain(std::clamp(Config.m_QmVoiceMicVolume / 100.0f, 0.0f, 3.0f), aPcm, VOICE_FRAME_SAMPLES);
-				ApplyNoiseSuppressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_NsNoiseFloor, m_NsGain, m_pNoiseSuppress);
+				ApplyNoiseSuppressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_NsNoiseFloor, m_NsGain, m_pNoiseSuppress, m_NoiseSuppressFallbackLogged);
 				ApplyHpfCompressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_HpfPrevIn, m_HpfPrevOut, m_CompEnv);
 				const float Peak = VoiceUtils::VoiceFramePeak(aPcm, VOICE_FRAME_SAMPLES);
 				UpdateMicLevel(Peak);
@@ -1579,8 +1769,7 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 	const vec2 Pos = LocalPos;
 	if(!m_pEncoder)
 	{
-		UpdateMicLevel(0.0f);
-		m_TxWasActive = false;
+		ResetTransmitState(false);
 		return;
 	}
 	const float VadThreshold = std::clamp(Config.m_QmVoiceVadThreshold / 100.0f, 0.0f, 1.0f);
@@ -1598,7 +1787,7 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		int16_t aPcm[VOICE_FRAME_SAMPLES];
 		SDL_DequeueAudio(m_CaptureDevice, aPcm, VOICE_FRAME_BYTES);
 		VoiceUtils::ApplyMicGain(std::clamp(Config.m_QmVoiceMicVolume / 100.0f, 0.0f, 3.0f), aPcm, VOICE_FRAME_SAMPLES);
-		ApplyNoiseSuppressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_NsNoiseFloor, m_NsGain, m_pNoiseSuppress);
+		ApplyNoiseSuppressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_NsNoiseFloor, m_NsGain, m_pNoiseSuppress, m_NoiseSuppressFallbackLogged);
 		ApplyHpfCompressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_HpfPrevIn, m_HpfPrevOut, m_CompEnv);
 
 		const float Peak = VoiceUtils::VoiceFramePeak(aPcm, VOICE_FRAME_SAMPLES);
@@ -1665,26 +1854,21 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		if(EncSize > VOICE_MAX_PAYLOAD)
 			continue;
 
-		size_t Offset = 0;
-		mem_copy(aPacket + Offset, VOICE_MAGIC, sizeof(VOICE_MAGIC));
-		Offset += sizeof(VOICE_MAGIC);
-		aPacket[Offset++] = ProtocolVersion;
-		aPacket[Offset++] = VOICE_TYPE_AUDIO;
-		VoiceUtils::WriteU16(aPacket + Offset, (uint16_t)EncSize);
-		Offset += sizeof(uint16_t);
-		VoiceUtils::WriteU32(aPacket + Offset, m_ContextHash.load());
-		Offset += sizeof(uint32_t);
-		VoiceUtils::WriteU32(aPacket + Offset, Config.m_QmVoiceTokenHash);
-		Offset += sizeof(uint32_t);
-		aPacket[Offset++] = TxFlags;
-		VoiceUtils::WriteU16(aPacket + Offset, (uint16_t)ClientId);
-		Offset += sizeof(uint16_t);
-		VoiceUtils::WriteU16(aPacket + Offset, m_Sequence++);
-		Offset += sizeof(uint16_t);
-		VoiceUtils::WriteFloat(aPacket + Offset, Pos.x);
-		Offset += sizeof(float);
-		VoiceUtils::WriteFloat(aPacket + Offset, Pos.y);
-		Offset += sizeof(float);
+		VoiceUtils::SVoicePacketHeader Header;
+		Header.m_Version = ProtocolVersion;
+		Header.m_Type = VOICE_TYPE_AUDIO;
+		Header.m_PayloadSize = (uint16_t)EncSize;
+		Header.m_ContextHash = m_ContextHash.load();
+		Header.m_TokenHash = Config.m_QmVoiceTokenHash;
+		Header.m_Flags = TxFlags;
+		Header.m_SenderId = (uint16_t)ClientId;
+		Header.m_Sequence = m_Sequence++;
+		Header.m_PosX = Pos.x;
+		Header.m_PosY = Pos.y;
+		if(!VoiceUtils::WriteVoicePacketHeader(aPacket, sizeof(aPacket), Header))
+			continue;
+
+		size_t Offset = VOICE_PACKET_HEADER_SIZE;
 		mem_copy(aPacket + Offset, aPayload, EncSize);
 		Offset += EncSize;
 
@@ -1694,6 +1878,7 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 			ServerAddrLocal = m_ServerAddr;
 		}
 		net_udp_send(m_Socket, &ServerAddrLocal, aPacket, (int)Offset);
+		m_LastTxPacketTime.store(Now);
 		MarkLocalVoiceActive(Now);
 		if(Config.m_QmVoiceDebug)
 		{
@@ -1745,71 +1930,101 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 			ServerAddrLocal = m_ServerAddr;
 		}
 		if(net_addr_comp(&Addr, &ServerAddrLocal) != 0)
-			continue;
-
-		if(Bytes < VOICE_HEADER_SIZE)
-			continue;
-
-		size_t Offset = 0;
-		if(mem_comp(pData, VOICE_MAGIC, sizeof(VOICE_MAGIC)) != 0)
-			continue;
-		Offset += sizeof(VOICE_MAGIC);
-
-		const uint8_t Version = pData[Offset++];
-		const uint8_t Type = pData[Offset++];
-		if(Version != ProtocolVersion)
-			continue;
-		if(Type != VOICE_TYPE_AUDIO && Type != VOICE_TYPE_PING && Type != VOICE_TYPE_PONG)
-			continue;
-		if(Bytes < VOICE_HEADER_SIZE)
-			continue;
-
-		const uint16_t PayloadSize = VoiceUtils::ReadU16(pData + Offset);
-		Offset += sizeof(uint16_t);
-		const uint32_t ContextHash = VoiceUtils::ReadU32(pData + Offset);
-		Offset += sizeof(uint32_t);
-		const uint32_t TokenHash = VoiceUtils::ReadU32(pData + Offset);
-		Offset += sizeof(uint32_t);
-		const uint8_t Flags = pData[Offset++];
-		const uint16_t SenderId = VoiceUtils::ReadU16(pData + Offset);
-		Offset += sizeof(uint16_t);
-		const uint16_t Sequence = VoiceUtils::ReadU16(pData + Offset);
-		Offset += sizeof(uint16_t);
-		const float PosX = VoiceUtils::SanitizeFloat(VoiceUtils::ReadFloat(pData + Offset));
-		Offset += sizeof(float);
-		const float PosY = VoiceUtils::SanitizeFloat(VoiceUtils::ReadFloat(pData + Offset));
-		Offset += sizeof(float);
-
-		const uint32_t LocalContextHash = m_ContextHash.load();
-		if(ContextHash == 0 || ContextHash != LocalContextHash)
 		{
-			m_RxDropContext++;
+			m_RxDropAddr++;
 			continue;
 		}
+
+		if(Bytes < VOICE_PACKET_HEADER_SIZE)
+		{
+			m_RxDropHeader++;
+			continue;
+		}
+
+		VoiceUtils::SVoicePacketHeader Header;
+		if(!VoiceUtils::ReadVoicePacketHeader(pData, Bytes, Header))
+		{
+			m_RxDropHeader++;
+			continue;
+		}
+
+		const uint8_t Version = Header.m_Version;
+		const uint8_t Type = Header.m_Type;
+		if(Version != ProtocolVersion)
+		{
+			m_RxDropVersion++;
+			continue;
+		}
+		if(Type != VOICE_TYPE_AUDIO && Type != VOICE_TYPE_PING && Type != VOICE_TYPE_PONG)
+		{
+			m_RxDropType++;
+			continue;
+		}
+		if(Bytes < VOICE_PACKET_HEADER_SIZE)
+		{
+			m_RxDropHeader++;
+			continue;
+		}
+
+		const uint16_t PayloadSize = Header.m_PayloadSize;
+		const uint32_t TokenHash = Header.m_TokenHash;
+		const uint8_t Flags = Header.m_Flags;
+		const uint16_t SenderId = Header.m_SenderId;
+		const uint16_t Sequence = Header.m_Sequence;
+		const float PosX = VoiceUtils::SanitizeFloat(Header.m_PosX);
+		const float PosY = VoiceUtils::SanitizeFloat(Header.m_PosY);
+
+		VoiceUtils::SVoiceIncomingPacketContext PacketContext;
+		PacketContext.m_ProtocolVersion = ProtocolVersion;
+		PacketContext.m_LocalContextHash = m_ContextHash.load();
+		PacketContext.m_LocalTokenHash = Config.m_QmVoiceTokenHash;
+		PacketContext.m_MaxClients = MAX_CLIENTS;
+		const auto PacketDecision = VoiceUtils::ClassifyVoiceIncomingPacket(Header, (size_t)Bytes, PacketContext);
+		switch(PacketDecision)
+		{
+		case VoiceUtils::EVoiceIncomingPacketDecision::DROP_HEADER:
+			m_RxDropHeader++;
+			continue;
+		case VoiceUtils::EVoiceIncomingPacketDecision::DROP_VERSION:
+			m_RxDropVersion++;
+			continue;
+		case VoiceUtils::EVoiceIncomingPacketDecision::DROP_TYPE:
+			m_RxDropType++;
+			continue;
+		case VoiceUtils::EVoiceIncomingPacketDecision::DROP_CONTEXT:
+			m_RxDropContext++;
+			continue;
+		case VoiceUtils::EVoiceIncomingPacketDecision::DROP_GROUP:
+		case VoiceUtils::EVoiceIncomingPacketDecision::DROP_KEEPALIVE_TOKEN:
+			m_RxDropGroup++;
+			continue;
+		case VoiceUtils::EVoiceIncomingPacketDecision::DROP_SENDER:
+			m_RxDropSender++;
+			continue;
+		case VoiceUtils::EVoiceIncomingPacketDecision::DROP_PAYLOAD:
+			m_RxDropPayload++;
+			continue;
+		case VoiceUtils::EVoiceIncomingPacketDecision::HANDLE_AUDIO:
+		case VoiceUtils::EVoiceIncomingPacketDecision::HANDLE_PING:
+		case VoiceUtils::EVoiceIncomingPacketDecision::HANDLE_PONG:
+			break;
+		}
+
 		const uint32_t LocalToken = Config.m_QmVoiceTokenHash;
-		const uint32_t LocalGroup = VoiceTokenGroup(LocalToken);
-		const uint32_t SenderGroup = VoiceTokenGroup(TokenHash);
-		if(!VoiceShouldHear(SenderGroup, LocalGroup))
-			continue;
-		if(SenderId >= MAX_CLIENTS)
-			continue;
 
 		const int64_t PacketNow = time_get();
 		m_aRoomMemberSeen[SenderId].store(PacketNow);
 
-		if(Type == VOICE_TYPE_PING || Type == VOICE_TYPE_PONG)
+		if(PacketDecision == VoiceUtils::EVoiceIncomingPacketDecision::HANDLE_PING || PacketDecision == VoiceUtils::EVoiceIncomingPacketDecision::HANDLE_PONG)
 		{
-			if(TokenHash != 0 && TokenHash != Config.m_QmVoiceTokenHash)
-				continue;
-			if(m_LastPingSentTime != 0 && Sequence == m_LastPingSeq)
+			m_LastRxPacketTime.store(PacketNow);
+			if(VoiceUtils::VoiceShouldUpdatePingRtt(Sequence, m_LastPingSeq, m_LastPingSentTime))
 			{
 				const int RttMs = (int)std::clamp((PacketNow - m_LastPingSentTime) * 1000 / time_freq(), (int64_t)0, (int64_t)9999);
 				m_PingMs.store(RttMs);
 			}
 			continue;
 		}
-		if(Type != VOICE_TYPE_AUDIO)
-			continue;
 
 		int LocalId = -1;
 		vec2 LocalPos = vec2(0.0f, 0.0f);
@@ -1835,58 +2050,56 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 			SenderSpec = m_aClientSpecSnap[SenderId] != 0;
 		}
 
-		if(SpecActive && Config.m_QmVoiceHearOnSpecPos)
-			LocalPos = SpecPos;
+		LocalPos = VoiceUtils::VoiceResolveListenerPosition(LocalPos, SpecActive, SpecPos, Config.m_QmVoiceHearOnSpecPos != 0);
 
 		const bool IsSelf = SenderId == LocalId;
-		if(IsSelf && !TestServer)
-			continue;
-
-		const bool SameGroup = LocalGroup != 0 && SenderGroup == LocalGroup;
-		const bool IgnoreDistance = Config.m_QmVoiceIgnoreDistance || (Config.m_QmVoiceGroupGlobal && SameGroup);
+		const bool IgnoreDistance = VoiceUtils::VoiceShouldIgnoreDistance(Config.m_QmVoiceIgnoreDistance != 0, Config.m_QmVoiceGroupGlobal != 0, LocalToken, TokenHash);
 		const char *pSenderName = aSenderName;
-		if(!IsSelf)
-		{
-			const bool AllowObserver = Config.m_QmVoiceHearPeoplesInSpectate && !SenderActive && !SenderSpec;
-			if(Config.m_QmVoiceVisibilityMode == 0)
-			{
-				if(!IgnoreDistance && !SenderActive && !AllowObserver)
-					continue;
-			}
-			else if(Config.m_QmVoiceVisibilityMode == 1)
-			{
-				if(SenderOtherTeam && !AllowObserver)
-					continue;
-			}
-
-			if(VoiceUtils::VoiceListMatch(Config.m_aQmVoiceMute, pSenderName))
-				continue;
-			if(Config.m_QmVoiceListMode == 1 && !VoiceUtils::VoiceListMatch(Config.m_aQmVoiceWhitelist, pSenderName))
-				continue;
-			if(Config.m_QmVoiceListMode == 2 && VoiceUtils::VoiceListMatch(Config.m_aQmVoiceBlacklist, pSenderName))
-				continue;
-			const bool SenderUsesVad = (Flags & VOICE_FLAG_VAD) != 0;
-			if(SenderUsesVad && !Config.m_QmVoiceHearVad && !VoiceUtils::VoiceListMatch(Config.m_aQmVoiceVadAllow, pSenderName))
-				continue;
-		}
+		VoiceUtils::SVoiceReceiveAudibilityContext AudibilityContext;
+		AudibilityContext.m_IsSelf = IsSelf;
+		AudibilityContext.m_TestServer = TestServer;
+		AudibilityContext.m_IgnoreDistance = IgnoreDistance;
+		AudibilityContext.m_VisibilityMode = Config.m_QmVoiceVisibilityMode;
+		AudibilityContext.m_HearPeoplesInSpectate = Config.m_QmVoiceHearPeoplesInSpectate != 0;
+		AudibilityContext.m_SenderOtherTeam = SenderOtherTeam;
+		AudibilityContext.m_SenderActive = SenderActive;
+		AudibilityContext.m_SenderSpec = SenderSpec;
+		AudibilityContext.m_ListMode = Config.m_QmVoiceListMode;
+		AudibilityContext.m_HearVad = Config.m_QmVoiceHearVad != 0;
+		AudibilityContext.m_SenderUsesVad = (Flags & VOICE_FLAG_VAD) != 0;
+		AudibilityContext.m_pMuteList = Config.m_aQmVoiceMute;
+		AudibilityContext.m_pWhitelist = Config.m_aQmVoiceWhitelist;
+		AudibilityContext.m_pBlacklist = Config.m_aQmVoiceBlacklist;
+		AudibilityContext.m_pVadAllow = Config.m_aQmVoiceVadAllow;
+		if(VoiceUtils::EvaluateVoiceReceiveAudibility(AudibilityContext, pSenderName) != VoiceUtils::EVoiceReceiveAudibility::ALLOW)
+			continue;
 		m_aLastHeard[SenderId].store(PacketNow);
 
-		if(PayloadSize > (uint16_t)(VOICE_MAX_PACKET - VOICE_HEADER_SIZE))
+		if(PayloadSize > (uint16_t)VOICE_MAX_PAYLOAD)
+		{
+			m_RxDropPayload++;
 			continue;
-		if(Offset + PayloadSize > (size_t)Bytes)
+		}
+		if((size_t)VOICE_PACKET_HEADER_SIZE + PayloadSize > (size_t)Bytes)
+		{
+			m_RxDropPayload++;
 			continue;
+		}
 		if(PayloadSize == 0)
+		{
+			m_RxDropPayload++;
 			continue;
+		}
 
 		const vec2 SenderPos = vec2(PosX, PosY);
 		const float Radius = std::max(1, Config.m_QmVoiceRadius) * 32.0f;
-		const float Dist = distance(LocalPos, SenderPos);
-		if(!IgnoreDistance && Dist > Radius)
+		if(!VoiceUtils::VoiceIsPacketWithinAudibleRadius(LocalPos, SenderPos, Radius, IgnoreDistance))
 		{
 			m_RxDropRadius++;
 			continue;
 		}
 
+		const float Dist = distance(LocalPos, SenderPos);
 		const float RadiusFactor = IgnoreDistance ? 1.0f : (1.0f - (Dist / Radius));
 		float Volume = std::clamp(RadiusFactor * (Config.m_QmVoiceVolume / 100.0f), 0.0f, 4.0f);
 		if(Volume <= 0.0f)
@@ -1967,17 +2180,36 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 		Pkt.m_Size = PayloadSize;
 		Pkt.m_LeftGain = LeftGain;
 		Pkt.m_RightGain = RightGain;
-		mem_copy(Pkt.m_aData, pData + Offset, PayloadSize);
+		mem_copy(Pkt.m_aData, pData + VOICE_PACKET_HEADER_SIZE, PayloadSize);
+		m_LastRxPacketTime.store(PacketNow);
+		m_LastMediaRxPacketTime.store(PacketNow);
 
 		if(Config.m_QmVoiceDebug)
 		{
 			m_RxPackets++;
 			if(Now - m_RxLastLog > time_freq())
 			{
-				log_info("voice", "rx packets=%d drop_ctx=%d drop_radius=%d", m_RxPackets, m_RxDropContext, m_RxDropRadius);
+				log_info("voice", "rx packets=%d drop_addr=%d drop_header=%d drop_version=%d drop_type=%d drop_ctx=%d drop_group=%d drop_sender=%d drop_payload=%d drop_radius=%d",
+					m_RxPackets,
+					m_RxDropAddr,
+					m_RxDropHeader,
+					m_RxDropVersion,
+					m_RxDropType,
+					m_RxDropContext,
+					m_RxDropGroup,
+					m_RxDropSender,
+					m_RxDropPayload,
+					m_RxDropRadius);
 				m_RxLastLog = Now;
 				m_RxPackets = 0;
+				m_RxDropAddr = 0;
+				m_RxDropHeader = 0;
+				m_RxDropVersion = 0;
+				m_RxDropType = 0;
 				m_RxDropContext = 0;
+				m_RxDropGroup = 0;
+				m_RxDropSender = 0;
+				m_RxDropPayload = 0;
 				m_RxDropRadius = 0;
 			}
 		}
@@ -1997,6 +2229,7 @@ void CRClientVoice::UpdateConfigSnapshot(bool Force) NO_THREAD_SAFETY_ANALYSIS
 	m_ConfigSnapshot.m_QmVoiceProtocolVersion = g_Config.m_QmVoiceProtocolVersion;
 	m_ConfigSnapshot.m_QmVoiceNoiseSuppressEnable = g_Config.m_QmVoiceNoiseSuppressEnable;
 	m_ConfigSnapshot.m_QmVoiceNoiseSuppressStrength = g_Config.m_QmVoiceNoiseSuppressStrength;
+	m_ConfigSnapshot.m_QmVoicePttReleaseDelayMs = g_Config.m_QmVoicePttReleaseDelayMs;
 	m_ConfigSnapshot.m_QmVoiceCompThreshold = g_Config.m_QmVoiceCompThreshold;
 	m_ConfigSnapshot.m_QmVoiceCompRatio = g_Config.m_QmVoiceCompRatio;
 	m_ConfigSnapshot.m_QmVoiceCompAttackMs = g_Config.m_QmVoiceCompAttackMs;
@@ -2066,34 +2299,12 @@ void CRClientVoice::UpdateEncoderParams()
 
 	const int LossPerc = (int)std::clamp(LossAvg * 100.0f, 0.0f, 30.0f);
 
-	int TargetBitrate = 24000;
+	int TargetBitrate = m_EncBitrate;
 	int TargetLoss = 0;
 	bool TargetFec = false;
-
-	if(LossPerc <= 2 && JitterMax < 8.0f)
-	{
-		TargetBitrate = 32000;
-		TargetLoss = 0;
-		TargetFec = false;
-	}
-	else if(LossPerc <= 5)
-	{
-		TargetBitrate = 24000;
-		TargetLoss = 5;
-		TargetFec = true;
-	}
-	else if(LossPerc <= 10)
-	{
-		TargetBitrate = 20000;
-		TargetLoss = 10;
-		TargetFec = true;
-	}
-	else
-	{
-		TargetBitrate = 16000;
-		TargetLoss = 20;
-		TargetFec = true;
-	}
+	// Share one target table with startup so healthy links get the quality bump
+	// while moderate loss/jitter step down more conservatively.
+	VoiceUtils::ComputeVoiceEncoderTargets(LossPerc, JitterMax, &TargetBitrate, &TargetLoss, &TargetFec);
 
 	if(TargetBitrate != m_EncBitrate)
 	{
@@ -2176,11 +2387,11 @@ void CRClientVoice::DecodeJitter()
 			{
 				char aError[256];
 				str_format(aError, sizeof(aError), "Failed to create Opus decoder: %d", Error);
-				VoiceLogErrorOnce(m_aDecoderErrorLog, sizeof(m_aDecoderErrorLog), aError);
+				LogDiagnosticErrorOnce(m_aDecoderErrorLog, sizeof(m_aDecoderErrorLog), aError);
 				Peer.m_DecoderFailed = true;
 				continue;
 			}
-			m_aDecoderErrorLog[0] = '\0';
+			ClearDiagnosticLogMessage(m_aDecoderErrorLog);
 			Peer.m_HasSeq = false;
 		}
 
@@ -2250,7 +2461,7 @@ void CRClientVoice::StopWorker()
 	m_WorkerStop.store(false);
 }
 
-void CRClientVoice::WorkerLoop()
+void CRClientVoice::WorkerLoop() NO_THREAD_SAFETY_ANALYSIS
 {
 	using namespace std::chrono_literals;
 	while(!m_WorkerStop.load())
@@ -2262,12 +2473,12 @@ void CRClientVoice::WorkerLoop()
 		}
 
 		bool ShouldEnsureAudio = m_AudioRefreshRequested.exchange(false);
-		bool CaptureNeedsRetry = m_CaptureUnavailable;
+		bool CaptureNeedsRetry = m_CaptureUnavailable.load();
 #if defined(CONF_PLATFORM_ANDROID)
 		if(m_AndroidRecordPermissionKnown && !m_AndroidRecordPermissionGranted)
 			CaptureNeedsRetry = false;
 #endif
-		if(!ShouldEnsureAudio && (CaptureNeedsRetry || m_OutputUnavailable))
+		if(!ShouldEnsureAudio && (CaptureNeedsRetry || m_OutputUnavailable.load()))
 		{
 			const int64_t RetryInterval = time_freq();
 			const int64_t Now = time_get();
@@ -2290,6 +2501,12 @@ void CRClientVoice::WorkerLoop()
 			const int64_t Now = time_get();
 			if(m_DebugStateLastLog == 0 || Now - m_DebugStateLastLog >= time_freq())
 			{
+				bool OnlineSnap = false;
+				{
+					const CLockScope Guard(m_SnapshotMutex);
+					OnlineSnap = m_OnlineSnap;
+				}
+
 				int ActivePeers = 0;
 				int QueuedPackets = 0;
 				int QueuedFrames = 0;
@@ -2304,15 +2521,47 @@ void CRClientVoice::WorkerLoop()
 					}
 				}
 
-				log_info("voice", "state server_valid=%d ping=%d out=%d cap=%d tx=%d mic=%.2f rx=%d drop_ctx=%d drop_radius=%d peers=%d queued_packets=%d queued_frames=%d",
+				SRClientVoiceConfigSnapshot StateConfig;
+				GetConfigSnapshot(StateConfig);
+				const bool NeedNetwork = std::clamp(StateConfig.m_QmVoiceTestMode, 0, 2) != 1;
+				VoiceUtils::SVoiceTransmitPreconditions Preconditions;
+				Preconditions.m_NeedNetwork = NeedNetwork;
+				Preconditions.m_ServerAddrValid = m_ServerAddrValid.load();
+				Preconditions.m_HaveSocket = m_Socket != nullptr;
+				Preconditions.m_Online = OnlineSnap;
+				Preconditions.m_HaveCaptureDevice = m_CaptureDevice != 0;
+				Preconditions.m_HaveEncoder = m_pEncoder != nullptr;
+				Preconditions.m_MicMuted = StateConfig.m_QmVoiceMicMute != 0;
+				const uint32_t TxBlockers = VoiceUtils::VoiceTransmitBlockers(Preconditions);
+				char aTxBlockers[128];
+				VoiceUtils::FormatVoiceTransmitBlockers(TxBlockers, aTxBlockers, sizeof(aTxBlockers));
+
+				const int TxAgeMs = m_LastTxPacketTime.load() > 0 ? (int)std::clamp((Now - m_LastTxPacketTime.load()) * 1000 / time_freq(), (int64_t)0, (int64_t)999999) : -1;
+				const int RxAgeMs = m_LastRxPacketTime.load() > 0 ? (int)std::clamp((Now - m_LastRxPacketTime.load()) * 1000 / time_freq(), (int64_t)0, (int64_t)999999) : -1;
+
+				log_info("voice", "state server_valid=%d ping=%d socket=%d online=%d out=%d cap=%d enc=%d mute=%d tx_block=0x%x tx_blockers=%s tx=%d tx_age=%d mic=%.2f rx_age=%d drop_addr=%d drop_header=%d drop_version=%d drop_type=%d drop_ctx=%d drop_group=%d drop_sender=%d drop_payload=%d drop_radius=%d peers=%d queued_packets=%d queued_frames=%d",
 					m_ServerAddrValid.load() ? 1 : 0,
 					m_PingMs.load(),
+					m_Socket != nullptr ? 1 : 0,
+					OnlineSnap ? 1 : 0,
 					m_OutputDevice != 0 ? 1 : 0,
 					m_CaptureDevice != 0 ? 1 : 0,
+					m_pEncoder != nullptr ? 1 : 0,
+					StateConfig.m_QmVoiceMicMute != 0 ? 1 : 0,
+					(unsigned)TxBlockers,
+					aTxBlockers,
 					m_TxWasActive.load() ? 1 : 0,
+					TxAgeMs,
 					(double)m_MicLevel.load(),
-					m_RxPackets,
+					RxAgeMs,
+					m_RxDropAddr,
+					m_RxDropHeader,
+					m_RxDropVersion,
+					m_RxDropType,
 					m_RxDropContext,
+					m_RxDropGroup,
+					m_RxDropSender,
+					m_RxDropPayload,
 					m_RxDropRadius,
 					ActivePeers,
 					QueuedPackets,
@@ -2325,7 +2574,7 @@ void CRClientVoice::WorkerLoop()
 	}
 }
 
-void CRClientVoice::OnRender()
+void CRClientVoice::OnRender() NO_THREAD_SAFETY_ANALYSIS
 {
 	if(!g_Config.m_QmVoiceEnable || !m_pGameClient || !m_pClient)
 	{
@@ -2347,25 +2596,46 @@ void CRClientVoice::OnRender()
 	if(g_Config.m_QmVoiceOffNonActive && m_pGraphics && !m_pGraphics->WindowActive())
 	{
 		StopWorker();
-		if(m_CaptureDevice)
+		if(!m_AudioPausedForInactive)
 		{
-			SDL_ClearQueuedAudio(m_CaptureDevice);
-			SDL_PauseAudioDevice(m_CaptureDevice, 1);
+			if(m_CaptureDevice)
+			{
+				SDL_ClearQueuedAudio(m_CaptureDevice);
+				SDL_PauseAudioDevice(m_CaptureDevice, 1);
+			}
+			if(m_OutputDevice)
+				SDL_PauseAudioDevice(m_OutputDevice, 1);
+			m_AudioPausedForInactive = true;
 		}
-		if(m_OutputDevice)
-			SDL_PauseAudioDevice(m_OutputDevice, 1);
 		ClearPeerFrames();
 		return;
 	}
-	if(m_CaptureDevice)
-		SDL_PauseAudioDevice(m_CaptureDevice, 0);
-	if(m_OutputDevice)
-		SDL_PauseAudioDevice(m_OutputDevice, 0);
+	if(m_AudioPausedForInactive)
+	{
+		if(m_CaptureDevice)
+			SDL_PauseAudioDevice(m_CaptureDevice, 0);
+		if(m_OutputDevice)
+			SDL_PauseAudioDevice(m_OutputDevice, 0);
+		m_AudioPausedForInactive = false;
+	}
 
 	UpdateServerAddrConfig();
 	const bool ContextChanged = UpdateContext();
 	UpdateClientSnapshot(ContextChanged);
 	UpdateConfigSnapshot();
+	SRClientVoiceConfigSnapshot RuntimeConfig;
+	GetConfigSnapshot(RuntimeConfig);
+
+	bool OnlineForReset = false;
+	{
+		const CLockScope Guard(m_SnapshotMutex);
+		OnlineForReset = m_OnlineSnap;
+	}
+	const uint32_t RuntimeResetFlags = VoiceUtils::VoiceRuntimeResetFlags(
+		ContextChanged,
+		OnlineForReset,
+		m_RoomMemberTokenHash.load(),
+		RuntimeConfig.m_QmVoiceTokenHash);
 
 #if defined(CONF_PLATFORM_ANDROID)
 	if(!m_AndroidRecordPermissionKnown)
@@ -2374,64 +2644,60 @@ void CRClientVoice::OnRender()
 		m_AndroidRecordPermissionKnown = true;
 		if(!m_AndroidRecordPermissionGranted)
 		{
-			VoiceLogErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), "Microphone permission denied on Android");
+			LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), "Microphone permission denied on Android");
 			m_CaptureUnavailable = true;
+			m_CaptureReady.store(false);
 		}
 	}
 #endif
 
-	const bool WantStereo = g_Config.m_QmVoiceStereo != 0;
-	const int DesiredChannels = WantStereo ? 2 : 1;
-	bool NeedReinit = false;
-	if(str_comp(m_aAudioBackend, g_Config.m_QmVoiceAudioBackend) != 0)
-		NeedReinit = true;
-	if(str_comp(m_aInputDeviceName, g_Config.m_QmVoiceInputDevice) != 0)
-		NeedReinit = true;
-	if(str_comp(m_aOutputDeviceName, g_Config.m_QmVoiceOutputDevice) != 0)
-		NeedReinit = true;
-	if(m_OutputStereo != WantStereo)
-		NeedReinit = true;
-	if(m_OutputDevice && m_OutputSpec.channels > 0 && m_OutputSpec.channels != DesiredChannels)
-	{
-		SDL_CloseAudioDevice(m_OutputDevice);
-		m_OutputDevice = 0;
-		m_OutputSpec = {};
-		m_OutputChannels.store(0);
-		NeedReinit = true;
-	}
-	if(!m_pEncoder)
-		NeedReinit = true;
-	if(!m_OutputDevice)
-	{
-		if(!m_OutputUnavailable)
-			NeedReinit = true;
-	}
-	if(!m_CaptureDevice)
-	{
+	VoiceUtils::SVoiceAudioDeviceConfig RequestedAudioConfig;
+	BuildRequestedAudioDeviceConfig(RequestedAudioConfig);
+	VoiceUtils::SVoiceAudioDeviceConfig AppliedRequestedAudioConfig;
+	GetRequestedAudioDeviceConfig(AppliedRequestedAudioConfig);
+	const int DesiredChannels = VoiceUtils::VoiceDesiredOutputChannels(RequestedAudioConfig);
+	VoiceUtils::SVoiceAudioRefreshState RefreshState;
+	RefreshState.m_BackendChanged = str_comp(AppliedRequestedAudioConfig.m_aBackend, RequestedAudioConfig.m_aBackend) != 0;
+	RefreshState.m_InputDeviceChanged = str_comp(AppliedRequestedAudioConfig.m_aInputDevice, RequestedAudioConfig.m_aInputDevice) != 0;
+	RefreshState.m_OutputDeviceChanged = str_comp(AppliedRequestedAudioConfig.m_aOutputDevice, RequestedAudioConfig.m_aOutputDevice) != 0;
+	RefreshState.m_StereoChanged = AppliedRequestedAudioConfig.m_OutputStereo != RequestedAudioConfig.m_OutputStereo;
+	if(RefreshState.m_BackendChanged || RefreshState.m_InputDeviceChanged || RefreshState.m_OutputDeviceChanged || RefreshState.m_StereoChanged)
+		SetRequestedAudioDeviceConfig(RequestedAudioConfig);
+	RefreshState.m_EncoderReady = m_EncoderReady.load();
+	RefreshState.m_OutputReady = m_OutputReady.load();
+	RefreshState.m_CaptureReady = m_CaptureReady.load();
+	RefreshState.m_OutputUnavailable = m_OutputUnavailable.load();
+	RefreshState.m_CaptureUnavailable = m_CaptureUnavailable.load();
+	RefreshState.m_CurrentOutputChannels = m_OutputChannels.load();
+	RefreshState.m_DesiredOutputChannels = DesiredChannels;
 #if defined(CONF_PLATFORM_ANDROID)
-		if(!(m_AndroidRecordPermissionKnown && !m_AndroidRecordPermissionGranted))
+	if(m_AndroidRecordPermissionKnown && !m_AndroidRecordPermissionGranted)
+		RefreshState.m_CaptureUnavailable = true;
 #endif
-		if(!m_CaptureUnavailable)
-			NeedReinit = true;
-	}
-	if(ContextChanged)
+	const bool NeedReinit = VoiceUtils::VoiceNeedsAudioRefresh(RefreshState);
+	bool WorkerStopped = false;
+	bool NeedRuntimeReset = false;
+	if((RuntimeResetFlags & VoiceUtils::VOICE_RUNTIME_RESET_CONNECTION) != 0)
+		NeedRuntimeReset = NeedRuntimeReset || HasConnectionRuntimeState();
+	if((RuntimeResetFlags & VoiceUtils::VOICE_RUNTIME_RESET_PEERS) != 0)
+		NeedRuntimeReset = NeedRuntimeReset || HasPeerRuntimeState(RuntimeConfig.m_QmVoiceTokenHash);
+	if(NeedRuntimeReset)
 	{
 		StopWorker();
-		ClearPeerFrames();
-		for(auto &RoomMemberSeen : m_aRoomMemberSeen)
-			RoomMemberSeen.store(0);
-		for(auto &SpeakerLevel : m_aSpeakerLevel)
-			SpeakerLevel.store(0.0f);
+		WorkerStopped = true;
+		ResetRuntimeState(RuntimeResetFlags, RuntimeConfig.m_QmVoiceTokenHash);
 	}
 
 	if(NeedReinit)
 	{
-		StopWorker();
+		if(!WorkerStopped)
+			StopWorker();
 		m_AudioRefreshRequested.store(true);
 	}
 	if(!EnsureSocket())
 	{
-		StopWorker();
+		if(!WorkerStopped)
+			StopWorker();
 		return;
 	}
 	if(!m_Worker.joinable())

@@ -16,6 +16,7 @@ public:
 	void OnConsoleInit() override;
 
 	void RenderOverlay();
+	const CRClientVoice &Voice() const { return m_Voice; }
 
 private:
 	static void ConVoicePtt(IConsole::IResult *pResult, void *pUserData);

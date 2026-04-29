@@ -5592,6 +5592,221 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						CardContent.HSplitTop(LG_LineSpacing * 0.75f, nullptr, &CardContent);
 					};
 
+					VoiceUtils::SVoiceUiStatus VoiceUiStatus;
+					GameClient()->m_Voice.Voice().ExportUiStatus(VoiceUiStatus);
+					auto LocalizeVoiceUiMicStatus = [&](const VoiceUtils::SVoiceUiStatus &Status) {
+						const char *pState = VoiceUtils::VoiceUiMicStatus(Status);
+						if(str_comp(pState, "muted") == 0)
+							return Localize("已静音");
+						if(str_comp(pState, "unavailable") == 0)
+							return Localize("未打开，请检查输入设备或麦克风权限");
+						if(str_comp(pState, "ready") == 0)
+							return Localize("已打开");
+						if(str_comp(pState, "waiting") == 0)
+							return Localize("等待打开");
+						return Localize("未启用");
+					};
+					auto LocalizeVoiceUiOutputStatus = [&](const VoiceUtils::SVoiceUiStatus &Status) {
+						const char *pState = VoiceUtils::VoiceUiOutputStatus(Status);
+						if(str_comp(pState, "unavailable") == 0)
+							return Localize("未打开，请检查输出设备");
+						if(str_comp(pState, "ready") == 0)
+							return Localize("已打开");
+						if(str_comp(pState, "waiting") == 0)
+							return Localize("等待打开");
+						return Localize("未启用");
+					};
+					auto LocalizeVoiceUiServerStatus = [&](const VoiceUtils::SVoiceUiStatus &Status, char *pBuf, size_t BufSize) {
+						const char *pState = VoiceUtils::VoiceUiServerStatus(Status);
+						if(str_comp(pState, "local_test") == 0)
+							str_copy(pBuf, Localize("本地测试模式，无需服务器"), BufSize);
+						else if(str_comp(pState, "offline") == 0)
+							str_copy(pBuf, Localize("未进入服务器"), BufSize);
+						else if(str_comp(pState, "resolving") == 0)
+							str_copy(pBuf, Localize("正在解析语音服务器地址"), BufSize);
+						else if(str_comp(pState, "socket_error") == 0)
+							str_copy(pBuf, Localize("UDP 套接字未打开"), BufSize);
+						else if(str_comp(pState, "connected") == 0)
+							str_format(pBuf, BufSize, "%s (%d ms)", Localize("已连接"), maximum(Status.m_PingMs, 0));
+						else if(str_comp(pState, "connected_no_ping") == 0)
+							str_copy(pBuf, Localize("已连接，等待首个 ping"), BufSize);
+						else
+							str_copy(pBuf, Localize("未知状态"), BufSize);
+					};
+					auto LocalizeVoiceUiRoomStatus = [&](const VoiceUtils::SVoiceUiStatus &Status, char *pBuf, size_t BufSize) {
+						const char *pState = VoiceUtils::VoiceUiRoomStatus(Status);
+						if(str_comp(pState, "local_test") == 0)
+							str_copy(pBuf, Localize("本地测试模式"), BufSize);
+						else if(str_comp(pState, "offline") == 0)
+							str_copy(pBuf, Localize("未进入服务器"), BufSize);
+						else if(str_comp(pState, "matched") == 0)
+							str_format(pBuf, BufSize, "%s (%d)", Localize("已匹配到可通话对端"), Status.m_ActivePeerCount);
+						else if(str_comp(pState, "waiting_peer") == 0)
+							str_copy(pBuf, Localize("当前未发现可通话对端"), BufSize);
+						else
+							str_copy(pBuf, Localize("未知状态"), BufSize);
+					};
+					auto LocalizeVoiceUiTransportStatus = [&](const VoiceUtils::SVoiceUiStatus &Status) {
+						const char *pState = VoiceUtils::VoiceUiTransportStatus(Status);
+						if(str_comp(pState, "tx_rx_active") == 0)
+							return Localize("正在发送和接收");
+						if(str_comp(pState, "tx_active") == 0)
+							return Localize("正在发送，等待对端回声");
+						if(str_comp(pState, "rx_active") == 0)
+							return Localize("正在接收");
+						if(str_comp(pState, "idle_with_peer") == 0)
+							return Localize("已联通，暂时无人说话");
+						if(str_comp(pState, "idle_no_peer") == 0)
+							return Localize("暂无对端");
+						return Localize("未启用");
+					};
+					auto LocalizeVoiceUiInputRouteStatus = [&](const VoiceUtils::SVoiceUiStatus &Status, char *pBuf, size_t BufSize) {
+						const char *pState = VoiceUtils::VoiceUiInputRouteStatus(Status);
+						const char *pRequested = Status.m_aRequestedInputDevice[0] != '\0' ? Status.m_aRequestedInputDevice : Localize("默认");
+						const char *pResolved = Status.m_aResolvedInputDevice[0] != '\0' ? Status.m_aResolvedInputDevice : Localize("系统默认");
+						if(str_comp(pState, "using_selected") == 0)
+							str_format(pBuf, BufSize, "%s: %s", Localize("已切换到"), pRequested);
+						else if(str_comp(pState, "using_default") == 0)
+							str_format(pBuf, BufSize, "%s (%s)", Localize("使用默认输入"), pResolved);
+						else if(str_comp(pState, "switching_selected") == 0)
+							str_format(pBuf, BufSize, "%s: %s", Localize("正在切换"), pRequested);
+						else if(str_comp(pState, "switching_default") == 0)
+							str_copy(pBuf, Localize("正在切回默认输入"), BufSize);
+						else if(str_comp(pState, "permission_denied") == 0)
+							str_copy(pBuf, Localize("麦克风权限被系统拒绝"), BufSize);
+						else if(str_comp(pState, "selected_failed") == 0)
+							str_format(pBuf, BufSize, "%s: %s", Localize("切换失败"), pRequested);
+						else if(str_comp(pState, "default_failed") == 0)
+							str_copy(pBuf, Localize("默认输入打开失败"), BufSize);
+						else if(str_comp(pState, "waiting") == 0)
+							str_copy(pBuf, Localize("等待打开输入设备"), BufSize);
+						else
+							str_copy(pBuf, Localize("未启用"), BufSize);
+					};
+					auto LocalizeVoiceUiOutputRouteStatus = [&](const VoiceUtils::SVoiceUiStatus &Status, char *pBuf, size_t BufSize) {
+						const char *pState = VoiceUtils::VoiceUiOutputRouteStatus(Status);
+						const char *pRequested = Status.m_aRequestedOutputDevice[0] != '\0' ? Status.m_aRequestedOutputDevice : Localize("默认");
+						const char *pResolved = Status.m_aResolvedOutputDevice[0] != '\0' ? Status.m_aResolvedOutputDevice : Localize("系统默认");
+						if(str_comp(pState, "using_selected") == 0)
+							str_format(pBuf, BufSize, "%s: %s", Localize("已切换到"), pRequested);
+						else if(str_comp(pState, "using_default") == 0)
+							str_format(pBuf, BufSize, "%s (%s)", Localize("使用默认输出"), pResolved);
+						else if(str_comp(pState, "switching_selected") == 0)
+							str_format(pBuf, BufSize, "%s: %s", Localize("正在切换"), pRequested);
+						else if(str_comp(pState, "switching_default") == 0)
+							str_copy(pBuf, Localize("正在切回默认输出"), BufSize);
+						else if(str_comp(pState, "selected_failed") == 0)
+							str_format(pBuf, BufSize, "%s: %s", Localize("切换失败"), pRequested);
+						else if(str_comp(pState, "default_failed") == 0)
+							str_copy(pBuf, Localize("默认输出打开失败"), BufSize);
+						else if(str_comp(pState, "waiting") == 0)
+							str_copy(pBuf, Localize("等待打开输出设备"), BufSize);
+						else
+							str_copy(pBuf, Localize("未启用"), BufSize);
+					};
+					auto LocalizeVoiceUiAudioIssue = [&](const VoiceUtils::SVoiceUiStatus &Status) {
+						const char *pIssue = VoiceUtils::VoiceUiAudioIssueKey(Status);
+						if(str_comp(pIssue, "none") == 0)
+							return Localize("未发现音频异常");
+						if(str_comp(pIssue, "input_device_not_found") == 0)
+							return Localize("输入设备不存在");
+						if(str_comp(pIssue, "output_device_not_found") == 0)
+							return Localize("输出设备不存在");
+						if(str_comp(pIssue, "no_capture_devices") == 0)
+							return Localize("系统没有可用输入设备");
+						if(str_comp(pIssue, "no_output_devices") == 0)
+							return Localize("系统没有可用输出设备");
+						if(str_comp(pIssue, "open_capture_failed") == 0)
+							return Localize("输入设备打开失败");
+						if(str_comp(pIssue, "open_output_failed") == 0)
+							return Localize("输出设备打开失败");
+						if(str_comp(pIssue, "permission_denied") == 0)
+							return Localize("麦克风权限被系统拒绝");
+						if(str_comp(pIssue, "backend_init_failed") == 0)
+							return Localize("音频后端初始化失败");
+						return Localize("音频异常未分类");
+					};
+					auto RenderVoiceStatusRow = [&](const char *pTitle, const char *pValue) {
+						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+						CUIRect StatusLabel, StatusValue;
+						Row.VSplitLeft(LG_LabelWidth, &StatusLabel, &StatusValue);
+						Ui()->DoLabel(&StatusLabel, pTitle, LG_BodySize, TEXTALIGN_ML);
+						Ui()->DoLabel(&StatusValue, pValue, LG_BodySize * 0.92f, TEXTALIGN_ML);
+						CardContent.HSplitTop(LG_LineSpacing * 0.75f, nullptr, &CardContent);
+					};
+					auto LocalizeVoiceUiActionHint = [&](const VoiceUtils::SVoiceUiStatus &Status) {
+						const char *pHint = VoiceUtils::VoiceUiActionHint(Status);
+						if(str_comp(pHint, "select_input_device") == 0)
+							return Localize("建议重新选择输入设备，并确认默认麦克风或耳机麦克风仍在线");
+						if(str_comp(pHint, "select_output_device") == 0)
+							return Localize("建议重新选择输出设备，并确认耳机或扬声器仍在线");
+						if(str_comp(pHint, "retry_input_open") == 0)
+							return Localize("输入设备打开失败，建议重插耳机/麦克风后刷新，或重新选择输入设备");
+						if(str_comp(pHint, "retry_output_open") == 0)
+							return Localize("输出设备打开失败，建议重插耳机/扬声器后刷新，或重新选择输出设备");
+						if(str_comp(pHint, "grant_mic_permission") == 0)
+							return Localize("需要在系统设置里允许麦克风权限，然后重新打开语音");
+						if(str_comp(pHint, "check_audio_backend") == 0)
+							return Localize("音频后端初始化失败，建议切换设备后重试，并查看详细原因");
+						if(str_comp(pHint, "inspect_audio_log") == 0)
+							return Localize("音频初始化失败，建议查看下方详细原因并结合日志排查");
+						if(str_comp(pHint, "check_input") == 0)
+							return Localize("建议先检查输入设备、系统默认麦克风和麦克风权限");
+						if(str_comp(pHint, "check_output") == 0)
+							return Localize("建议先检查输出设备，确认耳机或扬声器仍在线");
+						if(str_comp(pHint, "join_server") == 0)
+							return Localize("需要先进入服务器，语音网络链路才会建立");
+						if(str_comp(pHint, "check_server") == 0)
+							return Localize("建议检查语音服务器地址是否可用");
+						if(str_comp(pHint, "retry_socket") == 0)
+							return Localize("建议重新切换语音开关或重试进入服务器");
+						if(str_comp(pHint, "check_room") == 0)
+							return Localize("建议确认双方在同服、同房间，并且对方也支持语音");
+						if(str_comp(pHint, "wait_peer") == 0)
+							return Localize("本地正在发送，建议让对方开麦或确认对方是否能接收");
+						if(str_comp(pHint, "enable_voice") == 0)
+							return Localize("请先启用语音");
+						return Localize("当前状态正常，如仍异常请查看下方详细原因");
+					};
+
+					char aVoiceServerStatus[128];
+					char aVoiceRoomStatus[128];
+					char aVoiceTransportStatus[128];
+					char aVoiceTransportDetail[160];
+					char aVoiceInputRouteStatus[160];
+					char aVoiceOutputRouteStatus[160];
+					LocalizeVoiceUiServerStatus(VoiceUiStatus, aVoiceServerStatus, sizeof(aVoiceServerStatus));
+					LocalizeVoiceUiRoomStatus(VoiceUiStatus, aVoiceRoomStatus, sizeof(aVoiceRoomStatus));
+					LocalizeVoiceUiInputRouteStatus(VoiceUiStatus, aVoiceInputRouteStatus, sizeof(aVoiceInputRouteStatus));
+					LocalizeVoiceUiOutputRouteStatus(VoiceUiStatus, aVoiceOutputRouteStatus, sizeof(aVoiceOutputRouteStatus));
+					str_copy(aVoiceTransportStatus, LocalizeVoiceUiTransportStatus(VoiceUiStatus), sizeof(aVoiceTransportStatus));
+					if(VoiceUiStatus.m_TxAgeMs >= 0 || VoiceUiStatus.m_RxAgeMs >= 0)
+					{
+						str_format(aVoiceTransportDetail, sizeof(aVoiceTransportDetail), "%s: tx=%dms rx=%dms mic=%.0f%%",
+							aVoiceTransportStatus,
+							VoiceUiStatus.m_TxAgeMs,
+							VoiceUiStatus.m_RxAgeMs,
+							(double)std::clamp(VoiceUiStatus.m_MicLevel * 100.0f, 0.0f, 100.0f));
+					}
+					else
+					{
+						str_copy(aVoiceTransportDetail, aVoiceTransportStatus, sizeof(aVoiceTransportDetail));
+					}
+
+					AddVoiceSectionLabel(Localize("当前状态"), Localize("先看这里，可以快速判断卡在设备、服务器还是房间"));
+					RenderVoiceStatusRow(Localize("麦克风"), LocalizeVoiceUiMicStatus(VoiceUiStatus));
+					RenderVoiceStatusRow(Localize("扬声器"), LocalizeVoiceUiOutputStatus(VoiceUiStatus));
+					RenderVoiceStatusRow(Localize("输入切换"), aVoiceInputRouteStatus);
+					RenderVoiceStatusRow(Localize("输出切换"), aVoiceOutputRouteStatus);
+					RenderVoiceStatusRow(Localize("服务器"), aVoiceServerStatus);
+					RenderVoiceStatusRow(Localize("房间"), aVoiceRoomStatus);
+					RenderVoiceStatusRow(Localize("收发"), aVoiceTransportDetail);
+					RenderVoiceStatusRow(Localize("建议排查"), LocalizeVoiceUiActionHint(VoiceUiStatus));
+					RenderVoiceStatusRow(Localize("音频问题"), LocalizeVoiceUiAudioIssue(VoiceUiStatus));
+					if(VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus)[0] != '\0')
+						RenderVoiceStatusRow(Localize("详细原因"), VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus));
+					CardContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &CardContent);
+
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("服务器IP"), LG_BodySize, TEXTALIGN_ML);
@@ -5614,6 +5829,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					static std::vector<std::string> s_VoiceInputDeviceDisplayNames;
 					static std::vector<std::string> s_VoiceInputDeviceConfigValues;
 					static std::vector<const char *> s_VoiceInputDeviceDropDownNames;
+					static std::vector<VoiceUtils::SVoiceDeviceDropdownEntry> s_VoiceInputDeviceEntries;
 					static CUi::SDropDownState s_VoiceInputDeviceDropDownState;
 					static CScrollRegion s_VoiceInputDeviceDropDownScrollRegion;
 					static bool s_VoiceInputDevicesInitialized = false;
@@ -5623,55 +5839,32 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						s_VoiceInputDeviceDisplayNames.clear();
 						s_VoiceInputDeviceConfigValues.clear();
 						s_VoiceInputDeviceDropDownNames.clear();
-
-						s_VoiceInputDeviceDisplayNames.emplace_back(Localize("默认"));
-						s_VoiceInputDeviceConfigValues.emplace_back("");
-
+						std::vector<std::string> vDetectedDeviceNames;
 						const int NumInputs = SDL_GetNumAudioDevices(1);
 						for(int i = 0; i < NumInputs; i++)
 						{
 							const char *pName = SDL_GetAudioDeviceName(i, 1);
 							if(!pName || pName[0] == '\0')
 								continue;
-
-							bool Exists = false;
-							for(const auto &DeviceName : s_VoiceInputDeviceConfigValues)
-							{
-								if(str_comp_nocase(DeviceName.c_str(), pName) == 0)
-								{
-									Exists = true;
-									break;
-								}
-							}
-							if(Exists)
-								continue;
-							s_VoiceInputDeviceDisplayNames.emplace_back(pName);
-							s_VoiceInputDeviceConfigValues.emplace_back(pName);
+							vDetectedDeviceNames.emplace_back(pName);
 						}
 
-						if(g_Config.m_QmVoiceInputDevice[0] != '\0')
-						{
-							bool FoundCurrent = false;
-							for(const auto &DeviceName : s_VoiceInputDeviceConfigValues)
-							{
-								if(str_comp_nocase(DeviceName.c_str(), g_Config.m_QmVoiceInputDevice) == 0)
-								{
-									FoundCurrent = true;
-									break;
-								}
-							}
-							if(!FoundCurrent)
-							{
-								char aDisplay[160];
-								str_format(aDisplay, sizeof(aDisplay), "%s (%s)", g_Config.m_QmVoiceInputDevice, Localize("已断开"));
-								s_VoiceInputDeviceDisplayNames.emplace_back(aDisplay);
-								s_VoiceInputDeviceConfigValues.emplace_back(g_Config.m_QmVoiceInputDevice);
-							}
-						}
+						VoiceUtils::BuildVoiceDeviceDropdownEntries(
+							vDetectedDeviceNames,
+							g_Config.m_QmVoiceInputDevice,
+							Localize("默认"),
+							Localize("已断开"),
+							s_VoiceInputDeviceEntries);
 
+						s_VoiceInputDeviceDisplayNames.reserve(s_VoiceInputDeviceEntries.size());
+						s_VoiceInputDeviceConfigValues.reserve(s_VoiceInputDeviceEntries.size());
 						s_VoiceInputDeviceDropDownNames.reserve(s_VoiceInputDeviceDisplayNames.size());
-						for(const auto &DisplayName : s_VoiceInputDeviceDisplayNames)
-							s_VoiceInputDeviceDropDownNames.push_back(DisplayName.c_str());
+						for(const auto &Entry : s_VoiceInputDeviceEntries)
+						{
+							s_VoiceInputDeviceDisplayNames.push_back(Entry.m_DisplayName);
+							s_VoiceInputDeviceConfigValues.push_back(Entry.m_ConfigValue);
+							s_VoiceInputDeviceDropDownNames.push_back(s_VoiceInputDeviceDisplayNames.back().c_str());
+						}
 
 						char aVoiceExtra[96];
 						str_format(aVoiceExtra, sizeof(aVoiceExtra), "devices=%d", (int)s_VoiceInputDeviceDisplayNames.size());
@@ -5687,18 +5880,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CUIRect VoiceInputRefreshButton;
 					ControlCol.VSplitRight(maximum(68.0f, 68.0f * UiScale), &VoiceInputDropDownRect, &VoiceInputRefreshButton);
 
-					int VoiceInputSelectedOld = 0;
-					if(g_Config.m_QmVoiceInputDevice[0] != '\0')
-					{
-						for(size_t i = 1; i < s_VoiceInputDeviceConfigValues.size(); ++i)
-						{
-							if(str_comp_nocase(s_VoiceInputDeviceConfigValues[i].c_str(), g_Config.m_QmVoiceInputDevice) == 0)
-							{
-								VoiceInputSelectedOld = (int)i;
-								break;
-							}
-						}
-					}
+					const int VoiceInputSelectedOld = VoiceUtils::VoiceFindSelectedDeviceIndex(s_VoiceInputDeviceEntries, g_Config.m_QmVoiceInputDevice);
 
 					const int VoiceInputSelectedNew = Ui()->DoDropDown(&VoiceInputDropDownRect, VoiceInputSelectedOld, s_VoiceInputDeviceDropDownNames.data(), s_VoiceInputDeviceDropDownNames.size(), s_VoiceInputDeviceDropDownState);
 					if(VoiceInputSelectedNew >= 0 && VoiceInputSelectedNew != VoiceInputSelectedOld && (size_t)VoiceInputSelectedNew < s_VoiceInputDeviceConfigValues.size())
@@ -5715,6 +5897,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					static std::vector<std::string> s_VoiceOutputDeviceDisplayNames;
 					static std::vector<std::string> s_VoiceOutputDeviceConfigValues;
 					static std::vector<const char *> s_VoiceOutputDeviceDropDownNames;
+					static std::vector<VoiceUtils::SVoiceDeviceDropdownEntry> s_VoiceOutputDeviceEntries;
 					static CUi::SDropDownState s_VoiceOutputDeviceDropDownState;
 					static CScrollRegion s_VoiceOutputDeviceDropDownScrollRegion;
 					static bool s_VoiceOutputDevicesInitialized = false;
@@ -5724,55 +5907,32 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						s_VoiceOutputDeviceDisplayNames.clear();
 						s_VoiceOutputDeviceConfigValues.clear();
 						s_VoiceOutputDeviceDropDownNames.clear();
-
-						s_VoiceOutputDeviceDisplayNames.emplace_back(Localize("默认"));
-						s_VoiceOutputDeviceConfigValues.emplace_back("");
-
+						std::vector<std::string> vDetectedDeviceNames;
 						const int NumOutputs = SDL_GetNumAudioDevices(0);
 						for(int i = 0; i < NumOutputs; i++)
 						{
 							const char *pName = SDL_GetAudioDeviceName(i, 0);
 							if(!pName || pName[0] == '\0')
 								continue;
-
-							bool Exists = false;
-							for(const auto &DeviceName : s_VoiceOutputDeviceConfigValues)
-							{
-								if(str_comp_nocase(DeviceName.c_str(), pName) == 0)
-								{
-									Exists = true;
-									break;
-								}
-							}
-							if(Exists)
-								continue;
-							s_VoiceOutputDeviceDisplayNames.emplace_back(pName);
-							s_VoiceOutputDeviceConfigValues.emplace_back(pName);
+							vDetectedDeviceNames.emplace_back(pName);
 						}
 
-						if(g_Config.m_QmVoiceOutputDevice[0] != '\0')
-						{
-							bool FoundCurrent = false;
-							for(const auto &DeviceName : s_VoiceOutputDeviceConfigValues)
-							{
-								if(str_comp_nocase(DeviceName.c_str(), g_Config.m_QmVoiceOutputDevice) == 0)
-								{
-									FoundCurrent = true;
-									break;
-								}
-							}
-							if(!FoundCurrent)
-							{
-								char aDisplay[160];
-								str_format(aDisplay, sizeof(aDisplay), "%s (%s)", g_Config.m_QmVoiceOutputDevice, Localize("已断开"));
-								s_VoiceOutputDeviceDisplayNames.emplace_back(aDisplay);
-								s_VoiceOutputDeviceConfigValues.emplace_back(g_Config.m_QmVoiceOutputDevice);
-							}
-						}
+						VoiceUtils::BuildVoiceDeviceDropdownEntries(
+							vDetectedDeviceNames,
+							g_Config.m_QmVoiceOutputDevice,
+							Localize("默认"),
+							Localize("已断开"),
+							s_VoiceOutputDeviceEntries);
 
+						s_VoiceOutputDeviceDisplayNames.reserve(s_VoiceOutputDeviceEntries.size());
+						s_VoiceOutputDeviceConfigValues.reserve(s_VoiceOutputDeviceEntries.size());
 						s_VoiceOutputDeviceDropDownNames.reserve(s_VoiceOutputDeviceDisplayNames.size());
-						for(const auto &DisplayName : s_VoiceOutputDeviceDisplayNames)
-							s_VoiceOutputDeviceDropDownNames.push_back(DisplayName.c_str());
+						for(const auto &Entry : s_VoiceOutputDeviceEntries)
+						{
+							s_VoiceOutputDeviceDisplayNames.push_back(Entry.m_DisplayName);
+							s_VoiceOutputDeviceConfigValues.push_back(Entry.m_ConfigValue);
+							s_VoiceOutputDeviceDropDownNames.push_back(s_VoiceOutputDeviceDisplayNames.back().c_str());
+						}
 
 						char aVoiceExtra[96];
 						str_format(aVoiceExtra, sizeof(aVoiceExtra), "devices=%d", (int)s_VoiceOutputDeviceDisplayNames.size());
@@ -5788,18 +5948,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CUIRect VoiceOutputRefreshButton;
 					ControlCol.VSplitRight(maximum(68.0f, 68.0f * UiScale), &VoiceOutputDropDownRect, &VoiceOutputRefreshButton);
 
-					int VoiceOutputSelectedOld = 0;
-					if(g_Config.m_QmVoiceOutputDevice[0] != '\0')
-					{
-						for(size_t i = 1; i < s_VoiceOutputDeviceConfigValues.size(); ++i)
-						{
-							if(str_comp_nocase(s_VoiceOutputDeviceConfigValues[i].c_str(), g_Config.m_QmVoiceOutputDevice) == 0)
-							{
-								VoiceOutputSelectedOld = (int)i;
-								break;
-							}
-						}
-					}
+					const int VoiceOutputSelectedOld = VoiceUtils::VoiceFindSelectedDeviceIndex(s_VoiceOutputDeviceEntries, g_Config.m_QmVoiceOutputDevice);
 
 					const int VoiceOutputSelectedNew = Ui()->DoDropDown(&VoiceOutputDropDownRect, VoiceOutputSelectedOld, s_VoiceOutputDeviceDropDownNames.data(), s_VoiceOutputDeviceDropDownNames.size(), s_VoiceOutputDeviceDropDownState);
 					if(VoiceOutputSelectedNew >= 0 && VoiceOutputSelectedNew != VoiceOutputSelectedOld && (size_t)VoiceOutputSelectedNew < s_VoiceOutputDeviceConfigValues.size())
@@ -5823,6 +5972,62 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						RenderSliderWithValueInput(&s_QmVoiceMicVolumeInputId, ControlColValue, &g_Config.m_QmVoiceMicVolume, 0, 300, "%");
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					{
+						static std::vector<const char *> s_VoiceNoiseSuppressModeDropDownNames;
+						s_VoiceNoiseSuppressModeDropDownNames = {
+							Localize("不降噪"),
+							Localize("简单降噪"),
+#if defined(CONF_RNNOISE)
+							Localize("RNNoise 降噪"),
+#else
+							Localize("RNNoise 降噪（当前构建不可用）"),
+#endif
+						};
+						static CUi::SDropDownState s_VoiceNoiseSuppressModeDropDownState;
+						static CScrollRegion s_VoiceNoiseSuppressModeDropDownScrollRegion;
+						s_VoiceNoiseSuppressModeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceNoiseSuppressModeDropDownScrollRegion;
+
+						Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+						Ui()->DoLabel(&LabelCol, Localize("降噪模式"), LG_BodySize, TEXTALIGN_ML);
+						const int CurrentNoiseSuppressMode = std::clamp(g_Config.m_QmVoiceNoiseSuppressEnable, 0, 2);
+						const int NewNoiseSuppressMode = Ui()->DoDropDown(&ControlCol, CurrentNoiseSuppressMode, s_VoiceNoiseSuppressModeDropDownNames.data(), s_VoiceNoiseSuppressModeDropDownNames.size(), s_VoiceNoiseSuppressModeDropDownState);
+						if(CurrentNoiseSuppressMode != NewNoiseSuppressMode)
+							g_Config.m_QmVoiceNoiseSuppressEnable = NewNoiseSuppressMode;
+					}
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_QmVoiceNoiseSuppressEnable != 0)
+					{
+#if !defined(CONF_RNNOISE)
+						if(g_Config.m_QmVoiceNoiseSuppressEnable == 2)
+						{
+							CardContent.HSplitTop(LG_LineHeight * 0.78f, &Row, &CardContent);
+							Ui()->DoLabel(&Row, Localize("当前构建未集成 RNNoise，将自动回退到简单降噪"), LG_BodySize * 0.72f, TEXTALIGN_ML);
+							CardContent.HSplitTop(LG_LineSpacing * 0.75f, nullptr, &CardContent);
+						}
+#endif
+						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+						{
+							CUIRect LabelColValue, ControlColValue;
+							Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
+#if !defined(CONF_RNNOISE)
+							const bool RnnoiseFallbackActive = g_Config.m_QmVoiceNoiseSuppressEnable == 2;
+#endif
+							const char *pNoiseSuppressStrengthLabel = g_Config.m_QmVoiceNoiseSuppressEnable == 2 ?
+#if !defined(CONF_RNNOISE)
+								(RnnoiseFallbackActive ? Localize("回退后的简单降噪强度") : Localize("RNNoise 降噪强度")) :
+#else
+								Localize("RNNoise 降噪强度") :
+#endif
+								Localize("简单降噪强度");
+							Ui()->DoLabel(&LabelColValue, pNoiseSuppressStrengthLabel, LG_BodySize, TEXTALIGN_ML);
+							static int s_QmVoiceNoiseSuppressStrengthInputId;
+							RenderSliderWithValueInput(&s_QmVoiceNoiseSuppressStrengthInputId, ControlColValue, &g_Config.m_QmVoiceNoiseSuppressStrength, 0, 100, "%");
+						}
+						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+					}
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceVadEnable, Localize("启用语音激活"), &g_Config.m_QmVoiceVadEnable, &Row, LG_LineHeight);

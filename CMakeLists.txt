@@ -354,7 +354,7 @@ if(NOT MSVC AND NOT HAIKU)
   endif()
 
   if(TARGET_OS STREQUAL "mac")
-    add_cxx_compiler_flag_if_supported(OUR_FLAGS -stdlib=libc++)
+    add_cxx_compiler_flag_if_supported(OUR_FLAGS_OWN -stdlib=libc++)
   endif()
 
   if(EXCEPTION_HANDLING)
@@ -2289,6 +2289,43 @@ set_src(ENGINE_EXTERNAL GLOB src/engine/external
   tinyexpr.cpp
   tinyexpr.h
 )
+# RNNoise must be compiled in for normal developer builds so the in-client
+# noise suppression selector is real, not a build-time placeholder. Keep the
+# generated rnnoise_data.* model files vendored together with the official
+# library sources.
+set(ENGINE_EXTERNAL_RNNOISE
+  src/engine/external/rnnoise/include/rnnoise.h
+  src/engine/external/rnnoise/src/_kiss_fft_guts.h
+  src/engine/external/rnnoise/src/arch.h
+  src/engine/external/rnnoise/src/celt_lpc.c
+  src/engine/external/rnnoise/src/celt_lpc.h
+  src/engine/external/rnnoise/src/common.h
+  src/engine/external/rnnoise/src/cpu_support.h
+  src/engine/external/rnnoise/src/denoise.c
+  src/engine/external/rnnoise/src/denoise.h
+  src/engine/external/rnnoise/src/kiss_fft.c
+  src/engine/external/rnnoise/src/kiss_fft.h
+  src/engine/external/rnnoise/src/nnet.c
+  src/engine/external/rnnoise/src/nnet.h
+  src/engine/external/rnnoise/src/nnet_arch.h
+  src/engine/external/rnnoise/src/nnet_default.c
+  src/engine/external/rnnoise/src/opus_types.h
+  src/engine/external/rnnoise/src/parse_lpcnet_weights.c
+  src/engine/external/rnnoise/src/pitch.c
+  src/engine/external/rnnoise/src/pitch.h
+  src/engine/external/rnnoise/src/rnn.c
+  src/engine/external/rnnoise/src/rnn.h
+  src/engine/external/rnnoise/src/rnnoise_data.c
+  src/engine/external/rnnoise/src/rnnoise_data.h
+  src/engine/external/rnnoise/src/rnnoise_tables.c
+  src/engine/external/rnnoise/src/vec.h
+  src/engine/external/rnnoise/src/vec_avx.h
+  src/engine/external/rnnoise/src/vec_neon.h
+  src/engine/external/rnnoise/src/x86/dnn_x86.h
+  src/engine/external/rnnoise/src/x86/x86_arch_macros.h
+  src/engine/external/rnnoise/src/x86/x86cpu.h
+)
+list(APPEND ENGINE_EXTERNAL ${ENGINE_EXTERNAL_RNNOISE})
 
 # ChaiScript for tclient
 file(GLOB_RECURSE ENGINE_EXTERNAL_CHAISCRIPT
@@ -2620,6 +2657,8 @@ if(CLIENT)
     components/qmclient/menus_qmclient.cpp
     components/qmclient/qmclient.cpp
     components/qmclient/qmclient.h
+    components/qmclient/qmclient_utils.cpp
+    components/qmclient/qmclient_utils.h
     components/tclient/mod.cpp
     components/tclient/mod.h
     components/tclient/moving_tiles.cpp
@@ -3385,6 +3424,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
+    src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp
     src/game/client/components/qmclient/voice_utils.cpp
     src/engine/client/blocklist_driver.cpp
@@ -4060,12 +4100,15 @@ foreach(target ${TARGETS_OWN})
     target_compile_definitions(${target} PRIVATE _UNICODE) # C-runtime
   endif()
   if(OUR_FLAGS_OWN)
-    target_compile_options(${target} PRIVATE ${OUR_FLAGS_OWN})
+    target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${OUR_FLAGS_OWN}>)
   endif()
   target_include_directories(${target} PRIVATE ${PROJECT_BINARY_DIR}/src)
   target_include_directories(${target} PRIVATE src)
   target_include_directories(${target} PRIVATE src/rust-bridge)
+  target_include_directories(${target} PRIVATE src/engine/external/rnnoise/include)
+  target_include_directories(${target} PRIVATE src/engine/external/rnnoise/src)
   target_compile_definitions(${target} PRIVATE $<$<CONFIG:Debug>:CONF_DEBUG>)
+  target_compile_definitions(${target} PRIVATE CONF_RNNOISE)
   set(COMMON_SYSTEM_INCLUDE_DIRS ${CURL_INCLUDE_DIRS} ${SQLite3_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
   if(TARGET_OS STREQUAL "mac")
     # Do not pass SDK usr/include explicitly on macOS. libc++ expects to

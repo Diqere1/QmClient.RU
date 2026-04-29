@@ -8,17 +8,10 @@
 #include <game/client/component.h>
 
 #include <memory>
-#include <string>
-#include <vector>
+
+#include "qmclient_utils.h"
 
 class IJob;
-
-struct SQmClientServerDistribution
-{
-	std::string m_ServerAddress;
-	int m_UserCount = 0;
-	int m_DummyCount = 0;
-};
 
 class CQmClient : public CComponent
 {
@@ -41,6 +34,7 @@ class CQmClient : public CComponent
 	char m_aQmClientPlaytimeClientId[65] = "";
 	char m_aQmDdnetPlayerName[MAX_NAME_LENGTH] = "";
 	char m_aQmDdnetFavoritePartner[MAX_NAME_LENGTH] = "";
+	char m_aQmClientPendingVoicePresenceServerAddress[NETADDR_MAXSTRSIZE] = "";
 
 	int64_t m_QmClientLastSync = 0;
 	int64_t m_QmClientServerNow = 0;
@@ -59,6 +53,7 @@ class CQmClient : public CComponent
 	int m_QmClientOnlineUserCount = 0;
 	int m_QmClientOnlineDummyCount = 0;
 	int m_QmDdnetTotalFinishes = -1;
+	int m_QmClientPendingVoicePresencePlayers = 0;
 	bool m_QmClientShutdownReported = false;
 	bool m_QmClientAwaitingRecoveryStop = false;
 	bool m_QmClientStartupSent = false;
