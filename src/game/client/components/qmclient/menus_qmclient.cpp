@@ -3871,7 +3871,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("SecretKey"), LG_BodySize, TEXTALIGN_ML);
 					static CLineInput s_TranslateSecretKey(g_Config.m_QmTranslateTcSecretKey, sizeof(g_Config.m_QmTranslateTcSecretKey));
-					s_TranslateSecretId.SetEmptyText("填写我分发的Key");
+					s_TranslateSecretKey.SetEmptyText("填写我分发的Key");
+					s_TranslateSecretKey.SetHidden(true);
 					Ui()->DoEditBox(&s_TranslateSecretKey, &ControlCol, LG_BodySize);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				}
