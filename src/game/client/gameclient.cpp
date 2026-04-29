@@ -766,9 +766,39 @@ void CGameClient::OnUpdate()
 		pComponent->OnUpdate();
 	}
 
+	RefreshPredictionAfterConfigChange();
+
 	RecordDemoHudState(false);
 	RecordDemoInputState(false);
 	RecordDemoInputWheelEvent();
+}
+
+void CGameClient::RequestPredictionRefreshAfterConfigChange()
+{
+	m_RequestPredictionRefreshAfterConfigChange = true;
+}
+
+void CGameClient::RefreshPredictionAfterConfigChange()
+{
+	if(!m_RequestPredictionRefreshAfterConfigChange)
+		return;
+
+	m_RequestPredictionRefreshAfterConfigChange = false;
+
+	if(Client()->State() != IClient::STATE_ONLINE)
+		return;
+
+	if(m_Snap.m_LocalClientId < 0 || !m_Snap.m_pLocalCharacter)
+		return;
+
+	const int Dummy = g_Config.m_ClDummy;
+	const int PredTick = Client()->PredGameTick(Dummy);
+	const int CurGameTick = Client()->GameTick(Dummy);
+	const int MaxLatencyTicks = Client()->GameTickSpeed() + round_to_int(Client()->PredictionMarginMs() * Client()->GameTickSpeed() / 1000.0f);
+	if(PredTick <= CurGameTick || PredTick >= CurGameTick + MaxLatencyTicks)
+		return;
+
+	OnPredict();
 }
 
 int CGameClient::PackDemoHudState(int DummyResetOnSwitch, int DeepflyMode, bool DummyControl, bool DummyCopyMoves)

@@ -3245,6 +3245,16 @@ void CTClient::OnStateChange(int NewState, int OldState)
 	if(NewState != IClient::STATE_ONLINE)
 	{
 		ResetAxiomAutoLoginState();
+		if(m_PrevGoresFastInputActive)
+			g_Config.m_TcFastInput = m_SavedTcFastInput;
+		if(m_PrevGoresFastInputOthersActive)
+			g_Config.m_TcFastInputOthers = m_SavedTcFastInputOthers;
+		m_GoresModeStateKnown = false;
+		m_PrevGoresModeActive = false;
+		m_PrevGoresFastInputActive = false;
+		m_PrevGoresFastInputOthersActive = false;
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
 		ClearSwapCountdown();
 		m_aLastChatMessage[0] = '\0';
 		m_LastRepeatTime = 0;
@@ -3275,7 +3285,15 @@ void CTClient::OnStateChange(int NewState, int OldState)
 	m_aLastGameplayLogicTick[1] = -1;
 
 	if(NewState == IClient::STATE_ONLINE)
+	{
 		ResetAxiomAutoLoginState();
+		m_GoresModeStateKnown = true;
+		m_PrevGoresModeActive = IsGoresModuleEnabled();
+		m_PrevGoresFastInputActive = false;
+		m_PrevGoresFastInputOthersActive = false;
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
+	}
 
 	// 进入服务器时重置统计数据
 	if(NewState == IClient::STATE_ONLINE && g_Config.m_QmPlayerStatsResetOnJoin)
@@ -4069,60 +4087,77 @@ void CTClient::ApplyFocusModeEffects()
 
 void CTClient::ApplyGoresFastInputLink()
 {
-	const bool GoresActive = g_Config.m_QmGores != 0;
-	const bool PreviousGoresActive = m_PrevGoresModeActive;
+	if(Client()->State() != IClient::STATE_ONLINE)
+	{
+		m_GoresModeStateKnown = false;
+		m_PrevGoresModeActive = false;
+		m_PrevGoresFastInputActive = false;
+		m_PrevGoresFastInputOthersActive = false;
+		return;
+	}
+
+	bool FastInputConfigChanged = false;
+	const bool GoresActive = IsGoresModuleEnabled();
 	const bool StateWasKnown = m_GoresModeStateKnown;
-	const int PreviousTcFastInput = StateWasKnown ? m_PrevTcFastInput : g_Config.m_TcFastInput;
-	const int PreviousTcFastInputOthers = StateWasKnown ? m_PrevTcFastInputOthers : g_Config.m_TcFastInputOthers;
-	const int PreviousQmGoresFastInput = StateWasKnown ? m_PrevQmGoresFastInput : g_Config.m_QmGoresFastInput;
-	const int PreviousQmGoresFastInputOthers = StateWasKnown ? m_PrevQmGoresFastInputOthers : g_Config.m_QmGoresFastInputOthers;
+	const bool ShouldEnableFastInput = GoresActive && g_Config.m_QmGoresFastInput != 0;
+	const bool ShouldEnableFastInputOthers = GoresActive && g_Config.m_QmGoresFastInputOthers != 0;
 	if(!m_GoresModeStateKnown)
 	{
 		m_GoresModeStateKnown = true;
-		m_PrevGoresModeActive = false;
+		m_PrevGoresModeActive = GoresActive;
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
 	}
-	else if(GoresActive == m_PrevGoresModeActive &&
-		g_Config.m_TcFastInput == m_PrevTcFastInput &&
-		g_Config.m_TcFastInputOthers == m_PrevTcFastInputOthers &&
-		g_Config.m_QmGoresFastInput == m_PrevQmGoresFastInput &&
-		g_Config.m_QmGoresFastInputOthers == m_PrevQmGoresFastInputOthers)
+	if(StateWasKnown && GoresActive != m_PrevGoresModeActive)
 	{
-		return;
-	}
-	if(GoresActive != m_PrevGoresModeActive)
-	{
-		if(StateWasKnown)
-		{
-			char aGoresMsg[128];
-			str_format(aGoresMsg, sizeof(aGoresMsg), "%s%s: %s",
-				GoresActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
-				Localize("Gores Mode"),
-				Localize(GoresActive ? "On" : "Off"));
-			GameClient()->Echo(aGoresMsg, true);
-		}
+		char aGoresMsg[128];
+		str_format(aGoresMsg, sizeof(aGoresMsg), "%s%s: %s",
+			GoresActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
+			Localize("Gores Mode"),
+			Localize(GoresActive ? "On" : "Off"));
+		GameClient()->Echo(aGoresMsg, true);
 	}
 
-	g_Config.m_QmGoresFastInput = DeriveGoresAutoTogglePreference(
-		GoresActive,
-		PreviousGoresActive,
-		PreviousQmGoresFastInput,
-		g_Config.m_QmGoresFastInput,
-		PreviousTcFastInput,
-		g_Config.m_TcFastInput);
-	g_Config.m_QmGoresFastInputOthers = DeriveGoresAutoTogglePreference(
-		GoresActive,
-		PreviousGoresActive,
-		PreviousQmGoresFastInputOthers,
-		g_Config.m_QmGoresFastInputOthers,
-		PreviousTcFastInputOthers,
-		g_Config.m_TcFastInputOthers);
-	g_Config.m_TcFastInput = DeriveGoresLinkedConfigValue(PreviousGoresActive, GoresActive, g_Config.m_QmGoresFastInput != 0, g_Config.m_TcFastInput);
-	g_Config.m_TcFastInputOthers = DeriveGoresLinkedConfigValue(PreviousGoresActive, GoresActive, g_Config.m_QmGoresFastInputOthers != 0, g_Config.m_TcFastInputOthers);
-	m_PrevTcFastInput = g_Config.m_TcFastInput;
-	m_PrevTcFastInputOthers = g_Config.m_TcFastInputOthers;
-	m_PrevQmGoresFastInput = g_Config.m_QmGoresFastInput;
-	m_PrevQmGoresFastInputOthers = g_Config.m_QmGoresFastInputOthers;
+	if(ShouldEnableFastInput && !m_PrevGoresFastInputActive)
+	{
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+		g_Config.m_TcFastInput = 1;
+		FastInputConfigChanged = true;
+	}
+	else if(!ShouldEnableFastInput && m_PrevGoresFastInputActive)
+	{
+		g_Config.m_TcFastInput = m_SavedTcFastInput;
+		FastInputConfigChanged = true;
+	}
+	else if(!ShouldEnableFastInput)
+	{
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+	}
+
+	if(ShouldEnableFastInputOthers && !m_PrevGoresFastInputOthersActive)
+	{
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
+		g_Config.m_TcFastInputOthers = 1;
+		FastInputConfigChanged = true;
+	}
+	else if(!ShouldEnableFastInputOthers && m_PrevGoresFastInputOthersActive)
+	{
+		g_Config.m_TcFastInputOthers = m_SavedTcFastInputOthers;
+		FastInputConfigChanged = true;
+	}
+	else if(!ShouldEnableFastInputOthers)
+	{
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
+	}
+
+	m_PrevGoresFastInputActive = ShouldEnableFastInput;
+	m_PrevGoresFastInputOthersActive = ShouldEnableFastInputOthers;
 	m_PrevGoresModeActive = GoresActive;
+
+	if(FastInputConfigChanged)
+	{
+		GameClient()->RequestPredictionRefresh();
+	}
 }
 
 bool CTClient::BuildGoresDebugRoute(std::vector<vec2> &vRoutePoints, int Dummy) const

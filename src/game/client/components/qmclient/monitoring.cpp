@@ -23,8 +23,8 @@
 #endif
 
 #if defined(CONF_FAMILY_WINDOWS)
-#include <psapi.h>
 #include <windows.h>
+#include <psapi.h>
 #endif
 
 namespace

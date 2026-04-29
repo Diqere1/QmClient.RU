@@ -1095,12 +1095,15 @@ private:
 	void UpdatePrediction();
 	void UpdateSpectatorCursor();
 	void UpdateRenderedCharacters();
+	void RefreshPredictionAfterConfigChange();
+	void RequestPredictionRefreshAfterConfigChange();
 
 	int m_aLastUpdateTick[MAX_CLIENTS] = {0};
 	void DetectStrongHook();
 
 	int m_PredictedDummyId;
 	int m_IsDummySwapping;
+	bool m_RequestPredictionRefreshAfterConfigChange = false;
 	CCharOrder m_CharOrder;
 	int m_aSwitchStateTeam[NUM_DUMMIES];
 	int m_aAutoTeamLockLastTeam[NUM_DUMMIES] = {TEAM_FLOCK, TEAM_FLOCK};
@@ -1157,6 +1160,7 @@ public:
 	int m_SmoothTick = 0;
 	float m_SmoothIntraTick = 0;
 	bool CheckNewInput() override;
+	void RequestPredictionRefresh() { RequestPredictionRefreshAfterConfigChange(); }
 	std::optional<CServerInfo> m_ConnectServerInfo = std::nullopt;
 	void SetConnectInfo(const NETADDR *pAddress) override;
 };

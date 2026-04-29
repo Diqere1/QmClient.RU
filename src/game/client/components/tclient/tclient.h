@@ -425,10 +425,10 @@ public:
 	// Gores FastInput Link
 	bool m_GoresModeStateKnown = false;
 	bool m_PrevGoresModeActive = false;
-	int m_PrevTcFastInput = 0;
-	int m_PrevTcFastInputOthers = 0;
-	int m_PrevQmGoresFastInput = 0;
-	int m_PrevQmGoresFastInputOthers = 0;
+	bool m_PrevGoresFastInputActive = false;
+	bool m_PrevGoresFastInputOthersActive = false;
+	int m_SavedTcFastInput = 0;
+	int m_SavedTcFastInputOthers = 0;
 	bool m_AxiomAutoLoginAnnounced = false;
 	bool m_AxiomAutoLoginSucceeded = false;
 	bool m_AxiomAutoLoginWaitingReply = false;

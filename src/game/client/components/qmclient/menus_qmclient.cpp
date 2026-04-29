@@ -3811,7 +3811,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-				Ui()->DoLabel(&LabelCol, Localize("目标语言占比阈值"), LG_BodySize, TEXTALIGN_ML);
+				Ui()->DoLabel(&LabelCol, Localize("目标语言比例"), LG_BodySize, TEXTALIGN_ML);
 				{
 					static int s_LocalDetectRatioSelectorId;
 					RenderSliderWithNumberInput(&s_LocalDetectRatioSelectorId, ControlCol, &g_Config.m_QmTranslateLocalDetectRatio, 50, 100);
@@ -5794,19 +5794,26 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						str_copy(aVoiceTransportDetail, aVoiceTransportStatus, sizeof(aVoiceTransportDetail));
 					}
 
-					AddVoiceSectionLabel(Localize("当前状态"), Localize("先看这里，可以快速判断卡在设备、服务器还是房间"));
-					RenderVoiceStatusRow(Localize("麦克风"), LocalizeVoiceUiMicStatus(VoiceUiStatus));
-					RenderVoiceStatusRow(Localize("扬声器"), LocalizeVoiceUiOutputStatus(VoiceUiStatus));
-					RenderVoiceStatusRow(Localize("输入切换"), aVoiceInputRouteStatus);
-					RenderVoiceStatusRow(Localize("输出切换"), aVoiceOutputRouteStatus);
-					RenderVoiceStatusRow(Localize("服务器"), aVoiceServerStatus);
-					RenderVoiceStatusRow(Localize("房间"), aVoiceRoomStatus);
-					RenderVoiceStatusRow(Localize("收发"), aVoiceTransportDetail);
-					RenderVoiceStatusRow(Localize("建议排查"), LocalizeVoiceUiActionHint(VoiceUiStatus));
-					RenderVoiceStatusRow(Localize("音频问题"), LocalizeVoiceUiAudioIssue(VoiceUiStatus));
-					if(VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus)[0] != '\0')
-						RenderVoiceStatusRow(Localize("详细原因"), VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus));
-					CardContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &CardContent);
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceShowConnectionStatus, Localize("显示语音连接状态"), &g_Config.m_QmVoiceShowConnectionStatus, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_QmVoiceShowConnectionStatus)
+					{
+						AddVoiceSectionLabel(Localize("当前状态"), Localize("先看这里，可以快速判断卡在设备、服务器还是房间"));
+						RenderVoiceStatusRow(Localize("麦克风"), LocalizeVoiceUiMicStatus(VoiceUiStatus));
+						RenderVoiceStatusRow(Localize("扬声器"), LocalizeVoiceUiOutputStatus(VoiceUiStatus));
+						RenderVoiceStatusRow(Localize("输入切换"), aVoiceInputRouteStatus);
+						RenderVoiceStatusRow(Localize("输出切换"), aVoiceOutputRouteStatus);
+						RenderVoiceStatusRow(Localize("服务器"), aVoiceServerStatus);
+						RenderVoiceStatusRow(Localize("房间"), aVoiceRoomStatus);
+						RenderVoiceStatusRow(Localize("收发"), aVoiceTransportDetail);
+						RenderVoiceStatusRow(Localize("建议排查"), LocalizeVoiceUiActionHint(VoiceUiStatus));
+						RenderVoiceStatusRow(Localize("音频问题"), LocalizeVoiceUiAudioIssue(VoiceUiStatus));
+						if(VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus)[0] != '\0')
+							RenderVoiceStatusRow(Localize("详细原因"), VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus));
+						CardContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &CardContent);
+					}
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
