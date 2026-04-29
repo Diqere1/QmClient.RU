@@ -5983,6 +5983,29 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					{
+						static std::vector<const char *> s_VoiceBitrateProfileDropDownNames;
+						s_VoiceBitrateProfileDropDownNames = {
+							Localize("自动"),
+							"24 kbps",
+							"32 kbps",
+							"48 kbps",
+							"64 kbps",
+						};
+						static CUi::SDropDownState s_VoiceBitrateProfileDropDownState;
+						static CScrollRegion s_VoiceBitrateProfileDropDownScrollRegion;
+						s_VoiceBitrateProfileDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceBitrateProfileDropDownScrollRegion;
+
+						Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+						Ui()->DoLabel(&LabelCol, Localize("语音码率"), LG_BodySize, TEXTALIGN_ML);
+						const int CurrentBitrateProfile = std::clamp(g_Config.m_QmVoiceBitrateProfile, 0, 4);
+						const int NewBitrateProfile = Ui()->DoDropDown(&ControlCol, CurrentBitrateProfile, s_VoiceBitrateProfileDropDownNames.data(), s_VoiceBitrateProfileDropDownNames.size(), s_VoiceBitrateProfileDropDownState);
+						if(CurrentBitrateProfile != NewBitrateProfile)
+							g_Config.m_QmVoiceBitrateProfile = NewBitrateProfile;
+					}
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					{
 						static std::vector<const char *> s_VoiceNoiseSuppressModeDropDownNames;
 						s_VoiceNoiseSuppressModeDropDownNames = {
 							Localize("不降噪"),

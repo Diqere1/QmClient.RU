@@ -227,7 +227,7 @@ inline constexpr uint32_t VOICE_RUNTIME_RESET_CONNECTION = 1u << 1;
 uint32_t VoiceTransmitBlockers(const SVoiceTransmitPreconditions &Preconditions);
 void FormatVoiceTransmitBlockers(uint32_t Blockers, char *pBuf, size_t BufSize);
 bool VoiceNeedsAudioRefresh(const SVoiceAudioRefreshState &State);
-void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec);
+void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int BitrateProfile, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec);
 uint32_t VoiceRuntimeResetFlags(bool ContextChanged, bool Online, uint32_t PreviousRoomTokenHash, uint32_t CurrentRoomTokenHash);
 const char *VoiceUiMicStatus(const SVoiceUiStatus &Status);
 const char *VoiceUiOutputStatus(const SVoiceUiStatus &Status);

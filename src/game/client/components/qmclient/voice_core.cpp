@@ -778,7 +778,7 @@ bool CRClientVoice::EnsureAudio()
 		}
 		m_EncoderReady.store(true);
 		ClearDiagnosticLogMessage(m_aEncoderErrorLog);
-		VoiceUtils::ComputeVoiceEncoderTargets(0, 0.0f, &m_EncBitrate, &m_EncLossPerc, &m_EncFec);
+		VoiceUtils::ComputeVoiceEncoderTargets(0, 0.0f, g_Config.m_QmVoiceBitrateProfile, &m_EncBitrate, &m_EncLossPerc, &m_EncFec);
 		m_LastEncUpdate = 0;
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_BITRATE(m_EncBitrate));
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_PACKET_LOSS_PERC(m_EncLossPerc));
@@ -2226,6 +2226,7 @@ void CRClientVoice::UpdateConfigSnapshot(bool Force) NO_THREAD_SAFETY_ANALYSIS
 	m_LastConfigSnapshotUpdate = Now;
 	const CLockScope Guard(m_ConfigMutex);
 	m_ConfigSnapshot.m_QmVoiceFilterEnable = g_Config.m_QmVoiceFilterEnable;
+	m_ConfigSnapshot.m_QmVoiceBitrateProfile = g_Config.m_QmVoiceBitrateProfile;
 	m_ConfigSnapshot.m_QmVoiceProtocolVersion = g_Config.m_QmVoiceProtocolVersion;
 	m_ConfigSnapshot.m_QmVoiceNoiseSuppressEnable = g_Config.m_QmVoiceNoiseSuppressEnable;
 	m_ConfigSnapshot.m_QmVoiceNoiseSuppressStrength = g_Config.m_QmVoiceNoiseSuppressStrength;
@@ -2281,6 +2282,9 @@ void CRClientVoice::UpdateEncoderParams()
 	if(m_LastEncUpdate != 0 && Now - m_LastEncUpdate < time_freq())
 		return;
 
+	SRClientVoiceConfigSnapshot Config;
+	GetConfigSnapshot(Config);
+
 	float LossAvg = 0.0f;
 	float JitterMax = 0.0f;
 	int Count = 0;
@@ -2304,7 +2308,7 @@ void CRClientVoice::UpdateEncoderParams()
 	bool TargetFec = false;
 	// Share one target table with startup so healthy links get the quality bump
 	// while moderate loss/jitter step down more conservatively.
-	VoiceUtils::ComputeVoiceEncoderTargets(LossPerc, JitterMax, &TargetBitrate, &TargetLoss, &TargetFec);
+	VoiceUtils::ComputeVoiceEncoderTargets(LossPerc, JitterMax, Config.m_QmVoiceBitrateProfile, &TargetBitrate, &TargetLoss, &TargetFec);
 
 	if(TargetBitrate != m_EncBitrate)
 	{

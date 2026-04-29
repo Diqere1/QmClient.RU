@@ -405,35 +405,51 @@ bool VoiceNeedsAudioRefresh(const SVoiceAudioRefreshState &State)
 	return false;
 }
 
-void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec)
+void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int BitrateProfile, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec)
 {
 	if(!pTargetBitrate || !pTargetLoss || !pTargetFec)
 		return;
+
+	const int ClampedProfile = std::clamp(BitrateProfile, 0, 4);
+	if(ClampedProfile != 0)
+	{
+		static constexpr int s_aManualBitrates[] = {
+			0,
+			24000,
+			32000,
+			48000,
+			64000,
+		};
+		*pTargetBitrate = s_aManualBitrates[ClampedProfile];
+		*pTargetLoss = 0;
+		*pTargetFec = false;
+		return;
+	}
 
 	const int ClampedLoss = std::clamp(LossPerc, 0, 30);
 	const float ClampedJitter = std::isfinite(JitterMax) ? std::max(0.0f, JitterMax) : 0.0f;
 
 	if(ClampedLoss <= 2 && ClampedJitter < 8.0f)
 	{
-		*pTargetBitrate = 36000;
+		*pTargetBitrate = 64000;
 		*pTargetLoss = 0;
 		*pTargetFec = false;
 	}
 	else if(ClampedLoss <= 5 && ClampedJitter < 16.0f)
 	{
-		*pTargetBitrate = 28000;
+		*pTargetBitrate = 48000;
 		*pTargetLoss = 5;
 		*pTargetFec = true;
 	}
 	else if(ClampedLoss <= 10 && ClampedJitter < 28.0f)
 	{
-		*pTargetBitrate = 22000;
+		*pTargetBitrate = 32000;
 		*pTargetLoss = 10;
 		*pTargetFec = true;
 	}
 	else
 	{
-		*pTargetBitrate = 17000;
+		*pTargetBitrate = 24000;
 		*pTargetLoss = 20;
 		*pTargetFec = true;
 	}

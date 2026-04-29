@@ -23,7 +23,6 @@ using namespace VoiceUtils;
 namespace VoiceUtils
 {
 int ResolveNoiseSuppressMode(int ConfigValue, bool RnnoiseRuntimeAvailable, bool *pFallbackUsed);
-void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec);
 }
 
 static constexpr int TEST_VOICE_NOISE_SUPPRESS_OFF = 0;
@@ -812,8 +811,8 @@ TEST(VoiceUtils, ComputeVoiceEncoderTargetsHealthyNetwork)
 	int TargetBitrate = 0;
 	int TargetLoss = 0;
 	bool TargetFec = true;
-	ComputeVoiceEncoderTargets(0, 0.0f, &TargetBitrate, &TargetLoss, &TargetFec);
-	EXPECT_EQ(TargetBitrate, 36000);
+	ComputeVoiceEncoderTargets(0, 0.0f, 0, &TargetBitrate, &TargetLoss, &TargetFec);
+	EXPECT_EQ(TargetBitrate, 64000);
 	EXPECT_EQ(TargetLoss, 0);
 	EXPECT_FALSE(TargetFec);
 }
@@ -823,8 +822,8 @@ TEST(VoiceUtils, ComputeVoiceEncoderTargetsKeepsMoreBitrateBeforeWeakNetwork)
 	int TargetBitrate = 0;
 	int TargetLoss = 0;
 	bool TargetFec = false;
-	ComputeVoiceEncoderTargets(5, 12.0f, &TargetBitrate, &TargetLoss, &TargetFec);
-	EXPECT_EQ(TargetBitrate, 28000);
+	ComputeVoiceEncoderTargets(5, 12.0f, 0, &TargetBitrate, &TargetLoss, &TargetFec);
+	EXPECT_EQ(TargetBitrate, 48000);
 	EXPECT_EQ(TargetLoss, 5);
 	EXPECT_TRUE(TargetFec);
 }
@@ -834,8 +833,8 @@ TEST(VoiceUtils, ComputeVoiceEncoderTargetsWeakNetwork)
 	int TargetBitrate = 0;
 	int TargetLoss = 0;
 	bool TargetFec = false;
-	ComputeVoiceEncoderTargets(10, 20.0f, &TargetBitrate, &TargetLoss, &TargetFec);
-	EXPECT_EQ(TargetBitrate, 22000);
+	ComputeVoiceEncoderTargets(10, 20.0f, 0, &TargetBitrate, &TargetLoss, &TargetFec);
+	EXPECT_EQ(TargetBitrate, 32000);
 	EXPECT_EQ(TargetLoss, 10);
 	EXPECT_TRUE(TargetFec);
 }
@@ -845,8 +844,8 @@ TEST(VoiceUtils, ComputeVoiceEncoderTargetsPoorNetwork)
 	int TargetBitrate = 0;
 	int TargetLoss = 0;
 	bool TargetFec = false;
-	ComputeVoiceEncoderTargets(15, 35.0f, &TargetBitrate, &TargetLoss, &TargetFec);
-	EXPECT_EQ(TargetBitrate, 17000);
+	ComputeVoiceEncoderTargets(15, 35.0f, 0, &TargetBitrate, &TargetLoss, &TargetFec);
+	EXPECT_EQ(TargetBitrate, 24000);
 	EXPECT_EQ(TargetLoss, 20);
 	EXPECT_TRUE(TargetFec);
 }
@@ -1299,6 +1298,60 @@ TEST(VoiceCore, ClampJitterTargetHigh)
 	EXPECT_EQ(TestClampJitterTarget(33.0f), 6);
 	EXPECT_EQ(TestClampJitterTarget(100.0f), 6);
 	EXPECT_EQ(TestClampJitterTarget(1000.0f), 6);
+}
+
+TEST(VoiceCore, ComputeVoiceEncoderTargetsAutoProfileUsesAggressiveTable)
+{
+	int Bitrate = 0;
+	int Loss = 0;
+	bool Fec = false;
+
+	ComputeVoiceEncoderTargets(0, 0.0f, 0, &Bitrate, &Loss, &Fec);
+	EXPECT_EQ(Bitrate, 64000);
+	EXPECT_EQ(Loss, 0);
+	EXPECT_FALSE(Fec);
+
+	ComputeVoiceEncoderTargets(5, 10.0f, 0, &Bitrate, &Loss, &Fec);
+	EXPECT_EQ(Bitrate, 48000);
+	EXPECT_EQ(Loss, 5);
+	EXPECT_TRUE(Fec);
+
+	ComputeVoiceEncoderTargets(10, 20.0f, 0, &Bitrate, &Loss, &Fec);
+	EXPECT_EQ(Bitrate, 32000);
+	EXPECT_EQ(Loss, 10);
+	EXPECT_TRUE(Fec);
+
+	ComputeVoiceEncoderTargets(20, 40.0f, 0, &Bitrate, &Loss, &Fec);
+	EXPECT_EQ(Bitrate, 24000);
+	EXPECT_EQ(Loss, 20);
+	EXPECT_TRUE(Fec);
+}
+
+TEST(VoiceCore, ComputeVoiceEncoderTargetsManualProfilesOverrideAdaptiveTable)
+{
+	int Bitrate = 0;
+	int Loss = 0;
+	bool Fec = true;
+
+	ComputeVoiceEncoderTargets(20, 40.0f, 1, &Bitrate, &Loss, &Fec);
+	EXPECT_EQ(Bitrate, 24000);
+	EXPECT_EQ(Loss, 0);
+	EXPECT_FALSE(Fec);
+
+	ComputeVoiceEncoderTargets(20, 40.0f, 2, &Bitrate, &Loss, &Fec);
+	EXPECT_EQ(Bitrate, 32000);
+	EXPECT_EQ(Loss, 0);
+	EXPECT_FALSE(Fec);
+
+	ComputeVoiceEncoderTargets(20, 40.0f, 3, &Bitrate, &Loss, &Fec);
+	EXPECT_EQ(Bitrate, 48000);
+	EXPECT_EQ(Loss, 0);
+	EXPECT_FALSE(Fec);
+
+	ComputeVoiceEncoderTargets(20, 40.0f, 4, &Bitrate, &Loss, &Fec);
+	EXPECT_EQ(Bitrate, 64000);
+	EXPECT_EQ(Loss, 0);
+	EXPECT_FALSE(Fec);
 }
 
 // ---------------------------------------------------------------------------

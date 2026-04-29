@@ -56,6 +56,7 @@ private:
 struct SRClientVoiceConfigSnapshot
 {
 	int m_QmVoiceFilterEnable = 0;
+	int m_QmVoiceBitrateProfile = 0;
 	int m_QmVoiceProtocolVersion = 0;
 	int m_QmVoiceNoiseSuppressEnable = 0;
 	int m_QmVoiceNoiseSuppressStrength = 0;
