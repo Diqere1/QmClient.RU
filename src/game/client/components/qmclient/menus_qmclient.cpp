@@ -4946,7 +4946,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight * 1.75f, &Row, &CardContent);
-					Ui()->DoLabel(&Row, Localize("默认配置已偏向更自然的人声与更稳的响度；如果你的环境底噪较高，可提高噪声抑制强度。AGC 默认关闭，可在需要时手动开启。"), LG_BodySize * 0.82f, TEXTALIGN_ML);
+					Ui()->DoLabel(&Row, Localize("默认配置已偏向更自然的人声与更稳的响度；如果你的环境底噪较高，可提高噪声抑制强度。自动增益控制（AGC）默认关闭，可在需要时手动开启。"), LG_BodySize * 0.82f, TEXTALIGN_ML);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -6065,11 +6065,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					}
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceAgcEnable, Localize("启用 AGC（实验性）"), &g_Config.m_QmVoiceAgcEnable, &Row, LG_LineHeight);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceAgcEnable, Localize("自动平衡麦克风音量（AGC，实验性）"), &g_Config.m_QmVoiceAgcEnable, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceVadEnable, Localize("启用语音激活"), &g_Config.m_QmVoiceVadEnable, &Row, LG_LineHeight);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceVadEnable, Localize("自动检测说话时开麦"), &g_Config.m_QmVoiceVadEnable, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					if(g_Config.m_QmVoiceVadEnable)
@@ -6078,7 +6078,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						{
 							CUIRect LabelColValue, ControlColValue;
 							Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
-							Ui()->DoLabel(&LabelColValue, Localize("语音激活阈值"), LG_BodySize, TEXTALIGN_ML);
+							Ui()->DoLabel(&LabelColValue, Localize("说话触发阈值"), LG_BodySize, TEXTALIGN_ML);
 							static int s_QmVoiceVadThresholdInputId;
 							RenderSliderWithValueInput(&s_QmVoiceVadThresholdInputId, ControlColValue, &g_Config.m_QmVoiceVadThreshold, 0, 100, "%");
 						}

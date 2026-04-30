@@ -280,6 +280,38 @@ TEST(VoiceUtils, ReadVoicePacketHeaderRejectsTruncatedBuffer)
 	EXPECT_FALSE(ReadVoicePacketHeader(aBuf, VOICE_PACKET_HEADER_SIZE - 1, Parsed));
 }
 
+TEST(VoiceUtils, ReadVoicePacketHeaderRejectsNullBuffer)
+{
+	SVoicePacketHeader Parsed;
+	EXPECT_FALSE(ReadVoicePacketHeader(nullptr, VOICE_PACKET_HEADER_SIZE, Parsed));
+}
+
+TEST(VoiceUtils, ReadVoicePacketHeaderRejectsZeroSize)
+{
+	uint8_t aBuf[VOICE_PACKET_HEADER_SIZE];
+	mem_zero(aBuf, sizeof(aBuf));
+
+	SVoicePacketHeader Parsed;
+	EXPECT_FALSE(ReadVoicePacketHeader(aBuf, 0, Parsed));
+}
+
+TEST(VoiceUtils, WriteVoicePacketHeaderRejectsNullBuffer)
+{
+	SVoicePacketHeader Header;
+	Header.m_Version = 3;
+	Header.m_Type = VOICE_TYPE_AUDIO;
+	EXPECT_FALSE(WriteVoicePacketHeader(nullptr, VOICE_PACKET_HEADER_SIZE, Header));
+}
+
+TEST(VoiceUtils, WriteVoicePacketHeaderRejectsInsufficientSize)
+{
+	SVoicePacketHeader Header;
+	Header.m_Version = 3;
+	Header.m_Type = VOICE_TYPE_AUDIO;
+	uint8_t aBuf[VOICE_PACKET_HEADER_SIZE];
+	EXPECT_FALSE(WriteVoicePacketHeader(aBuf, VOICE_PACKET_HEADER_SIZE - 1, Header));
+}
+
 TEST(VoiceUtils, VoiceTransmitBlockersNetworkAndDevice)
 {
 	SVoiceTransmitPreconditions Preconditions;
@@ -585,6 +617,7 @@ TEST(VoiceUtils, VoiceShouldIgnoreDistanceRespectsConfigAndSharedGroup)
 	EXPECT_TRUE(VoiceShouldIgnoreDistance(false, true, 0x11u, 0x11u));
 	EXPECT_FALSE(VoiceShouldIgnoreDistance(false, true, 0x00u, 0x00u));
 	EXPECT_FALSE(VoiceShouldIgnoreDistance(false, true, 0x11u, 0x22u));
+	EXPECT_TRUE(VoiceShouldIgnoreDistance(false, true, 0x40000011u, 0x00000011u));
 }
 
 TEST(VoiceUtils, VoiceResolveListenerPositionUsesSpecPositionOnlyWhenEnabled)
@@ -782,6 +815,28 @@ TEST(VoiceUtils, ResolveNoiseSuppressModeFallbackToSimpleWhenRnnoiseUnavailable)
 	const int Mode = ResolveNoiseSuppressMode(TEST_VOICE_NOISE_SUPPRESS_RNNOISE, false, &FallbackUsed);
 	EXPECT_EQ(Mode, TEST_VOICE_NOISE_SUPPRESS_SIMPLE);
 	EXPECT_TRUE(FallbackUsed);
+}
+
+TEST(VoiceUtils, ResolveNoiseSuppressModeInvalidValue)
+{
+	bool FallbackUsed = false;
+	const int Mode = ResolveNoiseSuppressMode(99, true, &FallbackUsed);
+	EXPECT_EQ(Mode, TEST_VOICE_NOISE_SUPPRESS_RNNOISE);
+	EXPECT_FALSE(FallbackUsed);
+}
+
+TEST(VoiceUtils, ResolveNoiseSuppressModeNegativeValue)
+{
+	bool FallbackUsed = false;
+	const int Mode = ResolveNoiseSuppressMode(-1, true, &FallbackUsed);
+	EXPECT_EQ(Mode, TEST_VOICE_NOISE_SUPPRESS_OFF);
+	EXPECT_FALSE(FallbackUsed);
+}
+
+TEST(VoiceUtils, ResolveNoiseSuppressModeNullFallbackPointer)
+{
+	const int Mode = ResolveNoiseSuppressMode(TEST_VOICE_NOISE_SUPPRESS_RNNOISE, false, nullptr);
+	EXPECT_EQ(Mode, TEST_VOICE_NOISE_SUPPRESS_SIMPLE);
 }
 
 TEST(VoiceUtils, RnnoiseIsCompiledIn)
@@ -991,6 +1046,23 @@ TEST(VoiceUtils, VoiceFramePeakMaxNegative)
 {
 	int16_t aSamples[1] = {-32768};
 	EXPECT_FLOAT_EQ(VoiceFramePeak(aSamples, 1), 1.0f);
+}
+
+TEST(VoiceUtils, VoiceFramePeakNullPointer)
+{
+	EXPECT_FLOAT_EQ(VoiceFramePeak(nullptr, 10), 0.0f);
+}
+
+TEST(VoiceUtils, VoiceFramePeakZeroCount)
+{
+	int16_t aSamples[4] = {1000, 2000, 3000, 4000};
+	EXPECT_FLOAT_EQ(VoiceFramePeak(aSamples, 0), 0.0f);
+}
+
+TEST(VoiceUtils, VoiceFramePeakNegativeCount)
+{
+	int16_t aSamples[4] = {1000, 2000, 3000, 4000};
+	EXPECT_FLOAT_EQ(VoiceFramePeak(aSamples, -5), 0.0f);
 }
 
 TEST(VoiceUtils, VoiceFrameRmsSilence)
@@ -1418,6 +1490,7 @@ TEST(VoiceCore, VoiceProcessingFactoryDefaultsMatchRoadmapDefaults)
 
 	EXPECT_EQ(Defaults.m_NoiseSuppressMode, VOICE_NOISE_SUPPRESS_RNNOISE);
 	EXPECT_EQ(Defaults.m_NoiseSuppressStrength, 35);
+	EXPECT_NEAR(Defaults.m_HpfCutoffHz, VOICE_HPF_CUTOFF_HZ, 0.001f);
 	EXPECT_NEAR(Defaults.m_CompressorThreshold, 0.24f, 0.001f);
 	EXPECT_NEAR(Defaults.m_CompressorRatio, 2.0f, 0.001f);
 	EXPECT_NEAR(Defaults.m_CompressorAttackSec, 0.012f, 0.001f);
@@ -1433,6 +1506,7 @@ TEST(VoiceUtils, VoiceProcessingFactoryDefaultsMatchConfigDefaults)
 
 	EXPECT_EQ(Defaults.m_NoiseSuppressMode, 2);
 	EXPECT_EQ(Defaults.m_NoiseSuppressStrength, 35);
+	EXPECT_NEAR(Defaults.m_HpfCutoffHz, VOICE_HPF_CUTOFF_HZ, 0.001f);
 	EXPECT_NEAR(Defaults.m_CompressorThreshold, 0.24f, 0.001f);
 	EXPECT_NEAR(Defaults.m_CompressorRatio, 2.0f, 0.001f);
 	EXPECT_NEAR(Defaults.m_CompressorAttackSec, 0.012f, 0.001f);
@@ -1710,6 +1784,8 @@ TEST(VoiceCore, ProcessIncomingClassifiesGroupSenderAndPayloadDrops)
 {
 	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_AUDIO, 8, 0x12345678u, 0x22u, 1, VOICE_PACKET_HEADER_SIZE + 8),
 		EVoiceIncomingPacketDecision::DROP_GROUP);
+	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_AUDIO, 8, 0x12345678u, 0x40000011u, 1, VOICE_PACKET_HEADER_SIZE + 8),
+		EVoiceIncomingPacketDecision::HANDLE_AUDIO);
 	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_AUDIO, 8, 0x12345678u, 0x11u, MAX_CLIENTS, VOICE_PACKET_HEADER_SIZE + 8),
 		EVoiceIncomingPacketDecision::DROP_SENDER);
 	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_AUDIO, 0, 0x12345678u, 0x11u, 1, VOICE_PACKET_HEADER_SIZE),
@@ -1727,7 +1803,66 @@ TEST(VoiceCore, ProcessIncomingClassifiesAudioPingAndPongPaths)
 	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_PONG, 0, 0x12345678u, 0x11u, 1, VOICE_PACKET_HEADER_SIZE),
 		EVoiceIncomingPacketDecision::HANDLE_PONG);
 	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_PONG, 0, 0x12345678u, 0x40000011u, 1, VOICE_PACKET_HEADER_SIZE),
+		EVoiceIncomingPacketDecision::HANDLE_PONG);
+}
+
+TEST(VoiceCore, ProcessIncomingAllowsSameGroupAcrossLegacyAndModePackedTokens)
+{
+	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_AUDIO, 8, 0x12345678u, 0x80000011u, 1, VOICE_PACKET_HEADER_SIZE + 8),
+		EVoiceIncomingPacketDecision::HANDLE_AUDIO);
+	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_PING, 0, 0x12345678u, 0x80000011u, 1, VOICE_PACKET_HEADER_SIZE),
+		EVoiceIncomingPacketDecision::HANDLE_PING);
+}
+
+TEST(VoiceCore, ProcessIncomingRejectsKeepaliveFromDifferentGroupEvenWhenModeBitsDiffer)
+{
+	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_PING, 0, 0x12345678u, 0x80000022u, 1, VOICE_PACKET_HEADER_SIZE),
 		EVoiceIncomingPacketDecision::DROP_KEEPALIVE_TOKEN);
+	EXPECT_EQ(ClassifyTestPacket(VOICE_VERSION, VOICE_TYPE_PONG, 0, 0x12345678u, 0x40000022u, 1, VOICE_PACKET_HEADER_SIZE),
+		EVoiceIncomingPacketDecision::DROP_KEEPALIVE_TOKEN);
+}
+
+TEST(VoiceCore, JitterStartSeqWaitsForTargetFramesAndUsesMinLiveSequence)
+{
+	std::array<uint8_t, 32> aValid = {};
+	std::array<uint16_t, 32> aSeq = {};
+	aValid[5] = 1;
+	aSeq[5] = 37;
+	aValid[9] = 1;
+	aSeq[9] = 41;
+	aValid[12] = 1;
+	aSeq[12] = 44;
+
+	bool HasNextSeq = false;
+	uint16_t NextSeq = 999;
+	EXPECT_FALSE(SeedVoiceJitterStartSeq(2, 3, false, NextSeq, aValid.data(), aSeq.data(), aValid.size(), HasNextSeq, NextSeq));
+	EXPECT_FALSE(HasNextSeq);
+
+	ASSERT_TRUE(SeedVoiceJitterStartSeq(3, 3, false, 0, aValid.data(), aSeq.data(), aValid.size(), HasNextSeq, NextSeq));
+	EXPECT_TRUE(HasNextSeq);
+	EXPECT_EQ(NextSeq, 37);
+}
+
+TEST(VoiceCore, JitterStartSeqSkipsAllInvalidBuffersAndHandlesWrapAround)
+{
+	std::array<uint8_t, 32> aValid = {};
+	std::array<uint16_t, 32> aSeq = {};
+	bool HasNextSeq = false;
+	uint16_t NextSeq = 0;
+
+	EXPECT_FALSE(SeedVoiceJitterStartSeq(3, 3, false, 0, aValid.data(), aSeq.data(), aValid.size(), HasNextSeq, NextSeq));
+	EXPECT_FALSE(HasNextSeq);
+
+	aValid[1] = 1;
+	aSeq[1] = 65535;
+	aValid[2] = 1;
+	aSeq[2] = 0;
+	aValid[3] = 1;
+	aSeq[3] = 1;
+
+	ASSERT_TRUE(SeedVoiceJitterStartSeq(3, 3, false, 0, aValid.data(), aSeq.data(), aValid.size(), HasNextSeq, NextSeq));
+	EXPECT_TRUE(HasNextSeq);
+	EXPECT_EQ(NextSeq, 65535);
 }
 
 TEST(VoiceCore, BuiltPacketsFollowPositiveProtocolPaths)

@@ -1985,9 +1985,19 @@ endforeach()
 if(DATA)
   # Keep the whole runtime data directory in sync with the build directory on every build.
   # This custom target has no OUTPUT, so it always runs when game-client is built.
-  add_custom_target(sync_runtime_data
+  set(SYNC_RUNTIME_DATA_COMMANDS
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/data" "${PROJECT_BINARY_DIR}/data"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/data/shader/vulkan"
+  )
+  foreach(vulkan_shader_file ${VULKAN_SHADER_FILE_LIST})
+    list(APPEND SYNC_RUNTIME_DATA_COMMANDS
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${PROJECT_BINARY_DIR}/${vulkan_shader_file}"
+      "${PROJECT_BINARY_DIR}/data/shader/vulkan/")
+  endforeach()
+  add_custom_target(sync_runtime_data
+    ${SYNC_RUNTIME_DATA_COMMANDS}
     COMMENT "Sync data directory to build directory"
   )
 endif()

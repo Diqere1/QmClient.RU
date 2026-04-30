@@ -59,7 +59,7 @@ struct SVoiceProcessingFactoryDefaults
 {
 	int m_NoiseSuppressMode = VOICE_NOISE_SUPPRESS_RNNOISE;
 	int m_NoiseSuppressStrength = 35;
-	float m_HpfCutoffHz = 120.0f;
+	float m_HpfCutoffHz = VOICE_HPF_CUTOFF_HZ;
 	float m_CompressorThreshold = 0.24f;
 	float m_CompressorRatio = 2.0f;
 	float m_CompressorAttackSec = 0.012f;
@@ -152,6 +152,9 @@ struct SVoiceIncomingPacketContext
 EVoiceIncomingPacketDecision ClassifyVoiceIncomingPacket(const SVoicePacketHeader &Header, size_t PacketSize, const SVoiceIncomingPacketContext &Context);
 bool VoiceShouldUpdatePingRtt(uint16_t Sequence, uint16_t LastPingSeq, int64_t LastPingSentTime);
 uint32_t VoiceTokenGroupHash(uint32_t TokenHash);
+uint32_t BuildLegacyVoiceTokenHash(const char *pToken);
+bool FindMinLiveVoiceSeq(const uint8_t *pValid, const uint16_t *pSeq, size_t Count, uint16_t &OutSeq);
+bool SeedVoiceJitterStartSeq(int QueuedPackets, int TargetFrames, bool HasNextSeq, uint16_t InitialNextSeq, const uint8_t *pValid, const uint16_t *pSeq, size_t Count, bool &OutHasNextSeq, uint16_t &OutNextSeq);
 bool VoiceShouldIgnoreDistance(bool IgnoreDistanceConfig, bool GroupGlobal, uint32_t LocalTokenHash, uint32_t SenderTokenHash);
 vec2 VoiceResolveListenerPosition(vec2 LocalPos, bool SpecActive, vec2 SpecPos, bool HearOnSpecPos);
 

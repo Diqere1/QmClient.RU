@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <mutex>
 
 namespace VoiceUtils
 {
@@ -14,8 +15,9 @@ namespace VoiceUtils
 static constexpr char VOICE_MAGIC[4] = {'R', 'V', '0', '1'};
 static constexpr uint32_t VOICE_GROUP_MASK = 0x3fffffff;
 
-static std::atomic<VoiceProcessTraceCallback> s_pVoiceProcessTraceCallback = nullptr;
-static std::atomic<void *> s_pVoiceProcessTraceUserData = nullptr;
+static std::mutex s_VoiceProcessTraceMutex;
+static VoiceProcessTraceCallback s_pVoiceProcessTraceCallback = nullptr;
+static void *s_pVoiceProcessTraceUserData = nullptr;
 
 static bool VoiceContainsNoCase(const char *pHaystack, const char *pNeedle)
 {
@@ -27,9 +29,45 @@ uint32_t VoiceTokenGroupHash(uint32_t TokenHash)
 	return TokenHash & VOICE_GROUP_MASK;
 }
 
-static bool VoiceShouldHear(uint32_t SenderGroup, uint32_t ReceiverGroup)
+bool FindMinLiveVoiceSeq(const uint8_t *pValid, const uint16_t *pSeq, size_t Count, uint16_t &OutSeq)
 {
-	return SenderGroup == ReceiverGroup;
+	if(!pValid || !pSeq || Count == 0)
+		return false;
+
+	bool Found = false;
+	uint16_t MinSeq = 0;
+	for(size_t i = 0; i < Count; i++)
+	{
+		if(pValid[i] == 0)
+			continue;
+		if(!Found || VoiceSeqLess(pSeq[i], MinSeq))
+		{
+			MinSeq = pSeq[i];
+			Found = true;
+		}
+	}
+
+	if(Found)
+		OutSeq = MinSeq;
+	return Found;
+}
+
+bool SeedVoiceJitterStartSeq(int QueuedPackets, int TargetFrames, bool HasNextSeq, uint16_t InitialNextSeq, const uint8_t *pValid, const uint16_t *pSeq, size_t Count, bool &OutHasNextSeq, uint16_t &OutNextSeq)
+{
+	OutHasNextSeq = HasNextSeq;
+	OutNextSeq = InitialNextSeq;
+	if(OutHasNextSeq)
+		return true;
+	if(QueuedPackets < TargetFrames)
+		return false;
+
+	uint16_t StartSeq = 0;
+	if(!FindMinLiveVoiceSeq(pValid, pSeq, Count, StartSeq))
+		return false;
+
+	OutHasNextSeq = true;
+	OutNextSeq = StartSeq;
+	return true;
 }
 
 void WriteU16(uint8_t *pBuf, uint16_t Value)
@@ -156,18 +194,7 @@ int VoiceDesiredOutputChannels(const SVoiceAudioDeviceConfig &Config)
 
 SVoiceProcessingFactoryDefaults VoiceProcessingFactoryDefaults()
 {
-	SVoiceProcessingFactoryDefaults Defaults;
-	Defaults.m_NoiseSuppressMode = VOICE_NOISE_SUPPRESS_RNNOISE;
-	Defaults.m_NoiseSuppressStrength = 35;
-	Defaults.m_HpfCutoffHz = VOICE_HPF_CUTOFF_HZ;
-	Defaults.m_CompressorThreshold = 0.24f;
-	Defaults.m_CompressorRatio = 2.0f;
-	Defaults.m_CompressorAttackSec = 0.012f;
-	Defaults.m_CompressorReleaseSec = 0.140f;
-	Defaults.m_CompressorMakeupGain = 1.25f;
-	Defaults.m_Limiter = 0.92f;
-	Defaults.m_EncoderComplexity = 8;
-	return Defaults;
+	return {};
 }
 
 SVoiceAgcConfig VoiceAgcConfigFromRuntime(bool EnableAgc)
@@ -207,15 +234,22 @@ bool VoiceSeqLess(uint16_t A, uint16_t B)
 
 void SetVoiceProcessTraceCallback(VoiceProcessTraceCallback pCallback, void *pUserData)
 {
-	s_pVoiceProcessTraceUserData.store(pUserData, std::memory_order_release);
-	s_pVoiceProcessTraceCallback.store(pCallback, std::memory_order_release);
+	std::lock_guard<std::mutex> Guard(s_VoiceProcessTraceMutex);
+	s_pVoiceProcessTraceCallback = pCallback;
+	s_pVoiceProcessTraceUserData = pUserData;
 }
 
 void TraceVoiceProcessStage(EVoiceProcessStage Stage)
 {
-	VoiceProcessTraceCallback pCallback = s_pVoiceProcessTraceCallback.load(std::memory_order_acquire);
+	VoiceProcessTraceCallback pCallback = nullptr;
+	void *pUserData = nullptr;
+	{
+		std::lock_guard<std::mutex> Guard(s_VoiceProcessTraceMutex);
+		pCallback = s_pVoiceProcessTraceCallback;
+		pUserData = s_pVoiceProcessTraceUserData;
+	}
 	if(pCallback)
-		pCallback(Stage, s_pVoiceProcessTraceUserData.load(std::memory_order_acquire));
+		pCallback(Stage, pUserData);
 }
 
 void BuildVoiceDeviceDropdownEntries(
@@ -312,19 +346,19 @@ EVoiceIncomingPacketDecision ClassifyVoiceIncomingPacket(const SVoicePacketHeade
 	if(Header.m_ContextHash == 0 || Header.m_ContextHash != Context.m_LocalContextHash)
 		return EVoiceIncomingPacketDecision::DROP_CONTEXT;
 
-	const uint32_t LocalGroup = VoiceTokenGroupHash(Context.m_LocalTokenHash);
-	const uint32_t SenderGroup = VoiceTokenGroupHash(Header.m_TokenHash);
-	if(!VoiceShouldHear(SenderGroup, LocalGroup))
-		return EVoiceIncomingPacketDecision::DROP_GROUP;
-	if(Header.m_SenderId >= Context.m_MaxClients)
-		return EVoiceIncomingPacketDecision::DROP_SENDER;
-
 	if(Header.m_Type == VOICE_TYPE_PING || Header.m_Type == VOICE_TYPE_PONG)
 	{
-		if(Header.m_TokenHash != 0 && Header.m_TokenHash != Context.m_LocalTokenHash)
+		const uint32_t HeaderGroup = VoiceTokenGroupHash(Header.m_TokenHash);
+		const uint32_t LocalGroup = VoiceTokenGroupHash(Context.m_LocalTokenHash);
+		if(HeaderGroup != 0 && HeaderGroup != LocalGroup)
 			return EVoiceIncomingPacketDecision::DROP_KEEPALIVE_TOKEN;
 		return Header.m_Type == VOICE_TYPE_PING ? EVoiceIncomingPacketDecision::HANDLE_PING : EVoiceIncomingPacketDecision::HANDLE_PONG;
 	}
+
+	if(VoiceTokenGroupHash(Header.m_TokenHash) != VoiceTokenGroupHash(Context.m_LocalTokenHash))
+		return EVoiceIncomingPacketDecision::DROP_GROUP;
+	if(Header.m_SenderId >= Context.m_MaxClients)
+		return EVoiceIncomingPacketDecision::DROP_SENDER;
 
 	if(Header.m_PayloadSize > (uint16_t)VOICE_MAX_PAYLOAD)
 		return EVoiceIncomingPacketDecision::DROP_PAYLOAD;
@@ -348,8 +382,8 @@ bool VoiceShouldIgnoreDistance(bool IgnoreDistanceConfig, bool GroupGlobal, uint
 
 	const uint32_t LocalGroup = VoiceTokenGroupHash(LocalTokenHash);
 	const uint32_t SenderGroup = VoiceTokenGroupHash(SenderTokenHash);
-	const bool SameGroup = LocalGroup != 0 && SenderGroup == LocalGroup;
-	return GroupGlobal && SameGroup;
+	const bool SameRoom = LocalGroup != 0 && SenderGroup == LocalGroup;
+	return GroupGlobal && SameRoom;
 }
 
 vec2 VoiceResolveListenerPosition(vec2 LocalPos, bool SpecActive, vec2 SpecPos, bool HearOnSpecPos)
@@ -797,6 +831,9 @@ float SanitizeFloat(float Value)
 
 float VoiceFramePeak(const int16_t *pSamples, int Count)
 {
+	if(!pSamples || Count <= 0)
+		return 0.0f;
+
 	int Peak = 0;
 	for(int i = 0; i < Count; i++)
 	{
@@ -966,7 +1003,7 @@ void ApplyHpfCompressor(const SCompressorConfig &Config, int16_t *pSamples, int 
 	if(!Config.m_Enable)
 		return;
 
-	const float CutoffHz = 120.0f;
+	const float CutoffHz = VOICE_HPF_CUTOFF_HZ;
 	const float Rc = 1.0f / (2.0f * 3.14159265f * CutoffHz);
 	const float Dt = 1.0f / VOICE_SAMPLE_RATE;
 	const float Alpha = Rc / (Rc + Dt);

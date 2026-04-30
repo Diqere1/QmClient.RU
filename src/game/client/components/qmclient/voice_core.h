@@ -129,6 +129,8 @@ class CRClientVoice
 		float m_LossEwma = 0.0f;
 		uint16_t m_NextSeq = 0;
 		bool m_HasNextSeq = false;
+		bool m_HasMinQueuedSeq = false;
+		uint16_t m_MinQueuedSeq = 0;
 		float m_LastGainLeft = 1.0f;
 		float m_LastGainRight = 1.0f;
 		int64_t m_LastRecvTime = 0;
@@ -215,6 +217,7 @@ class CRClientVoice
 	int64_t m_LastPingSentTime = 0;
 	uint16_t m_LastPingSeq = 0;
 	std::unique_ptr<std::array<SVoicePeer, MAX_CLIENTS>> m_pPeers;
+	std::vector<int32_t> m_MixBuffer;
 	std::array<std::atomic<int64_t>, MAX_CLIENTS> m_aLastHeard = {};
 	// Room/peer runtime state: "who is present / speaking" for the current token.
 	std::array<std::atomic<int64_t>, MAX_CLIENTS> m_aRoomMemberSeen = {};
@@ -308,6 +311,8 @@ class CRClientVoice
 	void MixAudio(int16_t *pOut, int Samples, int OutputChannels);
 	void ClearPeerFrames();
 	void ResetPeer(SVoicePeer &Peer);
+	bool FindMinLiveQueuedSeq(const SVoicePeer &Peer, uint16_t &OutSeq) const;
+	bool SeedPeerNextSeq(SVoicePeer &Peer);
 	static void SDLAudioCallback(void *pUserData, Uint8 *pStream, int Len);
 	const char *FindDeviceName(bool Capture, const char *pDesired) const;
 	void StartWorker();

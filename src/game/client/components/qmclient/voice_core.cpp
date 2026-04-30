@@ -43,9 +43,6 @@ static constexpr const char *s_pVoiceOverlayMicIcon = "\xEF\x84\xB0";
 
 const char *GetEffectiveQmVoiceServer();
 
-// !!WARNING!!
-// Voice full wrote by AI don't use that pls
-
 void CVoiceOverlayState::Reset()
 {
 	m_aLastHeard.fill(0);
@@ -137,8 +134,6 @@ int CVoiceOverlayState::CollectVisible(int64_t Now, int64_t VisibleWindow, bool 
 static constexpr int VOICE_CHANNELS = 1;
 static constexpr int VOICE_FRAME_BYTES = VOICE_FRAME_SAMPLES * sizeof(int16_t);
 static constexpr uint32_t VOICE_GROUP_MASK = 0x3fffffff;
-static constexpr uint32_t VOICE_MODE_SHIFT = 30;
-static constexpr uint32_t VOICE_MODE_MASK = 0x3u;
 
 static uint8_t VoiceProtocolVersion(const SRClientVoiceConfigSnapshot &Config)
 {
@@ -146,41 +141,38 @@ static uint8_t VoiceProtocolVersion(const SRClientVoiceConfigSnapshot &Config)
 	return (uint8_t)std::clamp(ProtocolVersion, 1, 255);
 }
 
-static uint32_t VoicePackToken(uint32_t GroupHash, uint32_t Mode)
+bool CRClientVoice::FindMinLiveQueuedSeq(const SVoicePeer &Peer, uint16_t &OutSeq) const
 {
-	(void)Mode;
-	// Public pool: empty token -> group 0.
-	// Private pool: non-empty token -> hash(group) only.
-	return GroupHash & VOICE_GROUP_MASK;
-}
-
-[[maybe_unused]] static uint32_t VoiceTokenMode(uint32_t TokenHash)
-{
-	return (TokenHash >> VOICE_MODE_SHIFT) & VOICE_MODE_MASK;
-}
-
-[[maybe_unused]] static float SanitizeFloat(float Value)
-{
-	if(!std::isfinite(Value))
-		return 0.0f;
-	if(Value > 1000000.0f)
-		return 1000000.0f;
-	if(Value < -1000000.0f)
-		return -1000000.0f;
-	return Value;
-}
-
-[[maybe_unused]] static float VoiceFramePeak(const int16_t *pSamples, int Count)
-{
-	int Peak = 0;
-	for(int i = 0; i < Count; i++)
+	std::array<uint8_t, SVoicePeer::MAX_JITTER_PACKETS> aValid = {};
+	std::array<uint16_t, SVoicePeer::MAX_JITTER_PACKETS> aSeq = {};
+	for(size_t i = 0; i < Peer.MAX_JITTER_PACKETS; i++)
 	{
-		const int Sample = pSamples[i];
-		const int Abs = Sample == -32768 ? 32768 : (Sample < 0 ? -Sample : Sample);
-		if(Abs > Peak)
-			Peak = Abs;
+		aValid[i] = Peer.m_aPackets[i].m_Valid ? 1 : 0;
+		aSeq[i] = Peer.m_aPackets[i].m_Seq;
 	}
-	return Peak / 32768.0f;
+	return VoiceUtils::FindMinLiveVoiceSeq(aValid.data(), aSeq.data(), aValid.size(), OutSeq);
+}
+
+bool CRClientVoice::SeedPeerNextSeq(SVoicePeer &Peer)
+{
+	std::array<uint8_t, SVoicePeer::MAX_JITTER_PACKETS> aValid = {};
+	std::array<uint16_t, SVoicePeer::MAX_JITTER_PACKETS> aSeq = {};
+	for(size_t i = 0; i < Peer.MAX_JITTER_PACKETS; i++)
+	{
+		aValid[i] = Peer.m_aPackets[i].m_Valid ? 1 : 0;
+		aSeq[i] = Peer.m_aPackets[i].m_Seq;
+	}
+
+	bool HasNextSeq = Peer.m_HasNextSeq;
+	uint16_t NextSeq = Peer.m_NextSeq;
+	if(!VoiceUtils::SeedVoiceJitterStartSeq(Peer.m_QueuedPackets, Peer.m_TargetFrames, HasNextSeq, NextSeq, aValid.data(), aSeq.data(), aValid.size(), HasNextSeq, NextSeq))
+		return false;
+
+	Peer.m_HasNextSeq = HasNextSeq;
+	Peer.m_NextSeq = NextSeq;
+	Peer.m_MinQueuedSeq = NextSeq;
+	Peer.m_HasMinQueuedSeq = true;
+	return true;
 }
 
 void CRClientVoice::SDLAudioCallback(void *pUserData, Uint8 *pStream, int Len)
@@ -241,6 +233,7 @@ bool CRClientVoice::Init()
 		return false;
 
 	m_pPeers = std::make_unique<std::array<SVoicePeer, MAX_CLIENTS>>();
+	m_MixBuffer.resize(VOICE_FRAME_SAMPLES * 2);
 	m_ShutdownDone = false;
 	m_LastConfigSnapshotUpdate = 0;
 	m_LastClientSnapshotUpdate = 0;
@@ -758,7 +751,9 @@ void CRClientVoice::MixAudio(int16_t *pOut, int Samples, int OutputChannels)
 		return;
 
 	const int Needed = Samples * OutputChannels;
-	std::vector<int32_t> MixBuf(Needed, 0);
+	if(m_MixBuffer.size() < (size_t)Needed)
+		m_MixBuffer.resize(Needed);
+	std::fill(m_MixBuffer.begin(), m_MixBuffer.begin() + Needed, 0);
 
 	for(auto &Peer : *m_pPeers)
 	{
@@ -782,17 +777,17 @@ void CRClientVoice::MixAudio(int16_t *pOut, int Samples, int OutputChannels)
 			if(OutputChannels == 1)
 			{
 				const float MonoGain = 0.5f * (LeftGain + RightGain);
-				MixBuf[Base] += (int32_t)(Pcm * MonoGain);
+				m_MixBuffer[Base] += (int32_t)(Pcm * MonoGain);
 			}
 			else
 			{
-				MixBuf[Base] += (int32_t)(Pcm * LeftGain);
-				MixBuf[Base + 1] += (int32_t)(Pcm * RightGain);
+				m_MixBuffer[Base] += (int32_t)(Pcm * LeftGain);
+				m_MixBuffer[Base + 1] += (int32_t)(Pcm * RightGain);
 				if(OutputChannels > 2)
 				{
 					const int32_t Center = (int32_t)(Pcm * 0.5f * (LeftGain + RightGain));
 					for(int ch = 2; ch < OutputChannels; ch++)
-						MixBuf[Base + ch] += Center;
+						m_MixBuffer[Base + ch] += Center;
 				}
 			}
 
@@ -812,7 +807,7 @@ void CRClientVoice::MixAudio(int16_t *pOut, int Samples, int OutputChannels)
 
 	for(int i = 0; i < Needed; i++)
 	{
-		pOut[i] = (int16_t)std::clamp(MixBuf[i], -32768, 32767);
+		pOut[i] = (int16_t)std::clamp(m_MixBuffer[i], -32768, 32767);
 	}
 }
 
@@ -837,6 +832,8 @@ void CRClientVoice::ClearPeerFrames()
 		Peer.m_HasSeq = false;
 		Peer.m_HasNextSeq = false;
 		Peer.m_NextSeq = 0;
+		Peer.m_HasMinQueuedSeq = false;
+		Peer.m_MinQueuedSeq = 0;
 		Peer.m_HasLastRecvSeq = false;
 		Peer.m_LastRecvSeq = 0;
 		Peer.m_LastRecvTime = 0;
@@ -878,6 +875,8 @@ void CRClientVoice::ResetPeer(SVoicePeer &Peer)
 	Peer.m_HasSeq = false;
 	Peer.m_HasNextSeq = false;
 	Peer.m_NextSeq = 0;
+	Peer.m_HasMinQueuedSeq = false;
+	Peer.m_MinQueuedSeq = 0;
 	Peer.m_HasLastRecvSeq = false;
 	Peer.m_LastRecvSeq = 0;
 	Peer.m_LastRecvTime = 0;
@@ -955,7 +954,7 @@ void CRClientVoice::ExportOverlayState(CVoiceOverlayState &Overlay) const NO_THR
 	bool LocalEntryAdded = false;
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 	{
-		int64_t LastSeen = m_aRoomMemberSeen[ClientId].load();
+		int64_t LastSeen = m_aLastHeard[ClientId].load();
 		if(aaClientNames[ClientId][0] == '\0')
 			continue;
 
@@ -1044,7 +1043,7 @@ void CRClientVoice::ExportUiStatus(VoiceUtils::SVoiceUiStatus &Out) const NO_THR
 		if(ClientId == aLocalClientIds[0] || ClientId == aLocalClientIds[1])
 			continue;
 
-		const int64_t Seen = m_aRoomMemberSeen[ClientId].load();
+		const int64_t Seen = m_aLastHeard[ClientId].load();
 		if(Seen > 0 && Now - Seen <= RecentWindow)
 			ActivePeerCount++;
 	}
@@ -1608,7 +1607,6 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 			m_HpfPrevIn = 0.0f;
 			m_HpfPrevOut = 0.0f;
 			m_CompEnv = 0.0f;
-			m_Sequence += 1000;
 			m_TxWasActive = true;
 		}
 
@@ -1789,6 +1787,11 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 		const uint32_t LocalToken = Config.m_QmVoiceTokenHash;
 
 		const int64_t PacketNow = time_get();
+		if(SenderId >= MAX_CLIENTS)
+		{
+			m_RxDropSender++;
+			continue;
+		}
 		m_aRoomMemberSeen[SenderId].store(PacketNow);
 
 		if(PacketDecision == VoiceUtils::EVoiceIncomingPacketDecision::HANDLE_PING || PacketDecision == VoiceUtils::EVoiceIncomingPacketDecision::HANDLE_PONG)
@@ -1957,6 +1960,11 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 		Pkt.m_LeftGain = LeftGain;
 		Pkt.m_RightGain = RightGain;
 		mem_copy(Pkt.m_aData, pData + VOICE_PACKET_HEADER_SIZE, PayloadSize);
+		if(!Peer.m_HasMinQueuedSeq || VoiceUtils::VoiceSeqLess(Sequence, Peer.m_MinQueuedSeq))
+		{
+			Peer.m_MinQueuedSeq = Sequence;
+			Peer.m_HasMinQueuedSeq = true;
+		}
 		m_LastRxPacketTime.store(PacketNow);
 		m_LastMediaRxPacketTime.store(PacketNow);
 
@@ -2034,9 +2042,7 @@ void CRClientVoice::UpdateConfigSnapshot(bool Force) NO_THREAD_SAFETY_ANALYSIS
 	m_ConfigSnapshot.m_QmVoiceHearPeoplesInSpectate = g_Config.m_QmVoiceHearPeoplesInSpectate;
 	m_ConfigSnapshot.m_QmVoiceHearVad = g_Config.m_QmVoiceHearVad;
 	m_ConfigSnapshot.m_ClShowOthers = g_Config.m_ClShowOthers;
-	uint32_t GroupHash = g_Config.m_QmVoiceToken[0] != '\0' ? str_quickhash(g_Config.m_QmVoiceToken) : 0;
-	uint32_t Mode = (uint32_t)std::clamp(g_Config.m_QmVoiceGroupMode, 0, 3);
-	m_ConfigSnapshot.m_QmVoiceTokenHash = VoicePackToken(GroupHash, Mode);
+	m_ConfigSnapshot.m_QmVoiceTokenHash = VoiceUtils::BuildLegacyVoiceTokenHash(g_Config.m_QmVoiceToken);
 	str_copy(m_ConfigSnapshot.m_aQmVoiceWhitelist, g_Config.m_QmVoiceWhitelist, sizeof(m_ConfigSnapshot.m_aQmVoiceWhitelist));
 	str_copy(m_ConfigSnapshot.m_aQmVoiceBlacklist, g_Config.m_QmVoiceBlacklist, sizeof(m_ConfigSnapshot.m_aQmVoiceBlacklist));
 	str_copy(m_ConfigSnapshot.m_aQmVoiceMute, g_Config.m_QmVoiceMute, sizeof(m_ConfigSnapshot.m_aQmVoiceMute));
@@ -2133,27 +2139,8 @@ void CRClientVoice::DecodeJitter()
 
 		if(!Peer.m_HasNextSeq)
 		{
-			if(Peer.m_QueuedPackets < Peer.m_TargetFrames)
+			if(!SeedPeerNextSeq(Peer))
 				continue;
-			bool Found = false;
-			uint16_t StartSeq = 0;
-			for(const auto &Pkt : Peer.m_aPackets)
-			{
-				if(!Pkt.m_Valid)
-					continue;
-				if(!Found)
-				{
-					StartSeq = Pkt.m_Seq;
-					Found = true;
-					continue;
-				}
-				if(VoiceUtils::VoiceSeqLess(Pkt.m_Seq, StartSeq))
-					StartSeq = Pkt.m_Seq;
-			}
-			if(!Found)
-				continue;
-			Peer.m_NextSeq = StartSeq;
-			Peer.m_HasNextSeq = true;
 		}
 
 		int FrameCount = 0;
