@@ -4945,6 +4945,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					}
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
+					CardContent.HSplitTop(LG_LineHeight * 1.75f, &Row, &CardContent);
+					Ui()->DoLabel(&Row, Localize("默认配置已偏向更自然的人声与更稳的响度；如果你的环境底噪较高，可提高噪声抑制强度。AGC 默认关闭，可在需要时手动开启。"), LG_BodySize * 0.82f, TEXTALIGN_ML);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					{
 						CUIRect LabelColValue, ControlColValue;
@@ -6059,6 +6063,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						}
 						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					}
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceAgcEnable, Localize("启用 AGC（实验性）"), &g_Config.m_QmVoiceAgcEnable, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceVadEnable, Localize("启用语音激活"), &g_Config.m_QmVoiceVadEnable, &Row, LG_LineHeight);

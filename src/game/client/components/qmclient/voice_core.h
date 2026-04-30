@@ -56,6 +56,7 @@ private:
 struct SRClientVoiceConfigSnapshot
 {
 	int m_QmVoiceFilterEnable = 0;
+	int m_QmVoiceAgcEnable = 0;
 	int m_QmVoiceBitrateProfile = 0;
 	int m_QmVoiceProtocolVersion = 0;
 	int m_QmVoiceNoiseSuppressEnable = 0;
@@ -188,6 +189,7 @@ class CRClientVoice
 	float m_HpfPrevIn = 0.0f;
 	float m_HpfPrevOut = 0.0f;
 	float m_CompEnv = 0.0f;
+	float m_AgcGain = 1.0f;
 	float m_NsNoiseFloor = 0.0f;
 	float m_NsGain = 1.0f;
 	DenoiseState *m_pNoiseSuppress = nullptr;
@@ -198,6 +200,7 @@ class CRClientVoice
 	int m_EncBitrate = 36000;
 	int m_EncLossPerc = 0;
 	bool m_EncFec = false;
+	int m_EncComplexity = 8;
 	int64_t m_LastEncUpdate = 0;
 	std::atomic<int> m_PingMs = -1;
 	std::atomic<float> m_MicLevel = 0.0f;
@@ -324,6 +327,20 @@ public:
 	void ListDevices();
 	void ExportOverlayState(CVoiceOverlayState &Overlay) const;
 	void ExportUiStatus(VoiceUtils::SVoiceUiStatus &Out) const NO_THREAD_SAFETY_ANALYSIS;
+#ifdef CONF_TEST
+	void ProcessVoiceCaptureFrame_ForTest(
+		const SRClientVoiceConfigSnapshot &Config,
+		int16_t *pSamples,
+		int Count,
+		float &AgcGain,
+		float &NoiseFloor,
+		float &NoiseGate,
+		DenoiseState *&pNoiseState,
+		bool &NoiseFallbackLogged,
+		float &HpfPrevIn,
+		float &HpfPrevOut,
+		float &CompEnv);
+#endif
 	int PingMs() const { return m_PingMs.load(); }
 	float MicLevel() const { return m_MicLevel.load(); }
 	bool IsSpeaking() const { return m_TxWasActive.load(); }

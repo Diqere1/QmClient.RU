@@ -185,20 +185,6 @@ static uint32_t VoicePackToken(uint32_t GroupHash, uint32_t Mode)
 	return Peak / 32768.0f;
 }
 
-[[maybe_unused]] static void ApplyMicGain(const SRClientVoiceConfigSnapshot &Config, int16_t *pSamples, int Count)
-{
-	const float Gain = std::clamp(Config.m_QmVoiceMicVolume / 100.0f, 0.0f, 3.0f);
-	if(Gain == 1.0f)
-		return;
-
-	for(int i = 0; i < Count; i++)
-	{
-		const float Out = pSamples[i] * Gain;
-		const int Sample = (int)std::clamp(Out, -32768.0f, 32767.0f);
-		pSamples[i] = (int16_t)Sample;
-	}
-}
-
 static void ApplyHpfCompressor(const SRClientVoiceConfigSnapshot &Config, int16_t *pSamples, int Count, float &PrevIn, float &PrevOut, float &Env)
 {
 	if(!Config.m_QmVoiceFilterEnable)
@@ -317,6 +303,37 @@ static bool EnsureRnnoiseState(DenoiseState *&pState)
 	return false;
 #endif
 }
+
+static void ApplyNoiseSuppressor(const SRClientVoiceConfigSnapshot &Config, int16_t *pSamples, int Count, float &NoiseFloor, float &Gate, DenoiseState *&pState, bool &FallbackLogged);
+
+namespace
+{
+
+static void ProcessVoiceCaptureFrame(
+	const SRClientVoiceConfigSnapshot &Config,
+	int16_t *pSamples,
+	int Count,
+	float &AgcGain,
+	float &NoiseFloor,
+	float &NoiseGate,
+	DenoiseState *&pNoiseState,
+	bool &NoiseFallbackLogged,
+	float &HpfPrevIn,
+	float &HpfPrevOut,
+	float &CompEnv)
+{
+	VoiceUtils::TraceVoiceProcessStage(VoiceUtils::EVoiceProcessStage::AGC_GAIN);
+	const float FrameRms = VoiceUtils::VoiceFrameRms(pSamples, Count);
+	AgcGain = VoiceUtils::ComputeVoiceAutoGain(AgcGain, FrameRms, VoiceUtils::VoiceAgcConfigFromRuntime(Config.m_QmVoiceAgcEnable != 0));
+	VoiceUtils::TraceVoiceProcessStage(VoiceUtils::EVoiceProcessStage::MIC_GAIN);
+	VoiceUtils::ApplyMicGain(std::clamp((Config.m_QmVoiceMicVolume / 100.0f) * AgcGain, 0.0f, 3.0f), pSamples, Count);
+	VoiceUtils::TraceVoiceProcessStage(VoiceUtils::EVoiceProcessStage::DENOISE);
+	ApplyNoiseSuppressor(Config, pSamples, Count, NoiseFloor, NoiseGate, pNoiseState, NoiseFallbackLogged);
+	VoiceUtils::TraceVoiceProcessStage(VoiceUtils::EVoiceProcessStage::HPF_COMPRESSOR);
+	ApplyHpfCompressor(Config, pSamples, Count, HpfPrevIn, HpfPrevOut, CompEnv);
+}
+
+} // namespace
 
 // Keep the runtime dispatch explicit so mode 2 can fall back to the simpler
 // suppressor without changing transport behaviour or UI-facing config keys.
@@ -588,23 +605,23 @@ bool CRClientVoice::EnsureAudio()
 	VoiceUtils::SVoiceAudioDeviceConfig RequestedAudioConfig;
 	GetRequestedAudioDeviceConfig(RequestedAudioConfig);
 
-	SDL_AudioSpec WantCapture = {};
-	WantCapture.freq = VOICE_SAMPLE_RATE;
-	WantCapture.format = AUDIO_S16;
-	WantCapture.channels = VOICE_CHANNELS;
-	WantCapture.samples = VOICE_FRAME_SAMPLES;
-	WantCapture.callback = nullptr;
+		SDL_AudioSpec WantCapture = {};
+		WantCapture.freq = VOICE_SAMPLE_RATE;
+		WantCapture.format = AUDIO_S16;
+		WantCapture.channels = VOICE_CHANNELS;
+		WantCapture.samples = VOICE_FRAME_SAMPLES;
+		WantCapture.callback = nullptr;
 
 	const bool WantStereo = RequestedAudioConfig.m_OutputStereo;
 	const int DesiredOutputChannels = VoiceUtils::VoiceDesiredOutputChannels(RequestedAudioConfig);
 
-	SDL_AudioSpec WantOutput = {};
-	WantOutput.freq = VOICE_SAMPLE_RATE;
-	WantOutput.format = AUDIO_S16;
-	WantOutput.channels = DesiredOutputChannels;
-	WantOutput.samples = VOICE_FRAME_SAMPLES;
-	WantOutput.callback = SDLAudioCallback;
-	WantOutput.userdata = this;
+		SDL_AudioSpec WantOutput = {};
+		WantOutput.freq = VOICE_SAMPLE_RATE;
+		WantOutput.format = AUDIO_S16;
+		WantOutput.channels = DesiredOutputChannels;
+		WantOutput.samples = VOICE_FRAME_SAMPLES;
+		WantOutput.callback = SDLAudioCallback;
+		WantOutput.userdata = this;
 
 	const bool BackendChanged = str_comp(m_aAudioBackend, RequestedAudioConfig.m_aBackend) != 0;
 	if(BackendChanged)
@@ -778,11 +795,16 @@ bool CRClientVoice::EnsureAudio()
 		}
 		m_EncoderReady.store(true);
 		ClearDiagnosticLogMessage(m_aEncoderErrorLog);
-		VoiceUtils::ComputeVoiceEncoderTargets(0, 0.0f, g_Config.m_QmVoiceBitrateProfile, &m_EncBitrate, &m_EncLossPerc, &m_EncFec);
+		VoiceUtils::ComputeVoiceEncoderTargetsWithComplexity(0, 0.0f, g_Config.m_QmVoiceBitrateProfile, &m_EncBitrate, &m_EncLossPerc, &m_EncFec, &m_EncComplexity);
 		m_LastEncUpdate = 0;
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_BITRATE(m_EncBitrate));
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_PACKET_LOSS_PERC(m_EncLossPerc));
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_INBAND_FEC(m_EncFec ? 1 : 0));
+		const int ComplexityResult = opus_encoder_ctl(m_pEncoder, OPUS_SET_COMPLEXITY(m_EncComplexity));
+		if(ComplexityResult != OPUS_OK)
+		{
+			log_warn("voice", "OPUS_SET_COMPLEXITY(%d) failed during encoder init with error %d", m_EncComplexity, ComplexityResult);
+		}
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
 	}
 
@@ -1360,6 +1382,7 @@ void CRClientVoice::Shutdown()
 	m_HpfPrevIn = 0.0f;
 	m_HpfPrevOut = 0.0f;
 	m_CompEnv = 0.0f;
+	m_AgcGain = 1.0f;
 	m_NsNoiseFloor = 0.0f;
 	m_NsGain = 1.0f;
 	m_AudioPausedForInactive = false;
@@ -1537,6 +1560,7 @@ void CRClientVoice::UpdateClientSnapshot(bool Force) NO_THREAD_SAFETY_ANALYSIS
 void CRClientVoice::ResetTransmitState(bool ClearQueuedCapture) NO_THREAD_SAFETY_ANALYSIS
 {
 	UpdateMicLevel(0.0f);
+	m_AgcGain = 1.0f;
 	m_VadActive = false;
 	m_VadReleaseDeadline = 0;
 	m_PttReleaseDeadline.store(0);
@@ -1742,9 +1766,7 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 			{
 				int16_t aPcm[VOICE_FRAME_SAMPLES];
 				SDL_DequeueAudio(m_CaptureDevice, aPcm, VOICE_FRAME_BYTES);
-				VoiceUtils::ApplyMicGain(std::clamp(Config.m_QmVoiceMicVolume / 100.0f, 0.0f, 3.0f), aPcm, VOICE_FRAME_SAMPLES);
-				ApplyNoiseSuppressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_NsNoiseFloor, m_NsGain, m_pNoiseSuppress, m_NoiseSuppressFallbackLogged);
-				ApplyHpfCompressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_HpfPrevIn, m_HpfPrevOut, m_CompEnv);
+				ProcessVoiceCaptureFrame(Config, aPcm, VOICE_FRAME_SAMPLES, m_AgcGain, m_NsNoiseFloor, m_NsGain, m_pNoiseSuppress, m_NoiseSuppressFallbackLogged, m_HpfPrevIn, m_HpfPrevOut, m_CompEnv);
 				const float Peak = VoiceUtils::VoiceFramePeak(aPcm, VOICE_FRAME_SAMPLES);
 				UpdateMicLevel(Peak);
 				UpdatedMicLevel = true;
@@ -1786,9 +1808,7 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 	{
 		int16_t aPcm[VOICE_FRAME_SAMPLES];
 		SDL_DequeueAudio(m_CaptureDevice, aPcm, VOICE_FRAME_BYTES);
-		VoiceUtils::ApplyMicGain(std::clamp(Config.m_QmVoiceMicVolume / 100.0f, 0.0f, 3.0f), aPcm, VOICE_FRAME_SAMPLES);
-		ApplyNoiseSuppressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_NsNoiseFloor, m_NsGain, m_pNoiseSuppress, m_NoiseSuppressFallbackLogged);
-		ApplyHpfCompressor(Config, aPcm, VOICE_FRAME_SAMPLES, m_HpfPrevIn, m_HpfPrevOut, m_CompEnv);
+		ProcessVoiceCaptureFrame(Config, aPcm, VOICE_FRAME_SAMPLES, m_AgcGain, m_NsNoiseFloor, m_NsGain, m_pNoiseSuppress, m_NoiseSuppressFallbackLogged, m_HpfPrevIn, m_HpfPrevOut, m_CompEnv);
 
 		const float Peak = VoiceUtils::VoiceFramePeak(aPcm, VOICE_FRAME_SAMPLES);
 		if(ShowMicLevel)
@@ -1902,6 +1922,24 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		UpdateMicLevel(0.0f);
 	}
 }
+
+#ifdef CONF_TEST
+void CRClientVoice::ProcessVoiceCaptureFrame_ForTest(
+	const SRClientVoiceConfigSnapshot &Config,
+	int16_t *pSamples,
+	int Count,
+	float &AgcGain,
+	float &NoiseFloor,
+	float &NoiseGate,
+	DenoiseState *&pNoiseState,
+	bool &NoiseFallbackLogged,
+	float &HpfPrevIn,
+	float &HpfPrevOut,
+	float &CompEnv)
+{
+	ProcessVoiceCaptureFrame(Config, pSamples, Count, AgcGain, NoiseFloor, NoiseGate, pNoiseState, NoiseFallbackLogged, HpfPrevIn, HpfPrevOut, CompEnv);
+}
+#endif
 
 void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 {
@@ -2226,6 +2264,7 @@ void CRClientVoice::UpdateConfigSnapshot(bool Force) NO_THREAD_SAFETY_ANALYSIS
 	m_LastConfigSnapshotUpdate = Now;
 	const CLockScope Guard(m_ConfigMutex);
 	m_ConfigSnapshot.m_QmVoiceFilterEnable = g_Config.m_QmVoiceFilterEnable;
+	m_ConfigSnapshot.m_QmVoiceAgcEnable = g_Config.m_QmVoiceAgcEnable;
 	m_ConfigSnapshot.m_QmVoiceBitrateProfile = g_Config.m_QmVoiceBitrateProfile;
 	m_ConfigSnapshot.m_QmVoiceProtocolVersion = g_Config.m_QmVoiceProtocolVersion;
 	m_ConfigSnapshot.m_QmVoiceNoiseSuppressEnable = g_Config.m_QmVoiceNoiseSuppressEnable;
@@ -2306,9 +2345,10 @@ void CRClientVoice::UpdateEncoderParams()
 	int TargetBitrate = m_EncBitrate;
 	int TargetLoss = 0;
 	bool TargetFec = false;
+	int TargetComplexity = m_EncComplexity;
 	// Share one target table with startup so healthy links get the quality bump
 	// while moderate loss/jitter step down more conservatively.
-	VoiceUtils::ComputeVoiceEncoderTargets(LossPerc, JitterMax, Config.m_QmVoiceBitrateProfile, &TargetBitrate, &TargetLoss, &TargetFec);
+	VoiceUtils::ComputeVoiceEncoderTargetsWithComplexity(LossPerc, JitterMax, Config.m_QmVoiceBitrateProfile, &TargetBitrate, &TargetLoss, &TargetFec, &TargetComplexity);
 
 	if(TargetBitrate != m_EncBitrate)
 	{
@@ -2324,6 +2364,18 @@ void CRClientVoice::UpdateEncoderParams()
 	{
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_INBAND_FEC(TargetFec ? 1 : 0));
 		m_EncFec = TargetFec;
+	}
+	if(TargetComplexity != m_EncComplexity)
+	{
+		const int Result = opus_encoder_ctl(m_pEncoder, OPUS_SET_COMPLEXITY(TargetComplexity));
+		if(Result == OPUS_OK)
+		{
+			m_EncComplexity = TargetComplexity;
+		}
+		else
+		{
+			log_warn("voice", "OPUS_SET_COMPLEXITY(%d) failed with error %d, keeping previous complexity %d", TargetComplexity, Result, m_EncComplexity);
+		}
 	}
 
 	m_LastEncUpdate = Now;

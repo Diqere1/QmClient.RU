@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <base/vmath.h>
 #include <engine/shared/protocol.h>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -53,6 +54,30 @@ struct SVoiceAudioDeviceConfig
 	bool m_OutputStereo = false;
 };
 
+struct SVoiceProcessingFactoryDefaults
+{
+	int m_NoiseSuppressMode = VOICE_NOISE_SUPPRESS_RNNOISE;
+	int m_NoiseSuppressStrength = 35;
+	float m_HpfCutoffHz = 120.0f;
+	float m_CompressorThreshold = 0.24f;
+	float m_CompressorRatio = 2.0f;
+	float m_CompressorAttackSec = 0.012f;
+	float m_CompressorReleaseSec = 0.140f;
+	float m_CompressorMakeupGain = 1.25f;
+	float m_Limiter = 0.92f;
+	int m_EncoderComplexity = 8;
+};
+
+struct SVoiceAgcConfig
+{
+	bool m_Enable = false;
+	float m_TargetRms = 0.18f;
+	float m_MaxGain = 2.0f;
+	float m_MinGain = 0.75f;
+	float m_AttackSec = 0.050f;
+	float m_ReleaseSec = 0.350f;
+};
+
 struct SVoiceDeviceDropdownEntry
 {
 	std::string m_DisplayName;
@@ -71,6 +96,22 @@ bool ReadVoicePacketHeader(const uint8_t *pBuf, size_t BufSize, SVoicePacketHead
 const char *VoicePacketTypeName(uint8_t Type);
 bool VoiceAudioDeviceConfigEquals(const SVoiceAudioDeviceConfig &Left, const SVoiceAudioDeviceConfig &Right);
 int VoiceDesiredOutputChannels(const SVoiceAudioDeviceConfig &Config);
+SVoiceProcessingFactoryDefaults VoiceProcessingFactoryDefaults();
+SVoiceAgcConfig VoiceAgcConfigFromRuntime(bool EnableAgc);
+enum class EVoiceProcessStage
+{
+	AGC_GAIN,
+	MIC_GAIN,
+	DENOISE,
+	HPF_COMPRESSOR,
+};
+
+using VoiceProcessTraceCallback = void (*)(EVoiceProcessStage, void *pUserData);
+
+// Test/debug hook for observing the capture processing order. The callback may
+// be installed from tests while the voice runtime thread is active.
+void SetVoiceProcessTraceCallback(VoiceProcessTraceCallback pCallback, void *pUserData);
+void TraceVoiceProcessStage(EVoiceProcessStage Stage);
 void BuildVoiceDeviceDropdownEntries(
 	const std::vector<std::string> &vDetectedDeviceNames,
 	const char *pCurrentDevice,
@@ -228,6 +269,8 @@ uint32_t VoiceTransmitBlockers(const SVoiceTransmitPreconditions &Preconditions)
 void FormatVoiceTransmitBlockers(uint32_t Blockers, char *pBuf, size_t BufSize);
 bool VoiceNeedsAudioRefresh(const SVoiceAudioRefreshState &State);
 void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int BitrateProfile, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec);
+void ComputeVoiceEncoderTargetsWithComplexity(int LossPerc, float JitterMax, int BitrateProfile, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec, int *pTargetComplexity);
+float ComputeVoiceAutoGain(float CurrentGain, float FrameRms, const SVoiceAgcConfig &Config);
 uint32_t VoiceRuntimeResetFlags(bool ContextChanged, bool Online, uint32_t PreviousRoomTokenHash, uint32_t CurrentRoomTokenHash);
 const char *VoiceUiMicStatus(const SVoiceUiStatus &Status);
 const char *VoiceUiOutputStatus(const SVoiceUiStatus &Status);

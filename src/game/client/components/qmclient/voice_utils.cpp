@@ -14,6 +14,9 @@ namespace VoiceUtils
 static constexpr char VOICE_MAGIC[4] = {'R', 'V', '0', '1'};
 static constexpr uint32_t VOICE_GROUP_MASK = 0x3fffffff;
 
+static std::atomic<VoiceProcessTraceCallback> s_pVoiceProcessTraceCallback = nullptr;
+static std::atomic<void *> s_pVoiceProcessTraceUserData = nullptr;
+
 static bool VoiceContainsNoCase(const char *pHaystack, const char *pNeedle)
 {
 	return pHaystack && pNeedle && pNeedle[0] != '\0' && str_find_nocase(pHaystack, pNeedle) != nullptr;
@@ -149,6 +152,47 @@ bool VoiceAudioDeviceConfigEquals(const SVoiceAudioDeviceConfig &Left, const SVo
 int VoiceDesiredOutputChannels(const SVoiceAudioDeviceConfig &Config)
 {
 	return Config.m_OutputStereo ? 2 : 1;
+}
+
+SVoiceProcessingFactoryDefaults VoiceProcessingFactoryDefaults()
+{
+	SVoiceProcessingFactoryDefaults Defaults;
+	Defaults.m_NoiseSuppressMode = VOICE_NOISE_SUPPRESS_RNNOISE;
+	Defaults.m_NoiseSuppressStrength = 35;
+	Defaults.m_HpfCutoffHz = 120.0f;
+	Defaults.m_CompressorThreshold = 0.24f;
+	Defaults.m_CompressorRatio = 2.0f;
+	Defaults.m_CompressorAttackSec = 0.012f;
+	Defaults.m_CompressorReleaseSec = 0.140f;
+	Defaults.m_CompressorMakeupGain = 1.25f;
+	Defaults.m_Limiter = 0.92f;
+	Defaults.m_EncoderComplexity = 8;
+	return Defaults;
+}
+
+SVoiceAgcConfig VoiceAgcConfigFromRuntime(bool EnableAgc)
+{
+	SVoiceAgcConfig Config;
+	Config.m_Enable = EnableAgc;
+	Config.m_TargetRms = 0.18f;
+	Config.m_MaxGain = 2.0f;
+	Config.m_MinGain = 0.75f;
+	Config.m_AttackSec = 0.050f;
+	Config.m_ReleaseSec = 0.350f;
+	return Config;
+}
+
+void SetVoiceProcessTraceCallback(VoiceProcessTraceCallback pCallback, void *pUserData)
+{
+	s_pVoiceProcessTraceUserData.store(pUserData, std::memory_order_release);
+	s_pVoiceProcessTraceCallback.store(pCallback, std::memory_order_release);
+}
+
+void TraceVoiceProcessStage(EVoiceProcessStage Stage)
+{
+	VoiceProcessTraceCallback pCallback = s_pVoiceProcessTraceCallback.load(std::memory_order_acquire);
+	if(pCallback)
+		pCallback(Stage, s_pVoiceProcessTraceUserData.load(std::memory_order_acquire));
 }
 
 void BuildVoiceDeviceDropdownEntries(
@@ -407,22 +451,30 @@ bool VoiceNeedsAudioRefresh(const SVoiceAudioRefreshState &State)
 
 void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int BitrateProfile, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec)
 {
-	if(!pTargetBitrate || !pTargetLoss || !pTargetFec)
+	int Complexity = 0;
+	ComputeVoiceEncoderTargetsWithComplexity(LossPerc, JitterMax, BitrateProfile, pTargetBitrate, pTargetLoss, pTargetFec, &Complexity);
+}
+
+void ComputeVoiceEncoderTargetsWithComplexity(int LossPerc, float JitterMax, int BitrateProfile, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec, int *pTargetComplexity)
+{
+	if(!pTargetBitrate || !pTargetLoss || !pTargetFec || !pTargetComplexity)
 		return;
+
+	static constexpr int s_aManualBitrates[] = {
+		0,
+		24000,
+		32000,
+		48000,
+		64000,
+	};
 
 	const int ClampedProfile = std::clamp(BitrateProfile, 0, 4);
 	if(ClampedProfile != 0)
 	{
-		static constexpr int s_aManualBitrates[] = {
-			0,
-			24000,
-			32000,
-			48000,
-			64000,
-		};
 		*pTargetBitrate = s_aManualBitrates[ClampedProfile];
 		*pTargetLoss = 0;
 		*pTargetFec = false;
+		*pTargetComplexity = 8;
 		return;
 	}
 
@@ -434,25 +486,48 @@ void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int BitrateProfil
 		*pTargetBitrate = 64000;
 		*pTargetLoss = 0;
 		*pTargetFec = false;
+		*pTargetComplexity = 8;
 	}
 	else if(ClampedLoss <= 5 && ClampedJitter < 16.0f)
 	{
 		*pTargetBitrate = 48000;
 		*pTargetLoss = 5;
 		*pTargetFec = true;
+		*pTargetComplexity = 8;
 	}
 	else if(ClampedLoss <= 10 && ClampedJitter < 28.0f)
 	{
 		*pTargetBitrate = 32000;
 		*pTargetLoss = 10;
 		*pTargetFec = true;
+		*pTargetComplexity = 7;
 	}
 	else
 	{
 		*pTargetBitrate = 24000;
 		*pTargetLoss = 20;
 		*pTargetFec = true;
+		*pTargetComplexity = 6;
 	}
+}
+
+float ComputeVoiceAutoGain(float CurrentGain, float FrameRms, const SVoiceAgcConfig &Config)
+{
+	if(!Config.m_Enable)
+		return 1.0f;
+
+	const float SafeRms = std::clamp(FrameRms, 0.0001f, 1.0f);
+	const float TargetGain = std::clamp(Config.m_TargetRms / SafeRms, Config.m_MinGain, Config.m_MaxGain);
+	const bool Raising = TargetGain > CurrentGain;
+	const float FrameSec = VOICE_FRAME_SAMPLES / (float)VOICE_SAMPLE_RATE;
+	const float AttackSec = std::max(Config.m_AttackSec, FrameSec);
+	const float ReleaseSec = std::max(Config.m_ReleaseSec, FrameSec);
+	const float Slew = Raising ?
+		(1.0f - std::exp(-FrameSec / AttackSec)) :
+		(1.0f - std::exp(-FrameSec / ReleaseSec));
+	const float NextGain = CurrentGain + (TargetGain - CurrentGain) * Slew;
+	const float TowardUnity = NextGain + (1.0f - NextGain) * 0.01f;
+	return std::clamp(TowardUnity, Config.m_MinGain, Config.m_MaxGain);
 }
 
 uint32_t VoiceRuntimeResetFlags(bool ContextChanged, bool Online, uint32_t PreviousRoomTokenHash, uint32_t CurrentRoomTokenHash)

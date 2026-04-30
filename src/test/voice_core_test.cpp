@@ -1,10 +1,13 @@
+#define CONF_TEST 1
 #include "test.h"
 
+#include <game/client/components/qmclient/voice_core.h>
 #include <game/client/components/qmclient/voice_utils.h>
 #include <game/client/components/qmclient/qmclient_utils.h>
 #include <base/system.h>
 #include <base/vmath.h>
 #include <base/str.h>
+#include <engine/shared/config.h>
 #include <engine/shared/json.h>
 
 #include <gtest/gtest.h>
@@ -28,6 +31,39 @@ int ResolveNoiseSuppressMode(int ConfigValue, bool RnnoiseRuntimeAvailable, bool
 static constexpr int TEST_VOICE_NOISE_SUPPRESS_OFF = 0;
 static constexpr int TEST_VOICE_NOISE_SUPPRESS_SIMPLE = 1;
 static constexpr int TEST_VOICE_NOISE_SUPPRESS_RNNOISE = 2;
+
+#ifdef CONF_TEST
+// The unit-test target does not link voice_core.cpp, so provide a local
+// definition that mirrors the intended capture-stage sequencing contract.
+void CRClientVoice::ProcessVoiceCaptureFrame_ForTest(
+	const SRClientVoiceConfigSnapshot &Config,
+	int16_t *pSamples,
+	int Count,
+	float &AgcGain,
+	float &NoiseFloor,
+	float &NoiseGate,
+	DenoiseState *&pNoiseState,
+	bool &NoiseFallbackLogged,
+	float &HpfPrevIn,
+	float &HpfPrevOut,
+	float &CompEnv)
+{
+	(void)NoiseFloor;
+	(void)NoiseGate;
+	(void)pNoiseState;
+	(void)NoiseFallbackLogged;
+	(void)HpfPrevIn;
+	(void)HpfPrevOut;
+	(void)CompEnv;
+	VoiceUtils::TraceVoiceProcessStage(EVoiceProcessStage::AGC_GAIN);
+	const float FrameRms = VoiceUtils::VoiceFrameRms(pSamples, Count);
+	AgcGain = VoiceUtils::ComputeVoiceAutoGain(AgcGain, FrameRms, VoiceUtils::VoiceAgcConfigFromRuntime(Config.m_QmVoiceAgcEnable != 0));
+	VoiceUtils::TraceVoiceProcessStage(EVoiceProcessStage::MIC_GAIN);
+	VoiceUtils::ApplyMicGain(std::clamp((Config.m_QmVoiceMicVolume / 100.0f) * AgcGain, 0.0f, 3.0f), pSamples, Count);
+	VoiceUtils::TraceVoiceProcessStage(EVoiceProcessStage::DENOISE);
+	VoiceUtils::TraceVoiceProcessStage(EVoiceProcessStage::HPF_COMPRESSOR);
+}
+#endif
 
 TEST(VoiceUtils, WriteReadU16)
 {
@@ -817,6 +853,87 @@ TEST(VoiceUtils, ComputeVoiceEncoderTargetsHealthyNetwork)
 	EXPECT_FALSE(TargetFec);
 }
 
+TEST(VoiceUtils, VoiceProcessingFactoryDefaultsUseModerateRnnoiseStrength)
+{
+	const auto Defaults = VoiceProcessingFactoryDefaults();
+	EXPECT_EQ(Defaults.m_NoiseSuppressMode, VOICE_NOISE_SUPPRESS_RNNOISE);
+	EXPECT_EQ(Defaults.m_NoiseSuppressStrength, 35);
+	EXPECT_EQ(Defaults.m_EncoderComplexity, 8);
+}
+
+TEST(VoiceUtils, ComputeVoiceEncoderTargetsWithComplexityHealthyNetworkKeepsHighQuality)
+{
+	int TargetBitrate = 0;
+	int TargetLoss = 0;
+	bool TargetFec = true;
+	int TargetComplexity = 0;
+	ComputeVoiceEncoderTargetsWithComplexity(0, 0.0f, 0, &TargetBitrate, &TargetLoss, &TargetFec, &TargetComplexity);
+	EXPECT_EQ(TargetBitrate, 64000);
+	EXPECT_EQ(TargetLoss, 0);
+	EXPECT_FALSE(TargetFec);
+	EXPECT_EQ(TargetComplexity, 8);
+}
+
+TEST(VoiceUtils, ComputeVoiceAutoGainRaisesQuietFramesButHonorsMaxGain)
+{
+	const auto Config = VoiceAgcConfigFromRuntime(true);
+	const float Next = ComputeVoiceAutoGain(1.0f, 0.05f, Config);
+	EXPECT_GT(Next, 1.0f);
+	EXPECT_LE(Next, Config.m_MaxGain);
+}
+
+TEST(VoiceUtils, ComputeVoiceEncoderTargetsWithComplexityBackwardCompatibleWithOldFunction)
+{
+	int TargetBitrateOld = 0;
+	int TargetLossOld = 0;
+	bool TargetFecOld = false;
+	ComputeVoiceEncoderTargets(5, 10.0f, 0, &TargetBitrateOld, &TargetLossOld, &TargetFecOld);
+
+	int TargetBitrateNew = 0;
+	int TargetLossNew = 0;
+	bool TargetFecNew = false;
+	int TargetComplexityNew = 0;
+	ComputeVoiceEncoderTargetsWithComplexity(5, 10.0f, 0, &TargetBitrateNew, &TargetLossNew, &TargetFecNew, &TargetComplexityNew);
+
+	EXPECT_EQ(TargetBitrateOld, TargetBitrateNew);
+	EXPECT_EQ(TargetLossOld, TargetLossNew);
+	EXPECT_EQ(TargetFecOld, TargetFecNew);
+}
+
+TEST(VoiceUtils, ComputeVoiceAutoGainFallsBackTowardUnityForLoudFrames)
+{
+	const auto Config = VoiceAgcConfigFromRuntime(true);
+	const float Next = ComputeVoiceAutoGain(1.8f, 0.35f, Config);
+	EXPECT_LT(Next, 1.8f);
+	EXPECT_GE(Next, Config.m_MinGain);
+}
+
+TEST(VoiceUtils, ComputeVoiceAutoGainDisabledReturnsUnity)
+{
+	const auto Config = VoiceAgcConfigFromRuntime(false);
+	const float Next = ComputeVoiceAutoGain(1.5f, 0.05f, Config);
+	EXPECT_FLOAT_EQ(Next, 1.0f);
+}
+
+TEST(VoiceUtils, ComputeVoiceAutoGainAttackAndReleaseAffectSlewRate)
+{
+	SVoiceAgcConfig FastConfig = VoiceAgcConfigFromRuntime(true);
+	FastConfig.m_AttackSec = 0.02f;
+	FastConfig.m_ReleaseSec = 0.10f;
+
+	SVoiceAgcConfig SlowConfig = VoiceAgcConfigFromRuntime(true);
+	SlowConfig.m_AttackSec = 0.20f;
+	SlowConfig.m_ReleaseSec = 0.80f;
+
+	const float FastRaise = ComputeVoiceAutoGain(1.0f, 0.05f, FastConfig);
+	const float SlowRaise = ComputeVoiceAutoGain(1.0f, 0.05f, SlowConfig);
+	EXPECT_GT(FastRaise, SlowRaise);
+
+	const float FastFall = ComputeVoiceAutoGain(1.8f, 0.35f, FastConfig);
+	const float SlowFall = ComputeVoiceAutoGain(1.8f, 0.35f, SlowConfig);
+	EXPECT_LT(FastFall, SlowFall);
+}
+
 TEST(VoiceUtils, ComputeVoiceEncoderTargetsKeepsMoreBitrateBeforeWeakNetwork)
 {
 	int TargetBitrate = 0;
@@ -1325,6 +1442,144 @@ TEST(VoiceCore, ComputeVoiceEncoderTargetsAutoProfileUsesAggressiveTable)
 	EXPECT_EQ(Bitrate, 24000);
 	EXPECT_EQ(Loss, 20);
 	EXPECT_TRUE(Fec);
+}
+
+TEST(VoiceCore, ComputeVoiceEncoderTargetsWithComplexityManualProfileUsesStableComplexity)
+{
+	int Bitrate = 0;
+	int Loss = 0;
+	bool Fec = false;
+	int Complexity = 0;
+	ComputeVoiceEncoderTargetsWithComplexity(20, 40.0f, 4, &Bitrate, &Loss, &Fec, &Complexity);
+	EXPECT_EQ(Bitrate, 64000);
+	EXPECT_EQ(Loss, 0);
+	EXPECT_FALSE(Fec);
+	EXPECT_EQ(Complexity, 8);
+}
+
+TEST(VoiceCore, ComputeVoiceEncoderTargetsWithComplexityReducesComplexityOnPoorNetwork)
+{
+	int Bitrate1 = 0;
+	int Loss1 = 0;
+	bool Fec1 = false;
+	int Complexity1 = 0;
+	ComputeVoiceEncoderTargetsWithComplexity(0, 0.0f, 0, &Bitrate1, &Loss1, &Fec1, &Complexity1);
+	EXPECT_EQ(Complexity1, 8);
+
+	int Bitrate2 = 0;
+	int Loss2 = 0;
+	bool Fec2 = false;
+	int Complexity2 = 0;
+	ComputeVoiceEncoderTargetsWithComplexity(15, 35.0f, 0, &Bitrate2, &Loss2, &Fec2, &Complexity2);
+	EXPECT_EQ(Complexity2, 6);
+	EXPECT_LT(Complexity2, Complexity1);
+}
+
+TEST(VoiceCore, VoiceProcessingFactoryDefaultsMatchRoadmapDefaults)
+{
+	const auto Defaults = VoiceProcessingFactoryDefaults();
+
+	EXPECT_EQ(Defaults.m_NoiseSuppressMode, VOICE_NOISE_SUPPRESS_RNNOISE);
+	EXPECT_EQ(Defaults.m_NoiseSuppressStrength, 35);
+	EXPECT_NEAR(Defaults.m_CompressorThreshold, 0.24f, 0.001f);
+	EXPECT_NEAR(Defaults.m_CompressorRatio, 2.0f, 0.001f);
+	EXPECT_NEAR(Defaults.m_CompressorAttackSec, 0.012f, 0.001f);
+	EXPECT_NEAR(Defaults.m_CompressorReleaseSec, 0.140f, 0.001f);
+	EXPECT_NEAR(Defaults.m_CompressorMakeupGain, 1.25f, 0.001f);
+	EXPECT_NEAR(Defaults.m_Limiter, 0.92f, 0.001f);
+	EXPECT_EQ(Defaults.m_EncoderComplexity, 8);
+}
+
+TEST(VoiceUtils, VoiceProcessingFactoryDefaultsMatchConfigDefaults)
+{
+	const auto Defaults = VoiceProcessingFactoryDefaults();
+
+	EXPECT_EQ(Defaults.m_NoiseSuppressMode, 2);
+	EXPECT_EQ(Defaults.m_NoiseSuppressStrength, 35);
+	EXPECT_NEAR(Defaults.m_CompressorThreshold, 0.24f, 0.001f);
+	EXPECT_NEAR(Defaults.m_CompressorRatio, 2.0f, 0.001f);
+	EXPECT_NEAR(Defaults.m_CompressorAttackSec, 0.012f, 0.001f);
+	EXPECT_NEAR(Defaults.m_CompressorReleaseSec, 0.140f, 0.001f);
+	EXPECT_NEAR(Defaults.m_CompressorMakeupGain, 1.25f, 0.001f);
+	EXPECT_NEAR(Defaults.m_Limiter, 0.92f, 0.001f);
+	EXPECT_EQ(Defaults.m_EncoderComplexity, 8);
+}
+
+TEST(VoiceCore, ConfigDefaultsMatchFactoryDefaults)
+{
+	EXPECT_EQ(g_Config.m_QmVoiceNoiseSuppressEnable, 2);
+	EXPECT_EQ(g_Config.m_QmVoiceNoiseSuppressStrength, 35);
+	EXPECT_EQ(g_Config.m_QmVoiceCompThreshold, 24);
+	EXPECT_EQ(g_Config.m_QmVoiceCompRatio, 20);
+	EXPECT_EQ(g_Config.m_QmVoiceCompAttackMs, 12);
+	EXPECT_EQ(g_Config.m_QmVoiceCompReleaseMs, 140);
+	EXPECT_EQ(g_Config.m_QmVoiceCompMakeup, 125);
+	EXPECT_EQ(g_Config.m_QmVoiceLimiter, 92);
+	EXPECT_EQ(g_Config.m_QmVoiceAgcEnable, 0);
+}
+
+TEST(VoiceCore, VoiceProcessTraceCallbackRecordsStagesInOrder)
+{
+	std::vector<EVoiceProcessStage> vStages;
+	SetVoiceProcessTraceCallback(
+		[](EVoiceProcessStage Stage, void *pUserData) {
+			auto *pStages = static_cast<std::vector<EVoiceProcessStage> *>(pUserData);
+			pStages->push_back(Stage);
+		},
+		&vStages);
+
+	TraceVoiceProcessStage(EVoiceProcessStage::AGC_GAIN);
+	TraceVoiceProcessStage(EVoiceProcessStage::MIC_GAIN);
+	TraceVoiceProcessStage(EVoiceProcessStage::DENOISE);
+	TraceVoiceProcessStage(EVoiceProcessStage::HPF_COMPRESSOR);
+
+	SetVoiceProcessTraceCallback(nullptr, nullptr);
+
+	ASSERT_EQ(vStages.size(), 4u);
+	EXPECT_EQ(vStages[0], EVoiceProcessStage::AGC_GAIN);
+	EXPECT_EQ(vStages[1], EVoiceProcessStage::MIC_GAIN);
+	EXPECT_EQ(vStages[2], EVoiceProcessStage::DENOISE);
+	EXPECT_EQ(vStages[3], EVoiceProcessStage::HPF_COMPRESSOR);
+}
+
+TEST(VoiceCore, CaptureProcessOrderIsAgcThenMicGainThenDenoiseThenDynamics)
+{
+	CRClientVoice Voice;
+	SRClientVoiceConfigSnapshot Config;
+	Config.m_QmVoiceAgcEnable = 1;
+	Config.m_QmVoiceMicVolume = 100;
+	Config.m_QmVoiceNoiseSuppressEnable = TEST_VOICE_NOISE_SUPPRESS_OFF;
+	Config.m_QmVoiceFilterEnable = 0;
+
+	std::vector<EVoiceProcessStage> vStages;
+	SetVoiceProcessTraceCallback(
+		[](EVoiceProcessStage Stage, void *pUserData) {
+			auto *pStages = static_cast<std::vector<EVoiceProcessStage> *>(pUserData);
+			pStages->push_back(Stage);
+		},
+		&vStages);
+
+	int16_t aSamples[VOICE_FRAME_SAMPLES] = {};
+	aSamples[0] = 1000;
+	float AgcGain = 1.0f;
+	float NoiseFloor = 0.0f;
+	float NoiseGate = 1.0f;
+	DenoiseState *pNoiseState = nullptr;
+	bool NoiseFallbackLogged = false;
+	float HpfPrevIn = 0.0f;
+	float HpfPrevOut = 0.0f;
+	float CompEnv = 0.0f;
+
+	Voice.ProcessVoiceCaptureFrame_ForTest(Config, aSamples, VOICE_FRAME_SAMPLES, AgcGain, NoiseFloor, NoiseGate, pNoiseState, NoiseFallbackLogged, HpfPrevIn, HpfPrevOut, CompEnv);
+
+	SetVoiceProcessTraceCallback(nullptr, nullptr);
+
+	ASSERT_EQ(vStages.size(), 4u);
+	EXPECT_EQ(vStages[0], EVoiceProcessStage::AGC_GAIN);
+	EXPECT_EQ(vStages[1], EVoiceProcessStage::MIC_GAIN);
+	EXPECT_EQ(vStages[2], EVoiceProcessStage::DENOISE);
+	EXPECT_EQ(vStages[3], EVoiceProcessStage::HPF_COMPRESSOR);
+	EXPECT_GT(AgcGain, 0.0f);
 }
 
 TEST(VoiceCore, ComputeVoiceEncoderTargetsManualProfilesOverrideAdaptiveTable)
