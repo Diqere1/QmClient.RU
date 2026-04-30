@@ -327,20 +327,6 @@ public:
 	void ListDevices();
 	void ExportOverlayState(CVoiceOverlayState &Overlay) const;
 	void ExportUiStatus(VoiceUtils::SVoiceUiStatus &Out) const NO_THREAD_SAFETY_ANALYSIS;
-#ifdef CONF_TEST
-	void ProcessVoiceCaptureFrame_ForTest(
-		const SRClientVoiceConfigSnapshot &Config,
-		int16_t *pSamples,
-		int Count,
-		float &AgcGain,
-		float &NoiseFloor,
-		float &NoiseGate,
-		DenoiseState *&pNoiseState,
-		bool &NoiseFallbackLogged,
-		float &HpfPrevIn,
-		float &HpfPrevOut,
-		float &CompEnv);
-#endif
 	int PingMs() const { return m_PingMs.load(); }
 	float MicLevel() const { return m_MicLevel.load(); }
 	bool IsSpeaking() const { return m_TxWasActive.load(); }

@@ -1,6 +1,7 @@
 #define CONF_TEST 1
 #include "test.h"
 
+#include <game/client/components/qmclient/voice_capture_pipeline.h>
 #include <game/client/components/qmclient/voice_core.h>
 #include <game/client/components/qmclient/voice_utils.h>
 #include <game/client/components/qmclient/qmclient_utils.h>
@@ -31,39 +32,6 @@ int ResolveNoiseSuppressMode(int ConfigValue, bool RnnoiseRuntimeAvailable, bool
 static constexpr int TEST_VOICE_NOISE_SUPPRESS_OFF = 0;
 static constexpr int TEST_VOICE_NOISE_SUPPRESS_SIMPLE = 1;
 static constexpr int TEST_VOICE_NOISE_SUPPRESS_RNNOISE = 2;
-
-#ifdef CONF_TEST
-// The unit-test target does not link voice_core.cpp, so provide a local
-// definition that mirrors the intended capture-stage sequencing contract.
-void CRClientVoice::ProcessVoiceCaptureFrame_ForTest(
-	const SRClientVoiceConfigSnapshot &Config,
-	int16_t *pSamples,
-	int Count,
-	float &AgcGain,
-	float &NoiseFloor,
-	float &NoiseGate,
-	DenoiseState *&pNoiseState,
-	bool &NoiseFallbackLogged,
-	float &HpfPrevIn,
-	float &HpfPrevOut,
-	float &CompEnv)
-{
-	(void)NoiseFloor;
-	(void)NoiseGate;
-	(void)pNoiseState;
-	(void)NoiseFallbackLogged;
-	(void)HpfPrevIn;
-	(void)HpfPrevOut;
-	(void)CompEnv;
-	VoiceUtils::TraceVoiceProcessStage(EVoiceProcessStage::AGC_GAIN);
-	const float FrameRms = VoiceUtils::VoiceFrameRms(pSamples, Count);
-	AgcGain = VoiceUtils::ComputeVoiceAutoGain(AgcGain, FrameRms, VoiceUtils::VoiceAgcConfigFromRuntime(Config.m_QmVoiceAgcEnable != 0));
-	VoiceUtils::TraceVoiceProcessStage(EVoiceProcessStage::MIC_GAIN);
-	VoiceUtils::ApplyMicGain(std::clamp((Config.m_QmVoiceMicVolume / 100.0f) * AgcGain, 0.0f, 3.0f), pSamples, Count);
-	VoiceUtils::TraceVoiceProcessStage(EVoiceProcessStage::DENOISE);
-	VoiceUtils::TraceVoiceProcessStage(EVoiceProcessStage::HPF_COMPRESSOR);
-}
-#endif
 
 TEST(VoiceUtils, WriteReadU16)
 {
@@ -1570,7 +1538,7 @@ TEST(VoiceCore, CaptureProcessOrderIsAgcThenMicGainThenDenoiseThenDynamics)
 	float HpfPrevOut = 0.0f;
 	float CompEnv = 0.0f;
 
-	Voice.ProcessVoiceCaptureFrame_ForTest(Config, aSamples, VOICE_FRAME_SAMPLES, AgcGain, NoiseFloor, NoiseGate, pNoiseState, NoiseFallbackLogged, HpfPrevIn, HpfPrevOut, CompEnv);
+	VoiceUtils::ProcessVoiceCaptureFrame(Config, aSamples, VOICE_FRAME_SAMPLES, AgcGain, NoiseFloor, NoiseGate, pNoiseState, NoiseFallbackLogged, HpfPrevIn, HpfPrevOut, CompEnv);
 
 	SetVoiceProcessTraceCallback(nullptr, nullptr);
 

@@ -2691,6 +2691,8 @@ if(CLIENT)
     components/qmclient/voice_component.cpp
     components/qmclient/voice_component.h
     components/qmclient/voice_callback.h
+    components/qmclient/voice_capture_pipeline.cpp
+    components/qmclient/voice_capture_pipeline.h
     components/qmclient/voice_core.cpp
     components/qmclient/voice_core.h
     components/qmclient/voice_utils.cpp
@@ -3426,6 +3428,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/components/assets_resource_registry.cpp
     src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp
+    src/game/client/components/qmclient/voice_capture_pipeline.cpp
     src/game/client/components/qmclient/voice_utils.cpp
     src/engine/client/blocklist_driver.cpp
     src/engine/client/blocklist_driver.h
