@@ -23,7 +23,7 @@ void ApplyCaptureHpfCompressor(const SRClientVoiceConfigSnapshot &Config, int16_
 	if(!Config.m_QmVoiceFilterEnable)
 		return;
 
-	const float CutoffHz = 120.0f;
+	const float CutoffHz = VOICE_HPF_CUTOFF_HZ;
 	const float Rc = 1.0f / (2.0f * 3.14159265f * CutoffHz);
 	const float Dt = 1.0f / VOICE_SAMPLE_RATE;
 	const float Alpha = Rc / (Rc + Dt);

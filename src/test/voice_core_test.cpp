@@ -1267,122 +1267,91 @@ TEST(VoiceUtils, HpfCompressorEnabled)
 	EXPECT_TRUE(AnyChanged);
 }
 
-// ---------------------------------------------------------------------------
-// SeqDelta / SeqLess  (re-implement static logic from voice_core.cpp)
-// ---------------------------------------------------------------------------
-
-static int TestSeqDelta(uint16_t NewSeq, uint16_t OldSeq)
-{
-	return (int)(int16_t)(NewSeq - OldSeq);
-}
-
-static bool TestSeqLess(uint16_t A, uint16_t B)
-{
-	return (int16_t)(A - B) < 0;
-}
-
 TEST(VoiceCore, SeqDeltaNormal)
 {
-	EXPECT_EQ(TestSeqDelta(10, 5), 5);
-	EXPECT_EQ(TestSeqDelta(100, 0), 100);
-	EXPECT_EQ(TestSeqDelta(5, 10), -5);
-	EXPECT_EQ(TestSeqDelta(0, 100), -100);
+	EXPECT_EQ(VoiceSeqDelta(10, 5), 5);
+	EXPECT_EQ(VoiceSeqDelta(100, 0), 100);
+	EXPECT_EQ(VoiceSeqDelta(5, 10), -5);
+	EXPECT_EQ(VoiceSeqDelta(0, 100), -100);
 }
 
 TEST(VoiceCore, SeqDeltaSame)
 {
-	EXPECT_EQ(TestSeqDelta(42, 42), 0);
-	EXPECT_EQ(TestSeqDelta(0, 0), 0);
-	EXPECT_EQ(TestSeqDelta(65535, 65535), 0);
+	EXPECT_EQ(VoiceSeqDelta(42, 42), 0);
+	EXPECT_EQ(VoiceSeqDelta(0, 0), 0);
+	EXPECT_EQ(VoiceSeqDelta(65535, 65535), 0);
 }
 
 TEST(VoiceCore, SeqDeltaWrapForward)
 {
-	EXPECT_EQ(TestSeqDelta(5, 65530), 11);
-	EXPECT_EQ(TestSeqDelta(0, 65535), 1);
-	EXPECT_EQ(TestSeqDelta(100, 65436), 200);
+	EXPECT_EQ(VoiceSeqDelta(5, 65530), 11);
+	EXPECT_EQ(VoiceSeqDelta(0, 65535), 1);
+	EXPECT_EQ(VoiceSeqDelta(100, 65436), 200);
 }
 
 TEST(VoiceCore, SeqDeltaWrapBackward)
 {
-	EXPECT_EQ(TestSeqDelta(65530, 5), -11);
-	EXPECT_EQ(TestSeqDelta(65535, 0), -1);
-	EXPECT_EQ(TestSeqDelta(65436, 100), -200);
+	EXPECT_EQ(VoiceSeqDelta(65530, 5), -11);
+	EXPECT_EQ(VoiceSeqDelta(65535, 0), -1);
+	EXPECT_EQ(VoiceSeqDelta(65436, 100), -200);
 }
 
 TEST(VoiceCore, SeqLessNormal)
 {
-	EXPECT_TRUE(TestSeqLess(5, 10));
-	EXPECT_TRUE(TestSeqLess(0, 1));
-	EXPECT_FALSE(TestSeqLess(10, 5));
-	EXPECT_FALSE(TestSeqLess(1, 0));
+	EXPECT_TRUE(VoiceSeqLess(5, 10));
+	EXPECT_TRUE(VoiceSeqLess(0, 1));
+	EXPECT_FALSE(VoiceSeqLess(10, 5));
+	EXPECT_FALSE(VoiceSeqLess(1, 0));
 }
 
 TEST(VoiceCore, SeqLessEqual)
 {
-	EXPECT_FALSE(TestSeqLess(42, 42));
-	EXPECT_FALSE(TestSeqLess(0, 0));
-	EXPECT_FALSE(TestSeqLess(65535, 65535));
+	EXPECT_FALSE(VoiceSeqLess(42, 42));
+	EXPECT_FALSE(VoiceSeqLess(0, 0));
+	EXPECT_FALSE(VoiceSeqLess(65535, 65535));
 }
 
 TEST(VoiceCore, SeqLessWrap)
 {
-	EXPECT_TRUE(TestSeqLess(65530, 5));
-	EXPECT_TRUE(TestSeqLess(65535, 1));
-	EXPECT_FALSE(TestSeqLess(5, 65530));
-	EXPECT_FALSE(TestSeqLess(1, 65535));
+	EXPECT_TRUE(VoiceSeqLess(65530, 5));
+	EXPECT_TRUE(VoiceSeqLess(65535, 1));
+	EXPECT_FALSE(VoiceSeqLess(5, 65530));
+	EXPECT_FALSE(VoiceSeqLess(1, 65535));
 }
 
 TEST(VoiceCore, SeqLessHalfWrap)
 {
 	// 32768 = 0x8000 wraps to -32768 as int16_t
 	// Both directions return true at the exact halfway point (ambiguous)
-	EXPECT_TRUE(TestSeqLess(0, 32768));
-	EXPECT_TRUE(TestSeqLess(32768, 0));
+	EXPECT_TRUE(VoiceSeqLess(0, 32768));
+	EXPECT_TRUE(VoiceSeqLess(32768, 0));
 	// Just past halfway: 32769 = 0x8001 wraps to -32767
-	EXPECT_FALSE(TestSeqLess(0, 32769));
-	EXPECT_TRUE(TestSeqLess(32769, 0));
-}
-
-// ---------------------------------------------------------------------------
-// ClampJitterTarget  (re-implement static logic from voice_core.cpp)
-// ---------------------------------------------------------------------------
-
-static int TestClampJitterTarget(float JitterMs)
-{
-	if(JitterMs <= 8.0f)
-		return 2;
-	if(JitterMs <= 14.0f)
-		return 3;
-	if(JitterMs <= 22.0f)
-		return 4;
-	if(JitterMs <= 32.0f)
-		return 5;
-	return 6;
+	EXPECT_FALSE(VoiceSeqLess(0, 32769));
+	EXPECT_TRUE(VoiceSeqLess(32769, 0));
 }
 
 TEST(VoiceCore, ClampJitterTargetLow)
 {
-	EXPECT_EQ(TestClampJitterTarget(0.0f), 2);
-	EXPECT_EQ(TestClampJitterTarget(5.0f), 2);
-	EXPECT_EQ(TestClampJitterTarget(8.0f), 2);
+	EXPECT_EQ(VoiceClampJitterTarget(0.0f), 2);
+	EXPECT_EQ(VoiceClampJitterTarget(5.0f), 2);
+	EXPECT_EQ(VoiceClampJitterTarget(8.0f), 2);
 }
 
 TEST(VoiceCore, ClampJitterTargetMid)
 {
-	EXPECT_EQ(TestClampJitterTarget(10.0f), 3);
-	EXPECT_EQ(TestClampJitterTarget(14.0f), 3);
-	EXPECT_EQ(TestClampJitterTarget(18.0f), 4);
-	EXPECT_EQ(TestClampJitterTarget(22.0f), 4);
-	EXPECT_EQ(TestClampJitterTarget(28.0f), 5);
-	EXPECT_EQ(TestClampJitterTarget(32.0f), 5);
+	EXPECT_EQ(VoiceClampJitterTarget(10.0f), 3);
+	EXPECT_EQ(VoiceClampJitterTarget(14.0f), 3);
+	EXPECT_EQ(VoiceClampJitterTarget(18.0f), 4);
+	EXPECT_EQ(VoiceClampJitterTarget(22.0f), 4);
+	EXPECT_EQ(VoiceClampJitterTarget(28.0f), 5);
+	EXPECT_EQ(VoiceClampJitterTarget(32.0f), 5);
 }
 
 TEST(VoiceCore, ClampJitterTargetHigh)
 {
-	EXPECT_EQ(TestClampJitterTarget(33.0f), 6);
-	EXPECT_EQ(TestClampJitterTarget(100.0f), 6);
-	EXPECT_EQ(TestClampJitterTarget(1000.0f), 6);
+	EXPECT_EQ(VoiceClampJitterTarget(33.0f), 6);
+	EXPECT_EQ(VoiceClampJitterTarget(100.0f), 6);
+	EXPECT_EQ(VoiceClampJitterTarget(1000.0f), 6);
 }
 
 TEST(VoiceCore, ComputeVoiceEncoderTargetsAutoProfileUsesAggressiveTable)

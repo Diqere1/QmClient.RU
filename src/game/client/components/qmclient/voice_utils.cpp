@@ -159,7 +159,7 @@ SVoiceProcessingFactoryDefaults VoiceProcessingFactoryDefaults()
 	SVoiceProcessingFactoryDefaults Defaults;
 	Defaults.m_NoiseSuppressMode = VOICE_NOISE_SUPPRESS_RNNOISE;
 	Defaults.m_NoiseSuppressStrength = 35;
-	Defaults.m_HpfCutoffHz = 120.0f;
+	Defaults.m_HpfCutoffHz = VOICE_HPF_CUTOFF_HZ;
 	Defaults.m_CompressorThreshold = 0.24f;
 	Defaults.m_CompressorRatio = 2.0f;
 	Defaults.m_CompressorAttackSec = 0.012f;
@@ -180,6 +180,29 @@ SVoiceAgcConfig VoiceAgcConfigFromRuntime(bool EnableAgc)
 	Config.m_AttackSec = 0.050f;
 	Config.m_ReleaseSec = 0.350f;
 	return Config;
+}
+
+int VoiceClampJitterTarget(float JitterMs)
+{
+	if(JitterMs <= 8.0f)
+		return 2;
+	if(JitterMs <= 14.0f)
+		return 3;
+	if(JitterMs <= 22.0f)
+		return 4;
+	if(JitterMs <= 32.0f)
+		return 5;
+	return 6;
+}
+
+int VoiceSeqDelta(uint16_t NewSeq, uint16_t OldSeq)
+{
+	return (int)(int16_t)(NewSeq - OldSeq);
+}
+
+bool VoiceSeqLess(uint16_t A, uint16_t B)
+{
+	return (int16_t)(A - B) < 0;
 }
 
 void SetVoiceProcessTraceCallback(VoiceProcessTraceCallback pCallback, void *pUserData)

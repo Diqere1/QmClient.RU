@@ -333,29 +333,6 @@ void CRClientVoice::CopyDiagnosticLogMessage(const char *pField, char *pBuf, siz
 	str_copy(pBuf, pField, BufSize);
 }
 
-static int ClampJitterTarget(float JitterMs)
-{
-	if(JitterMs <= 8.0f)
-		return 2;
-	if(JitterMs <= 14.0f)
-		return 3;
-	if(JitterMs <= 22.0f)
-		return 4;
-	if(JitterMs <= 32.0f)
-		return 5;
-	return 6;
-}
-
-static int SeqDelta(uint16_t NewSeq, uint16_t OldSeq)
-{
-	return (int)(int16_t)(NewSeq - OldSeq);
-}
-
-static bool SeqLess(uint16_t A, uint16_t B)
-{
-	return (int16_t)(A - B) < 0;
-}
-
 bool CRClientVoice::EnsureSocket()
 {
 	if(m_Socket)
@@ -579,6 +556,7 @@ bool CRClientVoice::EnsureAudio()
 		if(ComplexityResult != OPUS_OK)
 		{
 			log_warn("voice", "OPUS_SET_COMPLEXITY(%d) failed during encoder init with error %d", m_EncComplexity, ComplexityResult);
+			opus_encoder_ctl(m_pEncoder, OPUS_GET_COMPLEXITY(&m_EncComplexity));
 		}
 		opus_encoder_ctl(m_pEncoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
 	}
@@ -1157,6 +1135,8 @@ void CRClientVoice::Shutdown()
 	m_HpfPrevIn = 0.0f;
 	m_HpfPrevOut = 0.0f;
 	m_CompEnv = 0.0f;
+	// Reset DSP state to factory defaults. Also reset in ResetTransmitState()
+	// when the transmit chain needs to restart without full shutdown.
 	m_AgcGain = 1.0f;
 	m_NsNoiseFloor = 0.0f;
 	m_NsGain = 1.0f;
@@ -1335,6 +1315,7 @@ void CRClientVoice::UpdateClientSnapshot(bool Force) NO_THREAD_SAFETY_ANALYSIS
 void CRClientVoice::ResetTransmitState(bool ClearQueuedCapture) NO_THREAD_SAFETY_ANALYSIS
 {
 	UpdateMicLevel(0.0f);
+	// Reset transmit-side DSP state. Mirrored in Shutdown() for full cleanup.
 	m_AgcGain = 1.0f;
 	m_VadActive = false;
 	m_VadReleaseDeadline = 0;
@@ -1924,7 +1905,7 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 				ResetStream = true;
 			else if(Peer.m_HasLastRecvSeq)
 			{
-				const int Delta = SeqDelta(Sequence, Peer.m_LastRecvSeq);
+				const int Delta = VoiceUtils::VoiceSeqDelta(Sequence, Peer.m_LastRecvSeq);
 				if(Delta > SVoicePeer::MAX_JITTER_PACKETS * 8)
 					ResetStream = true;
 			}
@@ -1940,7 +1921,7 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 		}
 		Peer.m_LastRecvTime = Now;
 
-		int Target = ClampJitterTarget(Peer.m_JitterMs);
+		int Target = VoiceUtils::VoiceClampJitterTarget(Peer.m_JitterMs);
 		if(Peer.m_HasLastRecvSeq)
 		{
 			const uint16_t Expected = (uint16_t)(Peer.m_LastRecvSeq + 1);
@@ -1950,7 +1931,7 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 		Peer.m_TargetFrames = Target;
 		if(Peer.m_HasLastRecvSeq)
 		{
-			const int Delta = SeqDelta(Sequence, Peer.m_LastRecvSeq);
+			const int Delta = VoiceUtils::VoiceSeqDelta(Sequence, Peer.m_LastRecvSeq);
 			if(Delta > 0 && Delta < 1000)
 			{
 				const int Lost = std::max(0, Delta - 1);
@@ -1958,7 +1939,7 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 				Peer.m_LossEwma = 0.9f * Peer.m_LossEwma + 0.1f * LossRatio;
 			}
 		}
-		if(!Peer.m_HasLastRecvSeq || SeqLess(Peer.m_LastRecvSeq, Sequence))
+		if(!Peer.m_HasLastRecvSeq || VoiceUtils::VoiceSeqLess(Peer.m_LastRecvSeq, Sequence))
 			Peer.m_LastRecvSeq = Sequence;
 		Peer.m_HasLastRecvSeq = true;
 		Peer.m_LastGainLeft = LeftGain;
@@ -2132,6 +2113,7 @@ void CRClientVoice::UpdateEncoderParams()
 		else
 		{
 			log_warn("voice", "OPUS_SET_COMPLEXITY(%d) failed with error %d, keeping previous complexity %d", TargetComplexity, Result, m_EncComplexity);
+			opus_encoder_ctl(m_pEncoder, OPUS_GET_COMPLEXITY(&m_EncComplexity));
 		}
 	}
 
@@ -2165,7 +2147,7 @@ void CRClientVoice::DecodeJitter()
 					Found = true;
 					continue;
 				}
-				if(SeqLess(Pkt.m_Seq, StartSeq))
+				if(VoiceUtils::VoiceSeqLess(Pkt.m_Seq, StartSeq))
 					StartSeq = Pkt.m_Seq;
 			}
 			if(!Found)

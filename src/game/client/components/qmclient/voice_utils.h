@@ -24,6 +24,7 @@ constexpr uint8_t VOICE_FLAG_LOOPBACK = 1 << 1;
 constexpr int VOICE_NOISE_SUPPRESS_OFF = 0;
 constexpr int VOICE_NOISE_SUPPRESS_SIMPLE = 1;
 constexpr int VOICE_NOISE_SUPPRESS_RNNOISE = 2;
+inline constexpr float VOICE_HPF_CUTOFF_HZ = 120.0f;
 
 namespace VoiceUtils
 {
@@ -98,6 +99,9 @@ bool VoiceAudioDeviceConfigEquals(const SVoiceAudioDeviceConfig &Left, const SVo
 int VoiceDesiredOutputChannels(const SVoiceAudioDeviceConfig &Config);
 SVoiceProcessingFactoryDefaults VoiceProcessingFactoryDefaults();
 SVoiceAgcConfig VoiceAgcConfigFromRuntime(bool EnableAgc);
+int VoiceClampJitterTarget(float JitterMs);
+int VoiceSeqDelta(uint16_t NewSeq, uint16_t OldSeq);
+bool VoiceSeqLess(uint16_t A, uint16_t B);
 enum class EVoiceProcessStage
 {
 	AGC_GAIN,
