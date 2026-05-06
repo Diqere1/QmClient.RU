@@ -345,7 +345,9 @@ void CMenus::StartReportScan()
 		return;
 	}
 
-	net_addr_str(&Client()->ServerAddress(), m_aReportScanAddress, sizeof(m_aReportScanAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, m_aReportScanAddress, sizeof(m_aReportScanAddress), true);
 	if(m_aReportScanAddress[0] == '\0')
 	{
 		GameClient()->Echo("无法获取当前服务器地址");

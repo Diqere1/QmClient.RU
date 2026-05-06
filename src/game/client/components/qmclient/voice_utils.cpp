@@ -29,6 +29,14 @@ uint32_t VoiceTokenGroupHash(uint32_t TokenHash)
 	return TokenHash & VOICE_GROUP_MASK;
 }
 
+uint32_t BuildLegacyVoiceTokenHash(const char *pToken)
+{
+	if(!pToken || pToken[0] == '\0')
+		return 0;
+
+	return str_quickhash(pToken);
+}
+
 bool FindMinLiveVoiceSeq(const uint8_t *pValid, const uint16_t *pSeq, size_t Count, uint16_t &OutSeq)
 {
 	if(!pValid || !pSeq || Count == 0)

@@ -1573,7 +1573,11 @@ void CQmClient::SendQmClientPlayerData()
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
 	if(Client()->State() == IClient::STATE_ONLINE)
-		net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	{
+		const NETADDR *pServerAddr = Client()->ServerAddress();
+		if(pServerAddr)
+			net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
+	}
 	if(aServerAddress[0] == '\0')
 		return;
 
@@ -1738,7 +1742,11 @@ void CQmClient::FinishQmClientUsers()
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
 	if(Client()->State() == IClient::STATE_ONLINE)
-		net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	{
+		const NETADDR *pServerAddr = Client()->ServerAddress();
+		if(pServerAddr)
+			net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
+	}
 	const bool FastSync = NeedsFastQmClientSync();
 	const int SyncInterval = FastSync ? QMCLIENT_VOICE_SYNC_INTERVAL_SECONDS : QMCLIENT_SYNC_INTERVAL_SECONDS;
 	const int64_t ExpireTick = time_get() + (int64_t)SyncInterval * time_freq() * 2;

@@ -1252,7 +1252,13 @@ bool CRClientVoice::UpdateContext()
 		return Old != 0;
 	}
 	char aAddr[NETADDR_MAXSTRSIZE];
-	net_addr_str(&m_pClient->ServerAddress(), aAddr, sizeof(aAddr), true);
+	const NETADDR *pServerAddr = m_pClient->ServerAddress();
+	if(!pServerAddr)
+	{
+		m_ContextHash.store(0);
+		return Old != 0;
+	}
+	net_addr_str(pServerAddr, aAddr, sizeof(aAddr), true);
 	const uint32_t NewHash = str_quickhash(aAddr);
 	m_ContextHash.store(NewHash);
 	return NewHash != Old;

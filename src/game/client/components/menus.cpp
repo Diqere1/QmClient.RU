@@ -2240,8 +2240,10 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
 			m_Popup = POPUP_NONE;
 		}
 
-		char aAddr[NETADDR_MAXSTRSIZE];
-		net_addr_str(&Client()->ServerAddress(), aAddr, sizeof(aAddr), true);
+		const NETADDR *pServerAddr = Client()->ServerAddress();
+		char aAddr[NETADDR_MAXSTRSIZE] = "";
+		if(pServerAddr)
+			net_addr_str(pServerAddr, aAddr, sizeof(aAddr), true);
 
 		static CButtonContainer s_ButtonTryAgain;
 		if(DoButton_Menu(&s_ButtonTryAgain, Localize("Try again"), 0, &TryAgain) ||
@@ -2269,7 +2271,7 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
 		Ui()->DoLabel(&Label, Localize("Address"), 18.0f, TEXTALIGN_ML);
 		Ui()->DoLabel(&Address, aAddr, 18.0f, TEXTALIGN_ML);
 
-		const CServerBrowser::CServerEntry *pEntry = ServerBrowser()->Find(Client()->ServerAddress());
+		const CServerBrowser::CServerEntry *pEntry = pServerAddr ? ServerBrowser()->Find(*pServerAddr) : nullptr;
 		if(pEntry != nullptr && pEntry->m_GotInfo)
 		{
 			const CCommunity *pCommunity = ServerBrowser()->Community(pEntry->m_Info.m_aCommunityId);

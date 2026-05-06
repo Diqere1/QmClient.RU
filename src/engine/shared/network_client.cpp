@@ -49,10 +49,14 @@ void CNetClient::Disconnect(const char *pReason)
 
 void CNetClient::Update()
 {
+	if(!m_Socket)
+		return;
+
 	m_Connection.Update();
 	if(m_Connection.State() == CNetConnection::EState::ERROR)
 		Disconnect(m_Connection.ErrorString());
-	m_pStun->Update();
+	if(m_pStun)
+		m_pStun->Update();
 	m_TokenCache.Update();
 }
 
@@ -73,6 +77,9 @@ void CNetClient::ResetErrorString()
 
 int CNetClient::Recv(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken, bool Sixup)
 {
+	if(!m_Socket)
+		return 0;
+
 	while(true)
 	{
 		// check for a chunk
@@ -88,7 +95,7 @@ int CNetClient::Recv(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken, bool Six
 		if(Bytes <= 0)
 			break;
 
-		if(m_pStun->OnPacket(Addr, pData, Bytes))
+		if(m_pStun && m_pStun->OnPacket(Addr, pData, Bytes))
 		{
 			continue;
 		}
@@ -215,15 +222,19 @@ const char *CNetClient::ErrorString() const
 
 void CNetClient::FeedStunServer(NETADDR StunServer)
 {
-	m_pStun->FeedStunServer(StunServer);
+	if(m_pStun)
+		m_pStun->FeedStunServer(StunServer);
 }
 
 void CNetClient::RefreshStun()
 {
-	m_pStun->Refresh();
+	if(m_pStun)
+		m_pStun->Refresh();
 }
 
 CONNECTIVITY CNetClient::GetConnectivity(int NetType, NETADDR *pGlobalAddr)
 {
+	if(!m_pStun)
+		return CONNECTIVITY::UNKNOWN;
 	return m_pStun->GetConnectivity(NetType, pGlobalAddr);
 }

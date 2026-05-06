@@ -5268,7 +5268,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						}
 					}
 
-					const IServerBrowser::CServerEntry *pEntry = pServerBrowser->Find(Client()->ServerAddress());
+					const NETADDR *pServerAddr = Client()->ServerAddress();
+					const IServerBrowser::CServerEntry *pEntry = pServerAddr ? pServerBrowser->Find(*pServerAddr) : nullptr;
 					if(pEntry && pEntry->m_Info.m_aMap[0] != '\0')
 					{
 						const char *pCategoryKey = MapCategoryKeyFromText(pEntry->m_Info.m_aCommunityType);
@@ -5293,7 +5294,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						const char *pCurrentMap = Client()->GetCurrentMap();
 						if(pCurrentMap && str_comp(pCurrentMap, pMapName) == 0)
 						{
-							const IServerBrowser::CServerEntry *pEntry = pServerBrowser->Find(Client()->ServerAddress());
+							const NETADDR *pServerAddr = Client()->ServerAddress();
+							const IServerBrowser::CServerEntry *pEntry = pServerAddr ? pServerBrowser->Find(*pServerAddr) : nullptr;
 							if(pEntry)
 							{
 								const char *pCategoryKey = MapCategoryKeyFromText(pEntry->m_Info.m_aCommunityType);

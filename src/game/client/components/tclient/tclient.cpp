@@ -1186,7 +1186,8 @@ const char *CTClient::CurrentCommunityIdForFinishCheck() const
 		return nullptr;
 
 	const char *pCommunityId = nullptr;
-	const IServerBrowser::CServerEntry *pEntry = pServerBrowser->Find(Client()->ServerAddress());
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	const IServerBrowser::CServerEntry *pEntry = pServerAddr ? pServerBrowser->Find(*pServerAddr) : nullptr;
 	if(pEntry)
 		pCommunityId = pEntry->m_Info.m_aCommunityId;
 	else if(GameClient()->m_ConnectServerInfo)
@@ -1237,7 +1238,9 @@ void CTClient::TrySendAxiomLogin()
 		return;
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
 	if(aServerAddress[0] != '\0')
 		str_copy(m_aAxiomAutoLoginServer, aServerAddress, sizeof(m_aAxiomAutoLoginServer));
 
@@ -1266,7 +1269,9 @@ void CTClient::TrySendAxiomDummyLogin()
 		return;
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
 	if(aServerAddress[0] != '\0')
 		str_copy(m_aAxiomDummyAutoLoginServer, aServerAddress, sizeof(m_aAxiomDummyAutoLoginServer));
 
@@ -1326,7 +1331,9 @@ void CTClient::UpdateAxiomAutoLogin()
 	}
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
 	if(m_aAxiomAutoLoginServer[0] != '\0' && aServerAddress[0] != '\0' && str_comp(m_aAxiomAutoLoginServer, aServerAddress) != 0)
 		ResetAxiomAutoLoginState();
 

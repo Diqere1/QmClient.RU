@@ -83,7 +83,8 @@ void CLocalServer::RconAuthIfPossible()
 {
 	if(!IsServerRunning() ||
 		m_aRconPassword[0] == '\0' ||
-		!net_addr_is_local(&Client()->ServerAddress()))
+		Client()->ServerAddress() == nullptr ||
+		!net_addr_is_local(Client()->ServerAddress()))
 	{
 		return;
 	}

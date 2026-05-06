@@ -7806,7 +7806,7 @@ void CEditor::HandleWriterFinishJobs()
 		CServerInfo CurrentServerInfo;
 		Client()->GetServerInfo(&CurrentServerInfo);
 
-		if(net_addr_is_local(&Client()->ServerAddress()))
+		if(Client()->ServerAddress() != nullptr && net_addr_is_local(Client()->ServerAddress()))
 		{
 			char aMapName[128];
 			IStorage::StripPathAndExtension(pJob->GetRealFilename(), aMapName, sizeof(aMapName));

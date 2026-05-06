@@ -229,7 +229,7 @@ void CEditor::TestMapLocally()
 
 	if(Client()->RconAuthed())
 	{
-		if(net_addr_is_local(&Client()->ServerAddress()))
+		if(Client()->ServerAddress() != nullptr && net_addr_is_local(Client()->ServerAddress()))
 		{
 			OnClose();
 			g_Config.m_ClEditor = 0;

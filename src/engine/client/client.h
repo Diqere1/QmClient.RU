@@ -442,7 +442,7 @@ public:
 
 	bool IsSixup() const override { return m_Sixup; }
 
-	const NETADDR &ServerAddress() const override { return *m_aNetClient[CONN_MAIN].ServerAddress(); }
+	const NETADDR *ServerAddress() const override { return m_aNetClient[CONN_MAIN].ServerAddress(); }
 	int ConnectNetTypes() const override;
 	const char *ConnectAddressString() const override { return m_aConnectAddressStr; }
 	const char *MapDownloadName() const override { return m_aMapdownloadName; }
