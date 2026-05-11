@@ -46,6 +46,21 @@ static constexpr std::array<ENameplateCoreRow, kNameplateCoreRowCount> s_aDefaul
 	ENameplateCoreRow::CLAN,
 	ENameplateCoreRow::NAME};
 
+static bool FocusModeHidesNames()
+{
+	return g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideNames != 0;
+}
+
+static bool FocusModeHidesOverheadIndicators()
+{
+	return g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideOverheadIndicators != 0;
+}
+
+static bool FocusModeHidesChat()
+{
+	return g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideChat != 0;
+}
+
 struct SChatBubbleAnimState
 {
 	bool m_Initialized = false;
@@ -1380,7 +1395,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 
 	const bool HideIdentity = GameClient()->ShouldHideStreamerIdentity(ClientId);
 
-	const bool HideFocusNames = g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideNames;
+	const bool HideFocusNames = FocusModeHidesNames();
 	Data.m_ShowName = !HideFocusNames && (pPlayerInfo->m_Local ? g_Config.m_ClNamePlatesOwn : g_Config.m_ClNamePlates);
 	GameClient()->FormatStreamerName(ClientId, Data.m_aName, sizeof(Data.m_aName));
 	Data.m_ShowFriendMark = Data.m_ShowName && g_Config.m_ClNamePlatesFriendMark && GameClient()->m_aClients[ClientId].m_Friend;
@@ -1395,9 +1410,9 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	GameClient()->FormatStreamerClan(ClientId, Data.m_aClan, sizeof(Data.m_aClan));
 	Data.m_FontSizeClan = 18.0f + 20.0f * g_Config.m_ClNamePlatesClanSize / 100.0f;
 
-	Data.m_ShowCoordX = g_Config.m_QmNameplateCoordX != 0;
-	Data.m_ShowCoordY = g_Config.m_QmNameplateCoordY != 0;
-	Data.m_ShowCoords = pPlayerInfo->m_Local ? g_Config.m_QmNameplateCoordsOwn : g_Config.m_QmNameplateCoords;
+	Data.m_ShowCoordX = !HideFocusNames && g_Config.m_QmNameplateCoordX != 0;
+	Data.m_ShowCoordY = !HideFocusNames && g_Config.m_QmNameplateCoordY != 0;
+	Data.m_ShowCoords = !HideFocusNames && (pPlayerInfo->m_Local ? g_Config.m_QmNameplateCoordsOwn : g_Config.m_QmNameplateCoords);
 	Data.m_Coords = Position / 32.0f;
 	Data.m_FontSizeCoords = 18.0f + 20.0f * g_Config.m_ClNamePlatesCoordsSize / 100.0f;
 	Data.m_CoordXAlignHint = false;
@@ -1441,7 +1456,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 		ShowDirectionConfig = g_Config.m_ClVideoShowDirection;
 #endif
 	Data.m_DirLeft = Data.m_DirJump = Data.m_DirRight = false;
-	const bool HideOverheadIndicators = g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideOverheadIndicators;
+	const bool HideOverheadIndicators = FocusModeHidesOverheadIndicators();
 	switch(ShowDirectionConfig)
 	{
 	case 0: // Off
@@ -1662,7 +1677,7 @@ void CNamePlates::RenderChatBubble(vec2 Position, int ClientId, float Alpha)
 	// Check if chat bubbles are enabled
 	if(!g_Config.m_QmChatBubble)
 		return;
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideChat)
+	if(FocusModeHidesChat())
 		return;
 
 	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
@@ -1979,12 +1994,14 @@ void CNamePlates::OnRender()
 	if(IVideo::Current())
 		ShowDirection = g_Config.m_ClVideoShowDirection;
 #endif
-	const bool ShowCoords = (g_Config.m_QmNameplateCoords || g_Config.m_QmNameplateCoordsOwn) &&
+	const bool HideFocusNames = FocusModeHidesNames();
+	const bool ShowCoords = !HideFocusNames && (g_Config.m_QmNameplateCoords || g_Config.m_QmNameplateCoordsOwn) &&
 				(g_Config.m_QmNameplateCoordX || g_Config.m_QmNameplateCoordY);
-	const bool HideFocusNames = g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideNames;
 	const bool RenderNames = !HideFocusNames && (g_Config.m_ClNamePlates || g_Config.m_ClNamePlatesOwn);
-	const bool RenderNameplates = RenderNames || ShowDirection != 0 || ShowCoords;
-	const bool RenderChatBubbles = g_Config.m_QmChatBubble != 0;
+	const bool HideOverheadIndicators = FocusModeHidesOverheadIndicators();
+	const bool RenderDirection = !HideOverheadIndicators && ShowDirection != 0;
+	const bool RenderNameplates = RenderNames || RenderDirection || ShowCoords;
+	const bool RenderChatBubbles = g_Config.m_QmChatBubble != 0 && !FocusModeHidesChat();
 	const bool RenderFreezeWakeupPopups = GameClient()->HasFreezeWakeupPopups();
 	if(!RenderNameplates && !RenderChatBubbles && !RenderFreezeWakeupPopups)
 		return;

@@ -19,6 +19,7 @@
 #include <game/client/animstate.h>
 #include <game/client/components/censor.h>
 #include <game/client/components/qmclient/config_override.h>
+#include <game/client/components/message_gradient.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
@@ -1937,20 +1938,39 @@ void CChat::OnPrepareLines(float y)
 		}
 
 		ColorRGBA Color;
+		const char *pGradient = nullptr;
 		if(Line.m_CustomColor)
 			Color = *Line.m_CustomColor;
 		else if(Line.m_ClientId == SERVER_MSG)
+		{
 			Color = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageSystemColor));
+			pGradient = g_Config.m_ClMessageSystemGradient;
+		}
 		else if(Line.m_ClientId == CLIENT_MSG)
+		{
 			Color = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor));
+			pGradient = g_Config.m_ClMessageClientGradient;
+		}
 		else if(Line.m_Highlighted)
+		{
 			Color = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageHighlightColor));
+			pGradient = g_Config.m_ClMessageHighlightGradient;
+		}
 		else if(Line.m_Friend && g_Config.m_ClMessageFriend)
+		{
 			Color = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageFriendColor));
+			pGradient = g_Config.m_ClMessageFriendGradient;
+		}
 		else if(Line.m_Team)
+		{
 			Color = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageTeamColor));
+			pGradient = g_Config.m_ClMessageTeamGradient;
+		}
 		else // regular message
+		{
 			Color = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageColor));
+			pGradient = g_Config.m_ClMessageGradient;
+		}
 		TextRender()->TextColor(Color);
 
 		CTextCursor AppendCursor = LineCursor;
@@ -1963,7 +1983,10 @@ void CChat::OnPrepareLines(float y)
 
 		if(pTranslatedText)
 		{
+			if(pGradient != nullptr && Line.m_CustomColor == std::nullopt && ColoredParts.Colors().empty())
+				CMessageGradient::AddTextSplits(AppendCursor, pTranslatedText, pGradient, Color);
 			TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &AppendCursor, pTranslatedText);
+			AppendCursor.m_vColorSplits.clear();
 			if(pTranslatedLanguage)
 			{
 				ColorRGBA ColorLang = Color;
@@ -1988,7 +2011,10 @@ void CChat::OnPrepareLines(float y)
 		}
 		else if(pTranslatedError)
 		{
+			if(pGradient != nullptr && Line.m_CustomColor == std::nullopt && ColoredParts.Colors().empty())
+				CMessageGradient::AddTextSplits(AppendCursor, pText, pGradient, Color);
 			TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &AppendCursor, pText);
+			AppendCursor.m_vColorSplits.clear();
 			ColorRGBA ColorSub = Color;
 			ColorSub.r = 0.7f;
 			ColorSub.g = 0.6f;
@@ -2002,6 +2028,8 @@ void CChat::OnPrepareLines(float y)
 		}
 		else
 		{
+			if(pGradient != nullptr && Line.m_CustomColor == std::nullopt && ColoredParts.Colors().empty())
+				CMessageGradient::AddTextSplits(AppendCursor, pText, pGradient, Color);
 			ColoredParts.AddSplitsToCursor(AppendCursor);
 			TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &AppendCursor, pText);
 			AppendCursor.m_vColorSplits.clear();

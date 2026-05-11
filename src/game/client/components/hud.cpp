@@ -4961,6 +4961,8 @@ void CHud::RenderMapProgressBar()
 	const int DummyIndex = g_Config.m_ClDummy ? 1 : 0;
 	const bool HasProgress = Preview || GameClient()->m_TClient.HasGoresMapProgress(DummyIndex);
 	const float TargetProgress = Preview ? 0.426f : (HasProgress ? std::clamp(GameClient()->m_TClient.GetGoresMapProgress(DummyIndex), 0.0f, 1.0f) : 0.0f);
+	const bool ProgressWasInitialized = m_aMapProgressInitialized[DummyIndex];
+	const float PreviousDisplayedProgress = std::clamp(m_aMapProgressDisplayed[DummyIndex], 0.0f, 1.0f);
 	if(!m_aMapProgressInitialized[DummyIndex])
 	{
 		m_aMapProgressDisplayed[DummyIndex] = TargetProgress;
@@ -4973,6 +4975,7 @@ void CHud::RenderMapProgressBar()
 	}
 
 	const float DisplayedProgress = std::clamp(m_aMapProgressDisplayed[DummyIndex], 0.0f, 1.0f);
+	const bool ProgressIncreased = ProgressWasInitialized && DisplayedProgress > PreviousDisplayedProgress + 0.000001f;
 	const ColorRGBA ConfiguredColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmPlayerStatsMapProgressColor, true));
 	const ColorRGBA FillColor = ColorRGBA(ConfiguredColor.r, ConfiguredColor.g, ConfiguredColor.b, std::clamp(maximum(ConfiguredColor.a, 0.65f), 0.0f, 1.0f));
 	const ColorRGBA TrackColor = LerpColor(ColorRGBA(0.02f, 0.03f, 0.03f, 0.78f), FillColor.WithAlpha(0.26f), 0.32f);
@@ -5029,12 +5032,20 @@ void CHud::RenderMapProgressBar()
 		const float TeePadding = TeeInfo.m_Size * 0.28f;
 		const float TeeX = std::clamp(BarX + BarWidth * DisplayedProgress, BarX + TeePadding, BarX + BarWidth - TeePadding);
 		const float TeeAnchorY = BarY + BarHeight * 0.5f - std::clamp(BarHeight * 0.15f, 1.0f, 3.0f);
-		const CAnimState *pIdleState = CAnimState::GetIdle();
+		const CAnimState *pTeeState = CAnimState::GetIdle();
+		CAnimState RunState;
+		if(ProgressIncreased)
+		{
+			const float RunTime = std::fmod(time_get() / (float)time_freq() * 2.5f, 1.0f);
+			RunState.Set(&g_pData->m_aAnimations[ANIM_BASE], 0.0f);
+			RunState.Add(&g_pData->m_aAnimations[ANIM_RUN_RIGHT], RunTime, 1.0f);
+			pTeeState = &RunState;
+		}
 		vec2 OffsetToMid;
-		CRenderTools::GetRenderTeeOffsetToRenderedTee(pIdleState, &TeeInfo, OffsetToMid);
+		CRenderTools::GetRenderTeeOffsetToRenderedTee(pTeeState, &TeeInfo, OffsetToMid);
 
 		DrawSmoothCircle(Graphics(), vec2(TeeX, TeeAnchorY), std::clamp(BarHeight * 0.48f, 4.0f, 10.0f), FillColor.WithAlpha(0.22f));
-		RenderTools()->RenderTee(pIdleState, &TeeInfo, EMOTE_NORMAL, vec2(1.0f, 0.0f), vec2(TeeX, TeeAnchorY + OffsetToMid.y));
+		RenderTools()->RenderTee(pTeeState, &TeeInfo, EMOTE_NORMAL, vec2(1.0f, 0.0f), vec2(TeeX, TeeAnchorY + OffsetToMid.y));
 	}
 	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 }

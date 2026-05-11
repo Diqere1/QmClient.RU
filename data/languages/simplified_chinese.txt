@@ -580,6 +580,9 @@ Highlighted message
 Team message
 == 队伍消息
 
+Text
+== 文字
+
 Normal message
 == 普通消息
 

@@ -2564,6 +2564,8 @@ if(CLIENT)
     components/mapsounds.h
     components/menu_background.cpp
     components/menu_background.h
+    components/message_gradient.cpp
+    components/message_gradient.h
     components/menus.cpp
     components/menus.h
     components/menus_assets_editor.cpp

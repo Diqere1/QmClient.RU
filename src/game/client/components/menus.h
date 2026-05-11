@@ -44,6 +44,7 @@
 struct CDataSprite;
 
 class CHttpRequest;
+class CChat;
 
 // IDs of the tabs in the Assets menu
 enum
@@ -113,6 +114,7 @@ private:
 	CUi::SColorPickerPopupContext m_ColorPickerPopupContext;
 	ColorHSLA DoLine_ColorPicker(CButtonContainer *pResetId, float LineSize, float LabelSize, float BottomMargin, CUIRect *pMainRect, const char *pText, unsigned int *pColorValue, ColorRGBA DefaultColor, bool CheckBoxSpacing = true, int *pCheckBoxValue = nullptr, bool Alpha = false);
 	ColorHSLA DoButton_ColorPicker(const CUIRect *pRect, unsigned int *pHslaColor, bool Alpha);
+	bool DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLabel, unsigned *pBaseColor, char *pGradient, int GradientSize, ColorRGBA DefaultColor, CButtonContainer *pResetButton, CButtonContainer *pAddButton, CButtonContainer *pRemoveButton, unsigned *pColorValues, bool CheckBoxSpacing = true, int *pCheckBoxValue = nullptr);
 
 	void DoLaserPreview(const CUIRect *pRect, ColorHSLA OutlineColor, ColorHSLA InnerColor, int LaserType);
 	int DoButton_GridHeader(const void *pId, const char *pText, int Checked, const CUIRect *pRect, int Align = TEXTALIGN_ML);
@@ -1366,7 +1368,6 @@ protected:
 
 	std::shared_ptr<CHttpRequest> m_pReportScanRequest;
 	EReportScanState m_ReportScanState = EReportScanState::IDLE;
-	int64_t m_ReportScanCooldownEndTime = 0;
 	char m_aReportScanAddress[NETADDR_MAXSTRSIZE] = "";
 	void ResetReportScan();
 	void StartReportScan();

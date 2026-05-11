@@ -245,6 +245,11 @@ void CPlayers::RenderHookCollLine(
 	const CNetObj_Character *pPlayerChar,
 	int ClientId)
 {
+	const bool HideFocusOverheadIndicators = g_Config.m_QmFocusMode != 0 &&
+		g_Config.m_QmFocusModeHideOverheadIndicators != 0;
+	if(HideFocusOverheadIndicators)
+		return;
+
 	if(GameClient()->m_TClient.ShouldHideGoresGuides())
 		return;
 
@@ -549,6 +554,11 @@ void CPlayers::RenderWeaponTrajectory(
 	const CNetObj_Character *pPlayerChar,
 	int ClientId)
 {
+	const bool HideFocusOverheadIndicators = g_Config.m_QmFocusMode != 0 &&
+		g_Config.m_QmFocusModeHideOverheadIndicators != 0;
+	if(HideFocusOverheadIndicators)
+		return;
+
 	if(GameClient()->m_TClient.ShouldHideGoresGuides())
 		return;
 

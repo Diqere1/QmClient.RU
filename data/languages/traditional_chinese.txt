@@ -583,6 +583,9 @@ Highlighted message
 Team message
 == 隊伍訊息
 
+Text
+== 文字
+
 Normal message
 == 普通訊息
 

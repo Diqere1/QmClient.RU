@@ -50,7 +50,6 @@ namespace
 {
 constexpr const char *REPORT_SCAN_PATH = "/v1/scan";
 constexpr const char *REPORT_CONTENT_TYPE = "application/json; charset=utf-8";
-constexpr int REPORT_SCAN_COOLDOWN_SECONDS = 120;
 
 void HmacSha256Hex(const char *pSecret, const char *pMessage, char *pBuffer, int BufferSize)
 {
@@ -335,15 +334,6 @@ void CMenus::StartReportScan()
 		GameClient()->Echo("举报请求正在处理中");
 		return;
 	}
-	const int64_t Now = time();
-	if(m_ReportScanCooldownEndTime > Now)
-	{
-		const int RemainingSeconds = (int)((m_ReportScanCooldownEndTime - Now + time_freq() - 1) / time_freq());
-		char aBuf[64];
-		str_format(aBuf, sizeof(aBuf), "举报冷却中，还剩 %d 秒", RemainingSeconds);
-		GameClient()->Echo(aBuf);
-		return;
-	}
 	if(Client()->State() != IClient::STATE_ONLINE)
 	{
 		GameClient()->Echo("需要先连接到服务器");
@@ -377,7 +367,6 @@ void CMenus::StartReportScan()
 	}
 
 	m_ReportScanState = EReportScanState::SCANNING;
-	m_ReportScanCooldownEndTime = Now + time_freq() * REPORT_SCAN_COOLDOWN_SECONDS;
 	Http()->Run(m_pReportScanRequest);
 	GameClient()->Echo("正在扫描当前服务器...");
 }
@@ -706,19 +695,10 @@ void CMenus::RenderGame(CUIRect MainView)
 	UtilityButtonBar.VSplitRight(UtilityButtonSpacing, &UtilityButtonBar, nullptr);
 	UtilityButtonBar.VSplitRight(ReportButtonWidth, &UtilityButtonBar, &Button);
 	static CButtonContainer s_ReportButton;
-	const int64_t Now = time();
-	const int ReportCooldownSecondsLeft = m_ReportScanCooldownEndTime > Now ? (int)((m_ReportScanCooldownEndTime - Now + time_freq() - 1) / time_freq()) : 0;
 	if(m_ReportScanState != EReportScanState::IDLE)
 	{
 		DoButton_Menu(&s_ReportButton, pReportButtonLabel, 1, &Button);
 		GameClient()->m_Tooltips.DoToolTip(&s_ReportButton, &Button, "正在扫描当前服务器");
-	}
-	else if(ReportCooldownSecondsLeft > 0)
-	{
-		DoButton_Menu(&s_ReportButton, pReportButtonLabel, 1, &Button);
-		char aTooltip[64];
-		str_format(aTooltip, sizeof(aTooltip), "举报冷却中，还剩 %d 秒", ReportCooldownSecondsLeft);
-		GameClient()->m_Tooltips.DoToolTip(&s_ReportButton, &Button, aTooltip);
 	}
 	else if(DoButton_Menu(&s_ReportButton, pReportButtonLabel, 0, &Button))
 	{

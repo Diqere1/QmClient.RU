@@ -24,6 +24,7 @@
 #include <game/client/animstate.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/menu_background.h>
+#include <game/client/components/message_gradient.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
 #include <game/client/skin.h>
@@ -69,6 +70,119 @@ void LogPerfStage(const char *pStage, const double DurationMs, const bool Force 
 		dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
 }
 
+}
+
+bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLabel, unsigned *pBaseColor, char *pGradient, int GradientSize, ColorRGBA DefaultColor, CButtonContainer *pResetButton, CButtonContainer *pAddButton, CButtonContainer *pRemoveButton, unsigned *pColorValues, bool CheckBoxSpacing, int *pCheckBoxValue)
+{
+	constexpr float TOP_LINE_HEIGHT = 24.0f;
+	constexpr float COLOR_LINE_HEIGHT = 27.0f;
+	constexpr float BOTTOM_MARGIN = 2.0f;
+	constexpr float COLOR_BUTTON_SIZE = 24.0f;
+	constexpr float COLOR_BUTTON_SPACING = 5.0f;
+	constexpr float CHANGE_BUTTON_SIZE = 22.0f;
+
+	bool Changed = false;
+	CUIRect Section, Label, TextLabel, ResetButton;
+	pView->HSplitTop(TOP_LINE_HEIGHT, &Section, pView);
+
+	Section.VSplitRight(60.0f, &Section, &ResetButton);
+	Section.VSplitRight(8.0f, &Section, nullptr);
+	Section.VSplitRight(55.0f, &Section, &TextLabel);
+	TextLabel.HMargin(2.0f, &TextLabel);
+	Ui()->DoLabel(&TextLabel, Localize("Text"), 13.0f, TEXTALIGN_MC);
+	Label = Section;
+
+	if(pCheckBoxValue != nullptr)
+	{
+		Label.Margin(2.0f, &Label);
+		if(DoButton_CheckBox(pCheckBoxValue, pLabel, *pCheckBoxValue, &Label))
+		{
+			*pCheckBoxValue ^= 1;
+			Changed = true;
+		}
+	}
+	else if(CheckBoxSpacing)
+	{
+		Label.VSplitLeft(Label.h + 5.0f, nullptr, &Label);
+	}
+
+	if(pCheckBoxValue == nullptr)
+		Ui()->DoLabel(&Label, pLabel, 13.0f, TEXTALIGN_ML);
+
+	ResetButton.HMargin(2.0f, &ResetButton);
+	if(DoButton_Menu(pResetButton, Localize("Reset"), 0, &ResetButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 4.0f, 0.1f, ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f)))
+	{
+		*pBaseColor = color_cast<ColorHSLA>(DefaultColor).Pack(false);
+		CMessageGradient::Reset(pGradient, GradientSize);
+		Changed = true;
+	}
+
+	int NumColors = CMessageGradient::Unpack(pGradient, pColorValues, CMessageGradient::MAX_COLORS);
+	if(NumColors <= 0)
+	{
+		NumColors = 1;
+		pColorValues[0] = *pBaseColor;
+	}
+
+	CUIRect ColorLine;
+	pView->HSplitTop(COLOR_LINE_HEIGHT, &ColorLine, pView);
+	CUIRect ColorArea = ColorLine;
+	if(CheckBoxSpacing)
+		ColorArea.VSplitLeft(ColorLine.h + 5.0f, nullptr, &ColorArea);
+	ColorArea.VSplitRight(CHANGE_BUTTON_SIZE * 2.0f + COLOR_BUTTON_SPACING, &ColorArea, &ColorLine);
+
+	for(int ColorIndex = 0; ColorIndex < NumColors; ++ColorIndex)
+	{
+		CUIRect ColorButton;
+		ColorArea.VSplitLeft(COLOR_BUTTON_SIZE, &ColorButton, &ColorArea);
+		if(ColorIndex < NumColors - 1)
+			ColorArea.VSplitLeft(COLOR_BUTTON_SPACING, nullptr, &ColorArea);
+		const unsigned OldColor = pColorValues[ColorIndex];
+		const ColorHSLA PickedColor = DoButton_ColorPicker(&ColorButton, &pColorValues[ColorIndex], false);
+		pColorValues[ColorIndex] = PickedColor.Pack(false);
+		if(pColorValues[ColorIndex] != OldColor)
+		{
+			*pBaseColor = pColorValues[0];
+			if(NumColors == 1)
+				CMessageGradient::Reset(pGradient, GradientSize);
+			else
+				CMessageGradient::Pack(pColorValues, NumColors, pGradient, GradientSize);
+			Changed = true;
+		}
+	}
+
+	CUIRect RemoveButton, AddButton;
+	ColorLine.VSplitLeft(CHANGE_BUTTON_SIZE, &RemoveButton, &ColorLine);
+	ColorLine.VSplitLeft(COLOR_BUTTON_SPACING, nullptr, &ColorLine);
+	ColorLine.VSplitLeft(CHANGE_BUTTON_SIZE, &AddButton, nullptr);
+	const bool CanRemoveColor = NumColors > CMessageGradient::MIN_COLORS;
+	const bool CanAddColor = NumColors < CMessageGradient::MAX_COLORS;
+	if(DoButton_Menu(pRemoveButton, "-", CanRemoveColor ? 0 : -1, &RemoveButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 4.0f) && CanRemoveColor)
+	{
+		--NumColors;
+		*pBaseColor = pColorValues[0];
+		if(NumColors == 1)
+			CMessageGradient::Reset(pGradient, GradientSize);
+		else
+			CMessageGradient::Pack(pColorValues, NumColors, pGradient, GradientSize);
+		Changed = true;
+	}
+	if(DoButton_Menu(pAddButton, "+", CanAddColor ? 0 : -1, &AddButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 4.0f) && CanAddColor)
+	{
+		pColorValues[NumColors] = pColorValues[NumColors - 1];
+		++NumColors;
+		CMessageGradient::Pack(pColorValues, NumColors, pGradient, GradientSize);
+		Changed = true;
+	}
+
+	pView->HSplitTop(BOTTOM_MARGIN, nullptr, pView);
+	if(Changed)
+		Chat.RebuildChat();
+	return Changed;
+}
+
+namespace
+{
 constexpr size_t MAX_LANGUAGE_CACHE = 128;
 constexpr float LANGUAGE_ROW_HEIGHT = 28.0f;
 constexpr float LANGUAGE_FONT_SIZE = 16.0f;
@@ -3926,21 +4040,31 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
 
 		// Message Colors and extra settings
-		static CButtonContainer s_SystemMessageColor;
-		DoLine_ColorPicker(&s_SystemMessageColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &RightView, Localize("System message"), &g_Config.m_ClMessageSystemColor, ColorRGBA(1.0f, 1.0f, 0.5f), true, &g_Config.m_ClShowChatSystem);
-		static CButtonContainer s_HighlightedMessageColor;
-		DoLine_ColorPicker(&s_HighlightedMessageColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &RightView, Localize("Highlighted message"), &g_Config.m_ClMessageHighlightColor, ColorRGBA(1.0f, 0.5f, 0.5f));
-		static CButtonContainer s_TeamMessageColor;
-		DoLine_ColorPicker(&s_TeamMessageColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &RightView, Localize("Team message"), &g_Config.m_ClMessageTeamColor, ColorRGBA(0.65f, 1.0f, 0.65f));
-		static CButtonContainer s_FriendMessageColor;
-		DoLine_ColorPicker(&s_FriendMessageColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &RightView, Localize("Friend message"), &g_Config.m_ClMessageFriendColor, ColorRGBA(1.0f, 0.137f, 0.137f), true, &g_Config.m_ClMessageFriend);
-		static CButtonContainer s_NormalMessageColor;
-		DoLine_ColorPicker(&s_NormalMessageColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &RightView, Localize("Normal message"), &g_Config.m_ClMessageColor, ColorRGBA(1.0f, 1.0f, 1.0f));
+		static CButtonContainer s_SystemMessageReset, s_SystemMessageAdd, s_SystemMessageRemove;
+		static unsigned s_aSystemMessageColorValues[CMessageGradient::MAX_COLORS];
+		DoMessageGradientLine(Chat, &RightView, Localize("System message"), &g_Config.m_ClMessageSystemColor, g_Config.m_ClMessageSystemGradient, sizeof(g_Config.m_ClMessageSystemGradient), ColorRGBA(1.0f, 1.0f, 0.5f), &s_SystemMessageReset, &s_SystemMessageAdd, &s_SystemMessageRemove, s_aSystemMessageColorValues, true, &g_Config.m_ClShowChatSystem);
+
+		static CButtonContainer s_HighlightedMessageReset, s_HighlightedMessageAdd, s_HighlightedMessageRemove;
+		static unsigned s_aHighlightedMessageColorValues[CMessageGradient::MAX_COLORS];
+		DoMessageGradientLine(Chat, &RightView, Localize("Highlighted message"), &g_Config.m_ClMessageHighlightColor, g_Config.m_ClMessageHighlightGradient, sizeof(g_Config.m_ClMessageHighlightGradient), ColorRGBA(1.0f, 0.5f, 0.5f), &s_HighlightedMessageReset, &s_HighlightedMessageAdd, &s_HighlightedMessageRemove, s_aHighlightedMessageColorValues);
+
+		static CButtonContainer s_TeamMessageReset, s_TeamMessageAdd, s_TeamMessageRemove;
+		static unsigned s_aTeamMessageColorValues[CMessageGradient::MAX_COLORS];
+		DoMessageGradientLine(Chat, &RightView, Localize("Team message"), &g_Config.m_ClMessageTeamColor, g_Config.m_ClMessageTeamGradient, sizeof(g_Config.m_ClMessageTeamGradient), ColorRGBA(0.65f, 1.0f, 0.65f), &s_TeamMessageReset, &s_TeamMessageAdd, &s_TeamMessageRemove, s_aTeamMessageColorValues);
+
+		static CButtonContainer s_FriendMessageReset, s_FriendMessageAdd, s_FriendMessageRemove;
+		static unsigned s_aFriendMessageColorValues[CMessageGradient::MAX_COLORS];
+		DoMessageGradientLine(Chat, &RightView, Localize("Friend message"), &g_Config.m_ClMessageFriendColor, g_Config.m_ClMessageFriendGradient, sizeof(g_Config.m_ClMessageFriendGradient), ColorRGBA(1.0f, 0.137f, 0.137f), &s_FriendMessageReset, &s_FriendMessageAdd, &s_FriendMessageRemove, s_aFriendMessageColorValues, true, &g_Config.m_ClMessageFriend);
+
+		static CButtonContainer s_NormalMessageReset, s_NormalMessageAdd, s_NormalMessageRemove;
+		static unsigned s_aNormalMessageColorValues[CMessageGradient::MAX_COLORS];
+		DoMessageGradientLine(Chat, &RightView, Localize("Normal message"), &g_Config.m_ClMessageColor, g_Config.m_ClMessageGradient, sizeof(g_Config.m_ClMessageGradient), ColorRGBA(1.0f, 1.0f, 1.0f), &s_NormalMessageReset, &s_NormalMessageAdd, &s_NormalMessageRemove, s_aNormalMessageColorValues);
 
 		str_format(aBuf, sizeof(aBuf), "%s (echo)", Localize("Client message"));
-		static CButtonContainer s_ClientMessageColor;
+		static CButtonContainer s_ClientMessageReset, s_ClientMessageAdd, s_ClientMessageRemove;
+		static unsigned s_aClientMessageColorValues[CMessageGradient::MAX_COLORS];
 		// TClient
-		DoLine_ColorPicker(&s_ClientMessageColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &RightView, aBuf, &g_Config.m_ClMessageClientColor, ColorRGBA(0.5f, 0.78f, 1.0f), true, &g_Config.m_TcShowChatClient);
+		DoMessageGradientLine(Chat, &RightView, aBuf, &g_Config.m_ClMessageClientColor, g_Config.m_ClMessageClientGradient, sizeof(g_Config.m_ClMessageClientGradient), ColorRGBA(0.5f, 0.78f, 1.0f), &s_ClientMessageReset, &s_ClientMessageAdd, &s_ClientMessageRemove, s_aClientMessageColorValues, true, &g_Config.m_TcShowChatClient);
 
 		// ***** Chat Preview ***** //
 		Ui()->DoLabel_AutoLineSize(Localize("Preview"), HeadlineFontSize,
@@ -4123,7 +4247,20 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 					TextRender()->TextColor(NormalColor);
 			}
 
+			if(Line.m_Highlighted)
+				CMessageGradient::AddTextSplits(AppendCursor, Line.m_aText, g_Config.m_ClMessageHighlightGradient, HighlightedColor);
+			else if(Line.m_Friend && g_Config.m_ClMessageFriend)
+				CMessageGradient::AddTextSplits(AppendCursor, Line.m_aText, g_Config.m_ClMessageFriendGradient, FriendColor);
+			else if(Line.m_Team)
+				CMessageGradient::AddTextSplits(AppendCursor, Line.m_aText, g_Config.m_ClMessageTeamGradient, TeamColor);
+			else if(Line.m_Player)
+				CMessageGradient::AddTextSplits(AppendCursor, Line.m_aText, g_Config.m_ClMessageGradient, NormalColor);
+			else if(Line.m_Client)
+				CMessageGradient::AddTextSplits(AppendCursor, Line.m_aText, g_Config.m_ClMessageClientGradient, ClientColor);
+			else
+				CMessageGradient::AddTextSplits(AppendCursor, Line.m_aText, g_Config.m_ClMessageSystemGradient, SystemColor);
 			TextRender()->TextEx(&AppendCursor, Line.m_aText, -1);
+			AppendCursor.m_vColorSplits.clear();
 			if(Render)
 				TextRender()->TextColor(TextRender()->DefaultTextColor());
 
