@@ -19,9 +19,35 @@
 #include <game/editor/mapitems/image.h>
 #include <game/editor/mapitems/sound.h>
 
+#include <algorithm>
+#include <array>
 #include <limits>
 
 using namespace FontIcons;
+
+namespace
+{
+using SQuadPointArray = std::array<CPoint, 5>;
+
+SQuadPointArray QuadPoints(const CQuad *pQuad)
+{
+	SQuadPointArray aPoints;
+	std::copy(std::begin(pQuad->m_aPoints), std::end(pQuad->m_aPoints), aPoints.begin());
+	return aPoints;
+}
+
+void ScaleQuadAroundPivot(CQuad *pQuad, const SQuadPointArray &aOriginalPoints, int ScalePercent)
+{
+	const float Scale = ScalePercent / 100.0f;
+	const CPoint Pivot = aOriginalPoints[4];
+	for(int PointIndex = 0; PointIndex < 4; ++PointIndex)
+	{
+		pQuad->m_aPoints[PointIndex].x = Pivot.x + f2fx(fx2f(aOriginalPoints[PointIndex].x - Pivot.x) * Scale);
+		pQuad->m_aPoints[PointIndex].y = Pivot.y + f2fx(fx2f(aOriginalPoints[PointIndex].y - Pivot.y) * Scale);
+	}
+	pQuad->m_aPoints[4] = Pivot;
+}
+}
 
 CUi::EPopupMenuFunctionResult CEditor::PopupMenuFile(void *pContext, CUIRect View, bool Active)
 {
@@ -1044,6 +1070,40 @@ CUi::EPopupMenuFunctionResult CEditor::PopupQuad(void *pContext, CUIRect View, b
 		pEditor->m_QuadKnifeCount = 0;
 		pEditor->m_QuadKnifeActive = true;
 		return CUi::POPUP_CLOSE_CURRENT;
+	}
+
+	// proportional scale
+	View.HSplitBottom(8.0f, &View, nullptr);
+	static int s_ScalePercent = 100;
+	CProperty aScaleProps[] = {
+		{"缩放 %", s_ScalePercent, PROPTYPE_INT, 1, 1000},
+		{nullptr},
+	};
+	static int s_ScaleId = 0;
+	static std::vector<SQuadPointArray> s_vOriginalScalePoints;
+	int ScalePercent = s_ScalePercent;
+	const SEditResult<int> ScaleResult = pEditor->DoPropertiesWithState<int>(&View, aScaleProps, &s_ScaleId, &ScalePercent);
+	if(ScaleResult.m_State == EEditState::START || ScaleResult.m_State == EEditState::ONE_GO)
+	{
+		s_vOriginalScalePoints.clear();
+		for(CQuad *pQuad : vpQuads)
+			s_vOriginalScalePoints.push_back(QuadPoints(pQuad));
+		if(pLayer)
+			pEditor->m_Map.m_QuadTracker.BeginQuadTrack(pLayer, pEditor->m_vSelectedQuads);
+	}
+	if(ScaleResult.m_State != EEditState::NONE && !s_vOriginalScalePoints.empty())
+	{
+		s_ScalePercent = ScalePercent;
+		for(size_t QuadIndex = 0; QuadIndex < vpQuads.size(); ++QuadIndex)
+			ScaleQuadAroundPivot(vpQuads[QuadIndex], s_vOriginalScalePoints[QuadIndex], ScalePercent);
+	}
+	if(ScaleResult.m_State == EEditState::ONE_GO || ScaleResult.m_State == EEditState::END)
+	{
+		if(pLayer)
+			pEditor->m_Map.m_QuadTracker.EndQuadTrack();
+		pEditor->m_Map.OnModify();
+		s_vOriginalScalePoints.clear();
+		s_ScalePercent = 100;
 	}
 
 	const int NumQuads = pLayer ? (int)pLayer->m_vQuads.size() : 0;

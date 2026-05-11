@@ -8,7 +8,7 @@
 class CMessageGradient
 {
 public:
-	static constexpr int MAX_COLORS = 5;
+	static constexpr int MAX_COLORS = 7;
 	static constexpr int MIN_COLORS = 1;
 
 	static int Unpack(const char *pGradient, unsigned *pColors, int MaxColors);

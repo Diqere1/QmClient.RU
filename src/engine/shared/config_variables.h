@@ -642,11 +642,6 @@ MACRO_CONFIG_COL(ClMessageClientColor, cl_message_client_color, 9633471, CFGFLAG
 MACRO_CONFIG_COL(ClMessageHighlightColor, cl_message_highlight_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "突出显示的消息颜色")
 MACRO_CONFIG_COL(ClMessageTeamColor, cl_message_team_color, 5636050, CFGFLAG_CLIENT | CFGFLAG_SAVE, "队伍消息颜色")
 MACRO_CONFIG_COL(ClMessageColor, cl_message_color, 255, CFGFLAG_CLIENT | CFGFLAG_SAVE, "留言颜色")
-MACRO_CONFIG_STR(ClMessageSystemGradient, cl_message_system_gradient, 128, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "系统消息文字渐变颜色")
-MACRO_CONFIG_STR(ClMessageClientGradient, cl_message_client_gradient, 128, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "客户端消息文字渐变颜色")
-MACRO_CONFIG_STR(ClMessageHighlightGradient, cl_message_highlight_gradient, 128, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "突出显示消息文字渐变颜色")
-MACRO_CONFIG_STR(ClMessageTeamGradient, cl_message_team_gradient, 128, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "队伍消息文字渐变颜色")
-MACRO_CONFIG_STR(ClMessageGradient, cl_message_gradient, 128, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "普通消息文字渐变颜色")
 MACRO_CONFIG_COL(ClLaserRifleInnerColor, cl_laser_rifle_inner_color, 11206591, CFGFLAG_CLIENT | CFGFLAG_SAVE, "步枪激光内色")
 MACRO_CONFIG_COL(ClLaserRifleOutlineColor, cl_laser_rifle_outline_color, 11176233, CFGFLAG_CLIENT | CFGFLAG_SAVE, "步枪的激光轮廓颜色")
 MACRO_CONFIG_COL(ClLaserShotgunInnerColor, cl_laser_sg_inner_color, 1467241, CFGFLAG_CLIENT | CFGFLAG_SAVE, "霰弹枪激光内色")
@@ -663,7 +658,6 @@ MACRO_CONFIG_COL(ClKillMessageHighlightColor, cl_kill_message_highlight_color, 2
 
 MACRO_CONFIG_INT(ClMessageFriend, cl_message_friend, 1, 0, 1, CFGFLAG_SAVE | CFGFLAG_CLIENT, "为朋友启用着色和爱心")
 MACRO_CONFIG_COL(ClMessageFriendColor, cl_message_friend_color, 65425, CFGFLAG_CLIENT | CFGFLAG_SAVE, "好友留言颜色")
-MACRO_CONFIG_STR(ClMessageFriendGradient, cl_message_friend_gradient, 128, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "好友消息文字渐变颜色")
 
 MACRO_CONFIG_INT(ConnTimeout, conn_timeout, 100, 5, 1000, CFGFLAG_SAVE | CFGFLAG_CLIENT | CFGFLAG_SERVER, "网络超时")
 MACRO_CONFIG_INT(ConnTimeoutProtection, conn_timeout_protection, 1000, 5, 10000, CFGFLAG_SERVER, "网络超时保护")
