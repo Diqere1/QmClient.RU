@@ -18,10 +18,34 @@
 namespace
 {
 constexpr float EPSILON = 0.001f;
+constexpr float HUD_EDITOR_SNAP_DISTANCE = 6.0f;
 
 float Clamp01(float Value)
 {
 	return std::clamp(Value, 0.0f, 1.0f);
+}
+
+float SnapHudEditorAxis(float Position, float Size, float ScreenStart, float ScreenSize)
+{
+	const float ScreenEnd = ScreenStart + ScreenSize;
+	const float ScreenCenter = ScreenStart + ScreenSize * 0.5f;
+	const float MinPosition = ScreenStart;
+	const float MaxPosition = Size >= ScreenSize ? ScreenStart : ScreenEnd - Size;
+	float SnappedPosition = std::clamp(Position, MinPosition, MaxPosition);
+	float BestDistance = HUD_EDITOR_SNAP_DISTANCE + EPSILON;
+
+	const auto TrySnap = [&](float Candidate, float Distance) {
+		if(Distance <= HUD_EDITOR_SNAP_DISTANCE && Distance < BestDistance)
+		{
+			SnappedPosition = std::clamp(Candidate, MinPosition, MaxPosition);
+			BestDistance = Distance;
+		}
+	};
+
+	TrySnap(ScreenStart, std::fabs(Position - ScreenStart));
+	TrySnap(ScreenEnd - Size, std::fabs(Position + Size - ScreenEnd));
+	TrySnap(ScreenCenter - Size * 0.5f, std::fabs(Position + Size * 0.5f - ScreenCenter));
+	return SnappedPosition;
 }
 }
 
@@ -456,10 +480,8 @@ void CHudEditor::OnRender()
 			const float Scale = std::clamp(State.m_ScalePercent / 100.0f, MIN_SCALE_PERCENT / 100.0f, MAX_SCALE_PERCENT / 100.0f);
 			const float Width = Visible.m_BaseWidth * Scale;
 			const float Height = Visible.m_BaseHeight * Scale;
-			const float MaxX = Width >= pUiScreen->w ? pUiScreen->x : pUiScreen->x + pUiScreen->w - Width;
-			const float MaxY = Height >= pUiScreen->h ? pUiScreen->y : pUiScreen->y + pUiScreen->h - Height;
-			const float X = std::clamp(Ui()->MouseX() - m_DragGrabOffset.x, pUiScreen->x, MaxX);
-			const float Y = std::clamp(Ui()->MouseY() - m_DragGrabOffset.y, pUiScreen->y, MaxY);
+			const float X = SnapHudEditorAxis(Ui()->MouseX() - m_DragGrabOffset.x, Width, pUiScreen->x, pUiScreen->w);
+			const float Y = SnapHudEditorAxis(Ui()->MouseY() - m_DragGrabOffset.y, Height, pUiScreen->y, pUiScreen->h);
 			State.m_PosXPermille = std::clamp(round_to_int((X - pUiScreen->x) / pUiScreen->w * POSITION_SCALE), 0, POSITION_SCALE);
 			State.m_PosYPermille = std::clamp(round_to_int((Y - pUiScreen->y) / pUiScreen->h * POSITION_SCALE), 0, POSITION_SCALE);
 			m_DirtyLayout = true;
@@ -524,6 +546,7 @@ void CHudEditor::OnRender()
 	constexpr float HelpLineHeight = 8.0f;
 	const char *apHelpLines[] = {
 		Localize("Drag HUD modules with the left mouse button"),
+		Localize("Modules snap to screen edges and center lines while dragging"),
 		Localize("Use the mouse wheel on a hovered module to scale it by 5%"),
 		Localize("Press Esc to exit the HUD editor"),
 	};
