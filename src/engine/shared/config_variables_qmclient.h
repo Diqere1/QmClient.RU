@@ -36,8 +36,10 @@ MACRO_CONFIG_STR(ClMessageFriendGradient, cl_message_friend_gradient, 128, "", C
 // Rainbow Name / 彩虹名字
 MACRO_CONFIG_INT(QmRainbowName, qm_rainbow_name, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用自己名字的彩虹色渲染")
 MACRO_CONFIG_INT(QmNameplateCoordX, qm_nameplate_coord_x, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌显示坐标X")
-MACRO_CONFIG_INT(QmNameplateCoordXAlignHint, qm_nameplate_coord_x_align_hint, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌X对齐提示")
+MACRO_CONFIG_INT(QmNameplateCoordXAlignHint, qm_nameplate_coord_x_align_hint, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌显示与本地玩家X对齐的提示")
 MACRO_CONFIG_INT(QmNameplateCoordXAlignHintStrict, qm_nameplate_coord_x_align_hint_strict, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌X对齐提示严格模式")
+MACRO_CONFIG_INT(QmNameplateCoordXAlignHintWindowMs, qm_nameplate_coord_x_align_hint_window_ms, 1000, 100, 3000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌X对齐提示持续判定窗口（毫秒）")
+MACRO_CONFIG_COL(QmNameplateCoordXAlignHintColor, qm_nameplate_coord_x_align_hint_color, 0x21FF99, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌X对齐提示高亮颜色")
 MACRO_CONFIG_INT(QmNameplateCoordY, qm_nameplate_coord_y, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌显示坐标Y")
 MACRO_CONFIG_INT(QmNameplateCoordsOwn, qm_nameplate_coords_own, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌显示自己坐标")
 MACRO_CONFIG_INT(QmNameplateCoords, qm_nameplate_coords, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字牌显示他人坐标")
