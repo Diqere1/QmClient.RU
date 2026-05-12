@@ -135,6 +135,7 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 	{
 		CUIRect ColorButton;
 		ColorArea.VSplitLeft(COLOR_BUTTON_SIZE, &ColorButton, &ColorArea);
+		ColorButton.HMargin((ColorButton.h - COLOR_BUTTON_SIZE) / 2.0f, &ColorButton);
 		if(ColorIndex < NumColors - 1)
 			ColorArea.VSplitLeft(COLOR_BUTTON_SPACING, nullptr, &ColorArea);
 		const unsigned OldColor = pColorValues[ColorIndex];
@@ -155,6 +156,8 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 	ColorLine.VSplitLeft(CHANGE_BUTTON_SIZE, &RemoveButton, &ColorLine);
 	ColorLine.VSplitLeft(COLOR_BUTTON_SPACING, nullptr, &ColorLine);
 	ColorLine.VSplitLeft(CHANGE_BUTTON_SIZE, &AddButton, nullptr);
+	RemoveButton.HMargin((RemoveButton.h - CHANGE_BUTTON_SIZE) / 2.0f, &RemoveButton);
+	AddButton.HMargin((AddButton.h - CHANGE_BUTTON_SIZE) / 2.0f, &AddButton);
 	const bool CanRemoveColor = NumColors > CMessageGradient::MIN_COLORS;
 	const bool CanAddColor = NumColors < CMessageGradient::MAX_COLORS;
 	if(DoButton_Menu(pRemoveButton, "-", CanRemoveColor ? 0 : -1, &RemoveButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 4.0f) && CanRemoveColor)
@@ -177,7 +180,10 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 
 	pView->HSplitTop(BOTTOM_MARGIN, nullptr, pView);
 	if(Changed)
+	{
 		Chat.RebuildChat();
+		ConfigManager()->Save();
+	}
 	return Changed;
 }
 
@@ -4072,6 +4078,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		PreviewView.HSplitTop(MarginSmall, nullptr, &PreviewView);
 
 		// Use the rest of the view for preview
+		PreviewView.w *= 0.5f;
 		PreviewView.Draw(ColorRGBA(1, 1, 1, 0.1f), IGraphics::CORNER_ALL, 5.0f);
 		PreviewView.Margin(MarginSmall, &PreviewView);
 

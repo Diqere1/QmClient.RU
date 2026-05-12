@@ -14,9 +14,10 @@ private:
 	class CNamePlatesData;
 	CNamePlatesData *m_pData;
 	void ResetChatBubbleAnimState(int ClientId, bool IsDestructing = false);
+	void UpdateCoordXAlignFrameState();
 
 public:
-	void RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *pPlayerInfo, float Alpha);
+	void RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *pPlayerInfo, float Alpha, bool TrackCoordXAlign = true);
 	void RenderNamePlatePreview(vec2 Position, int Dummy);
 	void RenderChatBubble(vec2 Position, int ClientId, float Alpha);
 	void ResetNamePlates();

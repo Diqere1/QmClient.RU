@@ -80,6 +80,20 @@ struct SChatBubbleAnimState
 	char m_aLayoutText[256] = "";
 };
 
+struct SCoordXAlignState
+{
+	bool m_Active = false;
+	bool m_Aligned = false;
+	float m_WindowStartTime = 0.0f;
+};
+
+struct SCoordXAlignFrameState
+{
+	bool m_LocalAligned = false;
+	int m_LocalClientId = -1;
+	int m_LocalRoundedX = 0;
+};
+
 static uint64_t ChatBubbleAnimNodeKey(int ClientId)
 {
 	static const uint64_t s_BaseKey = static_cast<uint64_t>(str_quickhash("chat_bubble_anim_v2"));
@@ -215,8 +229,7 @@ public:
 	bool m_CoordXAlignHint;
 	bool m_CoordXAlignHintStrict;
 	bool m_CoordXAligned;
-	float m_CoordXAlignBaseX;
-	int m_CoordXAlignDiff;
+	ColorRGBA m_CoordXAlignColor;
 	vec2 m_Coords;
 	float m_FontSizeCoords;
 	bool m_ShowDirection;
@@ -857,44 +870,37 @@ public:
 class CNamePlatePartCoordinates : public CNamePlatePartText
 {
 private:
-	vec2 m_Coords = vec2(INFINITY, INFINITY);
+	float m_Coord = INFINITY;
 	float m_FontSize = -INFINITY;
-	bool m_ShowX = false;
-	bool m_ShowY = false;
-	char m_aText[64] = "";
+	bool m_Show = false;
+	bool m_IsX = false;
+	bool m_Aligned = false;
+	char m_aText[32] = "";
 
-	static float RoundCoord(float Value)
+	static int RoundCoordToCentitiles(float Value)
 	{
-		return static_cast<float>(std::round(Value * 100.0f) / 100.0f);
+		return round_to_int(Value * 100.0f);
 	}
 
 protected:
 	bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
 	{
-		m_Visible = Data.m_ShowCoords && (Data.m_ShowCoordX || Data.m_ShowCoordY);
+		const bool Show = Data.m_ShowCoords && (m_IsX ? Data.m_ShowCoordX : Data.m_ShowCoordY);
+		m_Visible = Show;
 		if(!m_Visible)
 			return false;
-		m_Color = Data.m_Color;
-		const float RoundedX = RoundCoord(Data.m_Coords.x);
-		const float RoundedY = RoundCoord(Data.m_Coords.y);
-		const bool ShowX = Data.m_ShowCoordX;
-		const bool ShowY = Data.m_ShowCoordY;
-		return m_FontSize != Data.m_FontSizeCoords || m_ShowX != ShowX || m_ShowY != ShowY ||
-		       m_Coords.x != RoundedX || m_Coords.y != RoundedY;
+		const bool Aligned = m_IsX && Data.m_CoordXAligned;
+		m_Color = Aligned ? Data.m_CoordXAlignColor : Data.m_Color;
+		const float Coord = RoundCoordToCentitiles(m_IsX ? Data.m_Coords.x : Data.m_Coords.y) / 100.0f;
+		return m_FontSize != Data.m_FontSizeCoords || m_Show != Show || m_Aligned != Aligned || m_Coord != Coord;
 	}
 	void UpdateText(CGameClient &This, const CNamePlateData &Data) override
 	{
 		m_FontSize = Data.m_FontSizeCoords;
-		m_ShowX = Data.m_ShowCoordX;
-		m_ShowY = Data.m_ShowCoordY;
-		m_Coords = vec2(RoundCoord(Data.m_Coords.x), RoundCoord(Data.m_Coords.y));
-
-		if(m_ShowX && m_ShowY)
-			str_format(m_aText, sizeof(m_aText), "X:%.2f Y:%.2f", m_Coords.x, m_Coords.y);
-		else if(m_ShowX)
-			str_format(m_aText, sizeof(m_aText), "X:%.2f", m_Coords.x);
-		else
-			str_format(m_aText, sizeof(m_aText), "Y:%.2f", m_Coords.y);
+		m_Show = Data.m_ShowCoords && (m_IsX ? Data.m_ShowCoordX : Data.m_ShowCoordY);
+		m_Aligned = m_IsX && Data.m_CoordXAligned;
+		m_Coord = RoundCoordToCentitiles(m_IsX ? Data.m_Coords.x : Data.m_Coords.y) / 100.0f;
+		str_format(m_aText, sizeof(m_aText), "%c:%.2f", m_IsX ? 'X' : 'Y', m_Coord);
 
 		CTextCursor Cursor;
 		Cursor.m_FontSize = m_FontSize;
@@ -902,124 +908,9 @@ protected:
 	}
 
 public:
-	CNamePlatePartCoordinates(CGameClient &This) :
-		CNamePlatePartText(This) {}
-};
-
-class CNamePlatePartCoordXAlignPopup : public CNamePlatePart
-{
-private:
-	STextContainerIndex m_TextContainerIndex;
-	char m_aText[32] = "";
-	float m_StartTime = -INFINITY;
-	float m_NextAllowedTriggerTime = -INFINITY;
-	bool m_AlignHintEnabled = false;
-	bool m_PrevAligned = false;
-	vec2 m_TextSize = vec2(0.0f, 0.0f);
-	ColorRGBA m_BaseColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
-
-	static float RoundCoord(float Value)
-	{
-		return static_cast<float>(std::round(Value * 100.0f) / 100.0f);
-	}
-
-	static float CalcAlignPopupAlpha(float TimeSeconds)
-	{
-		const float FadeInDuration = 0.12f;
-		const float HoldDuration = 0.56f;
-		const float FadeOutDuration = 0.22f;
-		const float TotalDuration = FadeInDuration + HoldDuration + FadeOutDuration;
-		if(TimeSeconds < 0.0f || TimeSeconds > TotalDuration)
-			return 0.0f;
-		if(TimeSeconds < FadeInDuration)
-			return TimeSeconds / FadeInDuration;
-		if(TimeSeconds < FadeInDuration + HoldDuration)
-			return 1.0f;
-		const float FadeOutTime = TimeSeconds - FadeInDuration - HoldDuration;
-		return 1.0f - FadeOutTime / FadeOutDuration;
-	}
-
-public:
-	CNamePlatePartCoordXAlignPopup(CGameClient &This) :
-		CNamePlatePart(This)
-	{
-		m_Size = vec2(0.0f, 0.0f);
-		m_Padding = vec2(0.0f, 0.0f);
-	}
-
-	void Update(CGameClient &This, const CNamePlateData &Data) override
-	{
-		constexpr float AlignHintCooldown = 3.0f;
-		const float Now = This.Client()->LocalTime();
-
-		m_AlignHintEnabled = Data.m_CoordXAlignHint;
-		m_Visible = m_AlignHintEnabled;
-		m_BaseColor = Data.m_Color;
-		m_Size = vec2(0.0f, 0.0f);
-		m_Padding = vec2(0.0f, 0.0f);
-
-		if(!m_AlignHintEnabled)
-		{
-			m_PrevAligned = false;
-			return;
-		}
-
-		const bool Trigger = Data.m_CoordXAligned && !m_PrevAligned && Now >= m_NextAllowedTriggerTime;
-		m_PrevAligned = Data.m_CoordXAligned;
-		if(!Trigger)
-			return;
-
-		m_StartTime = Now;
-		m_NextAllowedTriggerTime = Now + AlignHintCooldown;
-		This.TextRender()->DeleteTextContainer(m_TextContainerIndex);
-
-		const float BaseX = RoundCoord(Data.m_CoordXAlignBaseX);
-		if(Data.m_CoordXAlignDiff >= 0)
-			str_format(m_aText, sizeof(m_aText), "%.2f+%d", BaseX, Data.m_CoordXAlignDiff);
-		else
-			str_format(m_aText, sizeof(m_aText), "%.2f%d", BaseX, Data.m_CoordXAlignDiff);
-
-		CTextCursor Cursor;
-		Cursor.m_FontSize = Data.m_FontSizeCoords;
-		This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, m_aText);
-		if(m_TextContainerIndex.Valid())
-		{
-			const STextBoundingBox PopupBounds = This.TextRender()->GetBoundingBoxTextContainer(m_TextContainerIndex);
-			m_TextSize = vec2(PopupBounds.m_W, PopupBounds.m_H);
-		}
-		else
-		{
-			m_TextSize = vec2(0.0f, 0.0f);
-		}
-	}
-
-	void Reset(CGameClient &This) override
-	{
-		This.TextRender()->DeleteTextContainer(m_TextContainerIndex);
-		m_StartTime = -INFINITY;
-		m_NextAllowedTriggerTime = -INFINITY;
-		m_PrevAligned = false;
-		m_TextSize = vec2(0.0f, 0.0f);
-	}
-
-	void Render(CGameClient &This, vec2 Pos) const override
-	{
-		if(!m_AlignHintEnabled || !m_TextContainerIndex.Valid())
-			return;
-
-		const float TimeSinceStart = This.Client()->LocalTime() - m_StartTime;
-		const float PopupAlpha = CalcAlignPopupAlpha(TimeSinceStart);
-		if(PopupAlpha <= 0.0f)
-			return;
-
-		const float PopupDuration = 0.9f;
-		const float Rise = std::clamp(TimeSinceStart / PopupDuration, 0.0f, 1.0f) * 12.0f;
-		const ColorRGBA HintColor = ColorRGBA(0.2f, 1.0f, 0.2f, m_BaseColor.a * PopupAlpha);
-		const ColorRGBA OutlineColor = s_OutlineColor.WithMultipliedAlpha(m_BaseColor.a * PopupAlpha);
-		const float PopupX = Pos.x - m_TextSize.x / 2.0f;
-		const float PopupY = Pos.y - m_TextSize.y - 36.0f - Rise;
-		This.TextRender()->RenderTextContainer(m_TextContainerIndex, HintColor, OutlineColor, PopupX, PopupY);
-	}
+	CNamePlatePartCoordinates(CGameClient &This, bool IsX) :
+		CNamePlatePartText(This),
+		m_IsX(IsX) {}
 };
 
 class CNamePlatePartReason : public CNamePlatePartText
@@ -1181,8 +1072,8 @@ private:
 
 	void AddCoordsRow(CGameClient &This)
 	{
-		AddPart<CNamePlatePartCoordinates>(This); // TClient
-		AddPart<CNamePlatePartCoordXAlignPopup>(This); // TClient
+		AddPart<CNamePlatePartCoordinates>(This, true); // TClient
+		AddPart<CNamePlatePartCoordinates>(This, false); // TClient
 		AddPart<CNamePlatePartNewLine>(This);
 	}
 
@@ -1364,9 +1255,74 @@ class CNamePlates::CNamePlatesData
 public:
 	CNamePlate m_aNamePlates[MAX_CLIENTS];
 	SChatBubbleAnimState m_aChatBubbleAnim[MAX_CLIENTS];
+	SCoordXAlignState m_aCoordXAlign[MAX_CLIENTS];
+	SCoordXAlignFrameState m_CoordXAlignFrame;
 };
 
-void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *pPlayerInfo, float Alpha)
+static int RoundCoordToCentitiles(float Value)
+{
+	return round_to_int(Value * 100.0f);
+}
+
+void CNamePlates::UpdateCoordXAlignFrameState()
+{
+	SCoordXAlignFrameState &FrameState = m_pData->m_CoordXAlignFrame;
+	FrameState = SCoordXAlignFrameState();
+
+	if(g_Config.m_QmNameplateCoordXAlignHint == 0 && g_Config.m_QmNameplateCoordXAlignHintStrict == 0)
+	{
+		for(SCoordXAlignState &CoordXAlignState : m_pData->m_aCoordXAlign)
+			CoordXAlignState = SCoordXAlignState();
+		return;
+	}
+	if(g_Config.m_QmNameplateCoordX == 0)
+	{
+		for(SCoordXAlignState &CoordXAlignState : m_pData->m_aCoordXAlign)
+			CoordXAlignState = SCoordXAlignState();
+		return;
+	}
+	if(GameClient()->m_Snap.m_LocalClientId < 0 || GameClient()->m_Snap.m_LocalClientId >= MAX_CLIENTS)
+	{
+		for(SCoordXAlignState &CoordXAlignState : m_pData->m_aCoordXAlign)
+			CoordXAlignState = SCoordXAlignState();
+		return;
+	}
+	if(!GameClient()->m_Snap.m_aCharacters[GameClient()->m_Snap.m_LocalClientId].m_Active)
+	{
+		for(SCoordXAlignState &CoordXAlignState : m_pData->m_aCoordXAlign)
+			CoordXAlignState = SCoordXAlignState();
+		return;
+	}
+
+	FrameState.m_LocalClientId = GameClient()->m_Snap.m_LocalClientId;
+	FrameState.m_LocalRoundedX = RoundCoordToCentitiles(GameClient()->m_LocalCharacterPos.x / 32.0f);
+
+	const int MaxAllowedDiff = g_Config.m_QmNameplateCoordXAlignHintStrict ? 0 : 3;
+	const float WindowSeconds = std::clamp(g_Config.m_QmNameplateCoordXAlignHintWindowMs / 1000.0f, 0.1f, 3.0f);
+	const float Now = Client()->LocalTime();
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+	{
+		if(ClientId == FrameState.m_LocalClientId || !GameClient()->m_Snap.m_apPlayerInfos[ClientId])
+			continue;
+		if(!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->m_aClients[ClientId].m_IsVolleyBall)
+			continue;
+
+		SCoordXAlignState &CoordXAlignState = m_pData->m_aCoordXAlign[ClientId];
+		const int RoundedX = RoundCoordToCentitiles(GameClient()->m_aClients[ClientId].m_RenderPos.x / 32.0f);
+		const int RoundedXDiff = absolute(RoundedX - FrameState.m_LocalRoundedX);
+		if(!CoordXAlignState.m_Active || RoundedXDiff > MaxAllowedDiff)
+		{
+			CoordXAlignState.m_Active = true;
+			CoordXAlignState.m_Aligned = false;
+			CoordXAlignState.m_WindowStartTime = Now;
+		}
+		CoordXAlignState.m_Aligned = RoundedXDiff <= MaxAllowedDiff && Now - CoordXAlignState.m_WindowStartTime >= WindowSeconds;
+		if(CoordXAlignState.m_Aligned)
+			FrameState.m_LocalAligned = true;
+	}
+}
+
+void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *pPlayerInfo, float Alpha, bool TrackCoordXAlign)
 {
 	if(!pPlayerInfo)
 		return;
@@ -1384,7 +1340,11 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	ScreenX1 += 400;
 	ScreenY1 += 800;
 	if(!(in_range(Position.x, ScreenX0, ScreenX1) && in_range(Position.y, ScreenY0, ScreenY1)))
+	{
+		if(TrackCoordXAlign)
+			m_pData->m_aCoordXAlign[ClientId] = SCoordXAlignState();
 		return;
+	}
 
 	CNamePlateData Data;
 
@@ -1415,11 +1375,28 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	Data.m_ShowCoords = !HideFocusNames && (pPlayerInfo->m_Local ? g_Config.m_QmNameplateCoordsOwn : g_Config.m_QmNameplateCoords);
 	Data.m_Coords = Position / 32.0f;
 	Data.m_FontSizeCoords = 18.0f + 20.0f * g_Config.m_ClNamePlatesCoordsSize / 100.0f;
-	Data.m_CoordXAlignHint = false;
-	Data.m_CoordXAlignHintStrict = false;
-	Data.m_CoordXAligned = false;
-	Data.m_CoordXAlignBaseX = Data.m_Coords.x;
-	Data.m_CoordXAlignDiff = 0;
+	Data.m_CoordXAlignHint = g_Config.m_QmNameplateCoordXAlignHint != 0;
+	Data.m_CoordXAlignHintStrict = g_Config.m_QmNameplateCoordXAlignHintStrict != 0;
+	Data.m_CoordXAlignColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmNameplateCoordXAlignHintColor));
+
+	SCoordXAlignState &CoordXAlignState = m_pData->m_aCoordXAlign[ClientId];
+	const bool ShouldTrackCoordXAlign =
+		TrackCoordXAlign &&
+		!pPlayerInfo->m_Local &&
+		GameClient()->m_Snap.m_LocalClientId >= 0 &&
+		Data.m_ShowCoords &&
+		Data.m_ShowCoordX &&
+		(Data.m_CoordXAlignHint || Data.m_CoordXAlignHintStrict);
+	if(ShouldTrackCoordXAlign)
+	{
+		Data.m_CoordXAligned = CoordXAlignState.m_Aligned;
+	}
+	else
+	{
+		if(TrackCoordXAlign)
+			CoordXAlignState = SCoordXAlignState();
+		Data.m_CoordXAligned = TrackCoordXAlign && pPlayerInfo->m_Local && m_pData->m_CoordXAlignFrame.m_LocalAligned;
+	}
 
 	Data.m_FontSizeHookStrongWeak = 18.0f + 20.0f * g_Config.m_ClNamePlatesStrongSize / 100.0f;
 	Data.m_FontSizeDirection = 18.0f + 20.0f * g_Config.m_ClDirectionSize / 100.0f;
@@ -1588,8 +1565,7 @@ void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
 	Data.m_CoordXAlignHint = false;
 	Data.m_CoordXAlignHintStrict = false;
 	Data.m_CoordXAligned = false;
-	Data.m_CoordXAlignBaseX = Data.m_Coords.x;
-	Data.m_CoordXAlignDiff = 0;
+	Data.m_CoordXAlignColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmNameplateCoordXAlignHintColor));
 
 	Data.m_ShowDirection = g_Config.m_ClShowDirection != 0 ? true : false;
 	Data.m_DirLeft = Data.m_DirJump = Data.m_DirRight = true;
@@ -1644,6 +1620,8 @@ void CNamePlates::ResetNamePlates()
 {
 	for(CNamePlate &NamePlate : m_pData->m_aNamePlates)
 		NamePlate.Reset(*GameClient());
+	for(SCoordXAlignState &CoordXAlignState : m_pData->m_aCoordXAlign)
+		CoordXAlignState = SCoordXAlignState();
 }
 
 void CNamePlates::ResetChatBubbleAnimState(int ClientId, bool IsDestructing)
@@ -2008,12 +1986,16 @@ void CNamePlates::OnRender()
 
 	if(RenderNameplates || RenderChatBubbles)
 	{
+		if(RenderNameplates)
+			UpdateCoordXAlignFrameState();
+
 		for(int i = 0; i < MAX_CLIENTS; i++)
 		{
 			const CNetObj_PlayerInfo *pInfo = GameClient()->m_Snap.m_apPlayerInfos[i];
 			if(!pInfo)
 			{
 				ResetChatBubbleAnimState(i);
+				m_pData->m_aCoordXAlign[i] = SCoordXAlignState();
 				continue;
 			}
 
@@ -2021,7 +2003,7 @@ void CNamePlates::OnRender()
 			if(GameClient()->m_aClients[i].m_SpecCharPresent && RenderNameplates)
 			{
 				const vec2 RenderPos = GameClient()->m_aClients[i].m_SpecChar;
-				RenderNamePlateGame(RenderPos, pInfo, 0.4f);
+				RenderNamePlateGame(RenderPos, pInfo, 0.4f, false);
 			}
 			// Only render name plates for active characters
 			if(GameClient()->m_Snap.m_aCharacters[i].m_Active)

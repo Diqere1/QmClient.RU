@@ -2188,6 +2188,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			LeftContent.HSplitTop(LG_LineHeight, &Row, &LeftContent);
 			{
 				static int s_QQGroupButtonId;
+				static constexpr const char *pQmClientQqGroupLink = "https://qm.qq.com/cgi-bin/qm/qr?k=ntqdhb9_nB5GeWBo8IVMZoypYmbMwCQ1&jump_from=webapi&authKey=e4HiooMF/hxk8UZhTv8qDu7/8bZ9e3xc7rZYaLlyeifWglGT9KDchsQ7zjpinDr7";
 				if(Ui()->MouseInside(&Row))
 				{
 					Ui()->SetHotItem(&s_QQGroupButtonId);
@@ -2213,6 +2214,14 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				TextRender()->TextColor(TextRender()->DefaultTextColor());
 				if(Ui()->HotItem() == &s_QQGroupButtonId)
 					GameClient()->m_Tooltips.DoToolTip(&s_QQGroupButtonId, &Row, Localize("Click to copy the QQ group number"));
+
+				LeftContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &LeftContent);
+				LeftContent.HSplitTop(LG_LineHeight, &Row, &LeftContent);
+				CUIRect JoinQqGroupButton;
+				static CButtonContainer s_JoinQqGroupButton;
+				Row.VSplitLeft(LeftContent.w, &JoinQqGroupButton, nullptr);
+				if(DoButton_Menu(&s_JoinQqGroupButton, Localize("Join QQ group"), 0, &JoinQqGroupButton))
+					Client()->ViewLink(pQmClientQqGroupLink);
 			}
 			LeftContent.HSplitTop(LG_LineSpacing * 2, nullptr, &LeftContent);
 			DoModuleHeadline(LeftContent, -3, Localize("Support"), Localize("Thanks for supporting QmClient"));
@@ -2332,7 +2341,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			TextRender()->TextColor(ColorRGBA(0.95f, 0.8f, 0.2f, 1.0f));
 			{
 				static const char *const s_apSponsors[] = {
-					"喵不一", "久桃", "芽芽", "碳烤綿芽", "骨头", "陌浅羽", "树羽小朋友", "望舒", "松子", "平凡..", "cixin", "洗点", "秀色", "朱朱", "Twen", "大恐龙", ":luv:", "小左", "Blue°F", "怯修", "yezeen", "鹑", "枫香°", "没问题啊", "·蓝蓝蓝蓝", "临渊捕鱼", "?hook?", "放肆zero", "Q币", "洛天依", "spider", "贝塔塔塔", "见月", "咩子的银耳", "Cancer", "少女`", "长亭寂寞独自愁", "fantuan", "无言鱼", "胖人老许", "夏日", "张宁我儿", "拌饭", "shengyan", "修勾在修沟", "taffy", "杀意没爱意", "DYL", "小信", "哆啦梦", "菜菜羊", "吃了吗chilem", "你就是我的", "xiaopang", "星星🌙", "軽い猫", "oxyzo1", "笨蛋猫猫", "信息检索", "炭", "江江", "晚晚晚上好", "AAA乐土猫猫", "一個廢物"};
+					"喵不一", "久桃", "芽芽", "碳烤綿芽", "骨头", "陌浅羽", "树羽小朋友", "望舒", "松子", "平凡..", "cixin", "洗点", "秀色", "朱朱", "Twen", "大恐龙", ":luv:", "小左", "Blue°F", "怯修", "yezeen", "鹑", "枫香°", "没问题啊", "·蓝蓝蓝蓝", "临渊捕鱼", "?hook?", "放肆zero", "Q币", "洛天依", "spider", "贝塔塔塔", "见月", "咩子的银耳", "Cancer", "少女`", "长亭寂寞独自愁", "fantuan", "无言鱼", "胖人老许", "夏日", "张宁我儿", "拌饭", "shengyan", "修勾在修沟", "taffy", "杀意没爱意", "DYL", "小信", "哆啦梦", "菜菜羊", "吃了吗chilem", "你就是我的", "xiaopang", "星星🌙", "軽い猫", "oxyzo1", "笨蛋猫猫", "信息检索", "炭", "江江", "晚晚晚上好", "AAA乐土猫猫", "一個廢物", "黄花的忧伤"
+				};
 				const float SponsorFontSize = maximum(LG_BodySize * 1.1f - SponsorFontShrink, MinSponsorFontSize);
 				const float MaxLineWidth = RightContent.w;
 				static std::vector<std::string> s_SponsorLines;
@@ -2484,6 +2494,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_CardSpacing;
 		if(s_aQmModuleLastHeights[Index] > 0.0f)
 			return s_aQmModuleLastHeights[Index] + LG_CardSpacing;
+		if(pModule->m_Id == EQmModuleId::Coords)
+			return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_LineHeight * 8.0f + LG_LineSpacing * 7.0f + LG_CardSpacing;
 		return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_LineHeight * 6.0f + LG_CardSpacing;
 	};
 
@@ -3400,6 +3412,34 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateCoordY, Localize("显示 Y"), &g_Config.m_QmNameplateCoordY, &Row, LG_LineHeight);
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateCoordXAlignHint, Localize("与我 X 对齐提示"), &g_Config.m_QmNameplateCoordXAlignHint, &Row, LG_LineHeight);
+				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateCoordXAlignHintStrict, Localize("严格模式"), &g_Config.m_QmNameplateCoordXAlignHintStrict, &Row, LG_LineHeight);
+				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+				Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+				Ui()->DoLabel(&LabelCol, Localize("判定时间"), LG_BodySize, TEXTALIGN_ML);
+				static int s_CoordXAlignHintWindowSliderId;
+				CUIRect WindowSliderRect, WindowValueRect;
+				ControlCol.VSplitRight(maximum(46.0f, 46.0f * UiScale), &WindowSliderRect, &WindowValueRect);
+				WindowSliderRect.VSplitRight(std::clamp(6.0f * UiScale, 3.0f, 6.0f), &WindowSliderRect, nullptr);
+				WindowSliderRect.VMargin(1.0f, &WindowSliderRect);
+				int WindowMs = std::clamp(g_Config.m_QmNameplateCoordXAlignHintWindowMs, 100, 3000);
+				const float WindowRelative = CUi::ms_LinearScrollbarScale.ToRelative(WindowMs, 100, 3000);
+				WindowMs = CUi::ms_LinearScrollbarScale.ToAbsolute(Ui()->DoScrollbarH(&s_CoordXAlignHintWindowSliderId, &WindowSliderRect, WindowRelative), 100, 3000);
+				g_Config.m_QmNameplateCoordXAlignHintWindowMs = std::clamp(round_to_int(WindowMs / 100.0f) * 100, 100, 3000);
+				char aCoordXAlignHintWindow[16];
+				str_format(aCoordXAlignHintWindow, sizeof(aCoordXAlignHintWindow), "%.1fs", g_Config.m_QmNameplateCoordXAlignHintWindowMs / 1000.0f);
+				Ui()->DoLabel(&WindowValueRect, aCoordXAlignHintWindow, LG_BodySize, TEXTALIGN_MR);
+				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+				static CButtonContainer s_CoordXAlignHintColorId;
+				DoLine_ColorPicker(&s_CoordXAlignHintColorId, LG_LineHeight, LG_BodySize, LG_LineSpacing, &CardContent, Localize("X 对齐颜色"), &g_Config.m_QmNameplateCoordXAlignHintColor, ColorRGBA(1.0f, 0.82f, 0.2f, 1.0f), false);
 
 				CardContent.HSplitTop(LG_CardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;
