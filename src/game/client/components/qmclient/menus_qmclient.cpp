@@ -3123,20 +3123,14 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				if(g_Config.m_QmGores)
 				{
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInput, Localize("Auto-toggle fast input"), &g_Config.m_QmGoresFastInput, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInputOthers, Localize("Auto-toggle fast input others"), &g_Config.m_QmGoresFastInputOthers, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInput, Localize("快速输入"), &g_Config.m_QmGoresFastInput, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					if(g_Config.m_QmGoresFastInput)
 					{
-						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-						DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInputOthers, Localize("其他人快速输入"), &g_Config.m_QmGoresFastInputOthers, &Row, LG_LineHeight);
-						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInputOthers, Localize("其他人快速输入"), &g_Config.m_QmGoresFastInputOthers, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 					}
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -3155,8 +3149,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				CardContent.HSplitTop(LG_LineHeight * 0.85f, &Row, &CardContent);
 				{
 					CUIRect BindLabel, BindKey;
-					Row.VSplitLeft(LG_LabelWidth, &BindLabel, &BindKey);
-					Ui()->DoLabel(&BindLabel, Localize("Gores mode bind:"), LG_BodySize, TEXTALIGN_ML);
 					Row.VSplitLeft(Row.w * 0.45f, &BindLabel, &BindKey);
 					Ui()->DoLabel(&BindLabel, Localize("Gores 模式按键:"), LG_BodySize, TEXTALIGN_ML);
 					CBindSlot GoresBind(KEY_UNKNOWN, KeyModifier::NONE);
