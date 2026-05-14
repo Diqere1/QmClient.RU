@@ -891,7 +891,7 @@ bool CBackground::LoadVideoBackground(const char *pPath)
 	m_pVideoFormatContext->flags |= AVFMT_FLAG_CUSTOM_IO;
 
 	const AVInputFormat *pInputFormat = FfmpegInputFormatFromName(pPath);
-	const int OpenResult = avformat_open_input(&m_pVideoFormatContext, nullptr, pInputFormat, nullptr);
+	const int OpenResult = avformat_open_input(&m_pVideoFormatContext, nullptr, const_cast<AVInputFormat *>(pInputFormat), nullptr);
 	if(OpenResult < 0)
 	{
 		char aError[AV_ERROR_MAX_STRING_SIZE];
