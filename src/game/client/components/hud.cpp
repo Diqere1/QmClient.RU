@@ -253,6 +253,12 @@ struct SSwapCountdownInfo
 	char m_aText[64] = {0};
 };
 
+struct SSwapCountdownList
+{
+	std::array<SSwapCountdownInfo, NUM_DUMMIES> m_aInfos{};
+	int m_Count = 0;
+};
+
 struct SHudFrozenTeamInfo
 {
 	bool m_Available = false;
@@ -636,17 +642,17 @@ void DrawTexturedCircle(IGraphics *pGraphics, IGraphics::CTextureHandle Texture,
 	pGraphics->TextureClear();
 }
 
-bool BuildSwapCountdownInfo(const CGameClient &GameClient, const IClient &Client, SSwapCountdownInfo &Out)
+bool BuildSwapCountdownInfo(const CGameClient &GameClient, IClient &Client, int Dummy, SSwapCountdownInfo &Out)
 {
-	if(!GameClient.m_TClient.HasSwapCountdown())
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES || !GameClient.m_TClient.HasSwapCountdown(Dummy))
 		return false;
 
-	const int StartTick = GameClient.m_TClient.GetSwapCountdownStartTick();
+	const int StartTick = GameClient.m_TClient.GetSwapCountdownStartTick(Dummy);
 	if(StartTick <= 0)
 		return false;
 
 	const int TickSpeed = Client.GameTickSpeed();
-	const int CurTick = Client.GameTick(g_Config.m_ClDummy);
+	const int CurTick = Client.GameTick(Dummy);
 	const int ElapsedTicks = CurTick - StartTick;
 	if(ElapsedTicks < 0 || TickSpeed <= 0)
 		return false;
@@ -658,19 +664,37 @@ bool BuildSwapCountdownInfo(const CGameClient &GameClient, const IClient &Client
 	if(ElapsedSeconds >= SWAP_HIDE_AFTER_SECONDS)
 		return false;
 
+	const char *pRequester = GameClient.m_TClient.GetSwapCountdownRequester(Dummy);
+	if(pRequester[0] == '\0')
+		pRequester = "?";
+	const int TargetClientId = GameClient.m_aLocalIds[Dummy];
+	const char *pTarget = TargetClientId >= 0 && TargetClientId < MAX_CLIENTS && GameClient.m_aClients[TargetClientId].m_aName[0] != '\0' ?
+		GameClient.m_aClients[TargetClientId].m_aName :
+		(Dummy == 0 ? Client.PlayerName() : Client.DummyName());
 	const int SecondsLeft = SWAP_COUNTDOWN_SECONDS - ElapsedSeconds;
 	if(SecondsLeft > 0)
 	{
-		str_format(Out.m_aText, sizeof(Out.m_aText), "Swap倒计时:%d秒", SecondsLeft);
+		str_format(Out.m_aText, sizeof(Out.m_aText), "%s->%s Swap:%d秒", pRequester, pTarget, SecondsLeft);
 		Out.m_TextColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 	else
 	{
-		str_copy(Out.m_aText, "可交换!");
+		str_format(Out.m_aText, sizeof(Out.m_aText), "%s->%s 可交换!", pRequester, pTarget);
 		Out.m_TextColor = ColorRGBA(0.5f, 1.0f, 0.5f, 1.0f);
 	}
 
 	return true;
+}
+
+bool BuildSwapCountdownList(const CGameClient &GameClient, IClient &Client, SSwapCountdownList &Out)
+{
+	Out.m_Count = 0;
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+	{
+		if(Out.m_Count < (int)Out.m_aInfos.size() && BuildSwapCountdownInfo(GameClient, Client, Dummy, Out.m_aInfos[Out.m_Count]))
+			++Out.m_Count;
+	}
+	return Out.m_Count > 0;
 }
 
 float ResolveAnimatedLayoutValueEx(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, EUiAnimProperty Property, float Target, float &LastTarget, float DurationSec, float DelaySec, EEasing Easing)
@@ -2361,16 +2385,20 @@ void CHud::RenderTextInfo()
 
 void CHud::RenderSwapCountdown()
 {
-	SSwapCountdownInfo Info;
-	if(!BuildSwapCountdownInfo(*GameClient(), *Client(), Info))
+	SSwapCountdownList SwapList;
+	if(!BuildSwapCountdownList(*GameClient(), *Client(), SwapList))
 		return;
 
 	const float FontSize = 8.0f;
 	const float X = 5.0f;
 	const float Y = m_Height - 12.0f;
+	const float LineHeight = 9.0f;
 
-	TextRender()->TextColor(Info.m_TextColor);
-	TextRender()->Text(X, Y, FontSize, Info.m_aText, -1.0f);
+	for(int i = 0; i < SwapList.m_Count; ++i)
+	{
+		TextRender()->TextColor(SwapList.m_aInfos[i].m_TextColor);
+		TextRender()->Text(X, Y - LineHeight * i, FontSize, SwapList.m_aInfos[i].m_aText, -1.0f);
+	}
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
 }
 
@@ -2588,10 +2616,12 @@ void CHud::RenderSwitchCountdowns()
 	const float SlideOffsetX = 12.0f;
 
 	float SwitchBaseX = BaseX;
-	SSwapCountdownInfo SwapInfo;
-	if(BuildSwapCountdownInfo(*GameClient(), *Client(), SwapInfo))
+	SSwapCountdownList SwapList;
+	if(BuildSwapCountdownList(*GameClient(), *Client(), SwapList))
 	{
-		const float SwapWidth = TextRender()->TextWidth(FontSize, SwapInfo.m_aText, -1, -1.0f);
+		float SwapWidth = 0.0f;
+		for(int i = 0; i < SwapList.m_Count; ++i)
+			SwapWidth = std::max(SwapWidth, TextRender()->TextWidth(FontSize, SwapList.m_aInfos[i].m_aText, -1, -1.0f));
 		SwitchBaseX += SwapWidth + SwapGap;
 	}
 
@@ -3006,8 +3036,8 @@ bool CHud::HasVisibleMediaIsland() const
 	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI && !GameClient()->m_HudEditor.IsActive())
 		return false;
 
-	SSwapCountdownInfo SwapInfo;
-	if(BuildSwapCountdownInfo(*GameClient(), *Client(), SwapInfo))
+	SSwapCountdownList SwapList;
+	if(BuildSwapCountdownList(*GameClient(), *Client(), SwapList))
 		return true;
 
 	if(HasActiveSwitchCountdown())
@@ -3158,8 +3188,8 @@ void CHud::RenderMediaIsland()
 	const bool MediaHudEnabled = g_Config.m_QmSmtcEnable && g_Config.m_QmSmtcShowHud;
 	const bool HasMediaState = MediaHudEnabled && GameClient()->m_SystemMediaControls.GetStateSnapshot(MediaState);
 
-	SSwapCountdownInfo SwapInfo;
-	const bool ShowSwapCountdown = BuildSwapCountdownInfo(*GameClient(), *Client(), SwapInfo);
+	SSwapCountdownList SwapList;
+	const bool ShowSwapCountdown = BuildSwapCountdownList(*GameClient(), *Client(), SwapList);
 
 	char aSwitchCountdownBuf[256];
 	const bool ShowSwitchCountdown = BuildSwitchCountdownSummary(aSwitchCountdownBuf, sizeof(aSwitchCountdownBuf));
@@ -3248,7 +3278,6 @@ void CHud::RenderMediaIsland()
 	}
 
 	constexpr float BaseIslandHeight = 16.0f;
-	constexpr float BottomRowExpandedHeight = 10.0f;
 	constexpr float IslandY = 1.0f;
 	constexpr float CoverSize = 12.0f;
 	constexpr float PaddingX = 3.0f;
@@ -3267,6 +3296,8 @@ void CHud::RenderMediaIsland()
 	constexpr float BottomFontSize = 5.2f;
 	constexpr float BottomRowPaddingX = 10.0f;
 	constexpr float BottomRowItemGap = 8.0f;
+	constexpr float BottomRowLineHeight = 7.0f;
+	constexpr float BottomRowPaddingY = 2.5f;
 	constexpr float BottomRowDividerInset = 10.0f;
 	constexpr float CoverRotationSpeed = 0.75f;
 	constexpr float Tau = 6.28318530718f;
@@ -3289,7 +3320,7 @@ void CHud::RenderMediaIsland()
 		const char *m_pText = nullptr;
 		float m_Width = 0.0f;
 	};
-	std::array<SBottomTextLayoutItem, 3> aBottomLayoutItems{};
+	std::array<SBottomTextLayoutItem, 2> aBottomLayoutItems{};
 	int BottomLayoutItemCount = 0;
 	const auto AddBottomLayoutItem = [&](const char *pText) {
 		if(pText == nullptr || pText[0] == '\0' || BottomLayoutItemCount >= (int)aBottomLayoutItems.size())
@@ -3298,18 +3329,21 @@ void CHud::RenderMediaIsland()
 		aBottomLayoutItems[BottomLayoutItemCount].m_Width = std::round(TextRender()->TextBoundingBox(BottomFontSize, pText).m_W);
 		++BottomLayoutItemCount;
 	};
-	if(ShowSwapCountdown)
-		AddBottomLayoutItem(SwapInfo.m_aText);
 	if(ShowFrozenSummaryInBottomRow)
 		AddBottomLayoutItem(aFrozenSummaryBuf);
 	if(ShowSwitchCountdown)
 		AddBottomLayoutItem(aSwitchCountdownBuf);
-	float NaturalBottomContentWidth = 0.0f;
+	float UtilityBottomContentWidth = 0.0f;
 	for(int i = 0; i < BottomLayoutItemCount; ++i)
-		NaturalBottomContentWidth += aBottomLayoutItems[i].m_Width;
+		UtilityBottomContentWidth += aBottomLayoutItems[i].m_Width;
 	if(BottomLayoutItemCount > 1)
-		NaturalBottomContentWidth += BottomRowItemGap * (BottomLayoutItemCount - 1);
-	const float DesiredBottomUnifiedWidth = BottomLayoutItemCount > 0 ? (NaturalBottomContentWidth + BottomRowPaddingX * 2.0f) : 0.0f;
+		UtilityBottomContentWidth += BottomRowItemGap * (BottomLayoutItemCount - 1);
+	float SwapBottomContentWidth = 0.0f;
+	for(int i = 0; i < SwapList.m_Count; ++i)
+		SwapBottomContentWidth = std::max(SwapBottomContentWidth, std::round(TextRender()->TextBoundingBox(BottomFontSize, SwapList.m_aInfos[i].m_aText).m_W));
+	const int BottomRowLineCount = SwapList.m_Count + (BottomLayoutItemCount > 0 ? 1 : 0);
+	const float NaturalBottomContentWidth = std::max(SwapBottomContentWidth, UtilityBottomContentWidth);
+	const float DesiredBottomUnifiedWidth = BottomRowLineCount > 0 ? (NaturalBottomContentWidth + BottomRowPaddingX * 2.0f) : 0.0f;
 	const bool ShowCover = HasMediaState;
 	float BaseWidth = PaddingX;
 	if(ShowCover)
@@ -3350,7 +3384,8 @@ void CHud::RenderMediaIsland()
 		const float MaxTargetX = std::max(ScreenPadding, m_Width - ScreenPadding - TargetWidth);
 		TargetX = std::clamp(TargetX, ScreenPadding, MaxTargetX);
 	}
-	const float TargetHeight = ShowBottomRow ? (BaseIslandHeight + BottomRowExpandedHeight) : BaseIslandHeight;
+	const float TargetBottomHeight = ShowBottomRow ? (BottomRowPaddingY * 2.0f + BottomRowLineHeight * BottomRowLineCount) : 0.0f;
+	const float TargetHeight = BaseIslandHeight + TargetBottomHeight;
 	const float TitleAlphaTarget = Expanded && TitleWidth > 0.0f ? 1.0f : 0.0f;
 	const float TitleOffsetTarget = Expanded ? 0.0f : 4.0f;
 	const float SpectatorAlphaTarget = ShowSpectator ? 1.0f : 0.0f;
@@ -3541,7 +3576,6 @@ void CHud::RenderMediaIsland()
 	if(BottomAlpha > 0.01f && AnimatedIslandHeight > BaseIslandHeight + 0.5f)
 	{
 		const float BottomRowY = IslandY + BaseIslandHeight;
-		const float BottomRowHeight = std::max(0.0f, AnimatedIslandHeight - BaseIslandHeight);
 		const float DividerInset = std::min(BottomRowDividerInset, UnifiedWidth * 0.25f);
 		const float DividerWidth = std::max(0.0f, UnifiedWidth - DividerInset * 2.0f);
 		if(DividerWidth > 0.0f)
@@ -3549,14 +3583,11 @@ void CHud::RenderMediaIsland()
 			Graphics()->DrawRect(IslandX + DividerInset, BottomRowY, DividerWidth, 0.75f, ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f * BottomAlpha), IGraphics::CORNER_ALL, 0.375f);
 		}
 
-		const float BottomTextY = BottomRowY + (BottomRowHeight - BottomFontSize) * 0.5f - 0.5f;
+		float BottomTextY = BottomRowY + BottomRowPaddingY;
 		const float ContentX = IslandX + BottomRowPaddingX;
 		const float ContentWidth = std::max(0.0f, UnifiedWidth - BottomRowPaddingX * 2.0f);
 		const ColorRGBA SwitchTextColor(0.97f, 0.98f, 1.0f, 0.90f * BottomAlpha);
-		ColorRGBA SwapTextColor = SwapInfo.m_TextColor;
-		SwapTextColor.a *= 0.92f * BottomAlpha;
-
-		const auto RenderBottomTextBlock = [&](float X, float MaxWidth, const char *pText, const ColorRGBA &Color, bool AlignRight) {
+		const auto RenderBottomTextBlock = [&](float X, float Y, float MaxWidth, const char *pText, const ColorRGBA &Color, bool AlignRight) {
 			if(pText == nullptr || pText[0] == '\0' || MaxWidth <= 0.0f)
 				return;
 
@@ -3565,7 +3596,7 @@ void CHud::RenderMediaIsland()
 			if(TextWidth <= MaxWidth + 0.01f)
 			{
 				const float DrawX = AlignRight ? (X + MaxWidth - TextWidth) : X;
-				TextRender()->Text(DrawX, BottomTextY, BottomFontSize, pText, -1.0f);
+				TextRender()->Text(DrawX, Y, BottomFontSize, pText, -1.0f);
 				return;
 			}
 
@@ -3573,11 +3604,11 @@ void CHud::RenderMediaIsland()
 			Cursor.m_FontSize = BottomFontSize;
 			Cursor.m_LineWidth = MaxWidth;
 			Cursor.m_Flags = TEXTFLAG_RENDER | TEXTFLAG_ELLIPSIS_AT_END;
-			Cursor.SetPosition(vec2(X, BottomTextY));
+			Cursor.SetPosition(vec2(X, Y));
 			TextRender()->TextEx(&Cursor, pText);
 		};
 
-		const auto RenderBottomTextCentered = [&](const char *pText, const ColorRGBA &Color) {
+		const auto RenderBottomTextCentered = [&](float Y, const char *pText, const ColorRGBA &Color) {
 			if(pText == nullptr || pText[0] == '\0' || ContentWidth <= 0.0f)
 				return;
 
@@ -3585,26 +3616,11 @@ void CHud::RenderMediaIsland()
 			if(TextWidth <= ContentWidth + 0.01f)
 			{
 				TextRender()->TextColor(Color);
-				TextRender()->Text(IslandX + (UnifiedWidth - TextWidth) * 0.5f, BottomTextY, BottomFontSize, pText, -1.0f);
+				TextRender()->Text(IslandX + (UnifiedWidth - TextWidth) * 0.5f, Y, BottomFontSize, pText, -1.0f);
 				return;
 			}
 
-			RenderBottomTextBlock(ContentX, ContentWidth, pText, Color, false);
-		};
-
-		const auto RenderBottomTextCenteredInBlock = [&](float X, float MaxWidth, const char *pText, const ColorRGBA &Color) {
-			if(pText == nullptr || pText[0] == '\0' || MaxWidth <= 0.0f)
-				return;
-
-			const float TextWidth = std::round(TextRender()->TextBoundingBox(BottomFontSize, pText).m_W);
-			TextRender()->TextColor(Color);
-			if(TextWidth <= MaxWidth + 0.01f)
-			{
-				TextRender()->Text(X + (MaxWidth - TextWidth) * 0.5f, BottomTextY, BottomFontSize, pText, -1.0f);
-				return;
-			}
-
-			RenderBottomTextBlock(X, MaxWidth, pText, Color, false);
+			RenderBottomTextBlock(ContentX, Y, ContentWidth, pText, Color, false);
 		};
 
 		struct SBottomTextItem
@@ -3614,10 +3630,16 @@ void CHud::RenderMediaIsland()
 			float m_Width = 0.0f;
 		};
 
-		std::array<SBottomTextItem, 3> aBottomItems{};
+		for(int i = 0; i < SwapList.m_Count; ++i)
+		{
+			ColorRGBA SwapTextColor = SwapList.m_aInfos[i].m_TextColor;
+			SwapTextColor.a *= 0.92f * BottomAlpha;
+			RenderBottomTextCentered(BottomTextY, SwapList.m_aInfos[i].m_aText, SwapTextColor);
+			BottomTextY += BottomRowLineHeight;
+		}
+
+		std::array<SBottomTextItem, 2> aBottomItems{};
 		int BottomItemCount = 0;
-		if(ShowSwapCountdown)
-			aBottomItems[BottomItemCount++] = {SwapInfo.m_aText, SwapTextColor, std::round(TextRender()->TextBoundingBox(BottomFontSize, SwapInfo.m_aText).m_W)};
 		if(ShowFrozenSummaryInBottomRow)
 			aBottomItems[BottomItemCount++] = {aFrozenSummaryBuf, SwitchTextColor, std::round(TextRender()->TextBoundingBox(BottomFontSize, aFrozenSummaryBuf).m_W)};
 		if(ShowSwitchCountdown)
@@ -3625,7 +3647,7 @@ void CHud::RenderMediaIsland()
 
 		if(BottomItemCount == 1)
 		{
-			RenderBottomTextCentered(aBottomItems[0].m_pText, aBottomItems[0].m_Color);
+			RenderBottomTextCentered(BottomTextY, aBottomItems[0].m_pText, aBottomItems[0].m_Color);
 		}
 		else if(BottomItemCount > 1)
 		{
@@ -3664,12 +3686,10 @@ void CHud::RenderMediaIsland()
 						BlockWidth = std::min(BlockWidth, RemainingWidth);
 					}
 
-					if(BottomItemCount == 3 && i == 1)
-						RenderBottomTextCenteredInBlock(CursorX, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color);
-					else if(LastItem)
-						RenderBottomTextBlock(CursorX, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color, true);
+					if(LastItem)
+						RenderBottomTextBlock(CursorX, BottomTextY, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color, true);
 					else
-						RenderBottomTextBlock(CursorX, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color, false);
+						RenderBottomTextBlock(CursorX, BottomTextY, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color, false);
 
 					CursorX += BlockWidth + BottomRowItemGap;
 					RemainingWidth = std::max(0.0f, RemainingWidth - BlockWidth);

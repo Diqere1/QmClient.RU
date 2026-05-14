@@ -578,9 +578,9 @@ void CVoting::Render()
 	}
 
 	// TClient
-	if(g_Config.m_TcMiniVoteHud > 0 && !HudEditorPreview)
+	if(g_Config.m_TcMiniVoteHud > 0)
 	{
-		GameClient()->m_TClient.RenderMiniVoteHud();
+		GameClient()->m_TClient.RenderMiniVoteHud(HudEditorPreview);
 		return;
 	}
 

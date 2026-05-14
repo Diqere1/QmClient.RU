@@ -926,6 +926,11 @@ static bool IsEntityBgConfigSelected(const char *pAssetName)
 	return IsEntityBgSelectionMatched(pAssetName);
 }
 
+static bool IsEntityBgVideoAsset(const char *pAssetName)
+{
+	return IsBackgroundVideoExtension(pAssetName);
+}
+
 template<typename TName>
 static void LoadAsset(TName *pAssetItem, const char *pAssetName, IGraphics *pGraphics)
 {
@@ -2116,7 +2121,7 @@ static bool LoadWorkshopCache(SWorkshopHudState &WorkshopState, IStorage *pStora
 
 	json_settings JsonSettings = {};
 	char JsonError[1024];
-	json_value *pJson = json_parse_ex(&JsonSettings, aBuffer, FileSize, JsonError);
+	json_value *pJson = JsonParseEx(&JsonSettings, aBuffer, FileSize, JsonError);
 	if(!pJson)
 		return false;
 
@@ -3236,6 +3241,20 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		Ui()->DoLabel(&LabelRect, Localize("Map Preview"), 11.0f, TEXTALIGN_MC);
 	};
 
+	auto RenderEntityBgVideoFallback = [&](const CUIRect &Rect) {
+		CUIRect FallbackRect = Rect;
+		FallbackRect.Margin(6.0f, &FallbackRect);
+		FallbackRect.Draw(ColorRGBA(0.12f, 0.14f, 0.19f, 0.92f), IGraphics::CORNER_ALL, 8.0f);
+
+		CUIRect IconRect, LabelRect;
+		FallbackRect.HSplitTop(FallbackRect.h * 0.58f, &IconRect, &LabelRect);
+		TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
+		Ui()->DoLabel(&IconRect, FONT_ICON_PLAY, 30.0f, TEXTALIGN_MC);
+		TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
+		LabelRect.Margin(6.0f, &LabelRect);
+		Ui()->DoLabel(&LabelRect, Localize("Video Background"), 10.5f, TEXTALIGN_MC);
+	};
+
 	struct SAssetCardHeaderLayout
 	{
 		CUIRect m_TextureRect;
@@ -3669,7 +3688,10 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			}
 			else if(s_CurCustomTab == ASSETS_TAB_ENTITY_BG)
 			{
-				RenderEntityBgFallback(HeaderLayout.m_TextureRect);
+				if(IsEntityBgVideoAsset(pItem->m_aName))
+					RenderEntityBgVideoFallback(HeaderLayout.m_TextureRect);
+				else
+					RenderEntityBgFallback(HeaderLayout.m_TextureRect);
 			}
 
 			if(HasDeleteButton)
@@ -4482,6 +4504,10 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 							Graphics()->QuadsDrawTL(&QuadItem, 1);
 							Graphics()->QuadsEnd();
 							Graphics()->WrapNormal();
+						}
+						else if(s_CurCustomTab == ASSETS_TAB_ENTITY_BG && IsEntityBgVideoAsset(pItem->m_aName))
+						{
+							RenderEntityBgVideoFallback(HeaderLayout.m_TextureRect);
 						}
 					}
 

@@ -757,7 +757,7 @@ endif()
 
 if(TARGET_OS STREQUAL "windows")
   set(PLATFORM_CLIENT)
-  set(PLATFORM_CLIENT_LIBS opengl32.lib winmm.lib imm32.lib oleaut32.lib ole32.lib)
+  set(PLATFORM_CLIENT_LIBS opengl32.lib winmm.lib imm32.lib oleaut32.lib ole32.lib windowscodecs.lib mfplat.lib mfreadwrite.lib mfuuid.lib)
   if(MSVC)
     list(APPEND PLATFORM_CLIENT_LIBS windowsapp.lib)
   endif()

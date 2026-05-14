@@ -29,6 +29,7 @@
 
 #include <game/client/animstate.h>
 #include <game/client/components/chat.h>
+#include <game/client/components/hud_editor.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/render.h>
@@ -1329,25 +1330,6 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 			{
 				const char *pText = pMsg->m_pMessage;
 				HandleAxiomAutoLoginMessage(pText);
-				if(str_find_nocase(pText, "has requested to swap with you"))
-				{
-					StartSwapCountdown();
-				}
-				else if(str_find_nocase(pText, "has canceled swap with you"))
-				{
-					ClearSwapCountdown();
-				}
-				else if(str_find_nocase(pText, "has swapped with"))
-				{
-					const char *pMainName = g_Config.m_PlayerName;
-					const char *pDummyName = g_Config.m_ClDummyName;
-					const bool MainMatch = pMainName[0] && str_find_nocase(pText, pMainName);
-					const bool DummyMatch = Client()->DummyConnected() && pDummyName[0] && str_find_nocase(pText, pDummyName);
-					if(MainMatch || DummyMatch)
-					{
-						ClearSwapCountdown();
-					}
-				}
 			}
 			return;
 		}
@@ -1549,16 +1531,105 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 	}
 }
 
-void CTClient::StartSwapCountdown()
+namespace
 {
-	m_SwapCountdownActive = true;
-	m_SwapCountdownStartTick = Client()->GameTick(g_Config.m_ClDummy);
+bool ExtractSwapRequesterName(const char *pText, const char *pMarker, char *pOut, int OutSize)
+{
+	if(OutSize <= 0)
+		return false;
+	pOut[0] = '\0';
+	if(pText == nullptr || pMarker == nullptr)
+		return false;
+
+	const char *pMarkerPos = str_find_nocase(pText, pMarker);
+	if(pMarkerPos == nullptr || pMarkerPos == pText)
+		return false;
+
+	const int NameLength = minimum<int>(pMarkerPos - pText, OutSize - 1);
+	str_truncate(pOut, OutSize, pText, NameLength);
+	return pOut[0] != '\0';
+}
 }
 
-void CTClient::ClearSwapCountdown()
+void CTClient::HandleSwapCountdownMessage(const char *pText, int Dummy)
 {
-	m_SwapCountdownActive = false;
-	m_SwapCountdownStartTick = 0;
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES || pText == nullptr)
+		return;
+
+	if(str_find_nocase(pText, "has requested to swap with you"))
+	{
+		char aRequester[MAX_NAME_LENGTH] = "";
+		ExtractSwapRequesterName(pText, " has requested to swap with you", aRequester, sizeof(aRequester));
+		StartSwapCountdown(Dummy, aRequester);
+	}
+	else if(str_find_nocase(pText, "has canceled swap with you"))
+	{
+		char aRequester[MAX_NAME_LENGTH] = "";
+		if(!ExtractSwapRequesterName(pText, " has canceled swap with you", aRequester, sizeof(aRequester)) ||
+			str_comp_nocase(aRequester, m_aaSwapCountdownRequester[Dummy]) == 0)
+		{
+			ClearSwapCountdown(Dummy);
+		}
+	}
+	else if(str_find_nocase(pText, "has swapped with"))
+	{
+		const char *pTargetName = Dummy == 0 ? g_Config.m_PlayerName : g_Config.m_ClDummyName;
+		if(pTargetName[0] != '\0' && str_find_nocase(pText, pTargetName))
+			ClearSwapCountdown(Dummy);
+	}
+}
+
+void CTClient::StartSwapCountdown(int Dummy, const char *pRequester)
+{
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES)
+		return;
+
+	m_aSwapCountdownActive[Dummy] = true;
+	m_aSwapCountdownStartTick[Dummy] = Client()->GameTick(Dummy);
+	str_copy(m_aaSwapCountdownRequester[Dummy], pRequester != nullptr ? pRequester : "", sizeof(m_aaSwapCountdownRequester[Dummy]));
+}
+
+void CTClient::ClearSwapCountdown(int Dummy)
+{
+	if(Dummy < 0)
+	{
+		for(int i = 0; i < NUM_DUMMIES; ++i)
+			ClearSwapCountdown(i);
+		return;
+	}
+	if(Dummy >= NUM_DUMMIES)
+		return;
+
+	m_aSwapCountdownActive[Dummy] = false;
+	m_aSwapCountdownStartTick[Dummy] = 0;
+	m_aaSwapCountdownRequester[Dummy][0] = '\0';
+}
+
+bool CTClient::HasSwapCountdown(int Dummy) const
+{
+	if(Dummy >= 0 && Dummy < NUM_DUMMIES)
+		return m_aSwapCountdownActive[Dummy];
+
+	for(int i = 0; i < NUM_DUMMIES; ++i)
+	{
+		if(m_aSwapCountdownActive[i])
+			return true;
+	}
+	return false;
+}
+
+int CTClient::GetSwapCountdownStartTick(int Dummy) const
+{
+	if(Dummy >= 0 && Dummy < NUM_DUMMIES)
+		return m_aSwapCountdownStartTick[Dummy];
+	return 0;
+}
+
+const char *CTClient::GetSwapCountdownRequester(int Dummy) const
+{
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES)
+		return "";
+	return m_aaSwapCountdownRequester[Dummy];
 }
 
 void CTClient::ConSpecId(IConsole::IResult *pResult, void *pUserData)
@@ -3251,9 +3322,10 @@ static void StripStr(const char *pIn, char *pOut, const char *pEnd)
 		*pOut = '\0';
 }
 
-void CTClient::RenderMiniVoteHud()
+void CTClient::RenderMiniVoteHud(bool HudEditorPreview)
 {
 	CUIRect View = {0.0f, 60.0f, 70.0f, 35.0f};
+	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::Voting, View);
 	View.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_R, 3.0f);
 	View.Margin(3.0f, &View);
 
@@ -3268,18 +3340,27 @@ void CTClient::RenderMiniVoteHud()
 
 	// Vote description
 	View.HSplitTop(6.0f, &Row, &View);
-	GameClient()->FormatStreamerVoteText(GameClient()->m_Voting.VoteDescription(), aVoteDescription, sizeof(aVoteDescription));
+	if(HudEditorPreview && !GameClient()->m_Voting.IsVoting())
+		str_copy(aVoteDescription, "funvote", sizeof(aVoteDescription));
+	else
+		GameClient()->FormatStreamerVoteText(GameClient()->m_Voting.VoteDescription(), aVoteDescription, sizeof(aVoteDescription));
 	StripStr(aVoteDescription, aBuf, aBuf + sizeof(aBuf));
 	Ui()->DoLabel(&Row, aBuf, 6.0f, TEXTALIGN_ML, Props);
 
 	// Vote reason
 	View.HSplitTop(3.0f, nullptr, &View);
 	View.HSplitTop(4.0f, &Row, &View);
-	GameClient()->FormatStreamerVoteText(GameClient()->m_Voting.VoteReason(), aVoteReason, sizeof(aVoteReason));
+	if(HudEditorPreview && !GameClient()->m_Voting.IsVoting())
+		str_copy(aVoteReason, "No reason given", sizeof(aVoteReason));
+	else
+		GameClient()->FormatStreamerVoteText(GameClient()->m_Voting.VoteReason(), aVoteReason, sizeof(aVoteReason));
 	Ui()->DoLabel(&Row, aVoteReason, 4.0f, TEXTALIGN_ML, Props);
 
 	// Time left
-	str_format(aBuf, sizeof(aBuf), Localize("%ds left"), GameClient()->m_Voting.SecondsLeft());
+	int Seconds = GameClient()->m_Voting.SecondsLeft();
+	if(HudEditorPreview && Seconds < 0)
+		Seconds = 24;
+	str_format(aBuf, sizeof(aBuf), Localize("%ds left"), Seconds);
 	View.HSplitTop(3.0f, nullptr, &View);
 	View.HSplitTop(3.0f, &Row, &View);
 	Row.VSplitLeft(2.0f, nullptr, &Row);
@@ -3312,6 +3393,8 @@ void CTClient::RenderMiniVoteHud()
 	Ui()->DoLabel(&RightColumn, aKey[0] == '\0' ? Localize("Disagree") : aKey, 0.5f, TEXTALIGN_MR);
 
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
+	GameClient()->m_HudEditor.UpdateVisibleRect(EHudEditorElement::Voting, {0.0f, 60.0f, 70.0f, 35.0f});
+	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 }
 
 void CTClient::RenderCenterLines()
@@ -4372,7 +4455,7 @@ void CTClient::LoadMapCategoryCache()
 
 	json_settings JsonSettings{};
 	char aError[256];
-	json_value *pJson = json_parse_ex(&JsonSettings, static_cast<json_char *>(pFileData), FileSize, aError);
+	json_value *pJson = JsonParseEx(&JsonSettings, static_cast<json_char *>(pFileData), FileSize, aError);
 	free(pFileData);
 
 	if(pJson == nullptr)
@@ -4503,7 +4586,7 @@ void CTClient::LoadMapNotes()
 
 	json_settings JsonSettings{};
 	char aError[256];
-	json_value *pJson = json_parse_ex(&JsonSettings, static_cast<json_char *>(pFileData), FileSize, aError);
+	json_value *pJson = JsonParseEx(&JsonSettings, static_cast<json_char *>(pFileData), FileSize, aError);
 	free(pFileData);
 
 	if(pJson == nullptr)

@@ -265,10 +265,11 @@ class CTClient : public CComponent
 	static void ConRepeat(IConsole::IResult *pResult, void *pUserData);
 
 	// Swap倒计时提示
-	bool m_SwapCountdownActive = false;
-	int m_SwapCountdownStartTick = 0;
-	void StartSwapCountdown();
-	void ClearSwapCountdown();
+	bool m_aSwapCountdownActive[NUM_DUMMIES] = {false, false};
+	int m_aSwapCountdownStartTick[NUM_DUMMIES] = {0, 0};
+	char m_aaSwapCountdownRequester[NUM_DUMMIES][MAX_NAME_LENGTH] = {{0}, {0}};
+	void StartSwapCountdown(int Dummy, const char *pRequester);
+	void ClearSwapCountdown(int Dummy = -1);
 
 	// 好友上线提醒
 	struct SFriendOnlineState
@@ -331,7 +332,7 @@ public:
 	bool IsUpdateChecking() const { return m_pTClientInfoTask && !m_pTClientInfoTask->Done(); }
 	bool IsUpdateDownloading() const { return m_pUpdateExeTask && !m_pUpdateExeTask->Done(); }
 
-	void RenderMiniVoteHud();
+	void RenderMiniVoteHud(bool HudEditorPreview = false);
 	void RenderCenterLines();
 	void RenderCtfFlag(vec2 Pos, float Alpha);
 
@@ -349,8 +350,10 @@ public:
 	void ResetPlayerStats(int Dummy = -1); // -1 = 重置所有
 
 	// Swap倒计时公开接口
-	bool HasSwapCountdown() const { return m_SwapCountdownActive; }
-	int GetSwapCountdownStartTick() const { return m_SwapCountdownStartTick; }
+	void HandleSwapCountdownMessage(const char *pText, int Dummy);
+	bool HasSwapCountdown(int Dummy = -1) const;
+	int GetSwapCountdownStartTick(int Dummy = -1) const;
+	const char *GetSwapCountdownRequester(int Dummy) const;
 
 	// 收藏地图公开接口
 	bool IsFavoriteMap(const char *pMapName) const;

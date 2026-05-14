@@ -2,10 +2,11 @@
 #include "theme_scan.h"
 
 #include <base/lock.h>
+#include <base/math.h>
 #include <base/system.h>
 
 #include <engine/engine.h>
-#include <engine/gfx/image_loader.h>
+#include <engine/gfx/image_manipulation.h>
 #include <engine/graphics.h>
 #include <engine/map.h>
 #include <engine/shared/config.h>
@@ -23,6 +24,24 @@
 #include <chrono>
 
 using namespace std::chrono_literals;
+
+namespace
+{
+constexpr int MAX_THEME_ICON_DIMENSION = 512;
+
+void ResizeThemeIconIfNeeded(CImageInfo &Image)
+{
+	if(Image.m_Width <= MAX_THEME_ICON_DIMENSION && Image.m_Height <= MAX_THEME_ICON_DIMENSION)
+		return;
+
+	const double Scale = minimum(
+		(double)MAX_THEME_ICON_DIMENSION / (double)Image.m_Width,
+		(double)MAX_THEME_ICON_DIMENSION / (double)Image.m_Height);
+	const int NewWidth = maximum(1, (int)std::floor((double)Image.m_Width * Scale));
+	const int NewHeight = maximum(1, (int)std::floor((double)Image.m_Height * Scale));
+	ResizeImage(Image, NewWidth, NewHeight);
+}
+}
 
 class CMenuBackground::CThemeListLoadJob : public IJob
 {
@@ -123,14 +142,15 @@ private:
 		}
 
 		CImageInfo Image;
-		const bool Loaded = (CImageLoader::LoadPng(pFileData, FileSize, m_IconPath.c_str(), Image) ||
-					CImageLoader::LoadWebP(pFileData, FileSize, m_IconPath.c_str(), Image)) &&
-			Image.m_Format == CImageInfo::FORMAT_RGBA;
+		bool Loaded = LoadBackgroundImageData(pFileData, FileSize, m_IconPath.c_str(), Image);
 		free(pFileData);
+		if(Loaded)
+			ConvertToRgba(Image);
 
 		const CLockScope Lock(m_Lock);
 		if(Loaded)
 		{
+			ResizeThemeIconIfNeeded(Image);
 			m_Result.m_Image = std::move(Image);
 			m_Result.m_Success = true;
 		}

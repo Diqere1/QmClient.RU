@@ -957,7 +957,6 @@ bool CGameClient::GetDummyFastInput(CNetObj_PlayerInput &DummyFastInput, const C
 		if(g_Config.m_ClDummyControl)
 		{
 			const CNetObj_PlayerInput BaseDummyInput = pDummyInputData ? *pDummyInputData : CNetObj_PlayerInput{};
-			DummyFastInput.m_Direction = BaseDummyInput.m_Direction;
 			DummyFastInput.m_Jump = BaseDummyInput.m_Jump;
 			DummyFastInput.m_Fire = BaseDummyInput.m_Fire;
 			DummyFastInput.m_Hook = BaseDummyInput.m_Hook;
@@ -969,6 +968,7 @@ bool CGameClient::GetDummyFastInput(CNetObj_PlayerInput &DummyFastInput, const C
 	{
 		const CNetObj_PlayerInput BaseDummyInput = pDummyInputData ? *pDummyInputData : CNetObj_PlayerInput{};
 		DummyFastInput = BaseDummyInput;
+		DummyFastInput.m_Direction = m_Controls.m_aFastInput[DummyTee].m_Direction;
 		DummyFastInput.m_PlayerFlags = m_Controls.m_aFastInput[DummyTee].m_PlayerFlags;
 		DummyFastInput.m_TargetX = m_Controls.m_aFastInput[DummyTee].m_TargetX;
 		DummyFastInput.m_TargetY = m_Controls.m_aFastInput[DummyTee].m_TargetY;
@@ -1788,6 +1788,13 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 		return;
 	}
 
+	if(MsgId == NETMSGTYPE_SV_CHAT)
+	{
+		CNetMsg_Sv_Chat *pMsg = (CNetMsg_Sv_Chat *)pRawMsg;
+		if(pMsg->m_ClientId < 0 && pMsg->m_pMessage != nullptr)
+			m_TClient.HandleSwapCountdownMessage(pMsg->m_pMessage, Conn);
+	}
+
 	if(Dummy)
 	{
 		if(MsgId == NETMSGTYPE_SV_CHAT && m_aLocalIds[0] >= 0 && m_aLocalIds[1] >= 0)
@@ -2341,6 +2348,7 @@ static CGameInfo GetGameInfo(const CNetObj_GameInfoEx *pInfoEx, int InfoExSize, 
 	Info.m_NoWeakHookAndBounce = false;
 	Info.m_NoSkinChangeForFrozen = false;
 	Info.m_DDRaceTeam = false;
+	Info.m_PredictEvents = Vanilla;
 
 	if(Version >= 0)
 	{
@@ -2403,6 +2411,10 @@ static CGameInfo GetGameInfo(const CNetObj_GameInfoEx *pInfoEx, int InfoExSize, 
 	if(Version >= 10)
 	{
 		Info.m_DDRaceTeam = Flags2 & GAMEINFOFLAG2_DDRACE_TEAM;
+	}
+	if(Version >= 11)
+	{
+		Info.m_PredictEvents = Flags2 & GAMEINFOFLAG2_PREDICT_EVENTS;
 	}
 
 	// TClient
@@ -4937,7 +4949,7 @@ void CGameClient::UpdatePrediction()
 	m_GameWorld.m_WorldConfig.m_PredictTiles = m_GameInfo.m_PredictDDRace && m_GameInfo.m_PredictDDRaceTiles;
 	m_GameWorld.m_WorldConfig.m_PredictFreeze = g_Config.m_ClPredictFreeze;
 	m_GameWorld.m_WorldConfig.m_PredictWeapons = AntiPingWeapons();
-	m_GameWorld.m_WorldConfig.m_PredictEvents = g_Config.m_ClPredictEvents;
+	m_GameWorld.m_WorldConfig.m_PredictEvents = g_Config.m_ClPredictEvents && m_GameInfo.m_PredictEvents;
 	m_GameWorld.m_WorldConfig.m_BugDDRaceInput = m_GameInfo.m_BugDDRaceInput;
 	m_GameWorld.m_WorldConfig.m_NoWeakHookAndBounce = m_GameInfo.m_NoWeakHookAndBounce;
 

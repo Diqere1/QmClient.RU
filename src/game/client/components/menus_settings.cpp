@@ -5618,9 +5618,8 @@ void CMenus::CPopupMapPickerContext::MapListPopulate()
 int CMenus::CPopupMapPickerContext::MapListFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser)
 {
 	CPopupMapPickerContext *pRealUser = (CPopupMapPickerContext *)pUser;
-	const bool IsMap = str_endswith(pInfo->m_pName, ".map") != nullptr;
-	const bool IsPng = str_endswith(pInfo->m_pName, ".png") != nullptr;
-	if((!IsDir && !IsMap && !IsPng) || !str_comp(pInfo->m_pName, ".") || (!str_comp(pInfo->m_pName, "..") && (!str_comp(pRealUser->m_aCurrentMapFolder, ""))))
+	const bool IsBackgroundFile = FindBackgroundFileExtension(pInfo->m_pName) != nullptr;
+	if((!IsDir && !IsBackgroundFile) || !str_comp(pInfo->m_pName, ".") || (!str_comp(pInfo->m_pName, "..") && (!str_comp(pRealUser->m_aCurrentMapFolder, ""))))
 		return 0;
 
 	CMapListItem Item;

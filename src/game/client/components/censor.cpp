@@ -4,8 +4,8 @@
 #include <base/log.h>
 
 #include <engine/engine.h>
-#include <engine/external/json-parser/json.h>
 #include <engine/shared/config.h>
+#include <engine/shared/json.h>
 
 #include <optional>
 #include <utility>
@@ -125,7 +125,7 @@ std::optional<std::vector<std::string>> CCensor::LoadCensorList(const void *pLis
 	json_value *pData = nullptr;
 	json_settings JsonSettings{};
 	char aError[256];
-	pData = json_parse_ex(&JsonSettings, static_cast<const json_char *>(pListText), ListTextLen, aError);
+	pData = JsonParseEx(&JsonSettings, static_cast<const json_char *>(pListText), ListTextLen, aError);
 
 	if(!pData)
 	{

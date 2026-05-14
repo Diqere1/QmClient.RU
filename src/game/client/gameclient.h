@@ -152,6 +152,8 @@ public:
 
 	bool m_DDRaceTeam;
 
+	bool m_PredictEvents;
+
 	char m_aGameType[16];
 };
 

@@ -9,15 +9,23 @@
 #include <game/client/components/maplayers.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
+#include <deque>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 #if defined(CONF_VIDEORECORDER)
 struct AVFormatContext;
 struct AVCodecContext;
+struct AVIOContext;
 struct SwsContext;
 struct AVFrame;
 struct AVPacket;
+#endif
+#if defined(CONF_FAMILY_WINDOWS) && defined(CONF_VIDEORECORDER)
+struct IMFSourceReader;
 #endif
 
 class CLayers;
@@ -25,10 +33,25 @@ class CMapImages;
 // Special value to use background of current map
 #define CURRENT_MAP "%current%"
 
+#if defined(CONF_VIDEORECORDER)
+inline constexpr std::array<const char *, 10> BACKGROUND_IMAGE_EXTENSIONS = {
+	".png",
+	".webp",
+	".jpg",
+	".jpeg",
+	".jfif",
+	".bmp",
+	".tga",
+	".tif",
+	".tiff",
+	".gif",
+};
+#else
 inline constexpr std::array<const char *, 2> BACKGROUND_IMAGE_EXTENSIONS = {
 	".png",
 	".webp",
 };
+#endif
 
 inline constexpr std::array<const char *, 4> BACKGROUND_VIDEO_EXTENSIONS = {
 	".mp4",
@@ -208,6 +231,11 @@ inline bool ShouldCommitBackgroundEntitiesInputOnBlur(bool WasActiveBeforeEditBo
 	return BuildBackgroundEntitiesCommitValueFromInput(pInputValue, pCurrentConfigValue, aPendingValue, sizeof(aPendingValue));
 }
 
+class IStorage;
+
+bool LoadBackgroundImageData(const void *pData, unsigned DataSize, const char *pContextName, CImageInfo &Image);
+bool LoadBackgroundImageFile(IStorage *pStorage, const char *pPath, CImageInfo &Image);
+
 class CBackgroundEngineMap : public CMap
 {
 	MACRO_INTERFACE("background_enginemap")
@@ -225,6 +253,8 @@ protected:
 #if defined(CONF_VIDEORECORDER)
 	AVFormatContext *m_pVideoFormatContext = nullptr;
 	AVCodecContext *m_pVideoCodecContext = nullptr;
+	AVIOContext *m_pVideoIoContext = nullptr;
+	IOHANDLE m_VideoFile = nullptr;
 	SwsContext *m_pVideoSwsContext = nullptr;
 	AVFrame *m_pVideoFrame = nullptr;
 	AVFrame *m_pVideoRgbaFrame = nullptr;
@@ -237,6 +267,23 @@ protected:
 	int m_VideoWidth = 0;
 	int m_VideoHeight = 0;
 	std::vector<uint8_t> m_vVideoFrameBuffer;
+#endif
+#if defined(CONF_FAMILY_WINDOWS) && defined(CONF_VIDEORECORDER)
+	struct SMfVideoFrame
+	{
+		std::vector<uint8_t> m_vData;
+	};
+
+	IMFSourceReader *m_pMfSourceReader = nullptr;
+	std::thread m_MfVideoThread;
+	std::mutex m_MfVideoFrameMutex;
+	std::deque<SMfVideoFrame> m_vMfVideoQueuedFrames;
+	std::vector<std::vector<uint8_t>> m_vMfVideoFreeFrameBuffers;
+	std::atomic<bool> m_MfVideoThreadRunning{false};
+	std::atomic<bool> m_MfVideoThreadStop{false};
+	int64_t m_MfVideoLastUploadTime = 0;
+	bool m_MfVideoBackground = false;
+	bool m_MfStarted = false;
 #endif
 
 	//to avoid memory leak when switching to %current%
@@ -256,6 +303,13 @@ protected:
 	bool DecodeNextVideoFrame();
 	bool RestartVideoBackground();
 	bool UploadVideoFrame();
+#endif
+#if defined(CONF_FAMILY_WINDOWS) && defined(CONF_VIDEORECORDER)
+	bool LoadMediaFoundationVideoBackground(const char *pPath);
+	bool DecodeNextMediaFoundationVideoFrame(double TargetFrameTime, std::vector<uint8_t> &vFrameBuffer);
+	bool RestartMediaFoundationVideoBackground();
+	void StopMediaFoundationVideoThread();
+	void MediaFoundationVideoThreadFunc();
 #endif
 
 public:

@@ -511,7 +511,7 @@ bool CInputOverlay::ParseConfiguration(const void *pFileData, unsigned FileLengt
 	json_settings JsonSettings{};
 	JsonSettings.settings = json_enable_comments;
 	char aError[256];
-	json_value *pJson = json_parse_ex(&JsonSettings, static_cast<const json_char *>(pFileData), FileLength, aError);
+	json_value *pJson = JsonParseEx(&JsonSettings, static_cast<const json_char *>(pFileData), FileLength, aError);
 	if(pJson == nullptr)
 	{
 		log_error("input_overlay", "Failed to parse configuration (invalid json): '%s'", aError);
@@ -615,7 +615,7 @@ bool CInputOverlay::ParseConfiguration(const void *pFileData, unsigned FileLengt
 			json_settings LayoutSettings{};
 			LayoutSettings.settings = json_enable_comments;
 			char aLayoutError[256];
-			json_value *pLayoutJson = json_parse_ex(&LayoutSettings, static_cast<const json_char *>(pLayoutData), LayoutLength, aLayoutError);
+			json_value *pLayoutJson = JsonParseEx(&LayoutSettings, static_cast<const json_char *>(pLayoutData), LayoutLength, aLayoutError);
 			free(pLayoutData);
 			if(pLayoutJson == nullptr)
 			{
@@ -688,7 +688,7 @@ bool CInputOverlay::ParseConfiguration(const void *pFileData, unsigned FileLengt
 		json_settings LayoutSettings{};
 		LayoutSettings.settings = json_enable_comments;
 		char aLayoutError[256];
-		json_value *pLayoutJson = json_parse_ex(&LayoutSettings, static_cast<const json_char *>(pLayoutData), LayoutLength, aLayoutError);
+		json_value *pLayoutJson = JsonParseEx(&LayoutSettings, static_cast<const json_char *>(pLayoutData), LayoutLength, aLayoutError);
 		free(pLayoutData);
 		if(pLayoutJson == nullptr)
 		{

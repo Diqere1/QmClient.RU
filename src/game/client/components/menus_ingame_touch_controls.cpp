@@ -6,6 +6,7 @@
 
 #include <engine/external/json-parser/json.h>
 #include <engine/graphics.h>
+#include <engine/shared/json.h>
 #include <engine/shared/jsonwriter.h>
 #include <engine/shared/localization.h>
 #include <engine/textrender.h>
@@ -1461,7 +1462,7 @@ std::string CMenusIngameTouchControls::CBehaviorElements::ParseLabel(const char 
 	char aError[256];
 	char aJsonString[1048];
 	str_format(aJsonString, sizeof(aJsonString), "\"%s\"", pLabel);
-	json_value *pJsonLabel = json_parse_ex(&JsonSettings, aJsonString, str_length(aJsonString), aError);
+	json_value *pJsonLabel = JsonParseEx(&JsonSettings, aJsonString, str_length(aJsonString), aError);
 	if(pJsonLabel == nullptr || pJsonLabel->type != json_string)
 	{
 		return pLabel;
