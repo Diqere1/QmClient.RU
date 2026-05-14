@@ -295,6 +295,20 @@ void CHudEditor::SaveLayoutConfig()
 	m_DirtyLayout = false;
 }
 
+void CHudEditor::ResetLayoutConfig()
+{
+	for(SElementState &State : m_aElementStates)
+		State = SElementState{};
+
+	g_Config.m_QmHudEditorLayout[0] = '\0';
+	m_aLayoutCache[0] = '\0';
+	m_LayoutLoaded = true;
+	m_DirtyLayout = false;
+	m_DraggingElement = -1;
+	m_DragGrabOffset = vec2(0.0f, 0.0f);
+	ConfigManager()->Save();
+}
+
 CHudEditor::SElementState &CHudEditor::EnsureState(EHudEditorElement Element)
 {
 	SyncLayoutConfig();
@@ -450,7 +464,21 @@ void CHudEditor::OnRender()
 
 	UpdateInteractionUi();
 
-	const int HoveredIndex = FindHoveredVisibleElement();
+	constexpr float ResetButtonWidth = 68.0f;
+	constexpr float ResetButtonHeight = 18.0f;
+	constexpr float ResetButtonMargin = 10.0f;
+	CUIRect ResetButton{
+		pUiScreen->x + pUiScreen->w - ResetButtonWidth - ResetButtonMargin,
+		pUiScreen->y + ResetButtonMargin,
+		ResetButtonWidth,
+		ResetButtonHeight};
+	static CButtonContainer s_ResetDefaultButton;
+	const bool ResetButtonHovered = Ui()->MouseHovered(&ResetButton);
+	const bool ResetDefaultClicked = Ui()->DoButtonLogic(&s_ResetDefaultButton, 0, &ResetButton, BUTTONFLAG_LEFT) != 0;
+	if(ResetDefaultClicked)
+		ResetLayoutConfig();
+
+	const int HoveredIndex = ResetButtonHovered ? -1 : FindHoveredVisibleElement();
 	if(m_DraggingElement >= 0)
 	{
 		const bool MouseReleased = !Ui()->MouseButton(0) && Ui()->LastMouseButton(0);
@@ -561,6 +589,9 @@ void CHudEditor::OnRender()
 	{
 		TextRender()->Text(HelpX + HelpPaddingX, HelpY + HelpPaddingY + HelpLineHeight * i, HelpFontSize, apHelpLines[i], -1.0f);
 	}
+
+	ResetButton.Draw(ColorRGBA(0.03f, 0.04f, 0.06f, 0.78f), IGraphics::CORNER_ALL, 6.0f);
+	Ui()->DoLabel(&ResetButton, Localize("Reset default"), 8.0f, TEXTALIGN_MC);
 
 	RenderTools()->RenderCursor(Ui()->MousePos(), 24.0f);
 

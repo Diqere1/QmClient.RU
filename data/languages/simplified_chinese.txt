@@ -4642,6 +4642,9 @@ Use the mouse wheel on a hovered module to scale it by 5%
 Press Esc to exit the HUD editor
 == 按 Esc 退出 HUD 编辑器
 
+Reset default
+== 恢复默认
+
 Assets editor
 == 材质编辑器
 

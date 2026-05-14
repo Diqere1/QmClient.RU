@@ -103,6 +103,7 @@ private:
 	void SyncLayoutConfig();
 	void ParseLayoutConfig(const char *pConfig);
 	void SaveLayoutConfig();
+	void ResetLayoutConfig();
 	void ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight) const;
 	SElementState &EnsureState(EHudEditorElement Element);
 	const SElementState &State(EHudEditorElement Element) const;
