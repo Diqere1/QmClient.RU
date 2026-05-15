@@ -1,0 +1,45 @@
+feature: 2026-05-09-rmlui-menu-pilot
+created: 2026-05-09
+
+steps:
+  - action: "页面契约：定义 PAGE_SETTINGS 试点范围、view model、action token 和 surface contract"
+    exit_signal: "能稳定表达页面壳、导航、content slot 和回退请求这几层结果，并明确仅 PAGE_SETTINGS 可进入 menu pilot"
+    status: done
+  - action: "壳层拆分：把设置页旧壳和 legacy content dispatcher 拆开，让 content island 可复用现有 RenderSettings* 分发"
+    exit_signal: "RmlUI 页面壳可以承载 legacy settings content，而不再整页继续走旧设置页壳"
+    status: done
+  - action: "宿主接线：把 PAGE_SETTINGS 接入 MENU_PAGE concrete module，其余 menu page 保持 legacy"
+    exit_signal: "PAGE_SETTINGS 可按开关进入 menu pilot，其它菜单页完全不受影响"
+    status: done
+  - action: "输入与回退：接页面导航、fallback_to_legacy、popup 抢占和 input bridge 既有 owner priority"
+    exit_signal: "页面壳能切设置页签、能显式回到旧版，fullscreen popup 打开时页面输入不越权"
+    status: done
+  - action: "验证闭环：补 targeted tests、构建验证和人工验收清单"
+    exit_signal: "自动证据覆盖页面壳 contract、导航动作、content slot/fallback 和 modal 抢占；人工验收只负责最终 UI 表现"
+    status: done
+
+checks:
+  - item: "本次唯一 concrete MENU_PAGE surface 只能是 PAGE_SETTINGS"
+    source: 范围守护
+    status: done
+  - item: "设置项内容继续复用既有 RenderSettings* 分发，不在本功能里重写成 RmlUI 原生控件"
+    source: 范围守护
+    status: done
+  - item: "settings page 导航仍通过 g_Config.m_UiSettingsPage 这套既有页面语义驱动"
+    source: 名词契约
+    status: done
+  - item: "页面壳失败、slot 无效或 safe-mode 触发时，同帧回到完整 legacy settings page"
+    source: 流程级约束
+    status: done
+  - item: "popup 打开时 MENU_MODAL 继续优先，menu pilot 不在 modal active 时抢输入"
+    source: 流程级约束
+    status: done
+  - item: "页面壳必须提供显式 RmlUI 标识和一键回到旧版入口"
+    source: 验收场景
+    status: done
+  - item: "非 PAGE_SETTINGS 菜单页继续全量走 legacy path"
+    source: 验收场景
+    status: done
+  - item: "不提前混入 settings reorg、settings search 或 click GUI"
+    source: 范围守护
+    status: done

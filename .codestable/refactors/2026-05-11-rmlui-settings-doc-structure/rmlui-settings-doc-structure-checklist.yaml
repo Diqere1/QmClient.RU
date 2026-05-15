@@ -1,0 +1,33 @@
+refactor: 2026-05-11-rmlui-settings-doc-structure
+created: 2026-05-11
+
+steps:
+  - action: "抽出 canonical settings-host contract"
+    exit_signal: "settings 主线的长期 host 规则只在 reference 文档里完整出现"
+    status: pending
+  - action: "压缩 settings feature / checklist"
+    exit_signal: "feature 文档仍保留 IA、目标、验收和执行边界，但不再重复整段 host contract"
+    status: pending
+  - action: "压缩 roadmap / readiness / runtime / index"
+    exit_signal: "roadmap 回到阶段/依赖/状态，runtime 回到 API，index 回到导航"
+    status: pending
+  - action: "校验引用与 YAML"
+    exit_signal: "链接不悬空，YAML 通过 validate-yaml.py"
+    status: pending
+
+checks:
+  - item: "settings-host contract 只在一份 reference 文档里完整出现"
+    source: refactor goal
+    status: pending
+  - item: "settings feature 文档仍保留 IA、目标、验收和执行边界"
+    source: preserve feature meaning
+    status: pending
+  - item: "roadmap / readiness 不再重复 feature design 级别正文"
+    source: doc responsibility split
+    status: pending
+  - item: "runtime reference 不再承载 settings-specific policy 主文"
+    source: doc responsibility split
+    status: pending
+  - item: "feature index 只保留导航型信息"
+    source: navigation role
+    status: pending

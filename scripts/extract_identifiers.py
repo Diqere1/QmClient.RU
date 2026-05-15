@@ -50,7 +50,7 @@ def get_complex_type(typ):
 		return get_complex_type(typ.get_pointee())
 	if typ.kind == TypeKind.POINTER:
 		return "p" + get_complex_type(typ.get_pointee())
-	if is_array_type(type):
+	if is_array_type(typ):
 		return "a" + get_complex_type(typ.element_type)
 	if typ.kind == TypeKind.FUNCTIONPROTO:
 		return "fn"
@@ -82,7 +82,7 @@ def is_static_member_definition_hack(node):
 def is_const(typ):
 	if typ.is_const_qualified():
 		return True
-	if is_array_type(type):
+	if is_array_type(typ):
 		return is_const(typ.element_type)
 	return False
 
@@ -93,6 +93,8 @@ def process_source_file(out, file, extra_args, break_on):
 	args = extra_args + ["-Isrc"]
 	if file.endswith(".c"):
 		header = f"{file[:-2]}.h"
+	elif file.endswith(".cc"):
+		header = f"{file[:-3]}.h"
 	elif file.endswith(".cpp"):
 		header = f"{file[:-4]}.h"
 	else:

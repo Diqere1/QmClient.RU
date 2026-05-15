@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import argparse
+import re
 
 os.chdir(os.path.dirname(__file__) + "/..")
 
@@ -17,7 +18,7 @@ IGNORE_FILES = [
 ]
 IGNORE_DIRS = [
 	"src/game/generated",
-	"src/rust-bridge"
+	"src/rust-bridge/base"
 ]
 def filter_ignored(filenames):
 	result = []
@@ -31,7 +32,24 @@ def filter_ignored(filenames):
 
 def filter_cpp(filenames):
 	return [filename for filename in filenames
-		if any(filename.endswith(ext) for ext in ".c .cpp .h".split())]
+		if any(filename.endswith(ext) for ext in ".c .cc .cpp .h .hpp".split())]
+
+def normalize_input_filenames(filenames):
+	return [os.path.normpath(filename) for filename in filenames]
+
+def chunked_for_command(base_args, filenames, max_chars=28000):
+	current = []
+	current_len = sum(len(arg) + 3 for arg in base_args)
+	for filename in filenames:
+		filename_len = len(filename) + 3
+		if current and current_len + filename_len > max_chars:
+			yield current
+			current = []
+			current_len = sum(len(arg) + 3 for arg in base_args)
+		current.append(filename)
+		current_len += filename_len
+	if current:
+		yield current
 
 def find_clang_format(version):
 	for binary in (
@@ -42,9 +60,16 @@ def find_clang_format(version):
 			out = subprocess.check_output([binary, "--version"])
 		except FileNotFoundError:
 			continue
-		if f"clang-format version {version}." in out.decode("utf-8"):
+		version_text = out.decode("utf-8")
+		match = re.search(r"clang-format version (\d+)\.", version_text)
+		if not match:
+			continue
+		major = int(match.group(1))
+		if major >= version:
+			if major != version:
+				print(f"Using clang-format {major} for required minimum {version}", file=sys.stderr)
 			return binary
-	print(f"Found no clang-format {version}")
+	print(f"Found no clang-format >= {version}")
 	sys.exit(-1)
 
 clang_format_bin = find_clang_format(20)
@@ -58,10 +83,15 @@ def reformat(filenames):
 					f.write(b'\n')
 			except OSError:
 				f.seek(0)
-	subprocess.check_call([clang_format_bin, "-i"] + filenames)
+	base_args = [clang_format_bin, "-i"]
+	for batch in chunked_for_command(base_args, filenames):
+		subprocess.check_call(base_args + batch)
 
 def warn(filenames):
-	clang = subprocess.call([clang_format_bin, "-Werror", "--dry-run"] + filenames)
+	clang = 0
+	base_args = [clang_format_bin, "-Werror", "--dry-run"]
+	for batch in chunked_for_command(base_args, filenames):
+		clang = subprocess.call(base_args + batch) or clang
 	newline = 0
 	for filename in filenames:
 		with open(filename, 'rb') as f:
@@ -77,8 +107,13 @@ def warn(filenames):
 def main():
 	p = argparse.ArgumentParser(description="Check and fix style of changed files")
 	p.add_argument("-n", "--dry-run", action="store_true", help="Don't fix, only warn")
+	p.add_argument("files", nargs="*", help="Optional explicit file list to check instead of scanning src/")
 	args = p.parse_args()
-	filenames = filter_ignored(filter_cpp(recursive_file_list("src")))
+	if args.files:
+		filenames = normalize_input_filenames(args.files)
+	else:
+		filenames = recursive_file_list("src")
+	filenames = filter_ignored(filter_cpp(filenames))
 	if not args.dry_run:
 		reformat(filenames)
 	else:

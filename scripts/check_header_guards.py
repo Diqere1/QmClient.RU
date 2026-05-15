@@ -27,10 +27,10 @@ def check_file(filename):
 			if line.startswith("#ifndef"):
 				if line[:-1] != header_guard:
 					error = True
-					print(f"Wrong header guard in {filename}, is: {line[:-1]}, should be: {header_guard}")
+					print(f"错误：{filename} 的头文件保护宏不正确，当前为 {line[:-1]}，应为 {header_guard}")
 			else:
 				error = True
-				print(f"Missing header guard in {filename}, should be: {header_guard}")
+				print(f"错误：{filename} 缺少头文件保护宏，应为 {header_guard}")
 			break
 	return error
 

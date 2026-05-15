@@ -1,0 +1,183 @@
+name: Governance Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - rmlUI
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-docs:
+    name: Workflow Docs
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check workflow documents
+        run: python qmclient_scripts/check_workflow_docs.py
+
+      - name: Generate gate report fixture
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path tmp -Force | Out-Null
+          pwsh -NoProfile -ExecutionPolicy Bypass -File qmclient_scripts/check-gate.ps1 `
+            -Mode quick `
+            -BaseRef HEAD `
+            -SkipPreflight `
+            -SkipConfigChecks `
+            -SkipHeaderChecks `
+            -SkipStyleCheck `
+            -ReportJsonPath tmp/check-gate-fixture.json
+
+      - name: Generate release notes smoke draft
+        run: python qmclient_scripts/generate_release_notes.py --version CI --gate-report tmp/check-gate-fixture.json --output tmp/release-notes-ci.md
+
+      - name: Upload release notes smoke draft
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-release-notes-smoke
+          path: tmp/release-notes-ci.md
+          if-no-files-found: error
+          retention-days: 7
+
+  quick-gate-windows:
+    name: Quick Gate (Windows)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM clang-format
+        shell: pwsh
+        run: choco install llvm -y --no-progress
+
+      - name: Fetch main baseline
+        shell: pwsh
+        run: git fetch origin main --depth=1
+
+      - name: Run quick governance gate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path tmp -Force | Out-Null
+          powershell -NoProfile -ExecutionPolicy Bypass -File qmclient_scripts\check-gate.ps1 `
+            -Mode quick `
+            -BaseRef origin/main `
+            -ReportJsonPath tmp\check-gate-ci.json `
+            -ExplainScope `
+            -ScopeReportPath tmp\check-gate-ci-scope.json 2>&1 | Tee-Object -FilePath tmp\check-gate-ci.log
+          exit $LASTEXITCODE
+
+      - name: Refresh baseline allowlist dry-run
+        shell: pwsh
+        run: python qmclient_scripts\refresh_baseline_debt_allowlist.py --report tmp\check-gate-ci.json --output qmclient_scripts\baseline_debt_allowlist.json --dry-run
+
+      - name: Upload quick gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-check-gate-report
+          path: tmp/check-gate-ci.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload quick gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-check-gate-log
+          path: tmp/check-gate-ci.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload quick gate scope report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-check-gate-scope
+          path: tmp/check-gate-ci-scope.json
+          if-no-files-found: error
+          retention-days: 7
+
+  default-gate-windows:
+    name: Default Gate (Windows)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM clang-format
+        shell: pwsh
+        run: choco install llvm -y --no-progress
+
+      - name: Fetch main baseline
+        shell: pwsh
+        run: git fetch origin main --depth=1
+
+      - name: Run default governance gate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path tmp -Force | Out-Null
+          powershell -NoProfile -ExecutionPolicy Bypass -File qmclient_scripts\check-gate.ps1 `
+            -Mode default `
+            -BaseRef origin/main `
+            -ReportJsonPath tmp\check-gate-default-ci.json `
+            -ExplainScope `
+            -ScopeReportPath tmp\check-gate-default-ci-scope.json 2>&1 | Tee-Object -FilePath tmp\check-gate-default-ci.log
+          exit $LASTEXITCODE
+
+      - name: Upload default gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-check-gate-default-report
+          path: tmp/check-gate-default-ci.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload default gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-check-gate-default-log
+          path: tmp/check-gate-default-ci.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload default gate scope report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-check-gate-default-scope
+          path: tmp/check-gate-default-ci-scope.json
+          if-no-files-found: error
+          retention-days: 7

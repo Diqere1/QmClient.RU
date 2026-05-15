@@ -1,0 +1,51 @@
+feature: 2026-05-10-rmlui-settings-reorg
+created: 2026-05-10
+
+steps:
+  - action: "context 拓扑：按 settings-host contract 建立 dedicated settings page context 与 settings modal context"
+    exit_signal: "settings page 与 modal 不再共享 context，也不存在每个模块各自 Update/Render 同一 context 的路径"
+    status: done
+  - action: "宿主切换：让 CMenus::RenderSettings(...) 在 active RmlUI settings path 中完全停掉 legacy settings 壳层与 RenderSettingsContent(...) 绘制链"
+    exit_signal: "进入 active RmlUI settings path 后，画面中不再出现旧 settings tab bar、旧内容面板或任何 legacy settings 并列渲染"
+    status: done
+  - action: "IA 与状态适配：按 Tee、游戏界面（HUD）、图像、声音、资源、配置、功能、搜索 八个一级 domain 建立 destination、section model 与 state adapter"
+    exit_signal: "新的 settings IA 可以独立驱动 active 页面内容，不再依赖 RenderSettingsContent(...) 作为内容 owner"
+    status: done
+  - action: "子页状态提升：把 TClient / QmClient 等多层入口整理成宿主级可表达状态，并接入 RmlUI-owned controls 与内容组"
+    exit_signal: "TClient、QmClient、Configs、Contributors 等历史多层入口都能在同一张 RmlUI settings page 内稳定呈现"
+    status: pending
+  - action: "验证闭环：补 targeted tests、构建验证和人工验收清单，覆盖 context 边界、宿主切换、state adapter 与 no-parallel-render 约束"
+    exit_signal: "自动证据能证明 settings active path 不再 mixed render，且 page/modal context 边界与关键路由稳定"
+    status: pending
+
+checks:
+  - item: "一级 IA 固定采用 Tee、游戏界面（HUD）、图像、声音、资源、配置、功能、搜索 八个 domain，不回退到泛化占位分类"
+    source: 用户 IA 约束
+    status: pending
+  - item: "active RmlUI settings path 中不再并列渲染旧 settings 壳层或旧 settings 内容"
+    source: 核心架构约束
+    status: pending
+  - item: "settings page 与 settings modal 使用独立 context，且 page/modal 输入焦点不串扰"
+    source: settings-host contract
+    status: pending
+  - item: "CMenus::RenderSettings(...) 在 RmlUI path 中只做 host seam，不再充当 active content owner"
+    source: settings-host contract
+    status: pending
+  - item: "RenderSettingsContent(...)、RenderSettingsQmClient(...)、RenderSettingsTClient(...) 在 settings 主线里降级为 legacy reference，而不是 active runtime renderer"
+    source: 编排契约
+    status: pending
+  - item: "TClient / QmClient / Configs / Contributors 等历史多层入口被吸收到新的 destination + state adapter 结构中"
+    source: 名词契约
+    status: pending
+  - item: "popup active 时 settings modal context 继续优先，page context 不抢 modal 输入"
+    source: 流程级约束
+    status: pending
+  - item: "safe-mode 可以禁用 feature 并导出原因，但不能在 active path 中用 mixed legacy fallback 掩盖未完成迁移"
+    source: 故障语义
+    status: pending
+  - item: "不提前混入 settings search、click GUI、HUD editor 或 popup 范围扩张"
+    source: 范围守护
+    status: pending
+  - item: "虽然本 feature 不实现搜索行为，但搜索一级入口与后续宿主槽位被保留，供 settings 原生化后继续接续"
+    source: IA 前瞻约束
+    status: pending

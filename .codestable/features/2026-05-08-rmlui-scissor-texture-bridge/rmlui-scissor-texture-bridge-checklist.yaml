@@ -1,0 +1,51 @@
+feature: 2026-05-08-rmlui-scissor-texture-bridge
+created: 2026-05-08
+
+steps:
+  - action: "bridge wrapper 骨架：引入 QmClient 自己的 render interface wrapper，并让 backend 持有 wrapper + current delegate"
+    exit_signal: "CRmlUiBackend 不再把 raw RenderInterface_GL3 作为唯一 public render surface 暴露"
+    status: passed
+  - action: "texture lifecycle slice：落地 file/generated/release 三条路径、registry 和 alpha normalization 契约"
+    exit_signal: "texture handle 有显式 registry，generated texture 不再只依赖 vendored adapter 的隐式兼容"
+    status: passed
+  - action: "scissor translation slice：落地 enable/set translation 和 single-owner clip semantics"
+    exit_signal: "bridge 有明确 scissor state，且没有双重 Y 翻转"
+    status: passed
+  - action: "构建与证据验证：重建 game-client/testrunner，补 targeted test 并收集 desktop GL 当前路径仍可用的运行证据"
+    exit_signal: "构建通过，targeted test 通过，且运行证据能说明 texture/scissor 已进入 QmClient bridge contract"
+    status: passed
+
+checks:
+  - item: "texture/scissor 行为先经过 QmClient bridge contract，而不是继续作为 raw RenderInterface_GL3 的隐含行为"
+    source: 名词契约
+    status: passed
+  - item: "bridge texture registry 能把 Rml::TextureHandle 与 delegate handle、来源类型、尺寸和释放状态关联起来"
+    source: 名词契约
+    status: passed
+  - item: "generated texture 的 premultiplied alpha 兼容规则被显式记录并验证"
+    source: 官方 compatibility 约束
+    status: passed
+  - item: "scissor translation 只有一个 owner，不出现双重 Y 翻转或多处坐标改写"
+    source: 流程级约束
+    status: passed
+  - item: "backend-thread render path 不会直接调用 main-thread-only 的 IGraphics::LoadTextureRaw*"
+    source: 线程边界约束
+    status: passed
+  - item: "texture release 会同时清理 bridge registry 和 delegate handle"
+    source: 流程级约束
+    status: passed
+  - item: "desktop GL current path 在这次 bridge slice 后仍可用"
+    source: 验收场景
+    status: passed
+  - item: "不实现 compiled geometry/full draw submission bridge"
+    source: 范围守护
+    status: passed
+  - item: "不实现 layer/filter/shader/save-layer/clip-mask 的完整 bridge"
+    source: 范围守护
+    status: passed
+  - item: "不迁移 Monitoring HUD、菜单、弹窗、轮盘或 editor surface"
+    source: 范围守护
+    status: passed
+  - item: "不宣称 Vulkan/Android 已被当前 slice 覆盖"
+    source: 范围守护
+    status: passed

@@ -1,0 +1,60 @@
+feature: 2026-05-07-rmlui-input-bridge
+created: 2026-05-07
+
+steps:
+  - action: "事件模型：定义输入事件和路由结果"
+    exit_signal: "测试能表达鼠标、按键、文本、焦点、取消和 release-state，并说明上游输入投递到宿主路由结果的映射"
+    status: done
+  - action: "状态释放：在关闭、失败、焦点丢失时执行 release-state"
+    exit_signal: "测试证明按下态、悬停态不会残留，并覆盖文本输入 context 销毁路径"
+    status: done
+  - action: "交互策略：菜单、弹窗、轮盘、editor 的输入消费规则"
+    exit_signal: "激活界面能消费输入，HUD 默认不抢 gameplay 输入"
+    status: done
+  - action: "控制台保护：保留控制台文本输入所有权"
+    exit_signal: "控制台激活时 RmlUI 不抢文本输入"
+    status: done
+  - action: "运行时集成：桥接结果与 runtime-shell 决策一致"
+    exit_signal: "路由结果和 runtime 结果的 fallback 语义一致，且 runtime-shell 不解释事件参数"
+    status: done
+  - action: "生命周期与入口守护：保持现有 GUI 生命周期 owner 不变，并把图形化切换按钮收口到栖梦设置页"
+    exit_signal: "现有菜单/轮盘/editor/文本输入生命周期不被改写，用户可见切换按钮位于 RenderSettingsQmClient 路径，且当前只保留全局 RmlUI 图形开关"
+    status: done
+
+checks:
+  - item: "输入桥支持鼠标、按键、文本、焦点、取消和 release-state"
+    source: 名词契约
+    status: passed
+  - item: "宿主路由结果不是对原始 Process* 返回值的未加说明透传"
+    source: 官方事件/输入约束
+    status: passed
+  - item: "HUD overlays 默认不抢 gameplay 输入"
+    source: 验收场景
+    status: passed
+  - item: "交互式界面可在激活态时消费输入"
+    source: 验收场景
+    status: passed
+  - item: "cancel/back 统一关闭当前界面"
+    source: 流程级约束
+    status: passed
+  - item: "release-state 可清理残留按下态和悬停态"
+    source: 流程级约束
+    status: passed
+  - item: "控制台激活时 RmlUI 不抢文本输入"
+    source: 验收场景
+    status: passed
+  - item: "文本输入 handler 安装范围与 OnDestroy 生命周期约束被明确记录"
+    source: 官方 text input 约束
+    status: passed
+  - item: "现有 GUI 生命周期 owner 不被输入桥改写"
+    source: 流程级约束
+    status: passed
+  - item: "用户可见切换按钮收口在栖梦设置页"
+    source: 流程级约束
+    status: passed
+  - item: "当前阶段图形化设置只保留全局 RmlUI 开关，不再保留 Monitoring 专属图形开关"
+    source: 流程级约束
+    status: passed
+  - item: "不实现菜单迁移、轮盘重做或 render bridge"
+    source: 范围守护
+    status: passed

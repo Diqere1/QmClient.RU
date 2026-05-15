@@ -1,0 +1,48 @@
+feature: 2026-05-08-rmlui-layer-switchboard
+created: 2026-05-08
+
+steps:
+  - action: "switchboard 骨架：新增宿主级 layer switchboard owner、固定 dispatch rule 和 dispatch result contract"
+    exit_signal: "宿主级代码不再需要各自拼接 direct runtime call 与 legacy fallback 判断"
+    status: done
+  - action: "`GAME_HUD` 迁移：把 Monitoring HUD 宿主改为通过 switchboard 进入 runtime"
+    exit_signal: "`CGameClient::RenderQmMonitoringHudRmlUi(...)` 不再作为宿主直连 runtime 的长期入口"
+    status: done
+  - action: "`DEBUG_OVERLAY` / `MENU_PAGE` / `MENU_MODAL` 接缝壳：把 debug、menu page 和 popup 宿主接进 switchboard，即使当前只回 legacy path"
+    exit_signal: "这几个宿主后续接 RmlUI surface 时，不需要再另起新的 runtime 调度分支"
+    status: done
+  - action: "构建与证据验证：补 targeted test / grep 证据并重建 game-client"
+    exit_signal: "构建通过，宿主直连 runtime 被收口，legacy fallback 链仍保持可用"
+    status: done
+
+checks:
+  - item: "switchboard 成为唯一允许把 host render request 送进 runtime 的宿主级入口"
+    source: 流程级约束
+    status: passed
+  - item: "Monitoring HUD 宿主先进入 switchboard，再由 switchboard 调 runtime"
+    source: 验收场景
+    status: passed
+  - item: "debug overlay / menu page / popup 宿主即使当前没有 RmlUI module，也先进入 switchboard slot 再回 legacy path"
+    source: 验收场景
+    status: passed
+  - item: "`GAME_HUD` 必须先于 `DEBUG_OVERLAY`，menu page / popup 继续受 `CMenus::OnRender()` 宿主链控制"
+    source: 流程级约束
+    status: passed
+  - item: "fallback 的执行者仍是原宿主，不由 switchboard 越权直接绘制 legacy UI"
+    source: 流程级约束
+    status: passed
+  - item: "runtime 不被改造成新的全局 UI 主循环"
+    source: 范围守护
+    status: passed
+  - item: "不实现 input bridge"
+    source: 范围守护
+    status: passed
+  - item: "不迁移 menu page、popup 或 debug HUD 的具体 RmlUI surface"
+    source: 范围守护
+    status: passed
+  - item: "不宣称 `RADIAL_OVERLAY` / `EDITOR_OVERLAY` 当前宿主已实现"
+    source: 范围守护
+    status: passed
+  - item: "不改变现有 legacy menu / popup / debug HUD 的行为语义"
+    source: 范围守护
+    status: passed

@@ -1,0 +1,245 @@
+roadmap: rmlui-full-replacement
+created: 2026-05-06
+
+items:
+  - slug: rmlui-runtime-shell
+    description: 建立 RmlUI runtime、模块注册、开关和 fallback 骨架
+    phase: A
+    module: RmlUiRuntime
+    depends_on: []
+    status: done
+    feature: 2026-05-07-rmlui-runtime-shell
+    minimal_loop: true
+    acceptance: Monitoring HUD 试点模块可注册、可开关、可回退、可导出诊断
+    notes: 最小闭环，先证明开关、回退和诊断成立；Monitoring HUD 只作为原型宿主
+
+  - slug: rmlui-resource-diagnostics
+    description: 统一字体、rml/rcss 资源路径、样式兼容错误和 debug 导出
+    phase: A
+    module: RmlUiResourcePipeline
+    depends_on: [rmlui-runtime-shell]
+    status: done
+    feature: 2026-05-07-rmlui-resource-diagnostics
+    minimal_loop: false
+    acceptance: 字体缺失、文档缺失和 RCSS 错误都能结构化落盘
+    notes: 只在开发环境自动导出；资源诊断与 runtime 诊断共存但不互相覆盖
+
+  - slug: rmlui-render-command-bridge
+    description: 实现不抢 GL context 的 RmlUI 渲染桥，输出到客户端渲染管线
+    phase: B
+    module: RmlUiRenderBridge
+    depends_on: [rmlui-runtime-shell]
+    status: done
+    feature: 2026-05-07-rmlui-render-command-bridge
+    minimal_loop: false
+    acceptance: RmlUI 与主画面可同时显示，bridge 不再依赖 SDL_GL_MakeCurrent
+    notes: 当前仅完成 graphics thread callback 最小桥，geometry/scissor/texture 全量 bridge 仍未完成
+
+  - slug: rmlui-scissor-texture-bridge
+    description: 收紧 scissor 与 texture load/generate/release 的 bridge contract，并把句柄 ownership 提到 QmClient bridge 层
+    phase: B
+    module: RmlUiRenderBridge
+    depends_on: [rmlui-render-command-bridge]
+    status: done
+    feature: 2026-05-08-rmlui-scissor-texture-bridge
+    minimal_loop: false
+    acceptance: texture/scissor 先经过 QmClient bridge contract，desktop GL 当前路径仍可用，geometry/layer/filter/shader full bridge 继续后置
+    notes: 当前已验收 texture registry、generated texture normalization、save-layer texture handle 重写与 scissor translation single-owner；full draw/layer/filter/shader bridge 仍未完成
+
+  - slug: rmlui-layer-switchboard
+    description: 把 RmlUI layer 接入 game HUD、debug overlay、menu、popup 的固定渲染顺序
+    phase: B
+    module: RmlUiLayerManager
+    depends_on: [rmlui-render-command-bridge]
+    status: done
+    feature: 2026-05-08-rmlui-layer-switchboard
+    minimal_loop: false
+    acceptance: 固定顺序调度生效，模块不再自行抢渲染时机
+    notes: 已验收 host dispatch order、frame token / surface tag guard 与 legacy fallback ownership；具体 debug/menu/popup RmlUI surface 仍未迁移
+
+  - slug: rmlui-monitoring-hud-migration
+    description: 用新管线迁移 Monitoring HUD，保留旧 HUD fallback
+    phase: C
+    module: RmlUiMigrationTargets
+    depends_on: [rmlui-scissor-texture-bridge, rmlui-layer-switchboard]
+    status: done
+    feature: 2026-05-08-rmlui-monitoring-hud-migration
+    minimal_loop: false
+    acceptance: 文字、卡片、图表完整显示，游戏中叠加稳定，可即时回退旧 HUD
+    notes: 已验收为第一条真实混合迁移样板；当前 contract 收口到文案、本地化、surface contract 与宿主 fallback owner，后续 debug HUD migration 直接复用这条样板
+
+  - slug: rmlui-input-bridge
+    description: 为菜单、弹窗等可交互 RmlUI 文档建立输入投递和消费规则
+    phase: D
+    module: RmlUiInputBridge
+    depends_on: [rmlui-layer-switchboard, rmlui-safe-mode]
+    status: done
+    feature: 2026-05-07-rmlui-input-bridge
+    minimal_loop: false
+    acceptance: HUD 不消费 gameplay 输入，控制台文本输入不被抢占，交互型 surface 异常时可统一 close/cancel/release-state 并回退旧路径
+    notes: 已验收输入投递、消费、cancel / release-state 和设置页开关收口；后续交互式 surface 可复用该基线
+
+  - slug: rmlui-debug-hud-migration
+    description: 迁移 debug overlay 类 HUD，验证和游戏画面同屏叠加稳定
+    phase: C
+    module: RmlUiMigrationTargets
+    depends_on: [rmlui-monitoring-hud-migration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 至少一个 debug HUD 模块可稳定叠加并保留旧路径
+    notes: 依赖 Monitoring HUD 迁移先把游戏内叠加基线收稳，再扩到调试覆盖层
+
+  - slug: rmlui-safe-mode
+    description: 为 RmlUI 页面异常提供自动禁用与回退到旧 UI 的安全模式
+    phase: D
+    module: RmlUiSafetyTooling
+    depends_on: [rmlui-runtime-shell, rmlui-resource-diagnostics]
+    status: done
+    feature: 2026-05-07-rmlui-safe-mode
+    minimal_loop: false
+    acceptance: 某模块连续失败后可自动回退并提示用户，不会把玩家锁死在坏 UI
+    notes: 首批交互式 surface 前必须具备的护栏
+
+  - slug: rmlui-popup-migration
+    description: 迁移低风险弹窗 / 提示 UI，验证输入消费和 fallback
+    phase: D
+    module: RmlUiMigrationTargets
+    depends_on: [rmlui-input-bridge, rmlui-safe-mode]
+    status: done
+    feature: 2026-05-08-rmlui-popup-migration
+    minimal_loop: false
+    acceptance: 弹窗可消费 UI 输入，失败时回退旧弹窗
+    notes: 已验收低风险 fullscreen popup modal 子集；popup_menu 与文本输入型 popup 仍继续走 legacy，后续 menu-pilot 直接复用这条交互式 modal 基线
+
+  - slug: rmlui-menu-pilot
+    description: 选择一个菜单页面作为 RmlUI 试点，不迁移全菜单
+    phase: D
+    module: RmlUiMigrationTargets
+    depends_on: [rmlui-input-bridge, rmlui-popup-migration, rmlui-safe-mode]
+    status: done
+    feature: 2026-05-09-rmlui-menu-pilot
+    minimal_loop: false
+    acceptance: 单页菜单试点可用且可一键回到旧菜单
+    notes: 不扩大到全菜单
+
+  - slug: rmlui-settings-reorg
+    description: settings host 稳定化，收紧 active RmlUI settings path 的宿主与 context 边界
+    phase: E
+    module: RmlUiNavigationSuite
+    depends_on: [rmlui-menu-pilot]
+    status: in-progress
+    feature: 2026-05-10-rmlui-settings-reorg
+    minimal_loop: false
+    acceptance: RenderSettings 只在 legacy path 与 RmlUI path 之间二选一，page/modal 使用独立 context，active path 不再 mixed render
+    notes: 当前挂载到该 item 的 feature 已超出这一步的合理范围，继续实现前需要先把 feature scope 收回 host stabilization 本身
+
+  - slug: rmlui-settings-ia-state-adapter
+    description: 把旧 settings 语义、子页态和副作用整理成 RmlUI 可消费的 IA 与 state adapter
+    phase: E
+    module: RmlUiNavigationSuite
+    depends_on: [rmlui-settings-reorg]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 八个一级 domain 与对应 destination 可稳定驱动 RmlUI-owned 内容模型，且 active path 不再依赖 RenderSettingsContent 充当内容 owner
+    notes: 这一层只解决 IA 与状态抽象，不承诺原生控件 parity
+
+  - slug: rmlui-click-gui-suite
+    description: 提供 Click GUI、Bind 轮盘和表情轮盘等现代交互入口
+    phase: E
+    module: RmlUiNavigationSuite
+    depends_on: [rmlui-input-bridge, rmlui-menu-pilot, rmlui-safe-mode]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 图形化入口可用，输入消费稳定，旧入口仍保留
+    notes: 统一处理 Click GUI 与轮盘类入口
+
+  - slug: rmlui-settings-first-native-domain
+    description: 选择一组高价值 settings domain，建立首条 RmlUI 原生表单控件闭环
+    phase: E
+    module: RmlUiNavigationSuite
+    depends_on: [rmlui-settings-ia-state-adapter]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 至少一组 settings domain 可由 RmlUI 原生 form controls 稳定承载，且配置项语义、默认值与存储键不变
+    notes: 优先使用官方文档已覆盖的 form controls 与 data binding 能力，不另造平行控件体系
+
+  - slug: rmlui-settings-search
+    description: 为 settings 页提供搜索和快速定位能力
+    phase: E
+    module: RmlUiNavigationSuite
+    depends_on: [rmlui-settings-first-native-domain]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 设置项可按关键词或分类快速定位，且不改变原有配置语义
+    notes: 搜索建立在稳定 IA 与首个原生 domain 闭环之上，不再对 legacy reference 外挂假搜索
+
+  - slug: rmlui-settings-visual-refresh
+    description: 在 settings 原生控件与搜索基础上，统一 settings 页视觉系统
+    phase: E
+    module: RmlUiNavigationSuite
+    depends_on: [rmlui-settings-first-native-domain, rmlui-settings-search]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: settings 页在全屏、自适应壳和原生控件基础上形成一致视觉层次
+    notes: 视觉刷新后置于内容与交互宿主稳定之后
+
+  - slug: rmlui-radial-action-system
+    description: 抽象统一的轮盘交互系统，承载 Bind、表情和快捷动作入口
+    phase: E
+    module: RmlUiNavigationSuite
+    depends_on: [rmlui-click-gui-suite]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 轮盘类入口共享统一交互模型和数据接入方式，旧轮盘仍可保留
+    notes: 统一轮盘交互
+
+  - slug: rmlui-dev-inspector
+    description: 提供页面节点、布局、样式和资源状态的开发者检查器
+    phase: F
+    module: RmlUiSafetyTooling
+    depends_on: [rmlui-resource-diagnostics, rmlui-menu-pilot]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 开发者可直接定位节点、布局和资源问题，减少纯日志盲查
+    notes: 提升后续 UI 开发效率
+
+  - slug: rmlui-preset-system
+    description: 为 HUD、Click GUI 和轮盘提供可切换预设能力
+    phase: F
+    module: RmlUiSafetyTooling
+    depends_on: [rmlui-settings-first-native-domain, rmlui-radial-action-system]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 现代 UI 配置可保存和切换预设，同时不破坏旧配置兼容
+    notes: 便于个性化和快速切换
+
+  - slug: rmlui-hud-layout-editor
+    description: 提供 HUD 元素位置与大小的拖拽布局编辑器，支持红绿虚线吸附
+    phase: E
+    module: RmlUiAuthoringTools
+    depends_on: [rmlui-monitoring-hud-migration, rmlui-settings-reorg]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 可拖拽调整 HUD 布局并显示吸附线，不影响旧 HUD 使用
+    notes: 低优先级增强能力
+
+  - slug: rmlui-component-editor
+    description: 提供组件编辑器，用于可视化组件配置和设置页自定义
+    phase: E
+    module: RmlUiAuthoringTools
+    depends_on: [rmlui-hud-layout-editor]
+    status: planned
+    feature: null
+    minimal_loop: false
+    acceptance: 作为低优先级扩展能力独立交付，不阻塞主替代闭环
+    notes: 低优先级，后置

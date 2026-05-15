@@ -1,0 +1,91 @@
+roadmap: rmlui-dual-ui-replacement
+created: 2026-05-13
+
+items:
+  - slug: rmlui-settings-dual-stack-reset
+    description: 回退 settings 混合主线并建立 surface 级 dual-stack path selector
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: 先让 settings 彻底摆脱 mixed render，再继续后面的 frontend 重建
+
+  - slug: rmlui-settings-semantic-surface
+    description: 把旧 settings 的配置语义、动作、副作用与 restart 状态抽成前端可消费接口
+    depends_on: [rmlui-settings-dual-stack-reset]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: legacy renderer 只保留为参考和独立 path
+
+  - slug: rmlui-settings-frontend-shell
+    description: 新建独立 RmlUiSettingsFrontend，持有 page/modal contexts、导航和内容模型
+    depends_on: [rmlui-settings-semantic-surface]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 不再沿用 menu_pilot 作为 settings 主线
+
+  - slug: rmlui-settings-core-domains-1to1
+    description: 先把 HUD与语言、图像、声音 三组页面做成真实 1比1 RmlUI 页面
+    depends_on: [rmlui-settings-frontend-shell]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 优先闭环纯表单型 domain
+
+  - slug: rmlui-settings-complex-pages-bridge
+    description: 为资源页、编辑器页、复杂输入页建立 semantic bridge 和后置策略
+    depends_on: [rmlui-settings-core-domains-1to1]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 解决哪些复杂页延后以及延后时如何保持双栈清晰边界
+
+  - slug: rmlui-settings-search-and-polish
+    description: 在 core domains 稳定后补 settings 搜索、定位与统一视觉整理
+    depends_on: [rmlui-settings-core-domains-1to1]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 后置于解耦和首批 1比1 页面之后
+
+  - slug: rmlui-main-menu-dual-stack
+    description: 把主菜单迁到真正的 dual-stack main menu frontend
+    depends_on: [rmlui-settings-frontend-shell]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: settings 先作为样板，主菜单后跟进
+
+  - slug: rmlui-popup-input-completion
+    description: 收口 popup_menu、文本输入型 fullscreen popup 和菜单级 modal 的双栈边界
+    depends_on: [rmlui-main-menu-dual-stack]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 扩展已有 popup migration 到难例
+
+  - slug: rmlui-click-gui-wheels-dual-stack
+    description: 迁移 Click GUI、Bind轮盘、表情轮盘等强交互面板
+    depends_on: [rmlui-popup-input-completion]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 依赖前面先把 page和modal path selector 跑顺
+
+  - slug: rmlui-editor-inspector-dual-stack
+    description: 迁移 HUD editor、developer inspector 等高交互工具 surface
+    depends_on: [rmlui-click-gui-wheels-dual-stack]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 编辑器型 surface 后置，避免过早拖慢主线
+
+  - slug: rmlui-full-parity-hardening
+    description: 收口 dual-stack toggle 矩阵、诊断、验收规则与长期共存文档
+    depends_on: [rmlui-settings-complex-pages-bridge, rmlui-settings-search-and-polish, rmlui-editor-inspector-dual-stack]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 作为全量替代最终收口项
