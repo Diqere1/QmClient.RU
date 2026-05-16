@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - rmlUI
+      - codex/rmlui-ui-split
   workflow_dispatch:
 
 permissions:
@@ -28,20 +29,20 @@ jobs:
           python-version: "3.12"
 
       - name: Check workflow documents
-        run: python qmclient_scripts/check_workflow_docs.py
+        run: python qmclient_scripts/gate/check_workflow_docs.py
 
       - name: Generate gate report fixture
-        shell: pwsh
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Path tmp -Force | Out-Null
-          pwsh -NoProfile -ExecutionPolicy Bypass -File qmclient_scripts/check-gate.ps1 `
-            -Mode quick `
-            -BaseRef HEAD `
-            -SkipPreflight `
-            -SkipConfigChecks `
-            -SkipHeaderChecks `
-            -SkipStyleCheck `
-            -ReportJsonPath tmp/check-gate-fixture.json
+          mkdir -p tmp
+          bash qmclient_scripts/gate/check-gate.sh \
+            --mode quick \
+            --base-ref HEAD \
+            --skip-preflight \
+            --skip-config-checks \
+            --skip-header-checks \
+            --skip-style-check \
+            --report-json-path tmp/check-gate-fixture.json
 
       - name: Generate release notes smoke draft
         run: python qmclient_scripts/generate_release_notes.py --version CI --gate-report tmp/check-gate-fixture.json --output tmp/release-notes-ci.md
@@ -78,20 +79,19 @@ jobs:
         run: git fetch origin main --depth=1
 
       - name: Run quick governance gate
-        shell: pwsh
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Path tmp -Force | Out-Null
-          powershell -NoProfile -ExecutionPolicy Bypass -File qmclient_scripts\check-gate.ps1 `
-            -Mode quick `
-            -BaseRef origin/main `
-            -ReportJsonPath tmp\check-gate-ci.json `
-            -ExplainScope `
-            -ScopeReportPath tmp\check-gate-ci-scope.json 2>&1 | Tee-Object -FilePath tmp\check-gate-ci.log
-          exit $LASTEXITCODE
+          mkdir -p tmp
+          bash qmclient_scripts/gate/check-gate.sh \
+            --mode quick \
+            --base-ref origin/main \
+            --report-json-path tmp/check-gate-ci.json \
+            --explain-scope \
+            --scope-report-path tmp/check-gate-ci-scope.json 2>&1 | tee tmp/check-gate-ci.log
 
       - name: Refresh baseline allowlist dry-run
         shell: pwsh
-        run: python qmclient_scripts\refresh_baseline_debt_allowlist.py --report tmp\check-gate-ci.json --output qmclient_scripts\baseline_debt_allowlist.json --dry-run
+        run: python qmclient_scripts/gate/refresh_baseline_debt_allowlist.py --report tmp\check-gate-ci.json --output qmclient_scripts/gate/baseline_debt_allowlist.json --dry-run
 
       - name: Upload quick gate report
         if: always()
@@ -144,16 +144,15 @@ jobs:
         run: git fetch origin main --depth=1
 
       - name: Run default governance gate
-        shell: pwsh
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Path tmp -Force | Out-Null
-          powershell -NoProfile -ExecutionPolicy Bypass -File qmclient_scripts\check-gate.ps1 `
-            -Mode default `
-            -BaseRef origin/main `
-            -ReportJsonPath tmp\check-gate-default-ci.json `
-            -ExplainScope `
-            -ScopeReportPath tmp\check-gate-default-ci-scope.json 2>&1 | Tee-Object -FilePath tmp\check-gate-default-ci.log
-          exit $LASTEXITCODE
+          mkdir -p tmp
+          bash qmclient_scripts/gate/check-gate.sh \
+            --mode default \
+            --base-ref origin/main \
+            --report-json-path tmp/check-gate-default-ci.json \
+            --explain-scope \
+            --scope-report-path tmp/check-gate-default-ci-scope.json 2>&1 | tee tmp/check-gate-default-ci.log
 
       - name: Upload default gate report
         if: always()

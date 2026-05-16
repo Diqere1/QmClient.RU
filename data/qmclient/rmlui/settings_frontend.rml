@@ -1,0 +1,32 @@
+<rml>
+	<head>
+		<title>QmClient settings frontend</title>
+		<link type="text/rcss" href="settings_frontend.rcss"/>
+	</head>
+	<body>
+		<div id="settings_frontend_root">
+			<div id="settings_toolbar">
+				<div id="settings_toolbar_main">
+					<div id="settings_route_title">设置</div>
+					<div id="settings_route_subtitle">前端壳层</div>
+				</div>
+				<div id="settings_toolbar_actions">
+					<div class="settings_toolbar_chip" id="settings_toolbar_chip_1">主任务优先</div>
+					<div class="settings_toolbar_chip" id="settings_toolbar_chip_2">结构化控件</div>
+					<div class="settings_toolbar_chip" id="settings_toolbar_chip_3">高级项下沉</div>
+				</div>
+				<div id="settings_search_slot">当前阶段优先收口布局与控件可达性，搜索仍在后续阶段。</div>
+			</div>
+			<div id="settings_frontend_body">
+				<div id="settings_workspace" class="settings_shell_panel settings_shell_primary">
+					<div id="settings_restart_banner"></div>
+					<div id="settings_section_host"></div>
+				</div>
+				<div class="settings_side_stack">
+					<div id="settings_domain_rail" class="settings_shell_panel settings_aux_shell settings_aux_shell_domain"></div>
+					<div id="settings_context_rail" class="settings_shell_panel settings_aux_shell settings_aux_shell_context"></div>
+				</div>
+			</div>
+		</div>
+	</body>
+</rml>

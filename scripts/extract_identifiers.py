@@ -1,9 +1,59 @@
 import argparse
 import csv
+import json
 import os
+import shlex
+import site
 import sys
 
-import clang.cindex # pylint: disable=import-error
+def ensure_clang_python_available():
+	try:
+		import clang.cindex as clang_cindex # pylint: disable=import-error
+		return clang_cindex
+	except ImportError as exc:
+		last_error = exc
+		candidate_paths = []
+		for root in site.getsitepackages() + [site.getusersitepackages()]:
+			if not root:
+				continue
+			candidate_paths.append(root)
+			candidate_paths.append(os.path.join(root, "Lib", "site-packages"))
+
+		for candidate in candidate_paths:
+			if not candidate or not os.path.isdir(candidate) or candidate in sys.path:
+				continue
+			sys.path.append(candidate)
+			try:
+				import clang.cindex as clang_cindex # pylint: disable=import-error
+				return clang_cindex
+			except ImportError as inner_exc:
+				last_error = inner_exc
+
+		raise RuntimeError(
+			"缺少 Python clang 模块。请先执行 `python -m pip install clang`，"
+			"如果你使用 Scoop Python，也可以执行 `py -3 -m pip install clang`。"
+		) from last_error
+
+clang = ensure_clang_python_available()
+
+def configure_libclang():
+	candidate_files = []
+	if "LIBCLANG_PATH" in os.environ:
+		candidate_files.append(os.environ["LIBCLANG_PATH"])
+
+	candidate_files.extend([
+		r"D:\Scoop\apps\llvm\current\bin\libclang.dll",
+		r"D:\Scoop\apps\llvm\22.1.5\bin\libclang.dll",
+		r"D:\Scoop\apps\llvm\22.1.4\bin\libclang.dll",
+		r"D:\Scoop\apps\llvm\22.1.3\bin\libclang.dll",
+	])
+
+	for candidate in candidate_files:
+		if candidate and os.path.isfile(candidate):
+			clang.Config.set_library_file(candidate)
+			return
+
+configure_libclang()
 
 from clang.cindex import CursorKind, LinkageKind, StorageClass, TypeKind # pylint: disable=import-error
 
@@ -89,8 +139,73 @@ def is_const(typ):
 class ParseError(RuntimeError):
 	pass
 
+def normalize_include_arg(value):
+	if not value:
+		return None
+	value = value.strip()
+	if not value:
+		return None
+	if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+		value = value[1:-1]
+	return value
+
+def collect_compile_command_args(file):
+	compile_commands = os.path.join("build-debug", "compile_commands.json")
+	if not os.path.isfile(compile_commands):
+		return []
+
+	target_file = os.path.normcase(os.path.abspath(file))
+	with open(compile_commands, encoding="utf-8") as compile_commands_file:
+		entries = json.load(compile_commands_file)
+
+	for entry in entries:
+		entry_file = entry.get("file")
+		if not entry_file:
+			continue
+		if os.path.normcase(os.path.abspath(entry_file)) != target_file:
+			continue
+
+		command_args = entry.get("arguments")
+		if command_args:
+			tokens = command_args[1:]
+		else:
+			command = entry.get("command", "")
+			tokens = shlex.split(command, posix=False)
+
+		candidate_args = []
+		for token in tokens:
+			if token.startswith(("-I", "/I", "-external:I", "/external:I", "-D", "/D", "-std:", "/std:")):
+				candidate_args.append(token)
+
+		normalized_args = []
+		for arg in candidate_args:
+			if arg.startswith(("-external:I", "/external:I")):
+				include_path = normalize_include_arg(arg.split(":", 1)[1])
+				if include_path and include_path.startswith("I"):
+					include_path = include_path[1:]
+				if include_path:
+					normalized_args.append("-I" + include_path)
+				continue
+			if arg.startswith(("-D", "/D")):
+				macro = normalize_include_arg(arg[2:])
+				if macro:
+					normalized_args.append("-D" + macro)
+				continue
+			if arg.startswith(("-std:", "/std:")):
+				normalized_args.append("-std=" + arg.split(":", 1)[1])
+				continue
+			prefix = "-I" if arg.startswith("-I") else "/I"
+			include_path = normalize_include_arg(arg[len(prefix):])
+			if include_path:
+				normalized_args.append("-I" + include_path)
+		return normalized_args
+
+	return []
+
 def process_source_file(out, file, extra_args, break_on):
-	args = extra_args + ["-Isrc"]
+	args = extra_args + collect_compile_command_args(file)
+	if not any(arg == "-Isrc" or arg.endswith("\\src") or arg.endswith("/src") for arg in args):
+		args.append("-Isrc")
 	if file.endswith(".c"):
 		header = f"{file[:-2]}.h"
 	elif file.endswith(".cc"):
@@ -100,7 +215,7 @@ def process_source_file(out, file, extra_args, break_on):
 	else:
 		raise ValueError(f"unrecognized source file: {file}")
 
-	index = clang.cindex.Index.create()
+	index = clang.Index.create()
 	unit = index.parse(file, args=args)
 	errors = list(unit.diagnostics)
 	if errors:

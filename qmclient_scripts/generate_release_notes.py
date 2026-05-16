@@ -219,9 +219,9 @@ def render_markdown(
     lines.append("- 发布态验证： [补充是否做过 build-ninja / Release 真实运行]")
     lines.append("")
     lines.append("## 素材来源")
-    lines.append("- `.codestable/features/*/*-acceptance.md`")
-    lines.append("- `.codestable/issues/*/*-fix-note.md`")
-    lines.append("- `qmclient_scripts/check-gate.ps1` JSON 报告（如果提供）")
+    lines.append("- `.ai/features/*/*-acceptance.md`")
+    lines.append("- `.ai/issues/*/*-fix-note.md`")
+    lines.append("- `qmclient_scripts/gate/check-gate.sh` JSON 报告（如果提供）")
     lines.append("")
     return "\n".join(lines)
 
@@ -229,7 +229,7 @@ def render_markdown(
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成 QmClient 发布说明初稿")
     parser.add_argument("--version", default="UNRELEASED", help="版本号，如 v2.3.0")
-    parser.add_argument("--gate-report", type=Path, default=None, help="check-gate.ps1 生成的 JSON 报告路径")
+    parser.add_argument("--gate-report", type=Path, default=None, help="check-gate.sh 生成的 JSON 报告路径")
     parser.add_argument("--output", type=Path, default=None, help="输出 Markdown 文件路径；不传则打印到 stdout")
     parser.add_argument(
         "--include-status",
@@ -243,8 +243,8 @@ def main() -> int:
     included_statuses.update(normalize_status(status) for status in args.include_status if status.strip())
     gate_report_path = resolve_repo_path(args.gate_report)
     output_path = resolve_repo_path(args.output)
-    features, skipped_features = collect_artifacts(REPO_ROOT / ".codestable" / "features", "-acceptance.md", included_statuses)
-    fixes, skipped_fixes = collect_artifacts(REPO_ROOT / ".codestable" / "issues", "-fix-note.md", included_statuses)
+    features, skipped_features = collect_artifacts(REPO_ROOT / ".ai" / "features", "-acceptance.md", included_statuses)
+    fixes, skipped_fixes = collect_artifacts(REPO_ROOT / ".ai" / "issues", "-fix-note.md", included_statuses)
     gate_summary = load_gate_summary(gate_report_path)
     markdown = render_markdown(
         args.version,

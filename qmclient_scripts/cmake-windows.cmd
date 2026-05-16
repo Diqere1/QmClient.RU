@@ -29,8 +29,12 @@ if defined VSINSTALLDIR (
 	if exist "%VSINSTALLDIR%Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe" set "PATH=%VSINSTALLDIR%Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 )
 
-cmake %*
-exit /b %errorlevel%
+set "CMOUT=%TEMP%\cmake-windows-%RANDOM%.log"
+cmake %* > "%CMOUT%" 2>&1
+set "CMRC=%errorlevel%"
+findstr /V /C:"注意: 包含文件:" /C:"Note: including file:" "%CMOUT%"
+del /Q "%CMOUT%" >nul 2>&1
+exit /b %CMRC%
 
 :usage
 echo Usage: scripts\cmake-windows.cmd [cmake arguments]

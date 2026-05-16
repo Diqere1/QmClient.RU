@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""
+同步 AGENTS.md 与 Claude.md。
+
+目标：
+1. 允许本地只修改任意一处，然后用脚本完成另一处同步。
+2. 避免内容未变时的无意义重写。
+3. 避免两边都改了且内容不一致时盲目覆盖。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json 
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AGENTS_PATH = REPO_ROOT / "AGENTS.md"
+CLAUDE_PATH = REPO_ROOT / "Claude.md"
+STATE_PATH = Path(tempfile.gettempdir()) / "qmclient-agents-claude-sync-state.json"
+
+
+@dataclass
+class SyncResult:
+    ok: bool
+    changed: bool
+    title: str
+    detail: str
+
+
+def normalize_text(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def detect_newline(text: str) -> str:
+    if "\r\n" in text:
+        return "\r\n"
+    if "\r" in text:
+        return "\r"
+    return "\n"
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def write_text(path: Path, text: str, newline: str) -> None:
+    normalized = normalize_text(text)
+    rewritten = normalized.replace("\n", newline)
+    path.write_text(rewritten, encoding="utf-8", newline="")
+
+
+def read_state() -> dict:
+    if not STATE_PATH.exists():
+        return {}
+    with STATE_PATH.open("r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def write_state(agents_text: str, claude_text: str) -> None:
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "agents_normalized": normalize_text(agents_text),
+        "claude_normalized": normalize_text(claude_text),
+    }
+    with STATE_PATH.open("w", encoding="utf-8", newline="\n") as file:
+        json.dump(payload, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+
+
+def choose_source(
+    agents_text: str,
+    claude_text: str,
+    state: dict,
+    prefer: str,
+) -> tuple[str | None, str]:
+    agents_normalized = normalize_text(agents_text)
+    claude_normalized = normalize_text(claude_text)
+    if agents_normalized == claude_normalized:
+        return None, "AGENTS.md 与 Claude.md 已一致"
+
+    last_agents = str(state.get("agents_normalized", ""))
+    last_claude = str(state.get("claude_normalized", ""))
+    has_state = bool(last_agents or last_claude)
+    agents_changed = agents_normalized != last_agents
+    claude_changed = claude_normalized != last_claude
+
+    if prefer == "agents":
+        return "agents", "按 AGENTS.md 作为源文件同步 Claude.md"
+    if prefer == "claude":
+        return "claude", "按 Claude.md 作为源文件同步 AGENTS.md"
+
+    if not has_state:
+        agents_mtime = AGENTS_PATH.stat().st_mtime_ns
+        claude_mtime = CLAUDE_PATH.stat().st_mtime_ns
+        if agents_mtime > claude_mtime:
+            return "agents", "首次同步未找到历史状态，按更新较新的 AGENTS.md 作为源文件"
+        if claude_mtime > agents_mtime:
+            return "claude", "首次同步未找到历史状态，按更新较新的 Claude.md 作为源文件"
+        return "agents", "首次同步未找到历史状态，时间戳相同，默认按 AGENTS.md 作为源文件"
+
+    if agents_changed and not claude_changed:
+        return "agents", "检测到仅 AGENTS.md 有新改动，将同步到 Claude.md"
+    if claude_changed and not agents_changed:
+        return "claude", "检测到仅 Claude.md 有新改动，将同步到 AGENTS.md"
+    if not agents_changed and not claude_changed:
+        return "agents", "状态文件缺失或过旧，默认按 AGENTS.md 同步 Claude.md"
+
+    return None, "AGENTS.md 与 Claude.md 都发生了未登记改动且内容不一致，已拒绝自动覆盖"
+
+
+def sync_files(prefer: str) -> SyncResult:
+    if not AGENTS_PATH.exists() or not CLAUDE_PATH.exists():
+        missing = []
+        if not AGENTS_PATH.exists():
+            missing.append("AGENTS.md")
+        if not CLAUDE_PATH.exists():
+            missing.append("Claude.md")
+        return SyncResult(False, False, "AGENTS / Claude 镜像同步", f"缺少文件: {', '.join(missing)}")
+
+    agents_text = read_text(AGENTS_PATH)
+    claude_text = read_text(CLAUDE_PATH)
+    state = read_state()
+    source, reason = choose_source(agents_text, claude_text, state, prefer)
+
+    if source is None:
+        if normalize_text(agents_text) == normalize_text(claude_text):
+            write_state(agents_text, claude_text)
+            return SyncResult(True, False, "AGENTS / Claude 镜像同步", reason)
+        return SyncResult(False, False, "AGENTS / Claude 镜像同步", reason)
+
+    if source == "agents":
+        target_newline = detect_newline(claude_text)
+        write_text(CLAUDE_PATH, agents_text, target_newline)
+        final_agents = agents_text
+        final_claude = agents_text
+    else:
+        target_newline = detect_newline(agents_text)
+        write_text(AGENTS_PATH, claude_text, target_newline)
+        final_agents = claude_text
+        final_claude = claude_text
+
+    write_state(final_agents, final_claude)
+    target_name = "Claude.md" if source == "agents" else "AGENTS.md"
+    return SyncResult(True, True, "AGENTS / Claude 镜像同步", f"{reason}，已更新 {target_name}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="同步 AGENTS.md 与 Claude.md")
+    parser.add_argument(
+        "--prefer",
+        choices=["auto", "agents", "claude"],
+        default="auto",
+        help="冲突或状态不明时优先采用哪一侧；默认自动判断",
+    )
+    args = parser.parse_args()
+
+    result = sync_files(args.prefer)
+    prefix = "通过" if result.ok else "失败"
+    print(f"{prefix}：{result.title} - {result.detail}")
+    return 0 if result.ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

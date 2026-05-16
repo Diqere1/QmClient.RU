@@ -1,0 +1,6 @@
+#!/bin/bash
+# QmClient pre-commit gate: quick mode
+# 检查源码卫生 + AGENTS/Claude 同步 + 文档入口断链
+cd "$(git rev-parse --show-toplevel)" || exit 1
+bash qmclient_scripts/gate/check-gate.sh --mode quick --base-ref HEAD
+exit $?

@@ -1,0 +1,57 @@
+#settings_workspace {
+	height: 100%;
+}
+
+#settings_shell_grid {
+	display: flex;
+	gap: 14px;
+	height: 100%;
+}
+
+#settings_categories_panel {
+	width: 300px;
+	flex: 0 0 300px;
+}
+
+#settings_main_column {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+#settings_detail_panel {
+	min-height: 240px;
+}
+
+#settings_action_strip {
+	display: flex;
+	gap: 10px;
+	margin-top: 24px;
+}
+
+#settings_lower_grid {
+	display: flex;
+	gap: 14px;
+	height: 100%;
+}
+
+#settings_status_panel {
+	width: 42%;
+}
+
+#settings_preview_panel {
+	flex: 1;
+}
+
+.settings_preview_block {
+	margin-top: 10px;
+	padding: 16px;
+	background-color: rgba(0, 0, 0, 18);
+	border-width: 1px;
+	border-color: rgba(255, 255, 255, 10);
+	border-radius: 12px;
+	font-size: 14px;
+	line-height: 1.5;
+	color: #efe8ef;
+}

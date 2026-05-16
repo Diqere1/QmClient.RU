@@ -1,0 +1,208 @@
+<rml>
+	<head>
+		<title>QmClient shell</title>
+		<link type="text/rcss" href="main_menu_shell.rcss"/>
+		<link type="text/rcss" href="serverbrowser_page.rcss"/>
+	</head>
+	<body>
+		<div id="shell">
+			<div id="left_nav">
+				<div id="left_nav_scroll">
+					<div id="brand">
+						<div id="brand_mark">
+							<div class="brand_mark_top">DDRace</div>
+							<div class="brand_mark_bottom">Network</div>
+						</div>
+						<div id="brand_copy">
+							<div id="brand_title">QmClient</div>
+							<div id="brand_subtitle">共享主界面壳层</div>
+						</div>
+					</div>
+					<div class="nav_group" id="nav_primary_group">
+						<div class="nav_section_label" id="nav_primary_label">主导航</div>
+						<button id="action_home" class="nav_button active"><span class="nav_icon">主</span><span class="nav_text" id="nav_home_label">主页</span></button>
+						<button id="action_play" class="nav_button primary"><span class="nav_icon">服</span><span class="nav_text" id="nav_play_label">服务器列表</span></button>
+						<button id="action_settings" class="nav_button"><span class="nav_icon">设</span><span class="nav_text" id="nav_settings_label">设置</span></button>
+						<button id="action_editor" class="nav_button"><span class="nav_icon">编</span><span class="nav_text" id="nav_editor_label">编辑器</span></button>
+						<button id="action_demos" class="nav_button"><span class="nav_icon">录</span><span class="nav_text" id="nav_demos_label">录像</span></button>
+					</div>
+					<div class="nav_group" id="nav_utility_group">
+						<div class="nav_section_label utility" id="nav_utility_label">辅助操作</div>
+						<button id="action_local_server" class="nav_button subtle"><span class="nav_icon">服</span><span class="nav_text" id="local_server_label">启动本地服务器</span></button>
+						<button id="action_quit" class="nav_button subtle"><span class="nav_icon">退</span><span class="nav_text" id="nav_quit_label">退出</span></button>
+					</div>
+				</div>
+				<div id="versions">
+					<div class="profile_caption" id="profile_caption">当前会话</div>
+					<div id="client_version"></div>
+					<div id="update_state"></div>
+					<div id="version"></div>
+					<button id="action_console">控制台</button>
+				</div>
+			</div>
+			<div id="main_column">
+				<div id="top_bar">
+					<div id="top_modes_group">
+						<div class="top_group_label" id="top_modes_label">模式切换</div>
+						<div id="mode_strip">
+							<div class="mode_button emphasis active" id="top_mode_1">游戏</div>
+							<div class="mode_button" id="top_mode_2">设置</div>
+							<div class="mode_button" id="top_mode_3">录像</div>
+							<div class="mode_button" id="top_mode_4">社区</div>
+						</div>
+					</div>
+					<div id="top_actions_group">
+						<div class="top_group_label" id="top_actions_label">快捷入口</div>
+						<div id="external">
+							<button id="action_discord">群组</button>
+							<button id="action_learn">指南</button>
+							<button id="action_tutorial">教程</button>
+							<button id="action_website">官网</button>
+							<button id="action_news">公告</button>
+							<button id="action_stats">统计</button>
+						</div>
+					</div>
+				</div>
+				<div id="workspace">
+					<div id="workspace_header">
+						<div id="workspace_header_copy">
+							<div id="page_title">主页</div>
+							<div id="page_subtitle">共享壳层占位页。</div>
+						</div>
+					</div>
+					<div id="workspace_stack">
+						<div class="workspace_page" id="home_workspace">
+							<div id="home_grid">
+								<div class="panel hero_panel" id="home_feature_panel">
+									<div id="home_feature_header">
+										<div class="panel_kicker">当前主任务</div>
+										<div class="panel_title large" id="home_title">准备进入服务器列表</div>
+										<div class="panel_body spacious" id="home_description">共享壳层的首屏应优先承载选服、设置和社交入口，而不是留出大片空白。</div>
+									</div>
+									<div id="home_feature_actions">
+										<div class="chip_row">
+											<div class="chip accent" id="home_highlight_1">共享壳层</div>
+											<div class="chip" id="home_highlight_2">首屏主任务</div>
+											<div class="chip" id="home_highlight_3">好友始终可见</div>
+										</div>
+										<div class="action_row">
+											<button class="pill_button strong active" id="home_primary_action">打开服务器列表</button>
+											<button class="pill_button ghost" id="home_secondary_action">查看设置</button>
+										</div>
+									</div>
+									<div id="home_notice_band">
+										<div class="notice_label">当前提示</div>
+										<div class="panel_body" id="home_notice_1">主区将作为主页、服务器列表和设置页的统一工作区。</div>
+										<div class="panel_body muted" id="home_notice_2">后续可以继续加深交互，但不再重写壳层结构。</div>
+									</div>
+								</div>
+								<div class="stack_column" id="home_side_column">
+									<div class="panel compact_panel" id="home_quick_panel">
+										<div class="panel_kicker">高频入口</div>
+										<div class="panel_title">快速入口</div>
+										<div class="list_entry accent_entry" id="home_quick_1">直接进入实时服务器列表。</div>
+										<div class="list_entry" id="home_quick_2">保持设置页与主菜单共用同一壳层。</div>
+										<div class="list_entry" id="home_quick_3">编辑器与发现页继续保留为后续主线。</div>
+										<div class="list_entry" id="home_quick_4">弹窗迁移与主壳层实现解耦推进。</div>
+									</div>
+									<div class="panel compact_panel" id="home_secondary_panel">
+										<div class="panel_kicker">侧栏摘要</div>
+										<div class="panel_title">当前收口</div>
+										<div class="stat_tile_row">
+											<div class="stat_tile">
+												<div class="stat_tile_label">主路由</div>
+												<div class="stat_tile_value">03</div>
+											</div>
+											<div class="stat_tile">
+												<div class="stat_tile_label">固定栏</div>
+												<div class="stat_tile_value">02</div>
+											</div>
+										</div>
+										<div class="panel_body muted">这块只保留次级摘要，不再和右侧好友栏抢视觉注意力。</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="workspace_page" id="workspace_fragment_host"></div>
+						<div class="workspace_page" id="generic_workspace">
+							<div id="workspace_grid">
+								<div class="panel">
+									<div class="panel_title" id="section_title_1">Section 1</div>
+									<div class="panel_body" id="section_body_1">Body 1</div>
+								</div>
+								<div class="panel">
+									<div class="panel_title" id="section_title_2">Section 2</div>
+									<div class="panel_body" id="section_body_2">Body 2</div>
+								</div>
+								<div class="panel">
+									<div class="panel_title" id="section_title_3">Section 3</div>
+									<div class="panel_body" id="section_body_3">Body 3</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div id="status_bar">
+					<div class="status_block" id="status_left">Left</div>
+					<div class="status_block" id="status_center">Center</div>
+					<div class="status_block status_emphasis" id="status_right">Right</div>
+				</div>
+			</div>
+			<div id="friends_rail">
+				<div id="friends_summary">
+					<div id="friends_summary_header">
+						<div id="friends_title">好友列表</div>
+						<div class="friends_summary_badge" id="friends_summary_badge">侧栏常驻</div>
+					</div>
+					<div id="friends_summary_stats">
+						<div class="friends_summary_meta" id="friends_summary_primary">在线好友 3</div>
+						<div class="friends_summary_meta" id="friends_summary_secondary">新提醒 1</div>
+					</div>
+				</div>
+				<div id="friends_list">
+					<div class="friend_entry is-active is-online" id="friend_1">
+						<div class="friend_avatar" id="friend_1_avatar">皮</div>
+						<div class="friend_copy">
+							<div class="friend_name" id="friend_1_name">好友 1</div>
+							<div class="friend_note" id="friend_1_note">备注 1</div>
+						</div>
+						<div class="friend_status" id="friend_1_status">在线</div>
+					</div>
+					<div class="friend_entry is-online" id="friend_2">
+						<div class="friend_avatar" id="friend_2_avatar">皮</div>
+						<div class="friend_copy">
+							<div class="friend_name" id="friend_2_name">好友 2</div>
+							<div class="friend_note" id="friend_2_note">备注 2</div>
+						</div>
+						<div class="friend_status" id="friend_2_status">在线</div>
+					</div>
+					<div class="friend_entry is-unread" id="friend_3">
+						<div class="friend_avatar" id="friend_3_avatar">皮</div>
+						<div class="friend_copy">
+							<div class="friend_name" id="friend_3_name">好友 3</div>
+							<div class="friend_note" id="friend_3_note">备注 3</div>
+						</div>
+						<div class="friend_status" id="friend_3_status">离线</div>
+					</div>
+					<div class="friend_entry is-online" id="friend_4">
+						<div class="friend_avatar" id="friend_4_avatar">皮</div>
+						<div class="friend_copy">
+							<div class="friend_name" id="friend_4_name">好友 4</div>
+							<div class="friend_note" id="friend_4_note">备注 4</div>
+						</div>
+						<div class="friend_status" id="friend_4_status">在线</div>
+					</div>
+					<div class="friend_entry" id="friend_5">
+						<div class="friend_avatar" id="friend_5_avatar">皮</div>
+						<div class="friend_copy">
+							<div class="friend_name" id="friend_5_name">好友 5</div>
+							<div class="friend_note" id="friend_5_note">备注 5</div>
+						</div>
+						<div class="friend_status" id="friend_5_status">离线</div>
+					</div>
+				</div>
+				<div id="friends_footer_hint">使用皮肤头像、名字和备注展示好友状态。</div>
+			</div>
+		</div>
+	</body>
+</rml>
