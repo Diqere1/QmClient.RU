@@ -275,7 +275,7 @@ namespace VoiceUtils
 	inline constexpr uint32_t VOICE_RUNTIME_RESET_CONNECTION = 1u << 1;
 
 	uint32_t VoiceTransmitBlockers(const SVoiceTransmitPreconditions &Preconditions);
-	void FormatVoiceTransmitBlockers(uint32_t Blockers, char *pBuf, size_t BufSize);
+	void FormatVoiceTransmitBlockers(uint32_t Blockers, char *pBuf, int BufSize);
 	bool VoiceNeedsAudioRefresh(const SVoiceAudioRefreshState &State);
 	void ComputeVoiceEncoderTargets(int LossPerc, float JitterMax, int BitrateProfile, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec);
 	void ComputeVoiceEncoderTargetsWithComplexity(int LossPerc, float JitterMax, int BitrateProfile, int *pTargetBitrate, int *pTargetLoss, bool *pTargetFec, int *pTargetComplexity);

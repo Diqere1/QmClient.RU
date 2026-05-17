@@ -100,6 +100,7 @@ static void PushUniqueWord(std::vector<std::string> &OutWords, const std::string
 		OutWords.push_back(Word);
 }
 
+namespace {
 struct CBlockWordsCache
 {
 	std::string m_List;
@@ -107,6 +108,7 @@ struct CBlockWordsCache
 	std::vector<std::string> m_Words;
 	std::vector<Regex> m_Regexes;
 };
+} // namespace
 
 static void UpdateBlockWordsCache(CBlockWordsCache &Cache)
 {

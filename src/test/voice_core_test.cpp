@@ -416,7 +416,7 @@ TEST(VoiceUtils, VoiceTransmitBlockersMicMutedIsReportedSeparately)
 TEST(VoiceUtils, FormatVoiceTransmitBlockersEmpty)
 {
 	char aBuf[64];
-	FormatVoiceTransmitBlockers(0, aBuf, sizeof(aBuf));
+	FormatVoiceTransmitBlockers(0, aBuf, (int)sizeof(aBuf));
 	EXPECT_STREQ(aBuf, "none");
 }
 
@@ -428,7 +428,7 @@ TEST(VoiceUtils, FormatVoiceTransmitBlockersListsReasonsInStableOrder)
 		VOICE_TX_BLOCK_SOCKET |
 		VOICE_TX_BLOCK_CAPTURE |
 		VOICE_TX_BLOCK_MIC_MUTED;
-	FormatVoiceTransmitBlockers(Blockers, aBuf, sizeof(aBuf));
+	FormatVoiceTransmitBlockers(Blockers, aBuf, (int)sizeof(aBuf));
 	EXPECT_STREQ(aBuf, "server_addr,socket,capture,mic_muted");
 }
 

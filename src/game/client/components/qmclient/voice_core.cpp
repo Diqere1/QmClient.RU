@@ -2319,7 +2319,7 @@ void CRClientVoice::WorkerLoop() NO_THREAD_SAFETY_ANALYSIS
 				Preconditions.m_MicMuted = StateConfig.m_QmVoiceMicMute != 0;
 				const uint32_t TxBlockers = VoiceUtils::VoiceTransmitBlockers(Preconditions);
 				char aTxBlockers[128];
-				VoiceUtils::FormatVoiceTransmitBlockers(TxBlockers, aTxBlockers, sizeof(aTxBlockers));
+				VoiceUtils::FormatVoiceTransmitBlockers(TxBlockers, aTxBlockers, (int)sizeof(aTxBlockers));
 
 				const int TxAgeMs = m_LastTxPacketTime.load() > 0 ? (int)std::clamp((Now - m_LastTxPacketTime.load()) * 1000 / time_freq(), (int64_t)0, (int64_t)999999) : -1;
 				const int RxAgeMs = m_LastRxPacketTime.load() > 0 ? (int)std::clamp((Now - m_LastRxPacketTime.load()) * 1000 / time_freq(), (int64_t)0, (int64_t)999999) : -1;

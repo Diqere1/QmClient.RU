@@ -322,7 +322,7 @@ private:
 	void UpdatePositions();
 	void RecordDemoHudState(bool Force);
 	void RecordDemoInputState(bool Force);
-	void RecordDemoInputWheelEvent();
+	void RecordDemoInputWheelEvent() const;
 	static int PackDemoHudState(int DummyResetOnSwitch, int DeepflyMode, bool DummyControl, bool DummyCopyMoves);
 	void UnpackDemoHudState(int PackedState);
 

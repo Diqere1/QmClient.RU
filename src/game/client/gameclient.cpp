@@ -874,7 +874,7 @@ void CGameClient::RecordDemoInputState(bool Force)
 	Client()->SendMsgActive(&Msg, MSGFLAG_RECORD | MSGFLAG_NOSEND);
 }
 
-void CGameClient::RecordDemoInputWheelEvent()
+void CGameClient::RecordDemoInputWheelEvent() const
 {
 	bool ActiveRecording = false;
 	for(int i = 0; i < RECORDER_MAX && !ActiveRecording; ++i)

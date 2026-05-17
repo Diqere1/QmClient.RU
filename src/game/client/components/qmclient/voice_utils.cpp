@@ -458,7 +458,7 @@ namespace VoiceUtils
 		return Blockers;
 	}
 
-	void FormatVoiceTransmitBlockers(uint32_t Blockers, char *pBuf, size_t BufSize)
+	void FormatVoiceTransmitBlockers(uint32_t Blockers, char *pBuf, int BufSize)
 	{
 		if(!pBuf || BufSize == 0)
 			return;
