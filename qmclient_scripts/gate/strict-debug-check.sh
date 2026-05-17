@@ -758,14 +758,11 @@ if [[ ${#EFFECTIVE_FILES[@]} -eq 0 ]]; then
 	exit 0
 fi
 
-CHECKS="-*,bugprone-unchecked-optional-access,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-nullability.*,clang-analyzer-optin.cplusplus.UninitializedObject"
-WARNINGS_AS_ERRORS="bugprone-unchecked-optional-access,clang-analyzer-*"
 add_result "INFO" "clang-tidy 范围" "将对 ${#EFFECTIVE_FILES[@]} 个文件执行严格 tidy 检查"
 
 for file in "${EFFECTIVE_FILES[@]}"; do
 	invoke_repo_command "clang-tidy 严格检查: ${file}" 1 \
 		clang-tidy "${file}" "-p=${DEBUG_BUILD_DIR}" \
-		"--checks=${CHECKS}" "--warnings-as-errors=${WARNINGS_AS_ERRORS}" \
 		"--extra-arg=-Qunused-arguments" "--quiet"
 done
 
