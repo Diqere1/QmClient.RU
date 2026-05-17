@@ -448,12 +448,15 @@ test_asan_supported() {
 }
 
 resolve_cmake_command() {
-	if command -v cmake >/dev/null 2>&1; then
-		printf '%s\n' "cmake"
+	# On Windows, prefer cmake-windows.cmd which sets up MSVC environment.
+	# Direct cmake in PATH may pick up clang (from choco install llvm)
+	# instead of MSVC, which can't compile WinRT/C++ code.
+	if is_windows_host_bash && [[ -f "${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd" ]]; then
+		printf '%s\n' "cmd.exe"
 		return 0
 	fi
-	if is_windows_host_bash; then
-		printf '%s\n' "cmd.exe"
+	if command -v cmake >/dev/null 2>&1; then
+		printf '%s\n' "cmake"
 		return 0
 	fi
 	return 1
@@ -649,11 +652,6 @@ if ! CM_CMD="$(resolve_cmake_command)"; then
 	exit 1
 fi
 
-CM_COMPILER_ARGS=()
-if [[ "${CM_CMD}" != "cmd.exe" ]] && is_windows_env; then
-	CM_COMPILER_ARGS=(-DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl)
-fi
-
 if [[ ${INPUT_FILES_EXPLICIT} -eq 0 ]]; then
 	collect_default_scope
 	INPUT_FILES=("${DEFAULT_SCOPE_SCOPED[@]}")
@@ -679,7 +677,7 @@ else
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
 		"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
 		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-		-DQM_STRICT_WARNINGS=ON "${CM_COMPILER_ARGS[@]}"
+		-DQM_STRICT_WARNINGS=ON
 fi
 
 if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
@@ -732,7 +730,7 @@ if [[ ! -f "${COMPILE_COMMANDS}" ]]; then
 	else
 		invoke_repo_command "Debug CRT 重新导出 compile_commands" 1 \
 			"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "${CM_COMPILER_ARGS[@]}"
+			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	fi
 fi
 
