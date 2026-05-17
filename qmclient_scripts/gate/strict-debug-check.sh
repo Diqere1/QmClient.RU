@@ -655,46 +655,92 @@ EFFECTIVE_FILES=("${INPUT_FILES[@]}")
 
 pushd "${REPO_ROOT}" >/dev/null
 
+# 判断是否需要运行 /analyze（必须在启动并行构建前完成范围计算）
+RUN_ANALYZE=0
+if [[ ${SKIP_ANALYZE} -eq 0 && "${CM_CMD}" == "cmd.exe" ]]; then
+	if [[ ${ANALYZE_ALL} -eq 0 ]]; then
+		mapfile -t ANALYZE_SOURCE_FILES < <(get_analyze_source_files "${INPUT_FILES[@]}")
+		if [[ ${#ANALYZE_SOURCE_FILES[@]} -eq 0 ]]; then
+			mark_degraded "MSVC /analyze 范围" "当前改动只有头文件或无可分析编译单元，/analyze 阶段已跳过"
+		else
+			add_result "INFO" "MSVC /analyze 范围" "仅扫描 ${#ANALYZE_SOURCE_FILES[@]} 个改动编译单元"
+		fi
+	else
+		add_result "INFO" "MSVC /analyze 范围" "已显式传入 --analyze-all，将执行全量首方源码分析"
+	fi
+	if [[ ${ANALYZE_ALL} -eq 1 || ${#ANALYZE_SOURCE_FILES[@]} -gt 0 ]]; then
+		RUN_ANALYZE=1
+	fi
+fi
+
+# --- 并行构建 ---
+# Debug CRT 和 MSVC /analyze 使用独立构建目录，可并行执行
+# 子进程内的 add_result 调用不会影响父进程 RESULT_ITEMS，但日志仍输出到终端
+PARALLEL_TMPDIR="$(mktemp -d)"
+DEBUG_PID=""
+ANALYZE_PID=""
+
 if [[ "${CM_CMD}" == "cmd.exe" ]]; then
 	CM_SCRIPT_WIN="$(to_windows_path "${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd")"
-	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
-		"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-		-DQM_STRICT_WARNINGS=ON
+
+	# Debug 构建（后台）
+	(
+		invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
+			"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
+			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+			-DQM_STRICT_WARNINGS=ON
+		echo $? > "${PARALLEL_TMPDIR}/debug_exit"
+	) &
+	DEBUG_PID=$!
+
+	# /analyze 构建（后台，如果需要）
+	if [[ ${RUN_ANALYZE} -eq 1 ]]; then
+		ANALYZE_ARGS=(
+			"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ANALYZE_BUILD_DIR}"
+			-DCMAKE_BUILD_TYPE=Debug
+			-DQM_MSVC_ANALYZE=ON
+		)
+		(
+			invoke_configure_and_build "MSVC /analyze" "${ANALYZE_BUILD_DIR}" 1 "${ANALYZE_ARGS[@]}"
+			echo $? > "${PARALLEL_TMPDIR}/analyze_exit"
+		) &
+		ANALYZE_PID=$!
+	fi
 else
+	# 非 Windows：只有 Debug 构建（不需要并行）
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
 		"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
 		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 		-DQM_STRICT_WARNINGS=ON
 fi
 
-if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
-	if [[ "${CM_CMD}" == "cmd.exe" ]]; then
-		if [[ ${ANALYZE_ALL} -eq 0 ]]; then
-			mapfile -t ANALYZE_SOURCE_FILES < <(get_analyze_source_files "${INPUT_FILES[@]}")
-			if [[ ${#ANALYZE_SOURCE_FILES[@]} -eq 0 ]]; then
-				mark_degraded "MSVC /analyze 范围" "当前改动只有头文件或无可分析编译单元，/analyze 阶段已跳过"
-			else
-				add_result "INFO" "MSVC /analyze 范围" "仅扫描 ${#ANALYZE_SOURCE_FILES[@]} 个改动编译单元"
-			fi
-		else
-			add_result "INFO" "MSVC /analyze 范围" "已显式传入 --analyze-all，将执行全量首方源码分析"
-		fi
-
-		if [[ ${ANALYZE_ALL} -eq 1 || ${#ANALYZE_SOURCE_FILES[@]} -gt 0 ]]; then
-			ANALYZE_ARGS=(
-				"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ANALYZE_BUILD_DIR}"
-				-DCMAKE_BUILD_TYPE=Debug
-				-DQM_MSVC_ANALYZE=ON
-			)
-			invoke_configure_and_build "MSVC /analyze" "${ANALYZE_BUILD_DIR}" 1 "${ANALYZE_ARGS[@]}"
-		fi
+# 等待 Debug 构建完成
+if [[ -n "${DEBUG_PID:-}" ]]; then
+	wait "${DEBUG_PID}"
+	DEBUG_EXIT=$(cat "${PARALLEL_TMPDIR}/debug_exit" 2>/dev/null || echo 1)
+	if [[ "${DEBUG_EXIT}" != "0" ]]; then
+		add_result "FAIL" "Debug CRT 构建" "Debug CRT 构建失败，退出码 ${DEBUG_EXIT}"
 	else
-		mark_degraded "MSVC /analyze" "当前不是 Windows/MSVC 环境，bash 版本不会伪造 /analyze；该阶段已按设计降级跳过"
+		add_result "PASS" "Debug CRT 构建" "Debug CRT 构建通过（并行执行）"
 	fi
-else
-	add_result "WARN" "MSVC /analyze" "已显式传入 --skip-analyze，跳过 /analyze 阶段"
 fi
+
+# 等待 /analyze 构建完成
+if [[ -n "${ANALYZE_PID:-}" ]]; then
+	wait "${ANALYZE_PID}"
+	ANALYZE_EXIT=$(cat "${PARALLEL_TMPDIR}/analyze_exit" 2>/dev/null || echo 1)
+	if [[ "${ANALYZE_EXIT}" != "0" ]]; then
+		add_result "FAIL" "MSVC /analyze 构建" "MSVC /analyze 构建失败，退出码 ${ANALYZE_EXIT}"
+	else
+		add_result "PASS" "MSVC /analyze 构建" "MSVC /analyze 构建通过（并行执行）"
+	fi
+elif [[ ${SKIP_ANALYZE} -eq 1 ]]; then
+	add_result "WARN" "MSVC /analyze" "已显式传入 --skip-analyze，跳过 /analyze 阶段"
+elif [[ "${CM_CMD}" != "cmd.exe" ]]; then
+	mark_degraded "MSVC /analyze" "当前不是 Windows/MSVC 环境，bash 版本不会伪造 /analyze；该阶段已按设计降级跳过"
+fi
+
+rm -rf "${PARALLEL_TMPDIR}"
 
 if [[ ${SKIP_TIDY} -eq 1 ]]; then
 	add_result "WARN" "clang-tidy" "已显式传入 --skip-tidy，跳过 tidy 阶段"
