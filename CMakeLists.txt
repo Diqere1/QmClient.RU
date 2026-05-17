@@ -2702,7 +2702,6 @@ if(CLIENT)
     components/qmclient/translate_ui_settings.h
     components/qmclient/voice_component.cpp
     components/qmclient/voice_component.h
-    components/qmclient/voice_callback.h
     components/qmclient/voice_capture_pipeline.cpp
     components/qmclient/voice_capture_pipeline.h
     components/qmclient/voice_core.cpp
