@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - master
       - rmlUI
       - codex/rmlui-ui-split
   workflow_dispatch:
@@ -58,6 +59,8 @@ jobs:
   quick-gate-windows:
     name: Quick Gate (Windows)
     runs-on: windows-2022
+    env:
+      GATE_BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -74,9 +77,9 @@ jobs:
         shell: pwsh
         run: choco install llvm -y --no-progress
 
-      - name: Fetch main baseline
+      - name: Fetch gate baseline
         shell: pwsh
-        run: git fetch origin main --depth=1
+        run: git fetch origin $env:GATE_BASE_REF --depth=1
 
       - name: Run quick governance gate
         shell: bash
@@ -84,7 +87,7 @@ jobs:
           mkdir -p tmp
           bash qmclient_scripts/gate/check-gate.sh \
             --mode quick \
-            --base-ref origin/main \
+            --base-ref "origin/${{ env.GATE_BASE_REF }}" \
             --report-json-path tmp/check-gate-ci.json \
             --explain-scope \
             --scope-report-path tmp/check-gate-ci-scope.json 2>&1 | tee tmp/check-gate-ci.log
@@ -123,6 +126,8 @@ jobs:
   default-gate-windows:
     name: Default Gate (Windows)
     runs-on: windows-2022
+    env:
+      GATE_BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -139,9 +144,9 @@ jobs:
         shell: pwsh
         run: choco install llvm -y --no-progress
 
-      - name: Fetch main baseline
+      - name: Fetch gate baseline
         shell: pwsh
-        run: git fetch origin main --depth=1
+        run: git fetch origin $env:GATE_BASE_REF --depth=1
 
       - name: Run default governance gate
         shell: bash
@@ -149,7 +154,7 @@ jobs:
           mkdir -p tmp
           bash qmclient_scripts/gate/check-gate.sh \
             --mode default \
-            --base-ref origin/main \
+            --base-ref "origin/${{ env.GATE_BASE_REF }}" \
             --report-json-path tmp/check-gate-default-ci.json \
             --explain-scope \
             --scope-report-path tmp/check-gate-default-ci-scope.json 2>&1 | tee tmp/check-gate-default-ci.log
