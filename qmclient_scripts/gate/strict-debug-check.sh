@@ -649,6 +649,11 @@ if ! CM_CMD="$(resolve_cmake_command)"; then
 	exit 1
 fi
 
+CM_COMPILER_ARGS=()
+if [[ "${CM_CMD}" != "cmd.exe" ]] && is_windows_env; then
+	CM_COMPILER_ARGS=(-DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl)
+fi
+
 if [[ ${INPUT_FILES_EXPLICIT} -eq 0 ]]; then
 	collect_default_scope
 	INPUT_FILES=("${DEFAULT_SCOPE_SCOPED[@]}")
@@ -674,7 +679,7 @@ else
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
 		"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
 		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-		-DQM_STRICT_WARNINGS=ON
+		-DQM_STRICT_WARNINGS=ON "${CM_COMPILER_ARGS[@]}"
 fi
 
 if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
@@ -727,7 +732,7 @@ if [[ ! -f "${COMPILE_COMMANDS}" ]]; then
 	else
 		invoke_repo_command "Debug CRT 重新导出 compile_commands" 1 \
 			"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "${CM_COMPILER_ARGS[@]}"
 	fi
 fi
 
