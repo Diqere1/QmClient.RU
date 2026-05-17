@@ -33,14 +33,11 @@ REPO_ROOT_GIT="${REPO_ROOT}"
 
 DEBUG_BUILD_DIR="build-debug"
 ANALYZE_BUILD_DIR="build-analyze"
-ASAN_BUILD_DIR="build-asan"
 BASE_REF="main"
 ANALYZE_ALL=0
-REQUIRE_ASAN=0
 SKIP_BUILD=0
 SKIP_TIDY=0
 SKIP_ANALYZE=0
-SKIP_ASAN=0
 PRINT_FILE_SCOPE=0
 REPORT_JSON_PATH=""
 INPUT_FILES=()
@@ -555,7 +552,6 @@ write_summary() {
 	write_section "检查汇总"
 	write_result_line "INFO" "DebugBuildDir: ${DEBUG_BUILD_DIR}"
 	write_result_line "INFO" "AnalyzeBuildDir: ${ANALYZE_BUILD_DIR}"
-	write_result_line "INFO" "AsanBuildDir: ${ASAN_BUILD_DIR}"
 	write_result_line "INFO" "BaseRef: ${BASE_REF}"
 	write_result_line "INFO" "降级运行: $( [[ ${DEGRADED} -eq 1 ]] && printf '是' || printf '否' )"
 	write_result_line "INFO" "通过: ${RESULT_PASS}"
@@ -613,7 +609,6 @@ while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--debug-build-dir) DEBUG_BUILD_DIR="$2"; shift 2 ;;
 		--analyze-build-dir) ANALYZE_BUILD_DIR="$2"; shift 2 ;;
-		--asan-build-dir) ASAN_BUILD_DIR="$2"; shift 2 ;;
 		--base-ref) BASE_REF="$2"; shift 2 ;;
 		--files)
 			INPUT_FILES_EXPLICIT=1
@@ -625,11 +620,9 @@ while [[ $# -gt 0 ]]; do
 			done
 			;;
 		--analyze-all) ANALYZE_ALL=1; shift ;;
-		--require-asan) REQUIRE_ASAN=1; shift ;;
 		--skip-build) SKIP_BUILD=1; shift ;;
 		--skip-tidy) SKIP_TIDY=1; shift ;;
 		--skip-analyze) SKIP_ANALYZE=1; shift ;;
-		--skip-asan) SKIP_ASAN=1; shift ;;
 		--print-file-scope) PRINT_FILE_SCOPE=1; shift ;;
 		--report-json-path) REPORT_JSON_PATH="$2"; shift 2 ;;
 		-h|--help) usage; exit 0 ;;
@@ -675,11 +668,13 @@ if [[ "${CM_CMD}" == "cmd.exe" ]]; then
 	CM_SCRIPT_WIN="$(to_windows_path "${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd")"
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
 		"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+		-DQM_STRICT_WARNINGS=ON
 else
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
 		"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+		-DQM_STRICT_WARNINGS=ON
 fi
 
 if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
@@ -699,6 +694,7 @@ if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
 			ANALYZE_ARGS=(
 				"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ANALYZE_BUILD_DIR}"
 				-DCMAKE_BUILD_TYPE=Debug
+				-DQM_MSVC_ANALYZE=ON -DQM_STRICT_WARNINGS=ON
 			)
 			invoke_configure_and_build "MSVC /analyze" "${ANALYZE_BUILD_DIR}" 1 "${ANALYZE_ARGS[@]}"
 		fi
@@ -707,31 +703,6 @@ if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
 	fi
 else
 	add_result "WARN" "MSVC /analyze" "已显式传入 --skip-analyze，跳过 /analyze 阶段"
-fi
-
-if [[ ${SKIP_ASAN} -eq 0 ]]; then
-	if ! test_asan_supported; then
-		ASAN_MESSAGE="AddressSanitizer 已跳过：当前仓库的 .cargo/config.toml 在 MSVC 下强制 Rust +crt-static。"
-		if [[ ${REQUIRE_ASAN} -eq 1 ]]; then
-			add_result "FAIL" "AddressSanitizer" "${ASAN_MESSAGE}"
-			exit 1
-		fi
-		write_section "AddressSanitizer"
-		printf '%s\n' "${ASAN_MESSAGE}"
-		add_result "WARN" "AddressSanitizer" "${ASAN_MESSAGE}"
-	else
-		if [[ "${CM_CMD}" == "cmd.exe" ]]; then
-			invoke_configure_and_build "AddressSanitizer" "${ASAN_BUILD_DIR}" 1 \
-				"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ASAN_BUILD_DIR}" \
-				-DCMAKE_BUILD_TYPE=Debug
-		else
-			invoke_configure_and_build "AddressSanitizer" "${ASAN_BUILD_DIR}" 1 \
-				"${CM_CMD}" -G Ninja -S . -B "${ASAN_BUILD_DIR}" \
-				-DCMAKE_BUILD_TYPE=Debug
-		fi
-	fi
-else
-	add_result "WARN" "AddressSanitizer" "已显式传入 --skip-asan，跳过 ASan 阶段"
 fi
 
 if [[ ${SKIP_TIDY} -eq 1 ]]; then
