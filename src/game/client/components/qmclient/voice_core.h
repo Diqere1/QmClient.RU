@@ -1,5 +1,5 @@
-#ifndef GAME_CLIENT_COMPONENTS_RCLIENT_VOICE_H
-#define GAME_CLIENT_COMPONENTS_RCLIENT_VOICE_H
+#ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_CORE_H
+#define GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_CORE_H
 
 #include <base/lock.h>
 #include <base/system.h>
@@ -339,4 +339,4 @@ public:
 	bool IsOutputUnavailable() const { return m_OutputUnavailable.load(); }
 };
 
-#endif // GAME_CLIENT_COMPONENTS_RCLIENT_VOICE_H
+#endif // GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_CORE_H

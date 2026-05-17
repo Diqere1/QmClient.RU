@@ -21,7 +21,7 @@ def check_file(filename):
 		for line in file:
 			if line == "// This file can be included several times.\n":
 				break
-			if line[0] == "/" or line[0] == "*" or line[0] == "\r" or line[0] == "\n" or line[0] == "\t":
+			if line[0] == "/" or line[0] == "*" or line[0] == "\r" or line[0] == "\n" or line[0] == "\t" or line[0] == " ":
 				continue
 			header_guard = "#ifndef " + ("_".join(filename.split(PATH)[1].split("/"))[:-2]).upper() + "_H"
 			if line.startswith("#ifndef"):
