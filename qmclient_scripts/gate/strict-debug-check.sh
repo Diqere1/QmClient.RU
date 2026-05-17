@@ -432,7 +432,7 @@ invoke_configure_and_build() {
 
 	invoke_repo_command "${title} 配置" "${fail_on_warnings}" "$@"
 	if [[ ${SKIP_BUILD} -eq 0 ]]; then
-		if is_windows_host_bash; then
+		if [[ "${CM_CMD}" == "cmd.exe" ]]; then
 			local cmake_script
 			cmake_script="$(to_windows_path "${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd")"
 			invoke_repo_command "${title} 构建" "${fail_on_warnings}" cmd.exe /c "${cmake_script}" --build "${build_dir}" --target game-client -j 10
@@ -451,12 +451,15 @@ test_asan_supported() {
 }
 
 resolve_cmake_command() {
+	if command -v cmake >/dev/null 2>&1; then
+		printf '%s\n' "cmake"
+		return 0
+	fi
 	if is_windows_host_bash; then
 		printf '%s\n' "cmd.exe"
-	else
-		command -v cmake >/dev/null 2>&1 || return 1
-		printf '%s\n' "cmake"
+		return 0
 	fi
+	return 1
 }
 
 configure_git_command() {
@@ -668,7 +671,7 @@ EFFECTIVE_FILES=("${INPUT_FILES[@]}")
 
 pushd "${REPO_ROOT}" >/dev/null
 
-if is_windows_host_bash; then
+if [[ "${CM_CMD}" == "cmd.exe" ]]; then
 	CM_SCRIPT_WIN="$(to_windows_path "${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd")"
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
 		"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
@@ -680,7 +683,7 @@ else
 fi
 
 if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
-	if is_windows_host_bash; then
+	if [[ "${CM_CMD}" == "cmd.exe" ]]; then
 		if [[ ${ANALYZE_ALL} -eq 0 ]]; then
 			mapfile -t ANALYZE_SOURCE_FILES < <(get_analyze_source_files "${INPUT_FILES[@]}")
 			if [[ ${#ANALYZE_SOURCE_FILES[@]} -eq 0 ]]; then
@@ -717,7 +720,7 @@ if [[ ${SKIP_ASAN} -eq 0 ]]; then
 		printf '%s\n' "${ASAN_MESSAGE}"
 		add_result "WARN" "AddressSanitizer" "${ASAN_MESSAGE}"
 	else
-		if is_windows_host_bash; then
+		if [[ "${CM_CMD}" == "cmd.exe" ]]; then
 			invoke_configure_and_build "AddressSanitizer" "${ASAN_BUILD_DIR}" 1 \
 				"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ASAN_BUILD_DIR}" \
 				-DCMAKE_BUILD_TYPE=Debug
@@ -746,7 +749,7 @@ add_result "PASS" "clang-tidy 前置检查" "已找到 clang-tidy"
 
 COMPILE_COMMANDS="${DEBUG_BUILD_DIR}/compile_commands.json"
 if [[ ! -f "${COMPILE_COMMANDS}" ]]; then
-	if is_windows_host_bash; then
+	if [[ "${CM_CMD}" == "cmd.exe" ]]; then
 		invoke_repo_command "Debug CRT 重新导出 compile_commands" 1 \
 			"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
 			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
