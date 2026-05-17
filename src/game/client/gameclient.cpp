@@ -32,6 +32,7 @@
 #include "components/nameplates.h"
 #include "components/particles.h"
 #include "components/players.h"
+#include "components/qmclient/jelly_tee.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
 #include "components/skins.h"
@@ -39,9 +40,8 @@
 #include "components/sounds.h"
 #include "components/spectator.h"
 #include "components/statboard.h"
-#include "components/voting.h"
 #include "components/tclient/fast_practice.h"
-#include "components/qmclient/jelly_tee.h"
+#include "components/voting.h"
 #include "lineinput.h"
 #include "prediction/entities/character.h"
 #include "prediction/entities/projectile.h"
@@ -53,7 +53,6 @@
 #include <base/perf_timer.h>
 #include <base/system.h>
 #include <base/vmath.h>
-#include <engine/shared/config_tags.h>
 
 #include <engine/client/checksum.h>
 #include <engine/client/enums.h>
@@ -67,6 +66,7 @@
 #include <engine/map.h>
 #include <engine/serverbrowser.h>
 #include <engine/shared/config.h>
+#include <engine/shared/config_tags.h>
 #include <engine/shared/csv.h>
 #include <engine/shared/protocol_ex.h>
 #include <engine/sound.h>
@@ -87,78 +87,78 @@
 
 namespace
 {
-constexpr int DEMO_INPUT_KEY_STATE_SIZE = KEY_LAST / 8;
+	constexpr int DEMO_INPUT_KEY_STATE_SIZE = KEY_LAST / 8;
 
-bool PerfDebugEnabled()
-{
-	return g_Config.m_QmPerfDebug != 0;
-}
-
-double PerfDebugThresholdMs()
-{
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-}
-
-void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(!Force && DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/gameclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/gameclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
-
-struct SConfigIntAliasSync
-{
-	int *m_pSource;
-	int *m_pTarget;
-};
-
-void ConchainConfigIntAlias(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
-{
-	pfnCallback(pResult, pCallbackUserData);
-	const SConfigIntAliasSync *pSync = static_cast<const SConfigIntAliasSync *>(pUserData);
-	*pSync->m_pTarget = *pSync->m_pSource;
-}
-
-void SetDemoInputKeyState(unsigned char *pKeyStates, int Key, bool Pressed)
-{
-	dbg_assert(Key >= KEY_FIRST && Key < KEY_LAST, "invalid demo input key");
-	const unsigned char Mask = 1U << (Key & 7);
-	if(Pressed)
-		pKeyStates[Key >> 3] |= Mask;
-	else
-		pKeyStates[Key >> 3] &= ~Mask;
-}
-
-void LoadNamedSingleFileImage(CGameClient *pGameClient, int ImageId, const char *pCategoryId, const char *pActiveName)
-{
-	if(ImageId < 0 || ImageId >= g_pData->m_NumImages || pCategoryId == nullptr || pActiveName == nullptr)
-		return;
-
-	IGraphics::CTextureHandle NewTexture;
-
-	for(const std::string &Candidate : BuildNamedSingleFileAssetCandidates(pCategoryId, pActiveName))
+	bool PerfDebugEnabled()
 	{
-		if(Candidate.empty())
-			continue;
-
-		NewTexture = pGameClient->Graphics()->LoadTexture(Candidate.c_str(), IStorage::TYPE_ALL);
-		if(NewTexture.IsValid() && !NewTexture.IsNullTexture())
-			break;
-		NewTexture = IGraphics::CTextureHandle();
+		return g_Config.m_QmPerfDebug != 0;
 	}
 
-	if(!NewTexture.IsValid() || NewTexture.IsNullTexture())
-		return;
+	double PerfDebugThresholdMs()
+	{
+		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
+	}
 
-	pGameClient->Graphics()->UnloadTexture(&g_pData->m_aImages[ImageId].m_Id);
-	g_pData->m_aImages[ImageId].m_Id = NewTexture;
-}
+	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	{
+		if(!PerfDebugEnabled())
+			return;
+		if(!Force && DurationMs < PerfDebugThresholdMs())
+			return;
+
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg("perf/gameclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg("perf/gameclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	}
+
+	struct SConfigIntAliasSync
+	{
+		int *m_pSource;
+		int *m_pTarget;
+	};
+
+	void ConchainConfigIntAlias(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
+	{
+		pfnCallback(pResult, pCallbackUserData);
+		const SConfigIntAliasSync *pSync = static_cast<const SConfigIntAliasSync *>(pUserData);
+		*pSync->m_pTarget = *pSync->m_pSource;
+	}
+
+	void SetDemoInputKeyState(unsigned char *pKeyStates, int Key, bool Pressed)
+	{
+		dbg_assert(Key >= KEY_FIRST && Key < KEY_LAST, "invalid demo input key");
+		const unsigned char Mask = 1U << (Key & 7);
+		if(Pressed)
+			pKeyStates[Key >> 3] |= Mask;
+		else
+			pKeyStates[Key >> 3] &= ~Mask;
+	}
+
+	void LoadNamedSingleFileImage(CGameClient *pGameClient, int ImageId, const char *pCategoryId, const char *pActiveName)
+	{
+		if(ImageId < 0 || ImageId >= g_pData->m_NumImages || pCategoryId == nullptr || pActiveName == nullptr)
+			return;
+
+		IGraphics::CTextureHandle NewTexture;
+
+		for(const std::string &Candidate : BuildNamedSingleFileAssetCandidates(pCategoryId, pActiveName))
+		{
+			if(Candidate.empty())
+				continue;
+
+			NewTexture = pGameClient->Graphics()->LoadTexture(Candidate.c_str(), IStorage::TYPE_ALL);
+			if(NewTexture.IsValid() && !NewTexture.IsNullTexture())
+				break;
+			NewTexture = IGraphics::CTextureHandle();
+		}
+
+		if(!NewTexture.IsValid() || NewTexture.IsNullTexture())
+			return;
+
+		pGameClient->Graphics()->UnloadTexture(&g_pData->m_aImages[ImageId].m_Id);
+		g_pData->m_aImages[ImageId].m_Id = NewTexture;
+	}
 }
 
 #include <algorithm>
@@ -170,28 +170,28 @@ using namespace std::chrono_literals;
 
 namespace
 {
-float EffectiveFastInputOffsetTicks(const CGameClient *pGameClient)
-{
-	(void)pGameClient;
+	float EffectiveFastInputOffsetTicks(const CGameClient *pGameClient)
+	{
+		(void)pGameClient;
 
-	if(!g_Config.m_TcFastInput)
-		return 0.0f;
-	if(g_Config.m_TcFastInputAmount <= 0)
-		return 0.0f;
-	return g_Config.m_TcFastInputAmount / 20.0f;
-}
+		if(!g_Config.m_TcFastInput)
+			return 0.0f;
+		if(g_Config.m_TcFastInputAmount <= 0)
+			return 0.0f;
+		return g_Config.m_TcFastInputAmount / 20.0f;
+	}
 
-int FastInputPredictionTicks(float OffsetTicks)
-{
-	if(OffsetTicks <= 0.0f)
-		return 0;
-	return (int)std::ceil(OffsetTicks);
-}
+	int FastInputPredictionTicks(float OffsetTicks)
+	{
+		if(OffsetTicks <= 0.0f)
+			return 0;
+		return (int)std::ceil(OffsetTicks);
+	}
 
-bool EffectiveFastInputOthers()
-{
-	return g_Config.m_TcFastInputOthers != 0;
-}
+	bool EffectiveFastInputOthers()
+	{
+		return g_Config.m_TcFastInputOthers != 0;
+	}
 
 } // namespace
 
@@ -276,7 +276,7 @@ void CGameClient::OnConsoleInit()
 					      &m_PlayerIndicator,
 					      &m_Mod,
 					      &m_CustomCommunities,
-						      &m_PlayerPoints,
+					      &m_PlayerPoints,
 					      &m_Hud,
 					      &m_Spectator,
 					      &m_Emoticon,
@@ -806,9 +806,9 @@ int CGameClient::PackDemoHudState(int DummyResetOnSwitch, int DeepflyMode, bool 
 	const int ClampedDummyResetOnSwitch = std::clamp(DummyResetOnSwitch, 0, 3);
 	const int ClampedDeepflyMode = std::clamp(DeepflyMode, 0, 3);
 	return ClampedDummyResetOnSwitch |
-		(ClampedDeepflyMode << 2) |
-		((DummyControl ? 1 : 0) << 4) |
-		((DummyCopyMoves ? 1 : 0) << 5);
+	       (ClampedDeepflyMode << 2) |
+	       ((DummyControl ? 1 : 0) << 4) |
+	       ((DummyCopyMoves ? 1 : 0) << 5);
 }
 
 void CGameClient::UnpackDemoHudState(int PackedState)
@@ -1522,13 +1522,13 @@ bool CGameClient::IsLocalClientId(int ClientId) const
 bool CGameClient::ShouldHideStreamerIdentity(int ClientId) const
 {
 	return g_Config.m_QmStreamerHideNames && ClientId >= 0 && ClientId < MAX_CLIENTS &&
-		!IsLocalClientId(ClientId) && !m_aClients[ClientId].m_Friend;
+	       !IsLocalClientId(ClientId) && !m_aClients[ClientId].m_Friend;
 }
 
 bool CGameClient::ShouldHideStreamerSkin(int ClientId) const
 {
 	return g_Config.m_QmStreamerHideSkins && ClientId >= 0 && ClientId < MAX_CLIENTS &&
-		!IsLocalClientId(ClientId) && !m_aClients[ClientId].m_Friend;
+	       !IsLocalClientId(ClientId) && !m_aClients[ClientId].m_Friend;
 }
 
 void CGameClient::FormatStreamerName(int ClientId, char *pBuf, int BufSize) const
@@ -1582,104 +1582,104 @@ void CGameClient::FormatStreamerClan(int ClientId, char *pBuf, int BufSize) cons
 
 namespace
 {
-bool IsAsciiDigit(char c)
-{
-	return c >= '0' && c <= '9';
-}
-
-void AppendVoteText(char *pBuf, int BufSize, int &Length, const char *pText, int TextLen)
-{
-	if(!pBuf || BufSize <= 0 || Length >= BufSize - 1 || !pText || TextLen <= 0)
-		return;
-
-	const int CopyLen = minimum(TextLen, BufSize - 1 - Length);
-	mem_copy(pBuf + Length, pText, CopyLen);
-	Length += CopyLen;
-	pBuf[Length] = '\0';
-}
-
-void AppendVoteText(char *pBuf, int BufSize, int &Length, const char *pText)
-{
-	if(!pText)
-		return;
-
-	AppendVoteText(pBuf, BufSize, Length, pText, str_length(pText));
-}
-
-struct SVoteClientLabel
-{
-	int m_ClientId = -1;
-	const char *m_pName = nullptr;
-	int m_NameLen = 0;
-	int m_Consumed = 0;
-};
-
-bool ParseQuotedVoteClientLabel(const char *pText, SVoteClientLabel &Out)
-{
-	if(!pText || *pText != '\'')
-		return false;
-
-	const char *pCursor = pText + 1;
-	while(*pCursor == ' ')
-		++pCursor;
-
-	if(!IsAsciiDigit(*pCursor))
-		return false;
-
-	int ClientId = 0;
-	do
+	bool IsAsciiDigit(char c)
 	{
-		ClientId = ClientId * 10 + (*pCursor - '0');
-		++pCursor;
-	} while(IsAsciiDigit(*pCursor));
+		return c >= '0' && c <= '9';
+	}
 
-	if(*pCursor != ':' || pCursor[1] != ' ')
-		return false;
-
-	pCursor += 2;
-	const char *pQuoteEnd = str_find(pCursor, "'");
-	if(!pQuoteEnd || pQuoteEnd == pCursor)
-		return false;
-
-	Out.m_ClientId = ClientId;
-	Out.m_pName = pCursor;
-	Out.m_NameLen = (int)(pQuoteEnd - pCursor);
-	Out.m_Consumed = (int)(pQuoteEnd - pText) + 1;
-	return true;
-}
-
-bool ParseFullVoteClientLabel(const char *pText, SVoteClientLabel &Out)
-{
-	if(!pText)
-		return false;
-
-	const char *pCursor = pText;
-	while(*pCursor == ' ')
-		++pCursor;
-
-	if(!IsAsciiDigit(*pCursor))
-		return false;
-
-	int ClientId = 0;
-	do
+	void AppendVoteText(char *pBuf, int BufSize, int &Length, const char *pText, int TextLen)
 	{
-		ClientId = ClientId * 10 + (*pCursor - '0');
-		++pCursor;
-	} while(IsAsciiDigit(*pCursor));
+		if(!pBuf || BufSize <= 0 || Length >= BufSize - 1 || !pText || TextLen <= 0)
+			return;
 
-	if(*pCursor != ':' || pCursor[1] != ' ')
-		return false;
+		const int CopyLen = minimum(TextLen, BufSize - 1 - Length);
+		mem_copy(pBuf + Length, pText, CopyLen);
+		Length += CopyLen;
+		pBuf[Length] = '\0';
+	}
 
-	pCursor += 2;
-	if(*pCursor == '\0')
-		return false;
+	void AppendVoteText(char *pBuf, int BufSize, int &Length, const char *pText)
+	{
+		if(!pText)
+			return;
 
-	Out.m_ClientId = ClientId;
-	Out.m_pName = pCursor;
-	Out.m_NameLen = str_length(pCursor);
-	Out.m_Consumed = str_length(pText);
-	return true;
-}
+		AppendVoteText(pBuf, BufSize, Length, pText, str_length(pText));
+	}
+
+	struct SVoteClientLabel
+	{
+		int m_ClientId = -1;
+		const char *m_pName = nullptr;
+		int m_NameLen = 0;
+		int m_Consumed = 0;
+	};
+
+	bool ParseQuotedVoteClientLabel(const char *pText, SVoteClientLabel &Out)
+	{
+		if(!pText || *pText != '\'')
+			return false;
+
+		const char *pCursor = pText + 1;
+		while(*pCursor == ' ')
+			++pCursor;
+
+		if(!IsAsciiDigit(*pCursor))
+			return false;
+
+		int ClientId = 0;
+		do
+		{
+			ClientId = ClientId * 10 + (*pCursor - '0');
+			++pCursor;
+		} while(IsAsciiDigit(*pCursor));
+
+		if(*pCursor != ':' || pCursor[1] != ' ')
+			return false;
+
+		pCursor += 2;
+		const char *pQuoteEnd = str_find(pCursor, "'");
+		if(!pQuoteEnd || pQuoteEnd == pCursor)
+			return false;
+
+		Out.m_ClientId = ClientId;
+		Out.m_pName = pCursor;
+		Out.m_NameLen = (int)(pQuoteEnd - pCursor);
+		Out.m_Consumed = (int)(pQuoteEnd - pText) + 1;
+		return true;
+	}
+
+	bool ParseFullVoteClientLabel(const char *pText, SVoteClientLabel &Out)
+	{
+		if(!pText)
+			return false;
+
+		const char *pCursor = pText;
+		while(*pCursor == ' ')
+			++pCursor;
+
+		if(!IsAsciiDigit(*pCursor))
+			return false;
+
+		int ClientId = 0;
+		do
+		{
+			ClientId = ClientId * 10 + (*pCursor - '0');
+			++pCursor;
+		} while(IsAsciiDigit(*pCursor));
+
+		if(*pCursor != ':' || pCursor[1] != ' ')
+			return false;
+
+		pCursor += 2;
+		if(*pCursor == '\0')
+			return false;
+
+		Out.m_ClientId = ClientId;
+		Out.m_pName = pCursor;
+		Out.m_NameLen = str_length(pCursor);
+		Out.m_Consumed = str_length(pText);
+		return true;
+	}
 }
 
 void CGameClient::FormatStreamerVoteText(const char *pText, char *pBuf, int BufSize) const
@@ -3898,7 +3898,6 @@ void CGameClient::OnPredict()
 				if(Events & COREEVENT_AIR_JUMP)
 					m_Effects.AirJump(Pos, 1.0f, 1.0f);
 		}
-
 	}
 
 	if(FastInputTicks > 0)
@@ -5758,8 +5757,8 @@ void CGameClient::LoadGameSkin(const char *pPath, bool AsDir)
 	CImageInfo ImgInfo;
 	bool PngLoaded = Graphics()->LoadPng(ImgInfo, aPath, IStorage::TYPE_ALL);
 	const bool ImageValid = PngLoaded &&
-		Graphics()->CheckImageDivisibility(aPath, ImgInfo, g_pData->m_aSprites[SPRITE_HEALTH_FULL].m_pSet->m_Gridx, g_pData->m_aSprites[SPRITE_HEALTH_FULL].m_pSet->m_Gridy, true) &&
-		Graphics()->IsImageFormatRgba(aPath, ImgInfo);
+				Graphics()->CheckImageDivisibility(aPath, ImgInfo, g_pData->m_aSprites[SPRITE_HEALTH_FULL].m_pSet->m_Gridx, g_pData->m_aSprites[SPRITE_HEALTH_FULL].m_pSet->m_Gridy, true) &&
+				Graphics()->IsImageFormatRgba(aPath, ImgInfo);
 	if(!PngLoaded && !IsDefault)
 	{
 		if(AsDir)

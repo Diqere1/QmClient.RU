@@ -6,9 +6,9 @@
 #include <base/system.h>
 #include <base/types.h>
 
+#include <engine/engine.h>
 #include <engine/graphics.h>
 #include <engine/image.h>
-#include <engine/engine.h>
 #include <engine/keys.h>
 #include <engine/serverbrowser.h>
 #include <engine/shared/config.h>
@@ -24,11 +24,11 @@
 #include <game/client/components/countryflags.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/menus.h>
+#include <game/client/components/qmclient/translate_ui_settings.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/tclient/bindchat.h>
 #include <game/client/components/tclient/bindwheel.h>
 #include <game/client/components/tclient/trails.h>
-#include <game/client/components/qmclient/translate_ui_settings.h>
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
 #include <game/client/skin.h>
@@ -79,174 +79,174 @@ extern bool g_CommandBindCacheInitialized;
 namespace
 {
 
-bool PerfDebugEnabled()
-{
-	return g_Config.m_QmPerfDebug != 0;
-}
-
-double PerfDebugThresholdMs()
-{
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-}
-
-void LogQmPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
-
-[[maybe_unused]] void LogTClientPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
-
-const char *QmSettingsTabName(int Tab)
-{
-	switch(Tab)
+	bool PerfDebugEnabled()
 	{
-	case 0: return "visuals";
-	case 1: return "functions";
-	case 2: return "hud";
-	case 3: return "contributors";
-	case 4: return "config";
-	default: return "unknown";
+		return g_Config.m_QmPerfDebug != 0;
 	}
-}
 
-int gs_TClientSettingsDeferredFrames = 0;
-int gs_TClientTabDeferredFrames = 0;
-int gs_TClientDeferredTab = -1;
-int gs_QmVisualDeferredFrames = 0;
-
-[[maybe_unused]] void BeginDeferredTClientSettings()
-{
-	gs_TClientSettingsDeferredFrames = 6;
-}
-
-[[maybe_unused]] void BeginDeferredTClientTab(const int Tab)
-{
-	gs_TClientDeferredTab = Tab;
-	switch(Tab)
+	double PerfDebugThresholdMs()
 	{
-	case TCLIENT_TAB_SETTINGS:
-		gs_TClientTabDeferredFrames = 5;
-		break;
-	case TCLIENT_TAB_BINDWHEEL:
-		gs_TClientTabDeferredFrames = 4;
-		break;
-	case TCLIENT_TAB_STATUSBAR:
-		gs_TClientTabDeferredFrames = 5;
-		break;
-	case TCLIENT_TAB_WARLIST:
-		gs_TClientTabDeferredFrames = 4;
-		break;
-	case TCLIENT_TAB_BINDCHAT:
-		gs_TClientTabDeferredFrames = 2;
-		break;
-	case TCLIENT_TAB_INFO:
-		gs_TClientTabDeferredFrames = 4;
-		break;
-	default:
-		gs_TClientTabDeferredFrames = 2;
-		break;
+		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 	}
-}
 
-[[maybe_unused]] bool ShouldDeferTClientVisualStage(const float ScrollY, const int MinRemainingFrames)
-{
-	return gs_TClientSettingsDeferredFrames >= MinRemainingFrames && absolute(ScrollY) <= 1.0f;
-}
-
-[[maybe_unused]] bool ShouldDeferTClientTabContent(const int Tab)
-{
-	return gs_TClientDeferredTab == Tab && gs_TClientTabDeferredFrames > 0;
-}
-
-[[maybe_unused]] int GetDeferredTClientTabFrames(const int Tab)
-{
-	return gs_TClientDeferredTab == Tab ? gs_TClientTabDeferredFrames : 0;
-}
-
-[[maybe_unused]] void FinishDeferredTClientSettingsFrame()
-{
-	if(gs_TClientSettingsDeferredFrames > 0)
-		--gs_TClientSettingsDeferredFrames;
-}
-
-[[maybe_unused]] void FinishDeferredTClientTabFrame(const int Tab)
-{
-	if(gs_TClientDeferredTab != Tab || gs_TClientTabDeferredFrames <= 0)
-		return;
-	--gs_TClientTabDeferredFrames;
-	if(gs_TClientTabDeferredFrames <= 0)
-		gs_TClientDeferredTab = -1;
-}
-
-void BeginDeferredQmVisualTab()
-{
-	gs_QmVisualDeferredFrames = 1;
-}
-
-bool ShouldDeferQmVisualHeavyStage(const int ActiveTab, const float ScrollY)
-{
-	return ActiveTab == 0 && gs_QmVisualDeferredFrames > 0 && absolute(ScrollY) <= 1.0f;
-}
-
-void FinishDeferredQmVisualFrame(const int ActiveTab)
-{
-	if(ActiveTab == 0 && gs_QmVisualDeferredFrames > 0)
-		--gs_QmVisualDeferredFrames;
-}
-
-struct SSectionCullContext
-{
-	float m_ViewportTop;
-	float m_ViewportBottom;
-	float m_PrefetchPadding;
-};
-
-bool IsSectionVisible(const CUIRect &SectionRect, const SSectionCullContext &Context)
-{
-	return SectionRect.y + SectionRect.h >= Context.m_ViewportTop - Context.m_PrefetchPadding &&
-		SectionRect.y <= Context.m_ViewportBottom + Context.m_PrefetchPadding;
-}
-
-uint64_t HashBytesFnv1a64(uint64_t Hash, const void *pData, size_t DataSize)
-{
-	const uint8_t *pBytes = static_cast<const uint8_t *>(pData);
-	for(size_t i = 0; i < DataSize; ++i)
+	void LogQmPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
 	{
-		Hash ^= pBytes[i];
-		Hash *= 1099511628211ull;
+		if(!PerfDebugEnabled())
+			return;
+		if(DurationMs < PerfDebugThresholdMs())
+			return;
+
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
 	}
-	return Hash;
-}
 
-template<typename T>
-uint64_t HashValueFnv1a64(uint64_t Hash, const T &Value)
-{
-	return HashBytesFnv1a64(Hash, &Value, sizeof(Value));
-}
+	[[maybe_unused]] void LogTClientPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
+	{
+		if(!PerfDebugEnabled())
+			return;
+		if(DurationMs < PerfDebugThresholdMs())
+			return;
 
-uint64_t HashStringFnv1a64(uint64_t Hash, const char *pString)
-{
-	return pString == nullptr ? Hash : HashBytesFnv1a64(Hash, pString, str_length(pString));
-}
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	}
+
+	const char *QmSettingsTabName(int Tab)
+	{
+		switch(Tab)
+		{
+		case 0: return "visuals";
+		case 1: return "functions";
+		case 2: return "hud";
+		case 3: return "contributors";
+		case 4: return "config";
+		default: return "unknown";
+		}
+	}
+
+	int gs_TClientSettingsDeferredFrames = 0;
+	int gs_TClientTabDeferredFrames = 0;
+	int gs_TClientDeferredTab = -1;
+	int gs_QmVisualDeferredFrames = 0;
+
+	[[maybe_unused]] void BeginDeferredTClientSettings()
+	{
+		gs_TClientSettingsDeferredFrames = 6;
+	}
+
+	[[maybe_unused]] void BeginDeferredTClientTab(const int Tab)
+	{
+		gs_TClientDeferredTab = Tab;
+		switch(Tab)
+		{
+		case TCLIENT_TAB_SETTINGS:
+			gs_TClientTabDeferredFrames = 5;
+			break;
+		case TCLIENT_TAB_BINDWHEEL:
+			gs_TClientTabDeferredFrames = 4;
+			break;
+		case TCLIENT_TAB_STATUSBAR:
+			gs_TClientTabDeferredFrames = 5;
+			break;
+		case TCLIENT_TAB_WARLIST:
+			gs_TClientTabDeferredFrames = 4;
+			break;
+		case TCLIENT_TAB_BINDCHAT:
+			gs_TClientTabDeferredFrames = 2;
+			break;
+		case TCLIENT_TAB_INFO:
+			gs_TClientTabDeferredFrames = 4;
+			break;
+		default:
+			gs_TClientTabDeferredFrames = 2;
+			break;
+		}
+	}
+
+	[[maybe_unused]] bool ShouldDeferTClientVisualStage(const float ScrollY, const int MinRemainingFrames)
+	{
+		return gs_TClientSettingsDeferredFrames >= MinRemainingFrames && absolute(ScrollY) <= 1.0f;
+	}
+
+	[[maybe_unused]] bool ShouldDeferTClientTabContent(const int Tab)
+	{
+		return gs_TClientDeferredTab == Tab && gs_TClientTabDeferredFrames > 0;
+	}
+
+	[[maybe_unused]] int GetDeferredTClientTabFrames(const int Tab)
+	{
+		return gs_TClientDeferredTab == Tab ? gs_TClientTabDeferredFrames : 0;
+	}
+
+	[[maybe_unused]] void FinishDeferredTClientSettingsFrame()
+	{
+		if(gs_TClientSettingsDeferredFrames > 0)
+			--gs_TClientSettingsDeferredFrames;
+	}
+
+	[[maybe_unused]] void FinishDeferredTClientTabFrame(const int Tab)
+	{
+		if(gs_TClientDeferredTab != Tab || gs_TClientTabDeferredFrames <= 0)
+			return;
+		--gs_TClientTabDeferredFrames;
+		if(gs_TClientTabDeferredFrames <= 0)
+			gs_TClientDeferredTab = -1;
+	}
+
+	void BeginDeferredQmVisualTab()
+	{
+		gs_QmVisualDeferredFrames = 1;
+	}
+
+	bool ShouldDeferQmVisualHeavyStage(const int ActiveTab, const float ScrollY)
+	{
+		return ActiveTab == 0 && gs_QmVisualDeferredFrames > 0 && absolute(ScrollY) <= 1.0f;
+	}
+
+	void FinishDeferredQmVisualFrame(const int ActiveTab)
+	{
+		if(ActiveTab == 0 && gs_QmVisualDeferredFrames > 0)
+			--gs_QmVisualDeferredFrames;
+	}
+
+	struct SSectionCullContext
+	{
+		float m_ViewportTop;
+		float m_ViewportBottom;
+		float m_PrefetchPadding;
+	};
+
+	bool IsSectionVisible(const CUIRect &SectionRect, const SSectionCullContext &Context)
+	{
+		return SectionRect.y + SectionRect.h >= Context.m_ViewportTop - Context.m_PrefetchPadding &&
+		       SectionRect.y <= Context.m_ViewportBottom + Context.m_PrefetchPadding;
+	}
+
+	uint64_t HashBytesFnv1a64(uint64_t Hash, const void *pData, size_t DataSize)
+	{
+		const uint8_t *pBytes = static_cast<const uint8_t *>(pData);
+		for(size_t i = 0; i < DataSize; ++i)
+		{
+			Hash ^= pBytes[i];
+			Hash *= 1099511628211ull;
+		}
+		return Hash;
+	}
+
+	template<typename T>
+	uint64_t HashValueFnv1a64(uint64_t Hash, const T &Value)
+	{
+		return HashBytesFnv1a64(Hash, &Value, sizeof(Value));
+	}
+
+	uint64_t HashStringFnv1a64(uint64_t Hash, const char *pString)
+	{
+		return pString == nullptr ? Hash : HashBytesFnv1a64(Hash, pString, str_length(pString));
+	}
 
 }
 
@@ -717,9 +717,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			for(int Tab = 0; Tab < NUMBER_OF_QMCLIENT_SETTINGS_TABS; ++Tab)
 			{
 				TabBar.VSplitLeft(TabWidth, &Button, &TabBar);
-				const int Corners = Tab == 0 ? IGraphics::CORNER_L :
-					Tab == NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1 ? IGraphics::CORNER_R :
-					IGraphics::CORNER_NONE;
+				const int Corners = Tab == 0                                    ? IGraphics::CORNER_L :
+						    Tab == NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1 ? IGraphics::CORNER_R :
+												  IGraphics::CORNER_NONE;
 				const bool ClickedSearchBlurredTab = Ui()->MouseButtonClicked(0) && Ui()->MouseHovered(&Button) && ReleaseActiveQmClientSearchInput();
 				if(DoButton_MenuTab(&s_aPageTabs[Tab], s_apQmTabNames[Tab], m_QmClientSettingsTab == Tab, &Button, Corners, nullptr, nullptr, nullptr, nullptr, 4.0f) || ClickedSearchBlurredTab)
 					m_QmClientSettingsTab = Tab;
@@ -791,15 +791,15 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	const bool CompactLayout = ViewWidth < 680.0f;
 	const float UiScale = std::clamp(ViewWidth / 1000.0f, CompactLayout ? 0.78f : 0.85f, 1.0f);
 
-	const float LG_CardPadding = std::clamp(14.0f * UiScale, 10.0f, 14.0f);          // 卡片内边距
-	const float LG_CardSpacing = std::clamp(16.0f * UiScale, 10.0f, 16.0f);          // 卡片间距
-	const float LG_CornerRadius = std::clamp(12.0f * UiScale, 8.0f, 12.0f);          // 圆角
-	const float LG_CardAlpha = 0.70f;                                                // 卡片透明度
-	const float LG_HeadlineSize = std::clamp(14.0f * UiScale, 12.0f, 14.0f);         // 标题字号
-	const float LG_BodySize = std::clamp(12.0f * UiScale, 10.0f, 12.0f);             // 正文字号
-	const float LG_LineHeight = std::clamp(20.0f * UiScale, 16.0f, 20.0f);           // 统一行高
-	const float LG_LineSpacing = std::clamp(5.0f * UiScale, 3.0f, 5.0f);             // 统一行间距
-	const float LG_HeadlineMargin = std::clamp(10.0f * UiScale, 7.0f, 10.0f);        // 标题下方间距
+	const float LG_CardPadding = std::clamp(14.0f * UiScale, 10.0f, 14.0f); // 卡片内边距
+	const float LG_CardSpacing = std::clamp(16.0f * UiScale, 10.0f, 16.0f); // 卡片间距
+	const float LG_CornerRadius = std::clamp(12.0f * UiScale, 8.0f, 12.0f); // 圆角
+	const float LG_CardAlpha = 0.70f; // 卡片透明度
+	const float LG_HeadlineSize = std::clamp(14.0f * UiScale, 12.0f, 14.0f); // 标题字号
+	const float LG_BodySize = std::clamp(12.0f * UiScale, 10.0f, 12.0f); // 正文字号
+	const float LG_LineHeight = std::clamp(20.0f * UiScale, 16.0f, 20.0f); // 统一行高
+	const float LG_LineSpacing = std::clamp(5.0f * UiScale, 3.0f, 5.0f); // 统一行间距
+	const float LG_HeadlineMargin = std::clamp(10.0f * UiScale, 7.0f, 10.0f); // 标题下方间距
 	const float LG_TipSize = std::clamp(LG_BodySize * 0.7f, 8.0f, LG_BodySize);
 	const float LG_TipHeight = maximum(LG_HeadlineMargin, LG_TipSize + 2.0f);
 	const float LG_LabelMaxWidth = maximum(CompactLayout ? 96.0f : 120.0f, ViewWidth * (CompactLayout ? 0.38f : 0.45f));
@@ -877,7 +877,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	static float s_LastRainbowUpdateTime = 0.0f;
 	static ColorRGBA s_CachedRainbowColors[16];
 	constexpr int RainbowColorCount = 16;
-	
+
 	const float Time = Client()->GlobalTime();
 	bool ShowSearchModuleControls = true;
 	if(Time - s_LastRainbowUpdateTime > 0.1f) // Update every 100ms
@@ -890,7 +890,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			s_CachedRainbowColors[i] = color_cast<ColorRGBA>(Hsla);
 		}
 	}
-	
+
 	auto GetRainbowColor = [](int ModuleIndex) -> ColorRGBA {
 		int Index = ModuleIndex % RainbowColorCount;
 		if(Index < 0)
@@ -1318,8 +1318,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	constexpr size_t kQmModuleCount = 28;
 
 	// Layout string format: key:column:order; entries separated by ';'.
-	static const std::array<SQmModuleEntry, kQmModuleCount> s_aQmModuleDefaults = {{
-		{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
+	static const std::array<SQmModuleEntry, kQmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
 		{EQmModuleId::ChatBubble, EQmModuleColumn::Left, 0, "chat_bubble"},
 		{EQmModuleId::GoresActor, EQmModuleColumn::Left, 1, "gores_actor"},
 		{EQmModuleId::Gores, EQmModuleColumn::Left, 2, "gores"},
@@ -1346,8 +1345,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::Voice, EQmModuleColumn::Right, 9, "voice"},
 		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 10, "dummy_miniview"},
 		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 11, "dynamic_island"},
-		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 12, "system_media_controls"}
-	}};
+		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 12, "system_media_controls"}}};
 
 	static std::array<SQmModuleEntry, kQmModuleCount> s_aQmModuleLayout = s_aQmModuleDefaults;
 	static char s_aQmModuleLayoutConfigCache[sizeof(g_Config.m_QmSidebarCardOrder)] = {};
@@ -2043,31 +2041,31 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		CPerfTimer StageTimer;
 		const bool RebuildColumnCacheDirty = s_QmModuleColumnCacheDirty;
 		if(s_QmModuleColumnCacheDirty)
-	{
-		auto RebuildColumnCache = [&](EQmModuleColumn Column, std::vector<const SQmModuleEntry *> &Out) {
-			Out.clear();
-			Out.reserve(s_aQmModuleLayout.size());
+		{
+			auto RebuildColumnCache = [&](EQmModuleColumn Column, std::vector<const SQmModuleEntry *> &Out) {
+				Out.clear();
+				Out.reserve(s_aQmModuleLayout.size());
+				for(const auto &Entry : s_aQmModuleLayout)
+				{
+					if(Entry.m_Column == Column)
+						Out.push_back(&Entry);
+				}
+				std::stable_sort(Out.begin(), Out.end(), [](const SQmModuleEntry *a, const SQmModuleEntry *b) {
+					return a->m_OrderInColumn < b->m_OrderInColumn;
+				});
+			};
+
+			RebuildColumnCache(EQmModuleColumn::Full, s_vCachedFullModules);
+			RebuildColumnCache(EQmModuleColumn::Left, s_vCachedLeftModules);
+			RebuildColumnCache(EQmModuleColumn::Right, s_vCachedRightModules);
+			s_apCachedModuleById.fill(nullptr);
 			for(const auto &Entry : s_aQmModuleLayout)
 			{
-				if(Entry.m_Column == Column)
-					Out.push_back(&Entry);
+				const int Index = std::clamp(static_cast<int>(Entry.m_Id), 0, static_cast<int>(kQmModuleCount) - 1);
+				s_apCachedModuleById[Index] = &Entry;
 			}
-			std::stable_sort(Out.begin(), Out.end(), [](const SQmModuleEntry *a, const SQmModuleEntry *b) {
-				return a->m_OrderInColumn < b->m_OrderInColumn;
-			});
-		};
-
-		RebuildColumnCache(EQmModuleColumn::Full, s_vCachedFullModules);
-		RebuildColumnCache(EQmModuleColumn::Left, s_vCachedLeftModules);
-		RebuildColumnCache(EQmModuleColumn::Right, s_vCachedRightModules);
-		s_apCachedModuleById.fill(nullptr);
-		for(const auto &Entry : s_aQmModuleLayout)
-		{
-			const int Index = std::clamp(static_cast<int>(Entry.m_Id), 0, static_cast<int>(kQmModuleCount) - 1);
-			s_apCachedModuleById[Index] = &Entry;
+			s_QmModuleColumnCacheDirty = false;
 		}
-		s_QmModuleColumnCacheDirty = false;
-	}
 		char aColumnCacheExtra[128];
 		str_format(aColumnCacheExtra, sizeof(aColumnCacheExtra), "tab=%s rebuilt=%d full=%d left=%d right=%d",
 			QmSettingsTabName(m_QmClientSettingsTab), RebuildColumnCacheDirty ? 1 : 0,
@@ -2124,7 +2122,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		if(!HasModuleSearch)
 			return true;
 		return str_utf8_find_nocase(pModule->m_pKey, pModuleSearch) != nullptr ||
-			str_utf8_find_nocase(ModuleSearchKeywords(pModule->m_Id), pModuleSearch) != nullptr;
+		       str_utf8_find_nocase(ModuleSearchKeywords(pModule->m_Id), pModuleSearch) != nullptr;
 	};
 
 	auto ModuleMatchesSelectedTab = [&](EQmModuleId Id) -> bool {
@@ -2132,34 +2130,34 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{
 		case QMCLIENT_SETTINGS_TAB_VISUAL:
 			return Id == EQmModuleId::ChatBubble ||
-				Id == EQmModuleId::CameraView ||
-				Id == EQmModuleId::Streamer ||
-				Id == EQmModuleId::EntityOverlay ||
-				Id == EQmModuleId::Laser ||
-				Id == EQmModuleId::CollisionHitbox ||
-				Id == EQmModuleId::TranslateUi;
+			       Id == EQmModuleId::CameraView ||
+			       Id == EQmModuleId::Streamer ||
+			       Id == EQmModuleId::EntityOverlay ||
+			       Id == EQmModuleId::Laser ||
+			       Id == EQmModuleId::CollisionHitbox ||
+			       Id == EQmModuleId::TranslateUi;
 		case QMCLIENT_SETTINGS_TAB_FUNCTION:
 			return Id == EQmModuleId::GoresActor ||
-				Id == EQmModuleId::Gores ||
-				Id == EQmModuleId::FocusMode ||
-				Id == EQmModuleId::KeyBinds ||
-				Id == EQmModuleId::MiniFeatures ||
-				Id == EQmModuleId::FriendNotify ||
-				Id == EQmModuleId::BlockWords ||
-				Id == EQmModuleId::Translate ||
-				Id == EQmModuleId::QiaFen ||
-				Id == EQmModuleId::PieMenu ||
-				Id == EQmModuleId::FavoriteMaps ||
-				Id == EQmModuleId::HJAssist;
+			       Id == EQmModuleId::Gores ||
+			       Id == EQmModuleId::FocusMode ||
+			       Id == EQmModuleId::KeyBinds ||
+			       Id == EQmModuleId::MiniFeatures ||
+			       Id == EQmModuleId::FriendNotify ||
+			       Id == EQmModuleId::BlockWords ||
+			       Id == EQmModuleId::Translate ||
+			       Id == EQmModuleId::QiaFen ||
+			       Id == EQmModuleId::PieMenu ||
+			       Id == EQmModuleId::FavoriteMaps ||
+			       Id == EQmModuleId::HJAssist;
 		case QMCLIENT_SETTINGS_TAB_HUD:
 			return Id == EQmModuleId::DummyMiniView ||
-				Id == EQmModuleId::Coords ||
-				Id == EQmModuleId::PlayerStats ||
-				Id == EQmModuleId::SpeedrunTimer ||
-				Id == EQmModuleId::InputOverlay ||
-				Id == EQmModuleId::Voice ||
-				Id == EQmModuleId::DynamicIsland ||
-				Id == EQmModuleId::SystemMediaControls;
+			       Id == EQmModuleId::Coords ||
+			       Id == EQmModuleId::PlayerStats ||
+			       Id == EQmModuleId::SpeedrunTimer ||
+			       Id == EQmModuleId::InputOverlay ||
+			       Id == EQmModuleId::Voice ||
+			       Id == EQmModuleId::DynamicIsland ||
+			       Id == EQmModuleId::SystemMediaControls;
 		case QMCLIENT_SETTINGS_TAB_CONTRIBUTORS:
 			return false;
 		default:
@@ -2353,8 +2351,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			TextRender()->TextColor(ColorRGBA(0.95f, 0.8f, 0.2f, 1.0f));
 			{
 				static const char *const s_apSponsors[] = {
-					"喵不一", "久桃", "芽芽", "碳烤綿芽", "骨头", "陌浅羽", "树羽小朋友", "望舒", "松子", "平凡..", "cixin", "洗点", "秀色", "朱朱", "Twen", "大恐龙", ":luv:", "小左", "Blue°F", "怯修", "yezeen", "鹑", "枫香°", "没问题啊", "·蓝蓝蓝蓝", "临渊捕鱼", "?hook?", "放肆zero", "Q币", "洛天依", "spider", "贝塔塔塔", "见月", "咩子的银耳", "Cancer", "少女`", "长亭寂寞独自愁", "fantuan", "无言鱼", "胖人老许", "夏日", "张宁我儿", "拌饭", "shengyan", "修勾在修沟", "taffy", "杀意没爱意", "DYL", "小信", "哆啦梦", "菜菜羊", "吃了吗chilem", "你就是我的", "xiaopang", "星星🌙", "軽い猫", "oxyzo1", "笨蛋猫猫", "信息检索", "炭", "江江", "晚晚晚上好", "AAA乐土猫猫", "一個廢物", "黄花的忧伤"
-				};
+					"喵不一", "久桃", "芽芽", "碳烤綿芽", "骨头", "陌浅羽", "树羽小朋友", "望舒", "松子", "平凡..", "cixin", "洗点", "秀色", "朱朱", "Twen", "大恐龙", ":luv:", "小左", "Blue°F", "怯修", "yezeen", "鹑", "枫香°", "没问题啊", "·蓝蓝蓝蓝", "临渊捕鱼", "?hook?", "放肆zero", "Q币", "洛天依", "spider", "贝塔塔塔", "见月", "咩子的银耳", "Cancer", "少女`", "长亭寂寞独自愁", "fantuan", "无言鱼", "胖人老许", "夏日", "张宁我儿", "拌饭", "shengyan", "修勾在修沟", "taffy", "杀意没爱意", "DYL", "小信", "哆啦梦", "菜菜羊", "吃了吗chilem", "你就是我的", "xiaopang", "星星🌙", "軽い猫", "oxyzo1", "笨蛋猫猫", "信息检索", "炭", "江江", "晚晚晚上好", "AAA乐土猫猫", "一個廢物", "黄花的忧伤"};
 				const float SponsorFontSize = maximum(LG_BodySize * 1.1f - SponsorFontShrink, MinSponsorFontSize);
 				const float MaxLineWidth = RightContent.w;
 				static std::vector<std::string> s_SponsorLines;
@@ -2568,8 +2565,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					return;
 
 				const bool MatchesSearch = !m_HasSearch ||
-					str_utf8_find_nocase(Entry.m_Key.c_str(), m_SearchText.c_str()) != nullptr ||
-					str_utf8_find_nocase(Entry.m_SearchKeywords.c_str(), m_SearchText.c_str()) != nullptr;
+							   str_utf8_find_nocase(Entry.m_Key.c_str(), m_SearchText.c_str()) != nullptr ||
+							   str_utf8_find_nocase(Entry.m_SearchKeywords.c_str(), m_SearchText.c_str()) != nullptr;
 				if(!MatchesSearch)
 					continue;
 
@@ -2753,7 +2750,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			s_pQmFunctionSnapshotResult.reset();
 
 		const bool HasFreshFunctionSnapshot = s_pQmFunctionSnapshotResult != nullptr &&
-			s_pQmFunctionSnapshotResult->m_Signature == FunctionSnapshotSignature;
+						      s_pQmFunctionSnapshotResult->m_Signature == FunctionSnapshotSignature;
 		if(!HasFreshFunctionSnapshot && s_QmFunctionSnapshotPendingSignature != FunctionSnapshotSignature)
 		{
 			if(s_pQmFunctionSnapshotJob != nullptr)
@@ -2888,8 +2885,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	}
 	const int VisibleFullModuleCount = static_cast<int>(VisibleFullModules.size());
 	const int VisibleModuleCount = HasModuleSearch ?
-		static_cast<int>(SearchVisibleModules.size()) + VisibleFullModuleCount :
-		static_cast<int>(VisibleLeftModules.size() + VisibleRightModules.size()) + VisibleFullModuleCount;
+					       static_cast<int>(SearchVisibleModules.size()) + VisibleFullModuleCount :
+					       static_cast<int>(VisibleLeftModules.size() + VisibleRightModules.size()) + VisibleFullModuleCount;
 	{
 		char aVisibleExtra[128];
 		str_format(aVisibleExtra, sizeof(aVisibleExtra), "tab=%s visible=%d search=%d left=%d right=%d full=%d pending=%d",
@@ -3720,7 +3717,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						// LLM API - 默认使用智谱AI预设
 						str_copy(g_Config.m_QmTranslateBackend, "llm", sizeof(g_Config.m_QmTranslateBackend));
 						// LLM API - 清空自定义端点，使用默认
-					str_copy(g_Config.m_QmTranslateLlmEndpointCustom, "", sizeof(g_Config.m_QmTranslateLlmEndpointCustom));
+						str_copy(g_Config.m_QmTranslateLlmEndpointCustom, "", sizeof(g_Config.m_QmTranslateLlmEndpointCustom));
 					}
 					else
 					{
@@ -3894,8 +3891,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Localize("智谱 AI"),
 						Localize("DeepSeek"),
 						Localize("OpenAI"),
-						Localize("自定义")
-					};
+						Localize("自定义")};
 					static CUi::SDropDownState s_LlmProviderDropDownState;
 					static CScrollRegion s_LlmProviderDropDownScrollRegion;
 					s_LlmProviderDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_LlmProviderDropDownScrollRegion;
@@ -4076,7 +4072,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						{
 							str_format(aBuf, sizeof(aBuf), Localize("手动并发数：%d"), EffectiveConcurrency);
 						}
-				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 						Row.VSplitLeft(LG_LabelWidth, nullptr, &ControlCol);
 						Ui()->DoLabel(&ControlCol, aBuf, LG_BodySize * 0.85f, TEXTALIGN_ML);
 					}
@@ -4217,7 +4213,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
 				Ui()->DoLabel(&LabelCol, Localize("Auto reply cooldown"), LG_BodySize, TEXTALIGN_ML);
 				static int s_QmAutoReplyCooldownInputId;
-					RenderSliderWithValueInput(&s_QmAutoReplyCooldownInputId, ControlCol, &g_Config.m_QmAutoReplyCooldown, 0, 30, "s");
+				RenderSliderWithValueInput(&s_QmAutoReplyCooldownInputId, ControlCol, &g_Config.m_QmAutoReplyCooldown, 0, 30, "s");
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 				auto SyncRuleRowsFromConfig = [](std::vector<std::unique_ptr<SAutoReplyRuleInputRow>> &vRows, bool &Inited, const char *pConfigRules) {
@@ -4606,7 +4602,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
 				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
 				HandleModuleDragState(pModule, s_GlassCards.back(), BlockPieMenuCardDrag);
-
 			}
 			break;
 			case EQmModuleId::CameraView:
@@ -4621,7 +4616,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				DoModuleHeadline(CardContent, 10, Localize("镜头与视野"), Localize("你想拍出怎样的大片"));
 				{
 					const float DriftSectionHeight = LG_LineHeight + LG_LineSpacing +
-						(g_Config.m_QmCameraDrift ? (LG_LineHeight + LG_LineSpacing) * 3.0f : 0.0f);
+									 (g_Config.m_QmCameraDrift ? (LG_LineHeight + LG_LineSpacing) * 3.0f : 0.0f);
 					if(IsModuleContentBlockVisible(CardContent, DriftSectionHeight))
 					{
 						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -4674,7 +4669,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						SkipModuleContentBlock(CardContent, DriftSectionHeight);
 
 					const float DynamicFovSectionHeight = LG_LineHeight + LG_LineSpacing +
-						(g_Config.m_QmDynamicFov ? (LG_LineHeight + LG_LineSpacing) * 2.0f : 0.0f);
+									      (g_Config.m_QmDynamicFov ? (LG_LineHeight + LG_LineSpacing) * 2.0f : 0.0f);
 					if(IsModuleContentBlockVisible(CardContent, DynamicFovSectionHeight))
 					{
 						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -4732,8 +4727,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					s_AspectPresetDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_AspectPresetDropDownScrollRegion;
 					const int CurrentPreset = std::clamp(g_Config.m_QmAspectPreset, 0, 6);
 					const float AspectSectionHeight = LG_LineHeight + LG_LineSpacing +
-						(g_Config.m_QmAspectPreset == 6 ? (LG_LineHeight + LG_LineSpacing) : 0.0f) +
-						LG_BodySize + LG_LineSpacing + LG_BodySize;
+									  (g_Config.m_QmAspectPreset == 6 ? (LG_LineHeight + LG_LineSpacing) : 0.0f) +
+									  LG_BodySize + LG_LineSpacing + LG_BodySize;
 					if(IsModuleContentBlockVisible(CardContent, AspectSectionHeight))
 					{
 						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -4836,11 +4831,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				CardContent.VSplitRight(LG_CardPadding, &CardContent, nullptr);
 				DoModuleHeadline(CardContent, 6, Localize("实体层颜色"), Localize("TeeWorlds的世界不会再出现挡人的实体层了"));
 
-					{
-						auto RenderOverlaySlider = [&](const void *pInputId, int *pValue, const char *pTitle) {
-							const float SliderHeight = LG_LineHeight + LG_LineSpacing;
-							if(IsModuleContentBlockVisible(CardContent, SliderHeight))
-							{
+				{
+					auto RenderOverlaySlider = [&](const void *pInputId, int *pValue, const char *pTitle) {
+						const float SliderHeight = LG_LineHeight + LG_LineSpacing;
+						if(IsModuleContentBlockVisible(CardContent, SliderHeight))
+						{
 							CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 							if(DeferQmVisualHeavyModules)
 							{
@@ -4850,36 +4845,36 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 							}
 							else
 							{
-									Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-									Ui()->DoLabel(&LabelCol, pTitle, LG_BodySize, TEXTALIGN_ML);
+								Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+								Ui()->DoLabel(&LabelCol, pTitle, LG_BodySize, TEXTALIGN_ML);
 
-									RenderSliderWithValueInput(pInputId, ControlCol, pValue, 0, 100, "%");
-								}
-								CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+								RenderSliderWithValueInput(pInputId, ControlCol, pValue, 0, 100, "%");
 							}
+							CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+						}
 						else
 							SkipModuleContentBlock(CardContent, SliderHeight);
 					};
 
-						static int s_QmEntityOverlayDeathAlphaInputId;
-						static int s_QmEntityOverlayFreezeAlphaInputId;
-						static int s_QmEntityOverlayUnfreezeAlphaInputId;
-						static int s_QmEntityOverlayDeepFreezeAlphaInputId;
-						static int s_QmEntityOverlayDeepUnfreezeAlphaInputId;
-						static int s_QmEntityOverlayTeleAlphaInputId;
-						static int s_QmEntityOverlayTeleCheckpointAlphaInputId;
-						static int s_QmEntityOverlaySwitchAlphaInputId;
-						static int s_ClOverlayEntitiesInputId;
-						RenderOverlaySlider(&s_QmEntityOverlayDeathAlphaInputId, &g_Config.m_QmEntityOverlayDeathAlpha, Localize("死亡不透明度"));
-						RenderOverlaySlider(&s_QmEntityOverlayFreezeAlphaInputId, &g_Config.m_QmEntityOverlayFreezeAlpha, Localize("冻结不透明度"));
-						RenderOverlaySlider(&s_QmEntityOverlayUnfreezeAlphaInputId, &g_Config.m_QmEntityOverlayUnfreezeAlpha, Localize("解冻不透明度"));
-						RenderOverlaySlider(&s_QmEntityOverlayDeepFreezeAlphaInputId, &g_Config.m_QmEntityOverlayDeepFreezeAlpha, Localize("深度冻结不透明度"));
-						RenderOverlaySlider(&s_QmEntityOverlayDeepUnfreezeAlphaInputId, &g_Config.m_QmEntityOverlayDeepUnfreezeAlpha, Localize("深度解冻不透明度"));
-						RenderOverlaySlider(&s_QmEntityOverlayTeleAlphaInputId, &g_Config.m_QmEntityOverlayTeleAlpha, Localize("传送不透明度"));
-						RenderOverlaySlider(&s_QmEntityOverlayTeleCheckpointAlphaInputId, &g_Config.m_QmEntityOverlayTeleCheckpointAlpha, Localize("CP点不透明度"));
-						RenderOverlaySlider(&s_QmEntityOverlaySwitchAlphaInputId, &g_Config.m_QmEntityOverlaySwitchAlpha, Localize("开关不透明度"));
-						RenderOverlaySlider(&s_ClOverlayEntitiesInputId, &g_Config.m_ClOverlayEntities, Localize("叠层不透明度"));
-					}
+					static int s_QmEntityOverlayDeathAlphaInputId;
+					static int s_QmEntityOverlayFreezeAlphaInputId;
+					static int s_QmEntityOverlayUnfreezeAlphaInputId;
+					static int s_QmEntityOverlayDeepFreezeAlphaInputId;
+					static int s_QmEntityOverlayDeepUnfreezeAlphaInputId;
+					static int s_QmEntityOverlayTeleAlphaInputId;
+					static int s_QmEntityOverlayTeleCheckpointAlphaInputId;
+					static int s_QmEntityOverlaySwitchAlphaInputId;
+					static int s_ClOverlayEntitiesInputId;
+					RenderOverlaySlider(&s_QmEntityOverlayDeathAlphaInputId, &g_Config.m_QmEntityOverlayDeathAlpha, Localize("死亡不透明度"));
+					RenderOverlaySlider(&s_QmEntityOverlayFreezeAlphaInputId, &g_Config.m_QmEntityOverlayFreezeAlpha, Localize("冻结不透明度"));
+					RenderOverlaySlider(&s_QmEntityOverlayUnfreezeAlphaInputId, &g_Config.m_QmEntityOverlayUnfreezeAlpha, Localize("解冻不透明度"));
+					RenderOverlaySlider(&s_QmEntityOverlayDeepFreezeAlphaInputId, &g_Config.m_QmEntityOverlayDeepFreezeAlpha, Localize("深度冻结不透明度"));
+					RenderOverlaySlider(&s_QmEntityOverlayDeepUnfreezeAlphaInputId, &g_Config.m_QmEntityOverlayDeepUnfreezeAlpha, Localize("深度解冻不透明度"));
+					RenderOverlaySlider(&s_QmEntityOverlayTeleAlphaInputId, &g_Config.m_QmEntityOverlayTeleAlpha, Localize("传送不透明度"));
+					RenderOverlaySlider(&s_QmEntityOverlayTeleCheckpointAlphaInputId, &g_Config.m_QmEntityOverlayTeleCheckpointAlpha, Localize("CP点不透明度"));
+					RenderOverlaySlider(&s_QmEntityOverlaySwitchAlphaInputId, &g_Config.m_QmEntityOverlaySwitchAlpha, Localize("开关不透明度"));
+					RenderOverlaySlider(&s_ClOverlayEntitiesInputId, &g_Config.m_ClOverlayEntities, Localize("叠层不透明度"));
+				}
 
 				CardContent.HSplitTop(LG_CardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;
@@ -5396,7 +5391,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			break;
 			case EQmModuleId::HJAssist:
 			{
-					// ========== 模块: HJ大佬辅助 ==========
+				// ========== 模块: HJ大佬辅助 ==========
 				Column.HSplitTop(LG_CardSpacing, nullptr, &Column);
 				CUIRect CardHJStart = Column;
 				s_GlassCards.push_back(CardHJStart);
@@ -5437,7 +5432,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
 				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
 				HandleModuleDragState(pModule, s_GlassCards.back());
-
 			}
 			break;
 			case EQmModuleId::SpeedrunTimer:
@@ -5567,7 +5561,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
 				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
 				HandleModuleDragState(pModule, s_GlassCards.back());
-
 			}
 			break;
 			case EQmModuleId::Voice:
@@ -6054,11 +6047,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 #endif
 							const char *pNoiseSuppressStrengthLabel = g_Config.m_QmVoiceNoiseSuppressEnable == 2 ?
 #if !defined(CONF_RNNOISE)
-								(RnnoiseFallbackActive ? Localize("回退后的简单降噪强度") : Localize("RNNoise 降噪强度")) :
+													  (RnnoiseFallbackActive ? Localize("回退后的简单降噪强度") : Localize("RNNoise 降噪强度")) :
 #else
-								Localize("RNNoise 降噪强度") :
+													  Localize("RNNoise 降噪强度") :
 #endif
-								Localize("简单降噪强度");
+													  Localize("简单降噪强度");
 							Ui()->DoLabel(&LabelColValue, pNoiseSuppressStrengthLabel, LG_BodySize, TEXTALIGN_ML);
 							static int s_QmVoiceNoiseSuppressStrengthInputId;
 							RenderSliderWithValueInput(&s_QmVoiceNoiseSuppressStrengthInputId, ControlColValue, &g_Config.m_QmVoiceNoiseSuppressStrength, 0, 100, "%");

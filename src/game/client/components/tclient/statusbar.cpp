@@ -12,17 +12,17 @@
 
 namespace
 {
-const char *ConnectionGradeLabel(EQmConnectionGrade Grade)
-{
-	switch(Grade)
+	const char *ConnectionGradeLabel(EQmConnectionGrade Grade)
 	{
-	case EQmConnectionGrade::NORMAL: return "正常";
-	case EQmConnectionGrade::ELEVATED: return "偏高";
-	case EQmConnectionGrade::SEVERE: return "严重";
-	case EQmConnectionGrade::DISCONNECTED: return "断开";
+		switch(Grade)
+		{
+		case EQmConnectionGrade::NORMAL: return "正常";
+		case EQmConnectionGrade::ELEVATED: return "偏高";
+		case EQmConnectionGrade::SEVERE: return "严重";
+		case EQmConnectionGrade::DISCONNECTED: return "断开";
+		}
+		return "断开";
 	}
-	return "断开";
-}
 }
 
 CStatusItem::CStatusItem(std::function<void()> Render, std::function<float()> Width, const char *pLetters, const char *pName, const char *pDisplayName, const char *pDesc, bool ShowLabel)

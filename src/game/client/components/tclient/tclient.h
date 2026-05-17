@@ -15,7 +15,6 @@
 
 #include <game/client/component.h>
 
-
 #include <deque>
 #include <set>
 #include <string>
@@ -29,22 +28,22 @@ class IJob;
 struct SPlayerStats
 {
 	// 存活时长统计
-	int m_TotalAliveTime = 0;      // 总存活时间（tick）
-	int m_MaxAliveTime = 0;        // 最大存活时间（tick）
-	int m_AliveCount = 0;          // 存活次数（用于计算平均）
-	int m_CurrentAliveStart = 0;   // 当前存活开始时间（tick）
-	bool m_IsAlive = false;        // 当前是否存活（未被freeze）
-	float m_FreezeX = 0.0f;        // 被冻结时的X位置
-	float m_FreezeY = 0.0f;        // 被冻结时的Y位置
+	int m_TotalAliveTime = 0; // 总存活时间（tick）
+	int m_MaxAliveTime = 0; // 最大存活时间（tick）
+	int m_AliveCount = 0; // 存活次数（用于计算平均）
+	int m_CurrentAliveStart = 0; // 当前存活开始时间（tick）
+	bool m_IsAlive = false; // 当前是否存活（未被freeze）
+	float m_FreezeX = 0.0f; // 被冻结时的X位置
+	float m_FreezeY = 0.0f; // 被冻结时的Y位置
 
 	// 被救/落水统计
-	int m_RescueCount = 0;         // 被救醒次数（被别人解冻）
-	int m_FreezeCount = 0;         // 落水次数（自己被冻结）
+	int m_RescueCount = 0; // 被救醒次数（被别人解冻）
+	int m_FreezeCount = 0; // 落水次数（自己被冻结）
 
 	// 出钩统计
-	int m_HookLeftCount = 0;       // 向左出钩次数
-	int m_HookRightCount = 0;      // 向右出钩次数
-	bool m_WasHooking = false;     // 上一帧是否在出钩
+	int m_HookLeftCount = 0; // 向左出钩次数
+	int m_HookRightCount = 0; // 向右出钩次数
+	bool m_WasHooking = false; // 上一帧是否在出钩
 
 	void Reset()
 	{
@@ -258,7 +257,7 @@ class CTClient : public CComponent
 	static void ConSaveList(IConsole::IResult *pResult, void *pUserData);
 
 	// 复读功能
-	char m_aLastChatMessage[2048] = "";  // 最新一条公屏消息
+	char m_aLastChatMessage[2048] = ""; // 最新一条公屏消息
 	int64_t m_LastRepeatTime = 0; // 上次发送复读时间
 	int64_t m_LastRepeatKeyPressTime = 0; // 上次按下复读按键时间
 	bool m_RepeatKeyDown = false; // 仅在按下沿计次，避免长按触发双击
@@ -439,7 +438,6 @@ public:
 	bool m_AxiomDummyWasConnected = false;
 	char m_aAxiomDummyAutoLoginServer[NETADDR_MAXSTRSIZE] = "";
 	void ApplyGoresFastInputLink();
-
 };
 
 #endif

@@ -1,14 +1,14 @@
 #ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_TRANSLATE_H
 #define GAME_CLIENT_COMPONENTS_QMCLIENT_TRANSLATE_H
 
+#include "translate_parse.h"
+
 #include <game/client/component.h>
 #include <game/client/components/chat.h>
 
 #include <memory>
 #include <optional>
 #include <vector>
-
-#include "translate_parse.h"
 
 class CTranslate;
 

@@ -17,8 +17,8 @@
 #include <generated/protocol.h>
 #include <generated/protocol7.h>
 
-#include <functional>
 #include <chrono>
+#include <functional>
 #include <optional>
 
 #define CONNECTLINK_DOUBLE_SLASH "ddnet://"

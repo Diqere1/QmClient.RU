@@ -1,16 +1,16 @@
 #ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_CORE_H
 #define GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_CORE_H
 
+#include "voice_utils.h"
+
 #include <base/lock.h>
 #include <base/system.h>
 #include <base/types.h>
 #include <base/vmath.h>
 
-#include <SDL_audio.h>
-
 #include <engine/shared/protocol.h>
 
-#include "voice_utils.h"
+#include <SDL_audio.h>
 
 #include <array>
 #include <atomic>

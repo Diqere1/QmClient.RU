@@ -10,35 +10,35 @@
 namespace
 {
 
-const json_value *JsonObjectField(const json_value *pObject, const char *pName)
-{
-	if(!pObject || pObject->type != json_object)
-		return &json_value_none;
-	return json_object_get(pObject, pName);
-}
+	const json_value *JsonObjectField(const json_value *pObject, const char *pName)
+	{
+		if(!pObject || pObject->type != json_object)
+			return &json_value_none;
+		return json_object_get(pObject, pName);
+	}
 
-bool JsonReadBoolean(const json_value *pValue, bool &OutValue)
-{
-	if(!pValue)
+	bool JsonReadBoolean(const json_value *pValue, bool &OutValue)
+	{
+		if(!pValue)
+			return false;
+
+		if(pValue->type == json_boolean)
+		{
+			OutValue = json_boolean_get(pValue) != 0;
+			return true;
+		}
+		if(pValue->type == json_integer)
+		{
+			OutValue = pValue->u.integer != 0;
+			return true;
+		}
+		if(pValue->type == json_double)
+		{
+			OutValue = pValue->u.dbl != 0.0;
+			return true;
+		}
 		return false;
-
-	if(pValue->type == json_boolean)
-	{
-		OutValue = json_boolean_get(pValue) != 0;
-		return true;
 	}
-	if(pValue->type == json_integer)
-	{
-		OutValue = pValue->u.integer != 0;
-		return true;
-	}
-	if(pValue->type == json_double)
-	{
-		OutValue = pValue->u.dbl != 0.0;
-		return true;
-	}
-	return false;
-}
 
 }
 

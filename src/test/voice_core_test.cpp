@@ -1,15 +1,17 @@
 #define CONF_TEST 1
 #include "test.h"
 
+#include <base/str.h>
+#include <base/system.h>
+#include <base/vmath.h>
+
+#include <engine/shared/config.h>
+#include <engine/shared/json.h>
+
+#include <game/client/components/qmclient/qmclient_utils.h>
 #include <game/client/components/qmclient/voice_capture_pipeline.h>
 #include <game/client/components/qmclient/voice_core.h>
 #include <game/client/components/qmclient/voice_utils.h>
-#include <game/client/components/qmclient/qmclient_utils.h>
-#include <base/system.h>
-#include <base/vmath.h>
-#include <base/str.h>
-#include <engine/shared/config.h>
-#include <engine/shared/json.h>
 
 #include <gtest/gtest.h>
 
@@ -26,7 +28,7 @@ using namespace VoiceUtils;
 
 namespace VoiceUtils
 {
-int ResolveNoiseSuppressMode(int ConfigValue, bool RnnoiseRuntimeAvailable, bool *pFallbackUsed);
+	int ResolveNoiseSuppressMode(int ConfigValue, bool RnnoiseRuntimeAvailable, bool *pFallbackUsed);
 }
 
 static constexpr int TEST_VOICE_NOISE_SUPPRESS_OFF = 0;
@@ -142,16 +144,35 @@ TEST(VoiceUtils, WriteVoicePacketHeaderMatchesExactAudioVector)
 	ASSERT_TRUE(WriteVoicePacketHeader(aBuf, sizeof(aBuf), Header));
 
 	const uint8_t aExpected[VOICE_PACKET_HEADER_SIZE] = {
-		'R', 'V', '0', '1',
-		0x03, 0x01,
-		0x34, 0x12,
-		0x12, 0x34, 0x56, 0x78,
-		0xAA, 0xBB, 0xCC, 0xDD,
+		'R',
+		'V',
+		'0',
+		'1',
 		0x03,
-		0x44, 0x22,
-		0x88, 0x66,
-		0x00, 0x00, 0xC0, 0x3F,
-		0x00, 0x00, 0x10, 0xC0,
+		0x01,
+		0x34,
+		0x12,
+		0x12,
+		0x34,
+		0x56,
+		0x78,
+		0xAA,
+		0xBB,
+		0xCC,
+		0xDD,
+		0x03,
+		0x44,
+		0x22,
+		0x88,
+		0x66,
+		0x00,
+		0x00,
+		0xC0,
+		0x3F,
+		0x00,
+		0x00,
+		0x10,
+		0xC0,
 	};
 	EXPECT_EQ(mem_comp(aBuf, aExpected, sizeof(aExpected)), 0);
 }
@@ -174,16 +195,35 @@ TEST(VoiceUtils, WriteVoicePacketHeaderMatchesExactPingVector)
 	ASSERT_TRUE(WriteVoicePacketHeader(aBuf, sizeof(aBuf), Header));
 
 	const uint8_t aExpected[VOICE_PACKET_HEADER_SIZE] = {
-		'R', 'V', '0', '1',
-		0x07, 0x02,
-		0x00, 0x00,
-		0x04, 0x03, 0x02, 0x01,
-		0x00, 0x00, 0x00, 0x00,
+		'R',
+		'V',
+		'0',
+		'1',
+		0x07,
+		0x02,
 		0x00,
-		0x09, 0x00,
-		0x0A, 0x00,
-		0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00,
+		0x00,
+		0x04,
+		0x03,
+		0x02,
+		0x01,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x09,
+		0x00,
+		0x0A,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
 	};
 	EXPECT_EQ(mem_comp(aBuf, aExpected, sizeof(aExpected)), 0);
 }
@@ -206,16 +246,35 @@ TEST(VoiceUtils, WriteVoicePacketHeaderMatchesExactPongVector)
 	ASSERT_TRUE(WriteVoicePacketHeader(aBuf, sizeof(aBuf), Header));
 
 	const uint8_t aExpected[VOICE_PACKET_HEADER_SIZE] = {
-		'R', 'V', '0', '1',
-		0x05, 0x03,
-		0x04, 0x00,
-		0x11, 0x22, 0x33, 0x44,
-		0x01, 0x02, 0x03, 0x04,
+		'R',
+		'V',
+		'0',
+		'1',
+		0x05,
+		0x03,
+		0x04,
+		0x00,
+		0x11,
+		0x22,
+		0x33,
+		0x44,
+		0x01,
 		0x02,
-		0x34, 0x12,
-		0xCD, 0xAB,
-		0x00, 0x00, 0x60, 0xC0,
-		0x00, 0x00, 0x14, 0x41,
+		0x03,
+		0x04,
+		0x02,
+		0x34,
+		0x12,
+		0xCD,
+		0xAB,
+		0x00,
+		0x00,
+		0x60,
+		0xC0,
+		0x00,
+		0x00,
+		0x14,
+		0x41,
 	};
 	EXPECT_EQ(mem_comp(aBuf, aExpected, sizeof(aExpected)), 0);
 }

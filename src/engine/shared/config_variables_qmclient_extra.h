@@ -110,8 +110,8 @@ MACRO_CONFIG_INT(QmTranslateAuto, qm_translate_auto, 0, 0, 1, CFGFLAG_CLIENT | C
 MACRO_CONFIG_INT(QmTranslateLocalDetectMinChars, qm_translate_local_detect_min_chars, 2, 1, 12, CFGFLAG_CLIENT | CFGFLAG_SAVE, "本地目标语言识别最小字符数")
 MACRO_CONFIG_INT(QmTranslateLocalDetectRatio, qm_translate_local_detect_ratio, 75, 50, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "本地目标语言识别占比阈值")
 MACRO_CONFIG_INT(QmTranslateFtapiAutoEnable, qm_translate_ftapi_auto_enable, 0, 0, 1,
-    CFGFLAG_CLIENT | CFGFLAG_SAVE,
-    "允许 FTAPI 自动翻译（可能导致过载）")
+	CFGFLAG_CLIENT | CFGFLAG_SAVE,
+	"允许 FTAPI 自动翻译（可能导致过载）")
 
 // Translate - LLM API (OpenAI 兼容，默认智谱AI预设)
 MACRO_CONFIG_INT(QmTranslateLlmProvider, qm_translate_llm_provider, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "LLM Provider (0=ZhipuAI, 1=DeepSeek, 2=OpenAI, 3=Custom)")
@@ -136,8 +136,8 @@ MACRO_CONFIG_STR(QmTranslateLlmKeyCustom, qm_translate_llm_key_custom, 256, "", 
 
 MACRO_CONFIG_INT(QmTranslateLlmConcurrency, qm_translate_llm_concurrency, 0, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "LLM 翻译并发数（0=自动）")
 MACRO_CONFIG_INT(QmTranslateLlmConcurrencyDefault, qm_translate_llm_concurrency_default, 3, 1, 20,
-    CFGFLAG_CLIENT | CFGFLAG_SAVE,
-    "LLM 翻译默认并发数（智能调整）")
+	CFGFLAG_CLIENT | CFGFLAG_SAVE,
+	"LLM 翻译默认并发数（智能调整）")
 MACRO_CONFIG_INT(QmTranslateLlmEnableThinking, qm_translate_llm_enable_thinking, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用 LLM 思考模式（可能增加响应时间）")
 MACRO_CONFIG_STR(QmTranslateSystemPrompt, qm_translate_system_prompt, 512, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "自定义翻译提示词（覆盖内置提示词）")
 

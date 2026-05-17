@@ -1,11 +1,12 @@
 #include "voice_core.h"
-#include "voice_capture_pipeline.h"
+
 #include "qmclient.h"
+#include "voice_capture_pipeline.h"
 #include "voice_utils.h"
 
 #include <base/log.h>
-#include <base/system.h>
 #include <base/str.h>
+#include <base/system.h>
 #include <base/vmath.h>
 
 #include <engine/client.h>
@@ -350,23 +351,23 @@ bool CRClientVoice::EnsureAudio()
 	VoiceUtils::SVoiceAudioDeviceConfig RequestedAudioConfig;
 	GetRequestedAudioDeviceConfig(RequestedAudioConfig);
 
-		SDL_AudioSpec WantCapture = {};
-		WantCapture.freq = VOICE_SAMPLE_RATE;
-		WantCapture.format = AUDIO_S16;
-		WantCapture.channels = VOICE_CHANNELS;
-		WantCapture.samples = VOICE_FRAME_SAMPLES;
-		WantCapture.callback = nullptr;
+	SDL_AudioSpec WantCapture = {};
+	WantCapture.freq = VOICE_SAMPLE_RATE;
+	WantCapture.format = AUDIO_S16;
+	WantCapture.channels = VOICE_CHANNELS;
+	WantCapture.samples = VOICE_FRAME_SAMPLES;
+	WantCapture.callback = nullptr;
 
 	const bool WantStereo = RequestedAudioConfig.m_OutputStereo;
 	const int DesiredOutputChannels = VoiceUtils::VoiceDesiredOutputChannels(RequestedAudioConfig);
 
-		SDL_AudioSpec WantOutput = {};
-		WantOutput.freq = VOICE_SAMPLE_RATE;
-		WantOutput.format = AUDIO_S16;
-		WantOutput.channels = DesiredOutputChannels;
-		WantOutput.samples = VOICE_FRAME_SAMPLES;
-		WantOutput.callback = SDLAudioCallback;
-		WantOutput.userdata = this;
+	SDL_AudioSpec WantOutput = {};
+	WantOutput.freq = VOICE_SAMPLE_RATE;
+	WantOutput.format = AUDIO_S16;
+	WantOutput.channels = DesiredOutputChannels;
+	WantOutput.samples = VOICE_FRAME_SAMPLES;
+	WantOutput.callback = SDLAudioCallback;
+	WantOutput.userdata = this;
 
 	const bool BackendChanged = str_comp(m_aAudioBackend, RequestedAudioConfig.m_aBackend) != 0;
 	if(BackendChanged)
@@ -634,60 +635,60 @@ bool CRClientVoice::EnsureAudio()
 		else
 #endif
 		{
-		const bool InputMissing = RequestedAudioConfig.m_aInputDevice[0] != '\0' && pInputName == nullptr;
-		const bool NoCaptureDevices = SDL_GetNumAudioDevices(1) <= 0;
+			const bool InputMissing = RequestedAudioConfig.m_aInputDevice[0] != '\0' && pInputName == nullptr;
+			const bool NoCaptureDevices = SDL_GetNumAudioDevices(1) <= 0;
 
-		if(InputMissing)
-		{
-			if(!m_CaptureUnavailable.load())
-			{
-				char aError[256];
-				str_format(aError, sizeof(aError), "Input device not found: '%s'", RequestedAudioConfig.m_aInputDevice);
-				LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
-			}
-			m_CaptureReady.store(false);
-			m_CaptureUnavailable = true;
-		}
-		else if(NoCaptureDevices)
-		{
-			if(!m_CaptureUnavailable.load())
-				LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), "No capture devices available");
-			m_CaptureReady.store(false);
-			m_CaptureUnavailable = true;
-		}
-		else
-		{
-			log_info("voice", "attempting to open capture device '%s'", pInputName ? pInputName : "<default>");
-			m_CaptureDevice = SDL_OpenAudioDevice(pInputName, 1, &WantCapture, &m_CaptureSpec, 0);
-			if(!m_CaptureDevice)
+			if(InputMissing)
 			{
 				if(!m_CaptureUnavailable.load())
 				{
 					char aError[256];
-					str_format(aError, sizeof(aError), "Failed to open capture device: %s", SDL_GetError());
+					str_format(aError, sizeof(aError), "Input device not found: '%s'", RequestedAudioConfig.m_aInputDevice);
 					LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
 				}
 				m_CaptureReady.store(false);
 				m_CaptureUnavailable = true;
 			}
+			else if(NoCaptureDevices)
+			{
+				if(!m_CaptureUnavailable.load())
+					LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), "No capture devices available");
+				m_CaptureReady.store(false);
+				m_CaptureUnavailable = true;
+			}
 			else
 			{
-				log_info("voice", "capture device opened '%s' %dch@%d",
-					pInputName ? pInputName : "<default>",
-					m_CaptureSpec.channels,
-					m_CaptureSpec.freq);
+				log_info("voice", "attempting to open capture device '%s'", pInputName ? pInputName : "<default>");
+				m_CaptureDevice = SDL_OpenAudioDevice(pInputName, 1, &WantCapture, &m_CaptureSpec, 0);
+				if(!m_CaptureDevice)
 				{
-					const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
-					if(pInputName && pInputName[0] != '\0')
-						str_copy(m_aResolvedInputDeviceName, pInputName, sizeof(m_aResolvedInputDeviceName));
-					else
-						m_aResolvedInputDeviceName[0] = '\0';
+					if(!m_CaptureUnavailable.load())
+					{
+						char aError[256];
+						str_format(aError, sizeof(aError), "Failed to open capture device: %s", SDL_GetError());
+						LogDiagnosticErrorOnce(m_aAudioErrorLog, sizeof(m_aAudioErrorLog), aError);
+					}
+					m_CaptureReady.store(false);
+					m_CaptureUnavailable = true;
 				}
-				SDL_PauseAudioDevice(m_CaptureDevice, 0);
-				m_CaptureReady.store(true);
-				m_CaptureUnavailable = false;
+				else
+				{
+					log_info("voice", "capture device opened '%s' %dch@%d",
+						pInputName ? pInputName : "<default>",
+						m_CaptureSpec.channels,
+						m_CaptureSpec.freq);
+					{
+						const CLockScope DeviceRouteGuard(m_DeviceRouteMutex);
+						if(pInputName && pInputName[0] != '\0')
+							str_copy(m_aResolvedInputDeviceName, pInputName, sizeof(m_aResolvedInputDeviceName));
+						else
+							m_aResolvedInputDeviceName[0] = '\0';
+					}
+					SDL_PauseAudioDevice(m_CaptureDevice, 0);
+					m_CaptureReady.store(true);
+					m_CaptureUnavailable = false;
+				}
 			}
-		}
 		}
 	}
 	else
@@ -985,8 +986,8 @@ void CRClientVoice::ExportOverlayState(CVoiceOverlayState &Overlay) const NO_THR
 		}
 
 		const float Level = IsLocalSpeaker ?
-			(LocalTxActive ? m_MicLevel.load() : 0.0f) :
-			m_aSpeakerLevel[ClientId].load();
+					    (LocalTxActive ? m_MicLevel.load() : 0.0f) :
+					    m_aSpeakerLevel[ClientId].load();
 		Overlay.NoteSpeaker(ClientId, aaClientNames[ClientId].data(), IsLocalSpeaker, LastSeen, Level);
 	}
 }
@@ -1333,13 +1334,13 @@ void CRClientVoice::ResetTransmitState(bool ClearQueuedCapture) NO_THREAD_SAFETY
 bool CRClientVoice::HasConnectionRuntimeState() const
 {
 	return m_PingMs.load() >= 0 ||
-		m_LastTxPacketTime.load() > 0 ||
-		m_LastRxPacketTime.load() > 0 ||
-		m_LastMediaRxPacketTime.load() > 0 ||
-		m_LastPingSentTime != 0 ||
-		m_LastPingSeq != 0 ||
-		m_LastTokenHashSent != 0 ||
-		m_TxWasActive.load();
+	       m_LastTxPacketTime.load() > 0 ||
+	       m_LastRxPacketTime.load() > 0 ||
+	       m_LastMediaRxPacketTime.load() > 0 ||
+	       m_LastPingSentTime != 0 ||
+	       m_LastPingSeq != 0 ||
+	       m_LastTokenHashSent != 0 ||
+	       m_TxWasActive.load();
 }
 
 bool CRClientVoice::HasPeerRuntimeState(uint32_t RoomTokenHash) const
@@ -1414,7 +1415,7 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 	Preconditions.m_MicMuted = MicMuted;
 
 	const uint32_t NetworkBlockers = VoiceUtils::VoiceTransmitBlockers(Preconditions) &
-		(VoiceUtils::VOICE_TX_BLOCK_SERVER_ADDR | VoiceUtils::VOICE_TX_BLOCK_SOCKET | VoiceUtils::VOICE_TX_BLOCK_ONLINE);
+					 (VoiceUtils::VOICE_TX_BLOCK_SERVER_ADDR | VoiceUtils::VOICE_TX_BLOCK_SOCKET | VoiceUtils::VOICE_TX_BLOCK_ONLINE);
 	if(NetworkBlockers != 0)
 	{
 		ResetTransmitState(false);
@@ -1545,8 +1546,6 @@ void CRClientVoice::ProcessCapture() NO_THREAD_SAFETY_ANALYSIS
 		SDL_ClearQueuedAudio(m_CaptureDevice);
 		return;
 	}
-
-
 
 	const int ClientId = LocalClientId;
 	const vec2 Pos = LocalPos;
@@ -1693,8 +1692,6 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 	const int TestMode = std::clamp(Config.m_QmVoiceTestMode, 0, 2);
 	const bool TestServer = TestMode == 2;
 	const uint8_t ProtocolVersion = VoiceProtocolVersion(Config);
-
-
 
 	while(net_socket_read_wait(m_Socket, std::chrono::nanoseconds(0)) > 0)
 	{

@@ -1,4 +1,5 @@
 #include "qmclient.h"
+
 #include <base/hash.h>
 #include <base/lock.h>
 #include <base/log.h>
@@ -7,19 +8,19 @@
 
 #include <engine/client.h>
 #include <engine/client/enums.h>
+#include <engine/client/updater.h>
+#include <engine/engine.h>
 #include <engine/external/regex.h>
 #include <engine/external/tinyexpr.h>
 #include <engine/friends.h>
 #include <engine/graphics.h>
 #include <engine/keys.h>
+#include <engine/map.h>
 #include <engine/serverbrowser.h>
-#include <engine/engine.h>
 #include <engine/shared/config.h>
+#include <engine/shared/jobs.h>
 #include <engine/shared/json.h>
 #include <engine/shared/jsonwriter.h>
-#include <engine/shared/jobs.h>
-#include <engine/client/updater.h>
-#include <engine/map.h>
 #include <engine/storage.h>
 
 #include <generated/client_data.h>
@@ -31,8 +32,8 @@
 #include <game/client/render.h>
 #include <game/client/ui.h>
 #include <game/layers.h>
-#include <game/mapitems.h>
 #include <game/localization.h>
+#include <game/mapitems.h>
 #include <game/version.h>
 
 #include <algorithm>
@@ -167,299 +168,299 @@ static bool JsonReadNonNegativeInt64(const json_value *pValue, int64_t &OutValue
 
 namespace
 {
-enum class ETextPopupType
-{
-	FREEZE_WAKEUP = 0,
-	COMBO_AMAZING,
-	COMBO_FANTASTIC,
-	COMBO_UNBELIEVABLE,
-	COMBO_UNSTOPPABLE,
-	NUM_TYPES,
-};
-
-struct STextPopupDefinition
-{
-	const char *m_pText;
-};
-
-[[maybe_unused]] static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
-	{QMCLIENT_FREEZE_WAKEUP_TEXT},
-	{"Amazing!"},
-	{"Fantastic!"},
-	{"Unbelievable!"},
-	{"Unstoppable!"},
-}};
-
-class CQmClientUsersParseJob : public IJob
-{
-public:
-	using SResult = SQmClientUsersParseResult;
-
-private:
-	std::shared_ptr<CHttpRequest> m_pTask;
-	char m_aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	int64_t m_ExpireTick = 0;
-	CLock m_Lock;
-	SResult m_Result;
-
-	void Run() override REQUIRES(!m_Lock)
+	enum class ETextPopupType
 	{
-		SResult Result;
-		if(m_pTask && m_pTask->State() == EHttpState::DONE)
-		{
-			json_value *pRoot = m_pTask->ResultJson();
-			if(pRoot != nullptr)
-			{
-				ParseQmClientUsersJson(pRoot, m_aServerAddress, Result);
-				json_value_free(pRoot);
-			}
-		}
-
-		{
-			const CLockScope Lock(m_Lock);
-			m_Result = std::move(Result);
-		}
-		m_pTask = nullptr;
-	}
-
-public:
-	CQmClientUsersParseJob(std::shared_ptr<CHttpRequest> pTask, const char *pServerAddress, int64_t ExpireTick) :
-		m_pTask(std::move(pTask)),
-		m_ExpireTick(ExpireTick)
-	{
-		str_copy(m_aServerAddress, pServerAddress, sizeof(m_aServerAddress));
-	}
-
-	SResult TakeResult() REQUIRES(!m_Lock)
-	{
-		const CLockScope Lock(m_Lock);
-		SResult Result = std::move(m_Result);
-		m_Result = SResult();
-		return Result;
-	}
-
-	int64_t ExpireTick() const { return m_ExpireTick; }
-};
-
-class CQmDdnetPlayerStatsParseJob : public IJob
-{
-public:
-	struct SResult
-	{
-		bool m_Parsed = false;
-		std::string m_FavoritePartner;
-		int m_TotalFinishes = -1;
+		FREEZE_WAKEUP = 0,
+		COMBO_AMAZING,
+		COMBO_FANTASTIC,
+		COMBO_UNBELIEVABLE,
+		COMBO_UNSTOPPABLE,
+		NUM_TYPES,
 	};
 
-private:
-	std::shared_ptr<CHttpRequest> m_pTask;
-	CLock m_Lock;
-	SResult m_Result;
-
-	void Run() override REQUIRES(!m_Lock)
+	struct STextPopupDefinition
 	{
-		SResult Result;
-		if(m_pTask && m_pTask->State() == EHttpState::DONE && m_pTask->StatusCode() == 200)
+		const char *m_pText;
+	};
+
+	[[maybe_unused]] static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
+		{QMCLIENT_FREEZE_WAKEUP_TEXT},
+		{"Amazing!"},
+		{"Fantastic!"},
+		{"Unbelievable!"},
+		{"Unstoppable!"},
+	}};
+
+	class CQmClientUsersParseJob : public IJob
+	{
+	public:
+		using SResult = SQmClientUsersParseResult;
+
+	private:
+		std::shared_ptr<CHttpRequest> m_pTask;
+		char m_aServerAddress[NETADDR_MAXSTRSIZE] = "";
+		int64_t m_ExpireTick = 0;
+		CLock m_Lock;
+		SResult m_Result;
+
+		void Run() override REQUIRES(!m_Lock)
 		{
-			json_value *pRoot = m_pTask->ResultJson();
-			if(pRoot && pRoot->type == json_object)
+			SResult Result;
+			if(m_pTask && m_pTask->State() == EHttpState::DONE)
 			{
-				const json_value *pFavoritePartners = JsonObjectField(pRoot, "favorite_partners");
-				if(pFavoritePartners->type == json_array)
+				json_value *pRoot = m_pTask->ResultJson();
+				if(pRoot != nullptr)
 				{
-					const char *pBestPartner = nullptr;
-					int BestPartnerFinishes = -1;
-					for(unsigned i = 0; i < pFavoritePartners->u.array.length; ++i)
-					{
-						const json_value &Partner = (*pFavoritePartners)[i];
-						if(Partner.type != json_object)
-							continue;
-
-						const json_value *pName = JsonObjectField(&Partner, "name");
-						if(pName->type != json_string)
-							continue;
-
-						const char *pPartnerName = json_string_get(pName);
-						if(!pPartnerName || pPartnerName[0] == '\0')
-							continue;
-
-						int PartnerFinishes = 0;
-						const json_value *pFinishes = JsonObjectField(&Partner, "finishes");
-						if(pFinishes->type == json_integer && pFinishes->u.integer > 0)
-						{
-							if(pFinishes->u.integer > std::numeric_limits<int>::max())
-								PartnerFinishes = std::numeric_limits<int>::max();
-							else
-								PartnerFinishes = (int)pFinishes->u.integer;
-						}
-
-						if(!pBestPartner ||
-							PartnerFinishes > BestPartnerFinishes ||
-							(PartnerFinishes == BestPartnerFinishes && str_comp_nocase(pPartnerName, pBestPartner) < 0))
-						{
-							pBestPartner = pPartnerName;
-							BestPartnerFinishes = PartnerFinishes;
-						}
-					}
-
-					if(pBestPartner)
-						Result.m_FavoritePartner = pBestPartner;
+					ParseQmClientUsersJson(pRoot, m_aServerAddress, Result);
+					json_value_free(pRoot);
 				}
-
-				const json_value *pTypes = JsonObjectField(pRoot, "types");
-				if(pTypes->type == json_object)
-				{
-					Result.m_Parsed = true;
-					int64_t TotalFinishes = 0;
-					for(unsigned i = 0; i < pTypes->u.object.length; ++i)
-					{
-						const json_value *pTypeObj = pTypes->u.object.values[i].value;
-						if(!pTypeObj || pTypeObj->type != json_object)
-							continue;
-
-						const json_value *pMaps = JsonObjectField(pTypeObj, "maps");
-						if(pMaps->type != json_object)
-							continue;
-
-						for(unsigned j = 0; j < pMaps->u.object.length; ++j)
-						{
-							const json_value *pMapObj = pMaps->u.object.values[j].value;
-							if(!pMapObj || pMapObj->type != json_object)
-								continue;
-
-							const json_value *pFinishes = JsonObjectField(pMapObj, "finishes");
-							if(pFinishes->type != json_integer || pFinishes->u.integer <= 0 || TotalFinishes >= std::numeric_limits<int>::max())
-								continue;
-
-							int64_t SafeAdd = pFinishes->u.integer;
-							if(SafeAdd > std::numeric_limits<int>::max())
-								SafeAdd = std::numeric_limits<int>::max();
-
-							const int64_t MaxTotal = std::numeric_limits<int>::max();
-							if(SafeAdd > MaxTotal - TotalFinishes)
-								TotalFinishes = MaxTotal;
-							else
-								TotalFinishes += SafeAdd;
-						}
-					}
-					Result.m_TotalFinishes = (int)TotalFinishes;
-				}
-				json_value_free(pRoot);
 			}
+
+			{
+				const CLockScope Lock(m_Lock);
+				m_Result = std::move(Result);
+			}
+			m_pTask = nullptr;
 		}
 
+	public:
+		CQmClientUsersParseJob(std::shared_ptr<CHttpRequest> pTask, const char *pServerAddress, int64_t ExpireTick) :
+			m_pTask(std::move(pTask)),
+			m_ExpireTick(ExpireTick)
+		{
+			str_copy(m_aServerAddress, pServerAddress, sizeof(m_aServerAddress));
+		}
+
+		SResult TakeResult() REQUIRES(!m_Lock)
 		{
 			const CLockScope Lock(m_Lock);
-			m_Result = std::move(Result);
+			SResult Result = std::move(m_Result);
+			m_Result = SResult();
+			return Result;
 		}
-		m_pTask = nullptr;
-	}
 
-public:
-	explicit CQmDdnetPlayerStatsParseJob(std::shared_ptr<CHttpRequest> pTask) :
-		m_pTask(std::move(pTask))
+		int64_t ExpireTick() const { return m_ExpireTick; }
+	};
+
+	class CQmDdnetPlayerStatsParseJob : public IJob
 	{
-	}
-
-	SResult TakeResult() REQUIRES(!m_Lock)
-	{
-		const CLockScope Lock(m_Lock);
-		SResult Result = std::move(m_Result);
-		m_Result = SResult();
-		return Result;
-	}
-};
-
-class CQmClientLifecycleMarkerWriteJob : public IJob
-{
-	IStorage *m_pStorage = nullptr;
-	std::string m_Content;
-
-	void Run() override
-	{
-		if(m_pStorage == nullptr || State() == IJob::STATE_ABORTED)
-			return;
-
-		m_pStorage->CreateFolder("qmclient", IStorage::TYPE_SAVE);
-		IOHANDLE File = m_pStorage->OpenFile(QMCLIENT_LIFECYCLE_MARKER_FILE, IOFLAG_WRITE, IStorage::TYPE_SAVE);
-		if(!File)
-			return;
-		if(State() == IJob::STATE_ABORTED)
+	public:
+		struct SResult
 		{
-			io_close(File);
-			return;
+			bool m_Parsed = false;
+			std::string m_FavoritePartner;
+			int m_TotalFinishes = -1;
+		};
+
+	private:
+		std::shared_ptr<CHttpRequest> m_pTask;
+		CLock m_Lock;
+		SResult m_Result;
+
+		void Run() override REQUIRES(!m_Lock)
+		{
+			SResult Result;
+			if(m_pTask && m_pTask->State() == EHttpState::DONE && m_pTask->StatusCode() == 200)
+			{
+				json_value *pRoot = m_pTask->ResultJson();
+				if(pRoot && pRoot->type == json_object)
+				{
+					const json_value *pFavoritePartners = JsonObjectField(pRoot, "favorite_partners");
+					if(pFavoritePartners->type == json_array)
+					{
+						const char *pBestPartner = nullptr;
+						int BestPartnerFinishes = -1;
+						for(unsigned i = 0; i < pFavoritePartners->u.array.length; ++i)
+						{
+							const json_value &Partner = (*pFavoritePartners)[i];
+							if(Partner.type != json_object)
+								continue;
+
+							const json_value *pName = JsonObjectField(&Partner, "name");
+							if(pName->type != json_string)
+								continue;
+
+							const char *pPartnerName = json_string_get(pName);
+							if(!pPartnerName || pPartnerName[0] == '\0')
+								continue;
+
+							int PartnerFinishes = 0;
+							const json_value *pFinishes = JsonObjectField(&Partner, "finishes");
+							if(pFinishes->type == json_integer && pFinishes->u.integer > 0)
+							{
+								if(pFinishes->u.integer > std::numeric_limits<int>::max())
+									PartnerFinishes = std::numeric_limits<int>::max();
+								else
+									PartnerFinishes = (int)pFinishes->u.integer;
+							}
+
+							if(!pBestPartner ||
+								PartnerFinishes > BestPartnerFinishes ||
+								(PartnerFinishes == BestPartnerFinishes && str_comp_nocase(pPartnerName, pBestPartner) < 0))
+							{
+								pBestPartner = pPartnerName;
+								BestPartnerFinishes = PartnerFinishes;
+							}
+						}
+
+						if(pBestPartner)
+							Result.m_FavoritePartner = pBestPartner;
+					}
+
+					const json_value *pTypes = JsonObjectField(pRoot, "types");
+					if(pTypes->type == json_object)
+					{
+						Result.m_Parsed = true;
+						int64_t TotalFinishes = 0;
+						for(unsigned i = 0; i < pTypes->u.object.length; ++i)
+						{
+							const json_value *pTypeObj = pTypes->u.object.values[i].value;
+							if(!pTypeObj || pTypeObj->type != json_object)
+								continue;
+
+							const json_value *pMaps = JsonObjectField(pTypeObj, "maps");
+							if(pMaps->type != json_object)
+								continue;
+
+							for(unsigned j = 0; j < pMaps->u.object.length; ++j)
+							{
+								const json_value *pMapObj = pMaps->u.object.values[j].value;
+								if(!pMapObj || pMapObj->type != json_object)
+									continue;
+
+								const json_value *pFinishes = JsonObjectField(pMapObj, "finishes");
+								if(pFinishes->type != json_integer || pFinishes->u.integer <= 0 || TotalFinishes >= std::numeric_limits<int>::max())
+									continue;
+
+								int64_t SafeAdd = pFinishes->u.integer;
+								if(SafeAdd > std::numeric_limits<int>::max())
+									SafeAdd = std::numeric_limits<int>::max();
+
+								const int64_t MaxTotal = std::numeric_limits<int>::max();
+								if(SafeAdd > MaxTotal - TotalFinishes)
+									TotalFinishes = MaxTotal;
+								else
+									TotalFinishes += SafeAdd;
+							}
+						}
+						Result.m_TotalFinishes = (int)TotalFinishes;
+					}
+					json_value_free(pRoot);
+				}
+			}
+
+			{
+				const CLockScope Lock(m_Lock);
+				m_Result = std::move(Result);
+			}
+			m_pTask = nullptr;
 		}
 
-		io_write(File, m_Content.data(), m_Content.size());
-		io_close(File);
-	}
+	public:
+		explicit CQmDdnetPlayerStatsParseJob(std::shared_ptr<CHttpRequest> pTask) :
+			m_pTask(std::move(pTask))
+		{
+		}
 
-public:
-	CQmClientLifecycleMarkerWriteJob(IStorage *pStorage, std::string Content) :
-		m_pStorage(pStorage),
-		m_Content(std::move(Content))
+		SResult TakeResult() REQUIRES(!m_Lock)
+		{
+			const CLockScope Lock(m_Lock);
+			SResult Result = std::move(m_Result);
+			m_Result = SResult();
+			return Result;
+		}
+	};
+
+	class CQmClientLifecycleMarkerWriteJob : public IJob
 	{
-		Abortable(true);
-	}
-};
+		IStorage *m_pStorage = nullptr;
+		std::string m_Content;
 
-enum class EFreezeWakeupType
-{
-	NONE,
-	LOCAL_HAMMER,
-	EXTERNAL_HAMMER,
-};
+		void Run() override
+		{
+			if(m_pStorage == nullptr || State() == IJob::STATE_ABORTED)
+				return;
 
-[[maybe_unused]] int ComboPopupTextTypeFromCount(int ComboCount)
-{
-	switch(ComboCount)
+			m_pStorage->CreateFolder("qmclient", IStorage::TYPE_SAVE);
+			IOHANDLE File = m_pStorage->OpenFile(QMCLIENT_LIFECYCLE_MARKER_FILE, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+			if(!File)
+				return;
+			if(State() == IJob::STATE_ABORTED)
+			{
+				io_close(File);
+				return;
+			}
+
+			io_write(File, m_Content.data(), m_Content.size());
+			io_close(File);
+		}
+
+	public:
+		CQmClientLifecycleMarkerWriteJob(IStorage *pStorage, std::string Content) :
+			m_pStorage(pStorage),
+			m_Content(std::move(Content))
+		{
+			Abortable(true);
+		}
+	};
+
+	enum class EFreezeWakeupType
 	{
-	case 2: return (int)ETextPopupType::COMBO_AMAZING;
-	case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
-	case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
-	default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
-	}
-}
+		NONE,
+		LOCAL_HAMMER,
+		EXTERNAL_HAMMER,
+	};
 
-bool IsComboPopupTextType(int TextType)
-{
-	return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
-		TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
-}
-
-[[maybe_unused]] float TextPopupDuration(int TextType)
-{
-	return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
-}
-
-[[maybe_unused]] EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
-{
-	const CCharacter *pPredictedChar = pGameClient->m_PredictedWorld.GetCharacterById(ClientId);
-	if(pPredictedChar == nullptr)
-		return EFreezeWakeupType::NONE;
-
-	const int LastDamageTick = pPredictedChar->GetLastDamageTick();
-	const int DamageTickDelta = pGameClient->m_PredictedWorld.GameTick() - LastDamageTick;
-	const int DamageTickWindow = maximum(2, pGameClient->m_PredictedWorld.GameTickSpeed() / 6);
-	const int DamageFrom = pPredictedChar->GetLastDamageFrom();
-	if(LastDamageTick <= 0 ||
-		DamageTickDelta < 0 ||
-		DamageTickDelta > DamageTickWindow ||
-		pPredictedChar->GetLastDamageWeapon() != WEAPON_HAMMER ||
-		DamageFrom < 0)
+	[[maybe_unused]] int ComboPopupTextTypeFromCount(int ComboCount)
 	{
-		return EFreezeWakeupType::NONE;
+		switch(ComboCount)
+		{
+		case 2: return (int)ETextPopupType::COMBO_AMAZING;
+		case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
+		case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
+		default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
+		}
 	}
 
-	if(DamageFrom == ClientId ||
-		DamageFrom == pGameClient->m_aLocalIds[0] ||
-		DamageFrom == pGameClient->m_aLocalIds[1])
+	bool IsComboPopupTextType(int TextType)
 	{
-		return EFreezeWakeupType::LOCAL_HAMMER;
+		return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
+		       TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
 	}
 
-	return EFreezeWakeupType::EXTERNAL_HAMMER;
-}
+	[[maybe_unused]] float TextPopupDuration(int TextType)
+	{
+		return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
+	}
+
+	[[maybe_unused]] EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
+	{
+		const CCharacter *pPredictedChar = pGameClient->m_PredictedWorld.GetCharacterById(ClientId);
+		if(pPredictedChar == nullptr)
+			return EFreezeWakeupType::NONE;
+
+		const int LastDamageTick = pPredictedChar->GetLastDamageTick();
+		const int DamageTickDelta = pGameClient->m_PredictedWorld.GameTick() - LastDamageTick;
+		const int DamageTickWindow = maximum(2, pGameClient->m_PredictedWorld.GameTickSpeed() / 6);
+		const int DamageFrom = pPredictedChar->GetLastDamageFrom();
+		if(LastDamageTick <= 0 ||
+			DamageTickDelta < 0 ||
+			DamageTickDelta > DamageTickWindow ||
+			pPredictedChar->GetLastDamageWeapon() != WEAPON_HAMMER ||
+			DamageFrom < 0)
+		{
+			return EFreezeWakeupType::NONE;
+		}
+
+		if(DamageFrom == ClientId ||
+			DamageFrom == pGameClient->m_aLocalIds[0] ||
+			DamageFrom == pGameClient->m_aLocalIds[1])
+		{
+			return EFreezeWakeupType::LOCAL_HAMMER;
+		}
+
+		return EFreezeWakeupType::EXTERNAL_HAMMER;
+	}
 }
 
 struct SKeywordReplyRule

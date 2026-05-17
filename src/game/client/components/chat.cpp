@@ -18,12 +18,12 @@
 
 #include <game/client/animstate.h>
 #include <game/client/components/censor.h>
-#include <game/client/components/qmclient/config_override.h>
 #include <game/client/components/message_gradient.h>
+#include <game/client/components/qmclient/colored_parts.h>
+#include <game/client/components/qmclient/config_override.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
-#include <game/client/components/qmclient/colored_parts.h>
 #include <game/client/gameclient.h>
 #include <game/localization.h>
 
@@ -406,9 +406,9 @@ CChat::CChat()
 			for(size_t i = 0; i < NumLetters; ++i)
 			{
 				if(Censor)
-				 ms_aDisplayText[i] = '*';
+					ms_aDisplayText[i] = '*';
 				else
-				 ms_aDisplayText[i] = pStr[i];
+					ms_aDisplayText[i] = pStr[i];
 				if(pStr[i] == ' ')
 				{
 					Censor = true;
@@ -1142,7 +1142,7 @@ bool CChat::OnInput(const IInput::CEvent &Event)
 				}
 
 				// add the name
-			 str_append(aBuf, pCompletionString);
+				str_append(aBuf, pCompletionString);
 
 				// add separator
 				const char *pSeparator = "";
@@ -2434,7 +2434,7 @@ void CChat::EnsureCoherentWidth() const
 static bool ShouldSyncTeamCommandToOther(const char *pLine)
 {
 	return g_Config.m_ClDummyCopyMoves &&
-		str_startswith(pLine, "/team ") != nullptr;
+	       str_startswith(pLine, "/team ") != nullptr;
 }
 
 void CChat::SendChat(int Team, const char *pLine)
@@ -2612,10 +2612,10 @@ void CChat::RenderTranslateButton(const CUIRect &InputRect)
 
 	TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH |
-				      ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING |
-				      ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING |
-				      ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT |
-				      ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
+				     ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING |
+				     ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING |
+				     ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT |
+				     ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
 	TextRender()->TextColor(1.0f, 1.0f, 1.0f, 0.95f);
 	Ui()->DoLabelStreamed(*m_TranslateButton.m_IconUiElement.Rect(0), &IconRect, FONT_ICON_LANGUAGE, IconSize, TEXTALIGN_MC);
 	TextRender()->SetRenderFlags(0);

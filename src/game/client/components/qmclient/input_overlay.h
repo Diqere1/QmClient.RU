@@ -7,10 +7,10 @@
 
 #include <game/client/component.h>
 
+#include <ctime>
 #include <optional>
 #include <string>
 #include <vector>
-#include <ctime>
 
 typedef struct _json_value json_value;
 

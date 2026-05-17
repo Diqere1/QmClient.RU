@@ -7,18 +7,18 @@ struct DenoiseState;
 
 namespace VoiceUtils
 {
-void ProcessVoiceCaptureFrame(
-	const SRClientVoiceConfigSnapshot &Config,
-	int16_t *pSamples,
-	int Count,
-	float &AgcGain,
-	float &NoiseFloor,
-	float &NoiseGate,
-	DenoiseState *&pNoiseState,
-	bool &NoiseFallbackLogged,
-	float &HpfPrevIn,
-	float &HpfPrevOut,
-	float &CompEnv);
+	void ProcessVoiceCaptureFrame(
+		const SRClientVoiceConfigSnapshot &Config,
+		int16_t *pSamples,
+		int Count,
+		float &AgcGain,
+		float &NoiseFloor,
+		float &NoiseGate,
+		DenoiseState *&pNoiseState,
+		bool &NoiseFallbackLogged,
+		float &HpfPrevIn,
+		float &HpfPrevOut,
+		float &CompEnv);
 }
 
 #endif

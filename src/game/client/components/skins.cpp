@@ -3,8 +3,6 @@
 
 #include "skins.h"
 
-#include <algorithm>
-
 #include <base/log.h>
 #include <base/math.h>
 #include <base/system.h>
@@ -22,6 +20,8 @@
 
 #include <game/client/gameclient.h>
 #include <game/localization.h>
+
+#include <algorithm>
 
 using namespace std::chrono_literals;
 

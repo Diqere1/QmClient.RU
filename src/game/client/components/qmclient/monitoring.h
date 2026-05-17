@@ -1,16 +1,16 @@
 #ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_MONITORING_H
 #define GAME_CLIENT_COMPONENTS_QMCLIENT_MONITORING_H
 
-#include <algorithm>
-#include <array>
-#include <chrono>
-#include <cmath>
-
 #include <base/system.h>
 #include <base/types.h>
 
 #include <game/client/component.h>
 #include <game/client/ui_rect.h>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
 
 enum class EQmConnectionGrade
 {

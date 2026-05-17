@@ -13,8 +13,6 @@
 #include <game/client/gameclient.h>
 #include <game/localization.h>
 
-
-
 class CScriptRunner : CComponentInterfaces
 {
 private:

@@ -1,15 +1,16 @@
 #ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_QMCLIENT_H
 #define GAME_CLIENT_COMPONENTS_QMCLIENT_QMCLIENT_H
 
+#include "qmclient_utils.h"
+
 #include <base/hash.h>
 
-#include <engine/shared/protocol.h>
 #include <engine/shared/http.h>
+#include <engine/shared/protocol.h>
+
 #include <game/client/component.h>
 
 #include <memory>
-
-#include "qmclient_utils.h"
 
 class IJob;
 

@@ -3760,7 +3760,7 @@ void CEditor::RenderLayers(CUIRect LayersBox)
 			bool Clicked;
 			bool Abrupted;
 			if(int Result = DoButton_DraggableEx(m_Map.m_vpGroups[g]->m_vpLayers[i].get(), aBuf, Checked, &Button, &Clicked, &Abrupted,
-			BUTTONFLAG_LEFT | BUTTONFLAG_RIGHT, "选择图层。按住 Shift 键以选择多个。", IGraphics::CORNER_R))
+				   BUTTONFLAG_LEFT | BUTTONFLAG_RIGHT, "选择图层。按住 Shift 键以选择多个。", IGraphics::CORNER_R))
 			{
 				if(s_Operation == OP_NONE)
 				{
@@ -4925,20 +4925,20 @@ public:
 		{
 		case ETimeUnit::MILLISECONDS:
 			if(Minutes != 0)
-		str_format(pBuffer, BufferSize, "%d:%02d.%03d分", Minutes, Seconds, Milliseconds);
+				str_format(pBuffer, BufferSize, "%d:%02d.%03d分", Minutes, Seconds, Milliseconds);
 			else if(Seconds != 0)
-		str_format(pBuffer, BufferSize, "%d.%03d秒", Seconds, Milliseconds);
+				str_format(pBuffer, BufferSize, "%d.%03d秒", Seconds, Milliseconds);
 			else
-		str_format(pBuffer, BufferSize, "%d毫秒", Milliseconds);
+				str_format(pBuffer, BufferSize, "%d毫秒", Milliseconds);
 			break;
 		case ETimeUnit::SECONDS:
 			if(Minutes != 0)
-		str_format(pBuffer, BufferSize, "%d:%02d分", Minutes, Seconds);
+				str_format(pBuffer, BufferSize, "%d:%02d分", Minutes, Seconds);
 			else
-		str_format(pBuffer, BufferSize, "%d秒", Seconds);
+				str_format(pBuffer, BufferSize, "%d秒", Seconds);
 			break;
 		case ETimeUnit::MINUTES:
-		str_format(pBuffer, BufferSize, "%d分", Minutes);
+			str_format(pBuffer, BufferSize, "%d分", Minutes);
 			break;
 		}
 	}
@@ -5597,14 +5597,14 @@ void CEditor::RenderEnvelopeEditor(CUIRect View)
 				CurveButton.w = CurveBar.h;
 				CurveButton.x -= CurveButton.w / 2.0f;
 				const void *pId = &pEnvelope->m_vPoints[i].m_Curvetype;
-static const char *const TYPE_NAMES[NUM_CURVETYPES] = {"阶", "线", "慢", "快", "滑", "贝"};
+				static const char *const TYPE_NAMES[NUM_CURVETYPES] = {"阶", "线", "慢", "快", "滑", "贝"};
 				const char *pTypeName = "!?";
 				if(0 <= pEnvelope->m_vPoints[i].m_Curvetype && pEnvelope->m_vPoints[i].m_Curvetype < (int)std::size(TYPE_NAMES))
 					pTypeName = TYPE_NAMES[pEnvelope->m_vPoints[i].m_Curvetype];
 
 				if(CurveButton.x >= View.x)
 				{
-	const int ButtonResult = DoButton_Editor(pId, pTypeName, 0, &CurveButton, BUTTONFLAG_LEFT | BUTTONFLAG_RIGHT, "切换曲线类型（阶=阶梯，线=线性，慢=慢入，快=快出，滑=平滑，贝=贝塞尔）。");
+					const int ButtonResult = DoButton_Editor(pId, pTypeName, 0, &CurveButton, BUTTONFLAG_LEFT | BUTTONFLAG_RIGHT, "切换曲线类型（阶=阶梯，线=线性，慢=慢入，快=快出，滑=平滑，贝=贝塞尔）。");
 					if(ButtonResult == 1)
 					{
 						const int PrevCurve = pEnvelope->m_vPoints[i].m_Curvetype;

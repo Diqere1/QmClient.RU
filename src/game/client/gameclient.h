@@ -29,6 +29,7 @@
 #include <game/teamscore.h>
 
 // components
+#include "QmUi/QmRt.h"
 #include "components/background.h"
 #include "components/binds.h"
 #include "components/broadcast.h"
@@ -45,8 +46,8 @@
 #include "components/flow.h"
 #include "components/freezebars.h"
 #include "components/ghost.h"
-#include "components/hud_editor.h"
 #include "components/hud.h"
+#include "components/hud_editor.h"
 #include "components/important_alert.h"
 #include "components/infomessages.h"
 #include "components/items.h"
@@ -57,12 +58,21 @@
 #include "components/mapsounds.h"
 #include "components/menu_background.h"
 #include "components/menus.h"
-#include "components/ui_effects.h"
 #include "components/motd.h"
 #include "components/nameplates.h"
 #include "components/particles.h"
-#include "components/players.h"
+#include "components/pie_menu.h"
 #include "components/player_points.h"
+#include "components/players.h"
+#include "components/qmclient/collision_hitbox.h"
+#include "components/qmclient/data_version.h"
+#include "components/qmclient/input_overlay.h"
+#include "components/qmclient/lyrics_component.h"
+#include "components/qmclient/monitoring.h"
+#include "components/qmclient/qmclient.h"
+#include "components/qmclient/scripting.h"
+#include "components/qmclient/translate.h"
+#include "components/qmclient/voice_component.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
 #include "components/skins.h"
@@ -74,33 +84,23 @@
 #include "components/tclient/bg_draw.h"
 #include "components/tclient/bindchat.h"
 #include "components/tclient/bindwheel.h"
-#include "components/qmclient/collision_hitbox.h"
-#include "components/qmclient/monitoring.h"
 #include "components/tclient/custom_communities.h"
-#include "components/qmclient/data_version.h"
 #include "components/tclient/fast_practice.h"
-#include "components/qmclient/input_overlay.h"
-#include "components/qmclient/lyrics_component.h"
-#include "components/qmclient/qmclient.h"
 #include "components/tclient/mod.h"
 #include "components/tclient/moving_tiles.h"
 #include "components/tclient/outlines.h"
 #include "components/tclient/pet.h"
 #include "components/tclient/player_indicator.h"
 #include "components/tclient/rainbow.h"
-#include "components/qmclient/scripting.h"
 #include "components/tclient/skinprofiles.h"
 #include "components/tclient/statusbar.h"
 #include "components/tclient/tclient.h"
 #include "components/tclient/trails.h"
-#include "components/qmclient/translate.h"
-#include "components/qmclient/voice_component.h"
 #include "components/tclient/warlist.h"
 #include "components/tooltips.h"
 #include "components/touch_controls.h"
+#include "components/ui_effects.h"
 #include "components/voting.h"
-#include "components/pie_menu.h"
-#include "QmUi/QmRt.h"
 
 #include <vector>
 
@@ -616,7 +616,7 @@ public:
 		float m_Uncertainty = 0.0f;
 		float m_VolleyBallAngle = 0.0f;
 		bool m_IsVolleyBall = false;
-	
+
 		// Chat bubble above player's head
 		char m_aChatBubbleText[256] = "";
 		int64_t m_ChatBubbleStartTick = 0;

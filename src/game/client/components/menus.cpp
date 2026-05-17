@@ -2,6 +2,7 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 
 #include "menus.h"
+
 #include "background.h"
 
 #include <base/color.h>
@@ -48,163 +49,163 @@ using namespace std::chrono_literals;
 
 namespace
 {
-constexpr float MENU_SWITCH_DURATION = 0.18f;
-constexpr float MENU_SWITCH_ALPHA_MAX = 0.12f;
-constexpr float MENU_TAB_HOVER_DURATION = 0.10f;
-constexpr float MENU_TAB_DEFAULT_X_OFFSET = 0.0f;
-constexpr float MENU_TAB_DEFAULT_Y_OFFSET = -1.5f;
-constexpr float MENU_TAB_DEFAULT_W_OFFSET = 0.0f;
-constexpr float MENU_TAB_DEFAULT_H_OFFSET = 3.0f;
-constexpr float MENU_TAB_ANIM_EPSILON = 0.0001f;
+	constexpr float MENU_SWITCH_DURATION = 0.18f;
+	constexpr float MENU_SWITCH_ALPHA_MAX = 0.12f;
+	constexpr float MENU_TAB_HOVER_DURATION = 0.10f;
+	constexpr float MENU_TAB_DEFAULT_X_OFFSET = 0.0f;
+	constexpr float MENU_TAB_DEFAULT_Y_OFFSET = -1.5f;
+	constexpr float MENU_TAB_DEFAULT_W_OFFSET = 0.0f;
+	constexpr float MENU_TAB_DEFAULT_H_OFFSET = 3.0f;
+	constexpr float MENU_TAB_ANIM_EPSILON = 0.0001f;
 
-uint64_t HashAnimNode(uint64_t Value)
-{
-	// Mix bits to keep generated animation keys stable and well distributed.
-	Value ^= Value >> 33;
-	Value *= 0xff51afd7ed558ccdULL;
-	Value ^= Value >> 33;
-	Value *= 0xc4ceb9fe1a85ec53ULL;
-	Value ^= Value >> 33;
-	return Value;
-}
-
-uint64_t BuildUiAnimNodeKey(const uint64_t ScopeHash, const uint64_t Id)
-{
-	return HashAnimNode((ScopeHash << 32) ^ HashAnimNode(Id));
-}
-
-float ResolveUiAnimValue(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, EUiAnimProperty Property, float Target, float DurationSec, EEasing Easing)
-{
-	struct SAnimTargetState
+	uint64_t HashAnimNode(uint64_t Value)
 	{
-		float m_Target = 0.0f;
-		uint64_t m_LastUseCounter = 0;
-	};
+		// Mix bits to keep generated animation keys stable and well distributed.
+		Value ^= Value >> 33;
+		Value *= 0xff51afd7ed558ccdULL;
+		Value ^= Value >> 33;
+		Value *= 0xc4ceb9fe1a85ec53ULL;
+		Value ^= Value >> 33;
+		return Value;
+	}
 
-	static std::unordered_map<uint64_t, SAnimTargetState> s_aLastTargets;
-	static uint64_t s_UseCounter = 0;
-	constexpr size_t TARGET_CACHE_SOFT_LIMIT = 4096;
-	constexpr uint64_t TARGET_CACHE_PRUNE_INTERVAL = 1024;
-	constexpr uint64_t TARGET_CACHE_STALE_WINDOW = 8192;
-	const uint64_t LastTargetKey = NodeKey ^ (static_cast<uint64_t>(Property) << 61);
-	const float CurrentValue = AnimRuntime.GetValue(NodeKey, Property, Target);
-	const uint64_t CurrentUseCounter = ++s_UseCounter;
-
-	if(s_aLastTargets.empty())
-		s_aLastTargets.reserve(TARGET_CACHE_SOFT_LIMIT);
-
-	if((CurrentUseCounter % TARGET_CACHE_PRUNE_INTERVAL) == 0 && s_aLastTargets.size() > TARGET_CACHE_SOFT_LIMIT)
+	uint64_t BuildUiAnimNodeKey(const uint64_t ScopeHash, const uint64_t Id)
 	{
-		for(auto It = s_aLastTargets.begin(); It != s_aLastTargets.end();)
+		return HashAnimNode((ScopeHash << 32) ^ HashAnimNode(Id));
+	}
+
+	float ResolveUiAnimValue(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, EUiAnimProperty Property, float Target, float DurationSec, EEasing Easing)
+	{
+		struct SAnimTargetState
 		{
-			if(CurrentUseCounter - It->second.m_LastUseCounter > TARGET_CACHE_STALE_WINDOW)
-				It = s_aLastTargets.erase(It);
-			else
-				++It;
+			float m_Target = 0.0f;
+			uint64_t m_LastUseCounter = 0;
+		};
+
+		static std::unordered_map<uint64_t, SAnimTargetState> s_aLastTargets;
+		static uint64_t s_UseCounter = 0;
+		constexpr size_t TARGET_CACHE_SOFT_LIMIT = 4096;
+		constexpr uint64_t TARGET_CACHE_PRUNE_INTERVAL = 1024;
+		constexpr uint64_t TARGET_CACHE_STALE_WINDOW = 8192;
+		const uint64_t LastTargetKey = NodeKey ^ (static_cast<uint64_t>(Property) << 61);
+		const float CurrentValue = AnimRuntime.GetValue(NodeKey, Property, Target);
+		const uint64_t CurrentUseCounter = ++s_UseCounter;
+
+		if(s_aLastTargets.empty())
+			s_aLastTargets.reserve(TARGET_CACHE_SOFT_LIMIT);
+
+		if((CurrentUseCounter % TARGET_CACHE_PRUNE_INTERVAL) == 0 && s_aLastTargets.size() > TARGET_CACHE_SOFT_LIMIT)
+		{
+			for(auto It = s_aLastTargets.begin(); It != s_aLastTargets.end();)
+			{
+				if(CurrentUseCounter - It->second.m_LastUseCounter > TARGET_CACHE_STALE_WINDOW)
+					It = s_aLastTargets.erase(It);
+				else
+					++It;
+			}
+			if(s_aLastTargets.size() > TARGET_CACHE_SOFT_LIMIT * 2)
+				s_aLastTargets.clear();
 		}
-		if(s_aLastTargets.size() > TARGET_CACHE_SOFT_LIMIT * 2)
-			s_aLastTargets.clear();
+
+		auto [ItLastTarget, Inserted] = s_aLastTargets.try_emplace(LastTargetKey, SAnimTargetState{Target, CurrentUseCounter});
+		const bool HasLastTarget = !Inserted;
+		const float LastTarget = ItLastTarget->second.m_Target;
+		const bool TargetChanged = !HasLastTarget || std::abs(Target - LastTarget) > MENU_TAB_ANIM_EPSILON;
+		const bool NeedsSync = !AnimRuntime.HasActiveAnimation(NodeKey, Property) && std::abs(Target - CurrentValue) > MENU_TAB_ANIM_EPSILON;
+		if(TargetChanged || NeedsSync)
+		{
+			SUiAnimRequest Request;
+			Request.m_NodeKey = NodeKey;
+			Request.m_Property = Property;
+			Request.m_Target = Target;
+			Request.m_Transition.m_DurationSec = DurationSec;
+			Request.m_Transition.m_DelaySec = 0.0f;
+			Request.m_Transition.m_Priority = 1;
+			Request.m_Transition.m_Interrupt = EUiAnimInterruptPolicy::MERGE_TARGET;
+			Request.m_Transition.m_Easing = Easing;
+			AnimRuntime.RequestAnimation(Request);
+			ItLastTarget->second.m_Target = Target;
+		}
+		ItLastTarget->second.m_LastUseCounter = CurrentUseCounter;
+
+		return AnimRuntime.GetValue(NodeKey, Property, Target);
 	}
 
-	auto [ItLastTarget, Inserted] = s_aLastTargets.try_emplace(LastTargetKey, SAnimTargetState{Target, CurrentUseCounter});
-	const bool HasLastTarget = !Inserted;
-	const float LastTarget = ItLastTarget->second.m_Target;
-	const bool TargetChanged = !HasLastTarget || std::abs(Target - LastTarget) > MENU_TAB_ANIM_EPSILON;
-	const bool NeedsSync = !AnimRuntime.HasActiveAnimation(NodeKey, Property) && std::abs(Target - CurrentValue) > MENU_TAB_ANIM_EPSILON;
-	if(TargetChanged || NeedsSync)
+	bool PerfDebugEnabled()
 	{
-		SUiAnimRequest Request;
-		Request.m_NodeKey = NodeKey;
-		Request.m_Property = Property;
-		Request.m_Target = Target;
-		Request.m_Transition.m_DurationSec = DurationSec;
-		Request.m_Transition.m_DelaySec = 0.0f;
-		Request.m_Transition.m_Priority = 1;
-		Request.m_Transition.m_Interrupt = EUiAnimInterruptPolicy::MERGE_TARGET;
-		Request.m_Transition.m_Easing = Easing;
-		AnimRuntime.RequestAnimation(Request);
-		ItLastTarget->second.m_Target = Target;
+		return g_Config.m_QmPerfDebug != 0;
 	}
-	ItLastTarget->second.m_LastUseCounter = CurrentUseCounter;
 
-	return AnimRuntime.GetValue(NodeKey, Property, Target);
-}
-
-bool PerfDebugEnabled()
-{
-	return g_Config.m_QmPerfDebug != 0;
-}
-
-double PerfDebugThresholdMs()
-{
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-}
-
-void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(!Force && DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/menu", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
-
-const char *MenuPageName(const int Page)
-{
-	switch(Page)
+	double PerfDebugThresholdMs()
 	{
-	case CMenus::PAGE_NEWS: return "news";
-	case CMenus::PAGE_INTERNET: return "internet";
-	case CMenus::PAGE_LAN: return "lan";
-	case CMenus::PAGE_FAVORITES: return "favorites";
-	case CMenus::PAGE_FAVORITE_COMMUNITY_1: return "favorite_community_1";
-	case CMenus::PAGE_FAVORITE_COMMUNITY_2: return "favorite_community_2";
-	case CMenus::PAGE_FAVORITE_COMMUNITY_3: return "favorite_community_3";
-	case CMenus::PAGE_FAVORITE_COMMUNITY_4: return "favorite_community_4";
-	case CMenus::PAGE_FAVORITE_COMMUNITY_5: return "favorite_community_5";
-	case CMenus::PAGE_FAVORITE_MAPS: return "favorite_maps";
-	case CMenus::PAGE_DEMOS: return "demos";
-	case CMenus::PAGE_SETTINGS: return "settings";
-	case CMenus::PAGE_STATS: return "stats";
-	default: return "unknown";
+		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 	}
-}
 
-const char *GamePageName(const int Page)
-{
-	switch(Page)
+	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 	{
-	case CMenus::PAGE_GAME: return "game";
-	case CMenus::PAGE_PLAYERS: return "players";
-	case CMenus::PAGE_SERVER_INFO: return "server_info";
-	case CMenus::PAGE_NETWORK: return "browser";
-	case CMenus::PAGE_GHOST: return "ghost";
-	case CMenus::PAGE_CALLVOTE: return "call_vote";
-	case CMenus::PAGE_SETTINGS: return "settings";
-	case CMenus::PAGE_DEMOS: return "demos";
-	case CMenus::PAGE_UNFINISHED_MAPS: return "unfinished_maps";
-	default: return "unknown";
-	}
-}
+		if(!PerfDebugEnabled())
+			return;
+		if(!Force && DurationMs < PerfDebugThresholdMs())
+			return;
 
-const char *ClientStateName(const IClient::EClientState State)
-{
-	switch(State)
-	{
-	case IClient::STATE_OFFLINE: return "offline";
-	case IClient::STATE_CONNECTING: return "connecting";
-	case IClient::STATE_LOADING: return "loading";
-	case IClient::STATE_ONLINE: return "online";
-	case IClient::STATE_DEMOPLAYBACK: return "demoplayback";
-	case IClient::STATE_QUITTING: return "quitting";
-	case IClient::STATE_RESTARTING: return "restarting";
-	default: return "unknown";
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
 	}
-}
+
+	const char *MenuPageName(const int Page)
+	{
+		switch(Page)
+		{
+		case CMenus::PAGE_NEWS: return "news";
+		case CMenus::PAGE_INTERNET: return "internet";
+		case CMenus::PAGE_LAN: return "lan";
+		case CMenus::PAGE_FAVORITES: return "favorites";
+		case CMenus::PAGE_FAVORITE_COMMUNITY_1: return "favorite_community_1";
+		case CMenus::PAGE_FAVORITE_COMMUNITY_2: return "favorite_community_2";
+		case CMenus::PAGE_FAVORITE_COMMUNITY_3: return "favorite_community_3";
+		case CMenus::PAGE_FAVORITE_COMMUNITY_4: return "favorite_community_4";
+		case CMenus::PAGE_FAVORITE_COMMUNITY_5: return "favorite_community_5";
+		case CMenus::PAGE_FAVORITE_MAPS: return "favorite_maps";
+		case CMenus::PAGE_DEMOS: return "demos";
+		case CMenus::PAGE_SETTINGS: return "settings";
+		case CMenus::PAGE_STATS: return "stats";
+		default: return "unknown";
+		}
+	}
+
+	const char *GamePageName(const int Page)
+	{
+		switch(Page)
+		{
+		case CMenus::PAGE_GAME: return "game";
+		case CMenus::PAGE_PLAYERS: return "players";
+		case CMenus::PAGE_SERVER_INFO: return "server_info";
+		case CMenus::PAGE_NETWORK: return "browser";
+		case CMenus::PAGE_GHOST: return "ghost";
+		case CMenus::PAGE_CALLVOTE: return "call_vote";
+		case CMenus::PAGE_SETTINGS: return "settings";
+		case CMenus::PAGE_DEMOS: return "demos";
+		case CMenus::PAGE_UNFINISHED_MAPS: return "unfinished_maps";
+		default: return "unknown";
+		}
+	}
+
+	const char *ClientStateName(const IClient::EClientState State)
+	{
+		switch(State)
+		{
+		case IClient::STATE_OFFLINE: return "offline";
+		case IClient::STATE_CONNECTING: return "connecting";
+		case IClient::STATE_LOADING: return "loading";
+		case IClient::STATE_ONLINE: return "online";
+		case IClient::STATE_DEMOPLAYBACK: return "demoplayback";
+		case IClient::STATE_QUITTING: return "quitting";
+		case IClient::STATE_RESTARTING: return "restarting";
+		default: return "unknown";
+		}
+	}
 }
 
 ColorRGBA CMenus::ms_GuiColor;
@@ -1618,7 +1619,6 @@ void CMenus::PrewarmSettingsPages()
 
 	// Preload skin list to avoid lag when first entering settings
 	GameClient()->m_Skins.SkinList();
-
 }
 
 void CMenus::ConchainBackgroundEntities(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -1792,20 +1792,20 @@ void CMenus::Render()
 		return;
 
 	case IClient::STATE_CONNECTING:
-		{
-			CPerfTimer StageTimer;
-			RenderPopupConnecting(Screen);
-			LogPerfStage("popup_connecting", StageTimer.ElapsedMs());
-		}
-		break;
+	{
+		CPerfTimer StageTimer;
+		RenderPopupConnecting(Screen);
+		LogPerfStage("popup_connecting", StageTimer.ElapsedMs());
+	}
+	break;
 
 	case IClient::STATE_LOADING:
-		{
-			CPerfTimer StageTimer;
-			RenderPopupLoading(Screen);
-			LogPerfStage("popup_loading", StageTimer.ElapsedMs());
-		}
-		break;
+	{
+		CPerfTimer StageTimer;
+		RenderPopupLoading(Screen);
+		LogPerfStage("popup_loading", StageTimer.ElapsedMs());
+	}
+	break;
 
 	case IClient::STATE_OFFLINE:
 		if(m_Popup != POPUP_NONE)

@@ -5,10 +5,9 @@
 
 #include <base/lock.h>
 
+#include <engine/client/enums.h>
 #include <engine/shared/config.h>
 #include <engine/shared/jobs.h>
-
-#include <engine/client/enums.h>
 
 #include <game/client/component.h>
 #include <game/client/skin.h>
