@@ -72,28 +72,28 @@
 
 namespace
 {
-bool PerfDebugEnabled()
-{
-	return g_Config.m_QmPerfDebug != 0;
-}
+	bool PerfDebugEnabled()
+	{
+		return g_Config.m_QmPerfDebug != 0;
+	}
 
-double PerfDebugThresholdMs()
-{
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-}
+	double PerfDebugThresholdMs()
+	{
+		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
+	}
 
-void LogPerfStage(const char *pSystem, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(!Force && DurationMs < PerfDebugThresholdMs())
-		return;
+	void LogPerfStage(const char *pSystem, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	{
+		if(!PerfDebugEnabled())
+			return;
+		if(!Force && DurationMs < PerfDebugThresholdMs())
+			return;
 
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg(pSystem, "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg(pSystem, "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg(pSystem, "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg(pSystem, "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	}
 }
 #ifdef main
 #undef main
@@ -107,6 +107,7 @@ void LogPerfStage(const char *pSystem, const char *pStage, const double Duration
 
 #if defined(CONF_FAMILY_WINDOWS)
 #include <windows.h>
+
 #include <dbghelp.h>
 #ifdef ERROR
 #undef ERROR
@@ -3769,7 +3770,6 @@ void CClient::Run()
 
 	// shutdown text render while graphics are still available
 	m_pTextRender->Shutdown();
-
 }
 
 bool CClient::InitNetworkClient(char *pError, size_t ErrorSize)

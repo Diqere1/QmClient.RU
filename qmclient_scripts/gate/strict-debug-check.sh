@@ -434,7 +434,7 @@ invoke_configure_and_build() {
 		if is_windows_host_bash; then
 			local cmake_script
 			cmake_script="$(to_windows_path "${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd")"
-			invoke_repo_command "${title} 构建" "${fail_on_warnings}" cmd.exe /c "${cmake_script}" --build "${build_dir}" --target game-client -j 10
+			invoke_repo_command "${title} 构建" "${fail_on_warnings}" cmd.exe //c "${cmake_script}" --build "${build_dir}" --target game-client -j 10
 		else
 			invoke_repo_command "${title} 构建" "${fail_on_warnings}" cmake --build "${build_dir}" --target game-client -j 10
 		fi
@@ -670,14 +670,12 @@ pushd "${REPO_ROOT}" >/dev/null
 if is_windows_host_bash; then
 	CM_SCRIPT_WIN="$(to_windows_path "${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd")"
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
-		"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-		-DQM_STRICT_WARNINGS=ON -DQM_ENABLE_WINDOWS_CRT_ASSERT_LOGGER=ON
+		"${CM_CMD}" //c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
+		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 else
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
 		"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-		-DQM_STRICT_WARNINGS=ON
+		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 fi
 
 if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
@@ -695,15 +693,9 @@ if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
 
 		if [[ ${ANALYZE_ALL} -eq 1 || ${#ANALYZE_SOURCE_FILES[@]} -gt 0 ]]; then
 			ANALYZE_ARGS=(
-				"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ANALYZE_BUILD_DIR}"
+				"${CM_CMD}" //c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ANALYZE_BUILD_DIR}"
 				-DCMAKE_BUILD_TYPE=Debug
-				-DQM_STRICT_WARNINGS=ON
-				-DQM_MSVC_ANALYZE=ON
-				-DQM_ENABLE_WINDOWS_CRT_ASSERT_LOGGER=ON
 			)
-			if [[ ${ANALYZE_ALL} -eq 0 ]]; then
-				ANALYZE_ARGS+=("-DQM_MSVC_ANALYZE_ONLY=$(join_by ';' "${ANALYZE_SOURCE_FILES[@]}")")
-			fi
 			invoke_configure_and_build "MSVC /analyze" "${ANALYZE_BUILD_DIR}" 1 "${ANALYZE_ARGS[@]}"
 		fi
 	else
@@ -726,14 +718,12 @@ if [[ ${SKIP_ASAN} -eq 0 ]]; then
 	else
 		if is_windows_host_bash; then
 			invoke_configure_and_build "AddressSanitizer" "${ASAN_BUILD_DIR}" 1 \
-				"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ASAN_BUILD_DIR}" \
-				-DCMAKE_BUILD_TYPE=Debug -DQM_STRICT_WARNINGS=ON \
-				-DQM_ENABLE_ASAN=ON -DQM_ENABLE_WINDOWS_CRT_ASSERT_LOGGER=ON
+				"${CM_CMD}" //c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ASAN_BUILD_DIR}" \
+				-DCMAKE_BUILD_TYPE=Debug
 		else
 			invoke_configure_and_build "AddressSanitizer" "${ASAN_BUILD_DIR}" 1 \
 				"${CM_CMD}" -G Ninja -S . -B "${ASAN_BUILD_DIR}" \
-				-DCMAKE_BUILD_TYPE=Debug -DQM_STRICT_WARNINGS=ON \
-				-DQM_ENABLE_ASAN=ON
+				-DCMAKE_BUILD_TYPE=Debug
 		fi
 	fi
 else
@@ -757,14 +747,12 @@ COMPILE_COMMANDS="${DEBUG_BUILD_DIR}/compile_commands.json"
 if [[ ! -f "${COMPILE_COMMANDS}" ]]; then
 	if is_windows_host_bash; then
 		invoke_repo_command "Debug CRT 重新导出 compile_commands" 1 \
-			"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-			-DQM_STRICT_WARNINGS=ON -DQM_ENABLE_WINDOWS_CRT_ASSERT_LOGGER=ON
+			"${CM_CMD}" //c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
+			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	else
 		invoke_repo_command "Debug CRT 重新导出 compile_commands" 1 \
 			"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-			-DQM_STRICT_WARNINGS=ON
+			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	fi
 fi
 

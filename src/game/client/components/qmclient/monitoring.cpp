@@ -24,361 +24,362 @@
 
 #if defined(CONF_FAMILY_WINDOWS)
 #include <windows.h>
+
 #include <psapi.h>
 #endif
 
 namespace
 {
-constexpr ColorRGBA PANEL_BG(0.04f, 0.09f, 0.16f, 0.92f);
-constexpr ColorRGBA GRAPH_BG(0.07f, 0.11f, 0.18f, 0.88f);
-constexpr ColorRGBA PRIMARY_CARD_BG(1.0f, 1.0f, 1.0f, 0.10f);
-constexpr ColorRGBA SECONDARY_CARD_BG(1.0f, 1.0f, 1.0f, 0.08f);
-constexpr ColorRGBA GRID_COLOR(1.0f, 1.0f, 1.0f, 0.10f);
-constexpr ColorRGBA PING_COLOR(0.31f, 0.63f, 1.0f, 0.95f);
-constexpr ColorRGBA PRED_COLOR(0.96f, 0.64f, 0.23f, 0.95f);
-constexpr ColorRGBA PRED_MARGIN_COLOR(0.78f, 0.56f, 0.97f, 0.95f);
-constexpr ColorRGBA JITTER_COLOR(0.95f, 0.86f, 0.33f, 0.95f);
-constexpr ColorRGBA FPS_COLOR(0.45f, 0.88f, 0.66f, 0.95f);
-constexpr ColorRGBA GAME_MARGIN_COLOR(0.29f, 0.84f, 0.48f, 0.95f);
+	constexpr ColorRGBA PANEL_BG(0.04f, 0.09f, 0.16f, 0.92f);
+	constexpr ColorRGBA GRAPH_BG(0.07f, 0.11f, 0.18f, 0.88f);
+	constexpr ColorRGBA PRIMARY_CARD_BG(1.0f, 1.0f, 1.0f, 0.10f);
+	constexpr ColorRGBA SECONDARY_CARD_BG(1.0f, 1.0f, 1.0f, 0.08f);
+	constexpr ColorRGBA GRID_COLOR(1.0f, 1.0f, 1.0f, 0.10f);
+	constexpr ColorRGBA PING_COLOR(0.31f, 0.63f, 1.0f, 0.95f);
+	constexpr ColorRGBA PRED_COLOR(0.96f, 0.64f, 0.23f, 0.95f);
+	constexpr ColorRGBA PRED_MARGIN_COLOR(0.78f, 0.56f, 0.97f, 0.95f);
+	constexpr ColorRGBA JITTER_COLOR(0.95f, 0.86f, 0.33f, 0.95f);
+	constexpr ColorRGBA FPS_COLOR(0.45f, 0.88f, 0.66f, 0.95f);
+	constexpr ColorRGBA GAME_MARGIN_COLOR(0.29f, 0.84f, 0.48f, 0.95f);
 
-static float BytesPerSecondDelta(int64_t CurrentBytes, int64_t PrevBytes, float DeltaSeconds)
-{
-	if(DeltaSeconds <= 0.0f || CurrentBytes < PrevBytes)
-		return 0.0f;
-	return (float)(CurrentBytes - PrevBytes) / DeltaSeconds;
-}
-
-static EQmConnectionGrade DetermineConnectionGrade(const SQmNetworkMetrics &Net)
-{
-	return QmDetermineConnectionGrade(Net);
-}
-
-static EQmDiagnosticCause DeterminePrimaryCause(const SQmNetworkMetrics &Net, const SQmPerformanceMetrics &Perf, EQmConnectionGrade Grade)
-{
-	return QmDeterminePrimaryCause(Net, Perf, Grade);
-}
-
-static const char *LocalizeGradeSummary(EQmConnectionGrade Grade)
-{
-	switch(Grade)
+	static float BytesPerSecondDelta(int64_t CurrentBytes, int64_t PrevBytes, float DeltaSeconds)
 	{
-	case EQmConnectionGrade::NORMAL: return "连接正常";
-	case EQmConnectionGrade::ELEVATED: return "连接偏高";
-	case EQmConnectionGrade::SEVERE: return "连接严重异常";
-	case EQmConnectionGrade::DISCONNECTED: return "连接断开";
-	}
-	return "连接断开";
-}
-
-static const char *LocalizeCauseDetail(EQmDiagnosticCause Cause, EQmConnectionGrade Grade)
-{
-	if(Grade == EQmConnectionGrade::DISCONNECTED)
-		return "当前未连接到游戏服务器";
-
-	switch(Cause)
-	{
-	case EQmDiagnosticCause::DOWNSTREAM: return "服务器 RTT 抬升，回包链路波动较明显";
-	case EQmDiagnosticCause::UPSTREAM: return "预测值抬升，预测链路压力偏高";
-	case EQmDiagnosticCause::JITTER: return "预测波动明显，延迟变化较大";
-	case EQmDiagnosticCause::PACKET_LOSS: return "存在重发迹象，链路质量可疑";
-	case EQmDiagnosticCause::CLIENT_PERFORMANCE: return "客户端帧时间异常";
-	case EQmDiagnosticCause::NONE: return "暂无明显异常";
-	}
-	return "暂无明显异常";
-}
-
-static const char *GradeBadgeText(EQmConnectionGrade Grade)
-{
-	switch(Grade)
-	{
-	case EQmConnectionGrade::NORMAL: return "正常";
-	case EQmConnectionGrade::ELEVATED: return "偏高";
-	case EQmConnectionGrade::SEVERE: return "严重";
-	case EQmConnectionGrade::DISCONNECTED: return "断开";
-	}
-	return "断开";
-}
-
-static ColorRGBA GradeBadgeColor(EQmConnectionGrade Grade)
-{
-	switch(Grade)
-	{
-	case EQmConnectionGrade::NORMAL: return ColorRGBA(0.18f, 0.70f, 0.42f, 0.95f);
-	case EQmConnectionGrade::ELEVATED: return ColorRGBA(0.96f, 0.70f, 0.18f, 0.95f);
-	case EQmConnectionGrade::SEVERE: return ColorRGBA(0.88f, 0.32f, 0.28f, 0.95f);
-	case EQmConnectionGrade::DISCONNECTED: return ColorRGBA(0.45f, 0.48f, 0.56f, 0.95f);
-	}
-	return ColorRGBA(0.45f, 0.48f, 0.56f, 0.95f);
-}
-
-static void DrawCard(CUIRect Rect, ColorRGBA Color, float Radius)
-{
-	Rect.Draw(Color, IGraphics::CORNER_ALL, Radius);
-}
-
-static void DrawGraphGrid(IGraphics *pGraphics, CUIRect Rect, int HorizontalSegments)
-{
-	std::array<IGraphics::CLineItem, 8> aLines = {};
-	int NumLines = 0;
-	for(int i = 1; i < HorizontalSegments; ++i)
-	{
-		const float Y = Rect.y + Rect.h * (float)i / (float)HorizontalSegments;
-		aLines[NumLines++] = IGraphics::CLineItem(Rect.x, Y, Rect.x + Rect.w, Y);
-	}
-	for(int i = 1; i < 4; ++i)
-	{
-		const float X = Rect.x + Rect.w * (float)i / 4.0f;
-		aLines[NumLines++] = IGraphics::CLineItem(X, Rect.y, X, Rect.y + Rect.h);
+		if(DeltaSeconds <= 0.0f || CurrentBytes < PrevBytes)
+			return 0.0f;
+		return (float)(CurrentBytes - PrevBytes) / DeltaSeconds;
 	}
 
-	pGraphics->TextureClear();
-	pGraphics->LinesBegin();
-	pGraphics->SetColor(GRID_COLOR);
-	pGraphics->LinesDraw(aLines.data(), NumLines);
-	pGraphics->LinesEnd();
-}
-
-static void DrawZeroAxis(IGraphics *pGraphics, CUIRect Rect)
-{
-	const IGraphics::CLineItem Axis(Rect.x, Rect.y + Rect.h / 2.0f, Rect.x + Rect.w, Rect.y + Rect.h / 2.0f);
-	pGraphics->TextureClear();
-	pGraphics->LinesBegin();
-	pGraphics->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.18f));
-	pGraphics->LinesDraw(&Axis, 1);
-	pGraphics->LinesEnd();
-}
-
-static void FormatGraphStats(char *pBuf, int BufSize, const SQmHistoryStats &Stats, const char *pUnit, int Precision = 0)
-{
-	if(!Stats.m_HasData)
+	static EQmConnectionGrade DetermineConnectionGrade(const SQmNetworkMetrics &Net)
 	{
-		str_copy(pBuf, "--", BufSize);
-		return;
+		return QmDetermineConnectionGrade(Net);
 	}
 
-	if(Precision <= 0)
-		str_format(pBuf, BufSize, "均%.0f ↓%.0f ↑%.0f%s", Stats.m_Average, Stats.m_Min, Stats.m_Max, pUnit);
-	else
-		str_format(pBuf, BufSize, "均%.*f ↓%.*f ↑%.*f%s", Precision, Stats.m_Average, Precision, Stats.m_Min, Precision, Stats.m_Max, pUnit);
-}
-
-static bool RectsOverlap(const CUIRect &A, const CUIRect &B)
-{
-	return A.x < B.x + B.w && A.x + A.w > B.x && A.y < B.y + B.h && A.y + A.h > B.y;
-}
-
-template<size_t N>
-static CUIRect PlacePeakLabelRect(
-	const std::array<float, N> &aHistory,
-	int HistoryHead,
-	int HistoryCount,
-	CUIRect PlotRect,
-	float PeakX,
-	float PeakY,
-	float Width,
-	float Height,
-	float VerticalOffset,
-	const std::array<CUIRect, 8> &aUsedRects,
-	int UsedCount)
-{
-	CUIRect LabelRect;
-	LabelRect.w = Width;
-	LabelRect.h = Height;
-	LabelRect.x = std::clamp(PeakX - LabelRect.w * 0.5f, PlotRect.x, PlotRect.x + PlotRect.w - LabelRect.w);
-	LabelRect.y = std::clamp(PeakY - LabelRect.h - 4.0f + VerticalOffset, PlotRect.y, PlotRect.y + PlotRect.h - LabelRect.h);
-
-	const float Step = Height + 4.0f;
-	for(int Attempt = 0; Attempt < 6; ++Attempt)
+	static EQmDiagnosticCause DeterminePrimaryCause(const SQmNetworkMetrics &Net, const SQmPerformanceMetrics &Perf, EQmConnectionGrade Grade)
 	{
-		bool Overlaps = false;
-		for(int i = 0; i < UsedCount; ++i)
+		return QmDeterminePrimaryCause(Net, Perf, Grade);
+	}
+
+	static const char *LocalizeGradeSummary(EQmConnectionGrade Grade)
+	{
+		switch(Grade)
 		{
-			if(RectsOverlap(LabelRect, aUsedRects[i]))
-			{
-				Overlaps = true;
-				break;
-			}
+		case EQmConnectionGrade::NORMAL: return "连接正常";
+		case EQmConnectionGrade::ELEVATED: return "连接偏高";
+		case EQmConnectionGrade::SEVERE: return "连接严重异常";
+		case EQmConnectionGrade::DISCONNECTED: return "连接断开";
 		}
-		if(!Overlaps)
-			return LabelRect;
-
-		const float Direction = Attempt % 2 == 0 ? -1.0f : 1.0f;
-		const float Multiplier = (float)(Attempt / 2 + 1);
-		LabelRect.y = std::clamp(LabelRect.y + Direction * Step * Multiplier, PlotRect.y, PlotRect.y + PlotRect.h - LabelRect.h);
+		return "连接断开";
 	}
-	return LabelRect;
-}
 
-template<size_t N>
-static void DrawPeakLabel(
-	ITextRender *pTextRender,
-	const std::array<float, N> &aHistory,
-	int HistoryHead,
-	int HistoryCount,
-	CUIRect PlotRect,
-	float Denominator,
-	ColorRGBA TextColor,
-	float FontSize,
-	const char *pUnit,
-	float VerticalOffset,
-	std::array<CUIRect, 8> &aUsedRects,
-	int &UsedCount)
-{
-	if(HistoryCount <= 0 || Denominator <= 0.0f)
-		return;
-
-	const int Start = (HistoryHead - HistoryCount + (int)aHistory.size()) % (int)aHistory.size();
-	const int PeakIndex = QmFindLatestPeakIndex(aHistory, HistoryHead, HistoryCount);
-	const float PeakValue = aHistory[(Start + PeakIndex) % (int)aHistory.size()];
-
-	const float PeakX = PlotRect.x + PlotRect.w * (float)PeakIndex / (float)std::max(HistoryCount - 1, 1);
-	const float PeakY = PlotRect.y + PlotRect.h - (PlotRect.h * std::clamp(PeakValue / Denominator, 0.0f, 1.0f));
-	char aBuf[32];
-	FormatMetricValue(aBuf, sizeof(aBuf), pUnit, PeakValue, 0);
-	const float Width = std::max(52.0f, pTextRender->TextWidth(FontSize, aBuf) + 8.0f);
-	const float Height = FontSize + 4.0f;
-	const CUIRect LabelRect = PlacePeakLabelRect(aHistory, HistoryHead, HistoryCount, PlotRect, PeakX, PeakY, Width, Height, VerticalOffset, aUsedRects, UsedCount);
-	pTextRender->TextColor(TextColor);
-	const float TextWidth = pTextRender->TextWidth(FontSize, aBuf);
-	pTextRender->Text(LabelRect.x + (LabelRect.w - TextWidth) * 0.5f, LabelRect.y, FontSize, aBuf);
-	pTextRender->TextColor(pTextRender->DefaultTextColor());
-	if(UsedCount < (int)aUsedRects.size())
-		aUsedRects[UsedCount++] = LabelRect;
-}
-
-template<size_t N>
-static void DrawSignedPeakLabel(
-	ITextRender *pTextRender,
-	const std::array<float, N> &aHistory,
-	int HistoryHead,
-	int HistoryCount,
-	CUIRect PlotRect,
-	float Denominator,
-	ColorRGBA TextColor,
-	float FontSize,
-	const char *pUnit,
-	std::array<CUIRect, 8> &aUsedRects,
-	int &UsedCount)
-{
-	if(HistoryCount <= 0 || Denominator <= 0.0f)
-		return;
-
-	const int Start = (HistoryHead - HistoryCount + (int)aHistory.size()) % (int)aHistory.size();
-	const int PeakIndex = QmFindLatestAbsolutePeakIndex(aHistory, HistoryHead, HistoryCount);
-	const float PeakValue = aHistory[(Start + PeakIndex) % (int)aHistory.size()];
-
-	const float PeakX = PlotRect.x + PlotRect.w * (float)PeakIndex / (float)std::max(HistoryCount - 1, 1);
-	const float PeakY = PlotRect.y + PlotRect.h * 0.5f - (PlotRect.h * 0.5f * std::clamp(PeakValue / Denominator, -1.0f, 1.0f));
-	char aBuf[32];
-	str_format(aBuf, sizeof(aBuf), "%.0f%s", PeakValue, pUnit);
-	const float Width = std::max(52.0f, pTextRender->TextWidth(FontSize, aBuf) + 8.0f);
-	const float Height = FontSize + 4.0f;
-	const CUIRect LabelRect = PlacePeakLabelRect(aHistory, HistoryHead, HistoryCount, PlotRect, PeakX, PeakY, Width, Height, 0.0f, aUsedRects, UsedCount);
-	pTextRender->TextColor(TextColor);
-	const float TextWidth = pTextRender->TextWidth(FontSize, aBuf);
-	pTextRender->Text(LabelRect.x + (LabelRect.w - TextWidth) * 0.5f, LabelRect.y, FontSize, aBuf);
-	pTextRender->TextColor(pTextRender->DefaultTextColor());
-	if(UsedCount < (int)aUsedRects.size())
-		aUsedRects[UsedCount++] = LabelRect;
-}
-
-static float SampleProcessCpuUsagePct()
-{
-#if defined(CONF_FAMILY_UNIX)
-	static int64_t s_LastWallNs = 0;
-	static int64_t s_LastCpuNs = 0;
-
-	struct rusage Usage;
-	if(getrusage(RUSAGE_SELF, &Usage) != 0)
-		return -1.0f;
-
-	const int64_t WallNs = time_get_nanoseconds().count();
-	const int64_t CpuNs =
-		(int64_t)Usage.ru_utime.tv_sec * 1000000000LL + (int64_t)Usage.ru_utime.tv_usec * 1000LL +
-		(int64_t)Usage.ru_stime.tv_sec * 1000000000LL + (int64_t)Usage.ru_stime.tv_usec * 1000LL;
-
-	if(s_LastWallNs == 0 || WallNs <= s_LastWallNs || CpuNs < s_LastCpuNs)
+	static const char *LocalizeCauseDetail(EQmDiagnosticCause Cause, EQmConnectionGrade Grade)
 	{
+		if(Grade == EQmConnectionGrade::DISCONNECTED)
+			return "当前未连接到游戏服务器";
+
+		switch(Cause)
+		{
+		case EQmDiagnosticCause::DOWNSTREAM: return "服务器 RTT 抬升，回包链路波动较明显";
+		case EQmDiagnosticCause::UPSTREAM: return "预测值抬升，预测链路压力偏高";
+		case EQmDiagnosticCause::JITTER: return "预测波动明显，延迟变化较大";
+		case EQmDiagnosticCause::PACKET_LOSS: return "存在重发迹象，链路质量可疑";
+		case EQmDiagnosticCause::CLIENT_PERFORMANCE: return "客户端帧时间异常";
+		case EQmDiagnosticCause::NONE: return "暂无明显异常";
+		}
+		return "暂无明显异常";
+	}
+
+	static const char *GradeBadgeText(EQmConnectionGrade Grade)
+	{
+		switch(Grade)
+		{
+		case EQmConnectionGrade::NORMAL: return "正常";
+		case EQmConnectionGrade::ELEVATED: return "偏高";
+		case EQmConnectionGrade::SEVERE: return "严重";
+		case EQmConnectionGrade::DISCONNECTED: return "断开";
+		}
+		return "断开";
+	}
+
+	static ColorRGBA GradeBadgeColor(EQmConnectionGrade Grade)
+	{
+		switch(Grade)
+		{
+		case EQmConnectionGrade::NORMAL: return ColorRGBA(0.18f, 0.70f, 0.42f, 0.95f);
+		case EQmConnectionGrade::ELEVATED: return ColorRGBA(0.96f, 0.70f, 0.18f, 0.95f);
+		case EQmConnectionGrade::SEVERE: return ColorRGBA(0.88f, 0.32f, 0.28f, 0.95f);
+		case EQmConnectionGrade::DISCONNECTED: return ColorRGBA(0.45f, 0.48f, 0.56f, 0.95f);
+		}
+		return ColorRGBA(0.45f, 0.48f, 0.56f, 0.95f);
+	}
+
+	static void DrawCard(CUIRect Rect, ColorRGBA Color, float Radius)
+	{
+		Rect.Draw(Color, IGraphics::CORNER_ALL, Radius);
+	}
+
+	static void DrawGraphGrid(IGraphics *pGraphics, CUIRect Rect, int HorizontalSegments)
+	{
+		std::array<IGraphics::CLineItem, 8> aLines = {};
+		int NumLines = 0;
+		for(int i = 1; i < HorizontalSegments; ++i)
+		{
+			const float Y = Rect.y + Rect.h * (float)i / (float)HorizontalSegments;
+			aLines[NumLines++] = IGraphics::CLineItem(Rect.x, Y, Rect.x + Rect.w, Y);
+		}
+		for(int i = 1; i < 4; ++i)
+		{
+			const float X = Rect.x + Rect.w * (float)i / 4.0f;
+			aLines[NumLines++] = IGraphics::CLineItem(X, Rect.y, X, Rect.y + Rect.h);
+		}
+
+		pGraphics->TextureClear();
+		pGraphics->LinesBegin();
+		pGraphics->SetColor(GRID_COLOR);
+		pGraphics->LinesDraw(aLines.data(), NumLines);
+		pGraphics->LinesEnd();
+	}
+
+	static void DrawZeroAxis(IGraphics *pGraphics, CUIRect Rect)
+	{
+		const IGraphics::CLineItem Axis(Rect.x, Rect.y + Rect.h / 2.0f, Rect.x + Rect.w, Rect.y + Rect.h / 2.0f);
+		pGraphics->TextureClear();
+		pGraphics->LinesBegin();
+		pGraphics->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.18f));
+		pGraphics->LinesDraw(&Axis, 1);
+		pGraphics->LinesEnd();
+	}
+
+	static void FormatGraphStats(char *pBuf, int BufSize, const SQmHistoryStats &Stats, const char *pUnit, int Precision = 0)
+	{
+		if(!Stats.m_HasData)
+		{
+			str_copy(pBuf, "--", BufSize);
+			return;
+		}
+
+		if(Precision <= 0)
+			str_format(pBuf, BufSize, "均%.0f ↓%.0f ↑%.0f%s", Stats.m_Average, Stats.m_Min, Stats.m_Max, pUnit);
+		else
+			str_format(pBuf, BufSize, "均%.*f ↓%.*f ↑%.*f%s", Precision, Stats.m_Average, Precision, Stats.m_Min, Precision, Stats.m_Max, pUnit);
+	}
+
+	static bool RectsOverlap(const CUIRect &A, const CUIRect &B)
+	{
+		return A.x < B.x + B.w && A.x + A.w > B.x && A.y < B.y + B.h && A.y + A.h > B.y;
+	}
+
+	template<size_t N>
+	static CUIRect PlacePeakLabelRect(
+		const std::array<float, N> &aHistory,
+		int HistoryHead,
+		int HistoryCount,
+		CUIRect PlotRect,
+		float PeakX,
+		float PeakY,
+		float Width,
+		float Height,
+		float VerticalOffset,
+		const std::array<CUIRect, 8> &aUsedRects,
+		int UsedCount)
+	{
+		CUIRect LabelRect;
+		LabelRect.w = Width;
+		LabelRect.h = Height;
+		LabelRect.x = std::clamp(PeakX - LabelRect.w * 0.5f, PlotRect.x, PlotRect.x + PlotRect.w - LabelRect.w);
+		LabelRect.y = std::clamp(PeakY - LabelRect.h - 4.0f + VerticalOffset, PlotRect.y, PlotRect.y + PlotRect.h - LabelRect.h);
+
+		const float Step = Height + 4.0f;
+		for(int Attempt = 0; Attempt < 6; ++Attempt)
+		{
+			bool Overlaps = false;
+			for(int i = 0; i < UsedCount; ++i)
+			{
+				if(RectsOverlap(LabelRect, aUsedRects[i]))
+				{
+					Overlaps = true;
+					break;
+				}
+			}
+			if(!Overlaps)
+				return LabelRect;
+
+			const float Direction = Attempt % 2 == 0 ? -1.0f : 1.0f;
+			const float Multiplier = (float)(Attempt / 2 + 1);
+			LabelRect.y = std::clamp(LabelRect.y + Direction * Step * Multiplier, PlotRect.y, PlotRect.y + PlotRect.h - LabelRect.h);
+		}
+		return LabelRect;
+	}
+
+	template<size_t N>
+	static void DrawPeakLabel(
+		ITextRender *pTextRender,
+		const std::array<float, N> &aHistory,
+		int HistoryHead,
+		int HistoryCount,
+		CUIRect PlotRect,
+		float Denominator,
+		ColorRGBA TextColor,
+		float FontSize,
+		const char *pUnit,
+		float VerticalOffset,
+		std::array<CUIRect, 8> &aUsedRects,
+		int &UsedCount)
+	{
+		if(HistoryCount <= 0 || Denominator <= 0.0f)
+			return;
+
+		const int Start = (HistoryHead - HistoryCount + (int)aHistory.size()) % (int)aHistory.size();
+		const int PeakIndex = QmFindLatestPeakIndex(aHistory, HistoryHead, HistoryCount);
+		const float PeakValue = aHistory[(Start + PeakIndex) % (int)aHistory.size()];
+
+		const float PeakX = PlotRect.x + PlotRect.w * (float)PeakIndex / (float)std::max(HistoryCount - 1, 1);
+		const float PeakY = PlotRect.y + PlotRect.h - (PlotRect.h * std::clamp(PeakValue / Denominator, 0.0f, 1.0f));
+		char aBuf[32];
+		FormatMetricValue(aBuf, sizeof(aBuf), pUnit, PeakValue, 0);
+		const float Width = std::max(52.0f, pTextRender->TextWidth(FontSize, aBuf) + 8.0f);
+		const float Height = FontSize + 4.0f;
+		const CUIRect LabelRect = PlacePeakLabelRect(aHistory, HistoryHead, HistoryCount, PlotRect, PeakX, PeakY, Width, Height, VerticalOffset, aUsedRects, UsedCount);
+		pTextRender->TextColor(TextColor);
+		const float TextWidth = pTextRender->TextWidth(FontSize, aBuf);
+		pTextRender->Text(LabelRect.x + (LabelRect.w - TextWidth) * 0.5f, LabelRect.y, FontSize, aBuf);
+		pTextRender->TextColor(pTextRender->DefaultTextColor());
+		if(UsedCount < (int)aUsedRects.size())
+			aUsedRects[UsedCount++] = LabelRect;
+	}
+
+	template<size_t N>
+	static void DrawSignedPeakLabel(
+		ITextRender *pTextRender,
+		const std::array<float, N> &aHistory,
+		int HistoryHead,
+		int HistoryCount,
+		CUIRect PlotRect,
+		float Denominator,
+		ColorRGBA TextColor,
+		float FontSize,
+		const char *pUnit,
+		std::array<CUIRect, 8> &aUsedRects,
+		int &UsedCount)
+	{
+		if(HistoryCount <= 0 || Denominator <= 0.0f)
+			return;
+
+		const int Start = (HistoryHead - HistoryCount + (int)aHistory.size()) % (int)aHistory.size();
+		const int PeakIndex = QmFindLatestAbsolutePeakIndex(aHistory, HistoryHead, HistoryCount);
+		const float PeakValue = aHistory[(Start + PeakIndex) % (int)aHistory.size()];
+
+		const float PeakX = PlotRect.x + PlotRect.w * (float)PeakIndex / (float)std::max(HistoryCount - 1, 1);
+		const float PeakY = PlotRect.y + PlotRect.h * 0.5f - (PlotRect.h * 0.5f * std::clamp(PeakValue / Denominator, -1.0f, 1.0f));
+		char aBuf[32];
+		str_format(aBuf, sizeof(aBuf), "%.0f%s", PeakValue, pUnit);
+		const float Width = std::max(52.0f, pTextRender->TextWidth(FontSize, aBuf) + 8.0f);
+		const float Height = FontSize + 4.0f;
+		const CUIRect LabelRect = PlacePeakLabelRect(aHistory, HistoryHead, HistoryCount, PlotRect, PeakX, PeakY, Width, Height, 0.0f, aUsedRects, UsedCount);
+		pTextRender->TextColor(TextColor);
+		const float TextWidth = pTextRender->TextWidth(FontSize, aBuf);
+		pTextRender->Text(LabelRect.x + (LabelRect.w - TextWidth) * 0.5f, LabelRect.y, FontSize, aBuf);
+		pTextRender->TextColor(pTextRender->DefaultTextColor());
+		if(UsedCount < (int)aUsedRects.size())
+			aUsedRects[UsedCount++] = LabelRect;
+	}
+
+	static float SampleProcessCpuUsagePct()
+	{
+#if defined(CONF_FAMILY_UNIX)
+		static int64_t s_LastWallNs = 0;
+		static int64_t s_LastCpuNs = 0;
+
+		struct rusage Usage;
+		if(getrusage(RUSAGE_SELF, &Usage) != 0)
+			return -1.0f;
+
+		const int64_t WallNs = time_get_nanoseconds().count();
+		const int64_t CpuNs =
+			(int64_t)Usage.ru_utime.tv_sec * 1000000000LL + (int64_t)Usage.ru_utime.tv_usec * 1000LL +
+			(int64_t)Usage.ru_stime.tv_sec * 1000000000LL + (int64_t)Usage.ru_stime.tv_usec * 1000LL;
+
+		if(s_LastWallNs == 0 || WallNs <= s_LastWallNs || CpuNs < s_LastCpuNs)
+		{
+			s_LastWallNs = WallNs;
+			s_LastCpuNs = CpuNs;
+			return -1.0f;
+		}
+
+		const int64_t WallDeltaNs = WallNs - s_LastWallNs;
+		const int64_t CpuDeltaNs = CpuNs - s_LastCpuNs;
 		s_LastWallNs = WallNs;
 		s_LastCpuNs = CpuNs;
-		return -1.0f;
-	}
 
-	const int64_t WallDeltaNs = WallNs - s_LastWallNs;
-	const int64_t CpuDeltaNs = CpuNs - s_LastCpuNs;
-	s_LastWallNs = WallNs;
-	s_LastCpuNs = CpuNs;
-
-	return std::clamp((double)CpuDeltaNs / (double)WallDeltaNs * 100.0, 0.0, 999.0);
+		return std::clamp((double)CpuDeltaNs / (double)WallDeltaNs * 100.0, 0.0, 999.0);
 #elif defined(CONF_FAMILY_WINDOWS)
-	static uint64_t s_LastWall100Ns = 0;
-	static uint64_t s_LastCpu100Ns = 0;
+		static uint64_t s_LastWall100Ns = 0;
+		static uint64_t s_LastCpu100Ns = 0;
 
-	FILETIME CreationTime, ExitTime, KernelTime, UserTime, SystemTime;
-	if(!GetProcessTimes(GetCurrentProcess(), &CreationTime, &ExitTime, &KernelTime, &UserTime))
-		return -1.0f;
+		FILETIME CreationTime, ExitTime, KernelTime, UserTime, SystemTime;
+		if(!GetProcessTimes(GetCurrentProcess(), &CreationTime, &ExitTime, &KernelTime, &UserTime))
+			return -1.0f;
 #if _WIN32_WINNT >= 0x0602
-	GetSystemTimePreciseAsFileTime(&SystemTime);
+		GetSystemTimePreciseAsFileTime(&SystemTime);
 #else
-	GetSystemTimeAsFileTime(&SystemTime);
+		GetSystemTimeAsFileTime(&SystemTime);
 #endif
 
-	ULARGE_INTEGER Wall;
-	Wall.LowPart = SystemTime.dwLowDateTime;
-	Wall.HighPart = SystemTime.dwHighDateTime;
-	ULARGE_INTEGER Kernel;
-	Kernel.LowPart = KernelTime.dwLowDateTime;
-	Kernel.HighPart = KernelTime.dwHighDateTime;
-	ULARGE_INTEGER User;
-	User.LowPart = UserTime.dwLowDateTime;
-	User.HighPart = UserTime.dwHighDateTime;
+		ULARGE_INTEGER Wall;
+		Wall.LowPart = SystemTime.dwLowDateTime;
+		Wall.HighPart = SystemTime.dwHighDateTime;
+		ULARGE_INTEGER Kernel;
+		Kernel.LowPart = KernelTime.dwLowDateTime;
+		Kernel.HighPart = KernelTime.dwHighDateTime;
+		ULARGE_INTEGER User;
+		User.LowPart = UserTime.dwLowDateTime;
+		User.HighPart = UserTime.dwHighDateTime;
 
-	const uint64_t Wall100Ns = Wall.QuadPart;
-	const uint64_t Cpu100Ns = Kernel.QuadPart + User.QuadPart;
-	if(s_LastWall100Ns == 0 || Wall100Ns <= s_LastWall100Ns || Cpu100Ns < s_LastCpu100Ns)
-	{
+		const uint64_t Wall100Ns = Wall.QuadPart;
+		const uint64_t Cpu100Ns = Kernel.QuadPart + User.QuadPart;
+		if(s_LastWall100Ns == 0 || Wall100Ns <= s_LastWall100Ns || Cpu100Ns < s_LastCpu100Ns)
+		{
+			s_LastWall100Ns = Wall100Ns;
+			s_LastCpu100Ns = Cpu100Ns;
+			return -1.0f;
+		}
+
+		const uint64_t WallDelta100Ns = Wall100Ns - s_LastWall100Ns;
+		const uint64_t CpuDelta100Ns = Cpu100Ns - s_LastCpu100Ns;
 		s_LastWall100Ns = Wall100Ns;
 		s_LastCpu100Ns = Cpu100Ns;
+
+		return std::clamp((double)CpuDelta100Ns / (double)WallDelta100Ns * 100.0, 0.0, 999.0);
+#else
 		return -1.0f;
+#endif
 	}
 
-	const uint64_t WallDelta100Ns = Wall100Ns - s_LastWall100Ns;
-	const uint64_t CpuDelta100Ns = Cpu100Ns - s_LastCpu100Ns;
-	s_LastWall100Ns = Wall100Ns;
-	s_LastCpu100Ns = Cpu100Ns;
-
-	return std::clamp((double)CpuDelta100Ns / (double)WallDelta100Ns * 100.0, 0.0, 999.0);
-#else
-	return -1.0f;
-#endif
-}
-
-static float SampleProcessMemoryMb()
-{
+	static float SampleProcessMemoryMb()
+	{
 #if defined(CONF_PLATFORM_MACOS)
-	mach_task_basic_info Info;
-	mach_msg_type_number_t Count = MACH_TASK_BASIC_INFO_COUNT;
-	if(task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&Info), &Count) != KERN_SUCCESS)
-		return -1.0f;
-	return (float)Info.resident_size / (1024.0f * 1024.0f);
+		mach_task_basic_info Info;
+		mach_msg_type_number_t Count = MACH_TASK_BASIC_INFO_COUNT;
+		if(task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&Info), &Count) != KERN_SUCCESS)
+			return -1.0f;
+		return (float)Info.resident_size / (1024.0f * 1024.0f);
 #elif defined(CONF_FAMILY_UNIX)
-	struct rusage Usage;
-	if(getrusage(RUSAGE_SELF, &Usage) != 0)
-		return -1.0f;
+		struct rusage Usage;
+		if(getrusage(RUSAGE_SELF, &Usage) != 0)
+			return -1.0f;
 #if defined(CONF_PLATFORM_LINUX)
-	return (float)Usage.ru_maxrss / 1024.0f;
+		return (float)Usage.ru_maxrss / 1024.0f;
 #else
-	return (float)Usage.ru_maxrss / (1024.0f * 1024.0f);
+		return (float)Usage.ru_maxrss / (1024.0f * 1024.0f);
 #endif
 #elif defined(CONF_FAMILY_WINDOWS)
-	PROCESS_MEMORY_COUNTERS_EX Counters;
-	if(!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&Counters), sizeof(Counters)))
-		return -1.0f;
-	return (float)Counters.WorkingSetSize / (1024.0f * 1024.0f);
+		PROCESS_MEMORY_COUNTERS_EX Counters;
+		if(!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&Counters), sizeof(Counters)))
+			return -1.0f;
+		return (float)Counters.WorkingSetSize / (1024.0f * 1024.0f);
 #else
-	return -1.0f;
+		return -1.0f;
 #endif
-}
+	}
 }
 
 void CQmMonitoring::ResetHistory()

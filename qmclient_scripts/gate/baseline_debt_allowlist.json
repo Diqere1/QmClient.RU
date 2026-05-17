@@ -3,30 +3,12 @@
   "entries": [
     {
       "title": "配置变量使用检查（Qm/Tc/栖梦）",
-      "detail_hash": "17d2c9ec143396885281c63920913fc3cb94e92266f3bc2700bff5cd747d2b1a",
+      "detail_hash": "e114ee0e0b814b3cd4f6d7787d86b4fb1c11fb2a1df38fa37c7837fc9c868f2a",
       "reason": "known_baseline_debt",
       "base_ref": "main",
-      "added_at": "2026-05-12T07:42:18Z",
-      "source_report": "tmp/check-gate-report-stable2.json",
-      "source_generated_at": "2026-05-12T07:42:18Z"
-    },
-    {
-      "title": "头文件 guard 检查",
-      "detail_hash": "e5316402c367ac2b9f3153b75439295330d09a605249e300a797cea3ff3a7bad",
-      "reason": "known_baseline_debt",
-      "base_ref": "main",
-      "added_at": "2026-05-12T07:42:18Z",
-      "source_report": "tmp/check-gate-report-stable2.json",
-      "source_generated_at": "2026-05-12T07:42:18Z"
-    },
-    {
-      "title": "代码格式干跑检查",
-      "detail_hash": "47c49c74610d4f3e09e808523577f0a73dcd7b395b9555711afccf2f2e70398b",
-      "reason": "known_baseline_debt",
-      "base_ref": "main",
-      "added_at": "2026-05-12T07:42:18Z",
-      "source_report": "tmp/check-gate-report-stable2.json",
-      "source_generated_at": "2026-05-12T07:42:18Z"
+      "added_at": "2026-05-17T11:53:51Z",
+      "source_report": "tmp/check-gate-report.json",
+      "source_generated_at": "2026-05-17T11:50:28Z"
     }
   ]
 }

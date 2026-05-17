@@ -147,11 +147,11 @@ category_info() {
 
 normalized_detail_hash() {
 	local detail="${1:-}"
-	DETAIL_FOR_HASH="${detail}" python_run - <<'PY'
+	printf '%s' "${detail}" | python_run -c '
 import hashlib
-import os
+import sys
 
-text = os.environ.get("DETAIL_FOR_HASH", "").replace("\r\n", "\n").replace("\r", "\n")
+text = sys.stdin.buffer.read().decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
 marker = "\n--- 原始尾部输出 ---\n"
 idx = text.find(marker)
 if idx >= 0:
@@ -159,7 +159,7 @@ if idx >= 0:
 lines = sorted({line.strip() for line in text.split("\n") if line.strip()})
 normalized = "\n".join(lines).strip()
 print(hashlib.sha256(normalized.encode("utf-8")).hexdigest())
-PY
+'
 }
 
 load_baseline_allowlist() {
@@ -381,6 +381,20 @@ unique_lines() {
 	awk 'NF { if(!seen[$0]++) print $0 }'
 }
 
+invoke_style_check_batch() {
+	local py_cmd="$1"
+	local fix_style_path="$2"
+	shift 2
+	case "${py_cmd}" in
+		py|py.exe|*/py|*/py.exe|*\\py|*\\py.exe)
+			invoke_repo_command "代码格式干跑检查" FAIL "${py_cmd}" -3 "${fix_style_path}" -n "$@"
+			;;
+		*)
+			invoke_repo_command "代码格式干跑检查" FAIL "${py_cmd}" "${fix_style_path}" -n "$@"
+			;;
+	esac
+}
+
 get_branch_diff_files() {
 	local merge_base_output merge_base
 	set +e
@@ -553,14 +567,26 @@ invoke_style_checks() {
 	add_result "INFO" "代码格式检查范围" "按收敛后的首方源码范围传入 ${#SCOPE_INCLUDED_FILES[@]} 个文件"
 	local py_cmd
 	py_cmd="$(get_python_cmd)"
-	case "${py_cmd}" in
-		py|py.exe)
-			invoke_repo_command "代码格式干跑检查" FAIL "${py_cmd}" -3 "${REPO_ROOT}/scripts/fix_style.py" -n "${SCOPE_INCLUDED_FILES[@]}"
-			;;
-		*)
-			invoke_repo_command "代码格式干跑检查" FAIL "${py_cmd}" "${REPO_ROOT}/scripts/fix_style.py" -n "${SCOPE_INCLUDED_FILES[@]}"
-			;;
-	esac
+	local fix_style_path="${REPO_ROOT}/scripts/fix_style.py"
+	if python_uses_windows_paths "${py_cmd}" && [[ "${fix_style_path}" == /* || "${fix_style_path}" =~ ^/mnt/[A-Za-z]/ ]]; then
+		fix_style_path="$(to_windows_path "${fix_style_path}")"
+	fi
+	local batch=()
+	local batch_len=0
+	local file file_len
+	for file in "${SCOPE_INCLUDED_FILES[@]}"; do
+		file_len=$((${#file} + 3))
+		if [[ ${#batch[@]} -gt 0 && $((batch_len + file_len)) -gt 6000 ]]; then
+			invoke_style_check_batch "${py_cmd}" "${fix_style_path}" "${batch[@]}"
+			batch=()
+			batch_len=0
+		fi
+		batch+=("${file}")
+		batch_len=$((batch_len + file_len))
+	done
+	if [[ ${#batch[@]} -gt 0 ]]; then
+		invoke_style_check_batch "${py_cmd}" "${fix_style_path}" "${batch[@]}"
+	fi
 }
 
 invoke_identifier_checks() {
