@@ -158,6 +158,10 @@ jobs:
         shell: pwsh
         run: .\qmclient_scripts\cmake-windows.cmd -G Ninja -S . -B build-ninja -DCMAKE_BUILD_TYPE=Release
 
+      - name: Build release for generated headers
+        shell: pwsh
+        run: .\qmclient_scripts\cmake-windows.cmd --build build-ninja --target game-client -j 10
+
       - name: Run default governance gate
         shell: bash
         run: |

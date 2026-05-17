@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export MSYS2_ARG_CONV_EXCL='*'
 
 # -----------------------------------------------------------------------------
 # QmClient 仓库级 bash 门禁总入口
