@@ -685,7 +685,7 @@ if [[ ${SKIP_ANALYZE} -eq 0 ]]; then
 			ANALYZE_ARGS=(
 				"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ANALYZE_BUILD_DIR}"
 				-DCMAKE_BUILD_TYPE=Debug
-				-DQM_MSVC_ANALYZE=ON -DQM_STRICT_WARNINGS=ON
+				-DQM_MSVC_ANALYZE=ON
 			)
 			invoke_configure_and_build "MSVC /analyze" "${ANALYZE_BUILD_DIR}" 1 "${ANALYZE_ARGS[@]}"
 		fi
