@@ -79,7 +79,7 @@
   ],
   "governance_workflow_required_snippets": [
     "workflow-docs:",
-    "quick-gate-windows:",
+    "quick-gate:",
     "default-gate-windows:",
     "if: always()",
     "check-gate.sh",
@@ -130,13 +130,14 @@
       ]
     },
     {
-      "job_id": "quick-gate-windows",
+      "job_id": "quick-gate",
       "required_steps": [
         {
           "name": "Run quick governance gate",
           "must_contain": [
             "check-gate.sh",
             "--mode quick",
+            "--enable-clang-format-check",
             "check-gate-ci.json",
             "check-gate-ci-scope.json",
             "--explain-scope",

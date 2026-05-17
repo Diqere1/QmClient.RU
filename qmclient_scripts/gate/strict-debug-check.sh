@@ -12,17 +12,14 @@ export MSYS2_ARG_CONV_EXCL='*'
 #
 # 构建目录口径：
 # - build-ninja
-#   默认 Release 运行目录。它是“真实运行事实源”，承载发布态行为、资源同步、着色器与 run_*_tests。
+#   默认 Release 运行目录。它是”真实运行事实源”，承载发布态行为、资源同步、着色器与 run_*_tests。
 #   原理：把运行验证固定绑到单一 Release 目录，避免 Debug/诊断产物污染发布态判断。
 # - build-debug
 #   默认 Debug 诊断目录。它承载断言、RTC、变量可读性，以及 compile_commands.json 导出。
-#   原理：把“便于调试”的编译开关与发布态隔离，避免两种行为混在同一目录里。
+#   原理：把”便于调试”的编译开关与发布态隔离，避免两种行为混在同一目录里。
 # - build-analyze
 #   Windows 专用的 Debug + MSVC /analyze 目录，只供静态分析使用。
 #   原理：/analyze 会改变诊断与编译行为，必须与普通 Debug 产物隔离，避免误把分析目录当运行目录。
-# - build-asan
-#   实验性 AddressSanitizer 目录。当前 Rust +crt-static 约束下通常允许跳过。
-#   原理：ASan 需要单独的编译/链接选项，和普通 Debug/Release 共用目录会污染缓存与二进制语义。
 # - build-release-pdb
 #   临时 Release+PDB 诊断目录，不属于本脚本默认主链，只在 release-only 崩溃需要源码栈时按需使用。
 # -----------------------------------------------------------------------------
@@ -441,11 +438,6 @@ invoke_configure_and_build() {
 	fi
 }
 
-test_asan_supported() {
-	local cargo_config="${REPO_ROOT}/.cargo/config.toml"
-	[[ ! -f "${cargo_config}" ]] && return 0
-	! grep -q 'target-feature=+crt-static' "${cargo_config}"
-}
 
 resolve_cmake_command() {
 	# On Windows, prefer cmake-windows.cmd which sets up MSVC environment.
@@ -495,7 +487,6 @@ write_json_report() {
 		printf '{\n'
 		printf '  "DebugBuildDir": "%s",\n' "$(json_escape "${DEBUG_BUILD_DIR}")"
 		printf '  "AnalyzeBuildDir": "%s",\n' "$(json_escape "${ANALYZE_BUILD_DIR}")"
-		printf '  "AsanBuildDir": "%s",\n' "$(json_escape "${ASAN_BUILD_DIR}")"
 		printf '  "BaseRef": "%s",\n' "$(json_escape "${BASE_REF}")"
 		printf '  "Degraded": %s,\n' "$( [[ ${DEGRADED} -eq 1 ]] && printf true || printf false )"
 		printf '  "InputScope": {\n'
@@ -594,15 +585,12 @@ usage() {
 选项：
   --debug-build-dir DIR
   --analyze-build-dir DIR
-  --asan-build-dir DIR
   --base-ref REF
   --files FILE [FILE ...]
   --analyze-all
-  --require-asan
   --skip-build
   --skip-tidy
   --skip-analyze
-  --skip-asan
   --print-file-scope
   --report-json-path PATH
 EOF
