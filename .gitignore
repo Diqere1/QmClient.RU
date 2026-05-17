@@ -8,6 +8,7 @@ dyl/
 docs/dyl
 !docs/dyl/QmClient_docs
 .superpowers
+.trae
 
 # tmp
 tmp/
