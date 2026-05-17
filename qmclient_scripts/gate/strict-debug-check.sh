@@ -758,11 +758,13 @@ if [[ ${#EFFECTIVE_FILES[@]} -eq 0 ]]; then
 	exit 0
 fi
 
+	TIDY_CHECKS="-*,bugprone-assignment-in-if-condition,bugprone-dangling-handle,bugprone-inaccurate-erase,bugprone-misplaced-widening-cast,bugprone-stringview-nullptr,bugprone-suspicious-enum-usage,bugprone-unchecked-optional-access,bugprone-use-after-move,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-nullability.*,modernize-use-override,modernize-use-nullptr,modernize-use-auto,performance-for-range-copy,performance-unnecessary-copy-initialization"
 add_result "INFO" "clang-tidy 范围" "将对 ${#EFFECTIVE_FILES[@]} 个文件执行严格 tidy 检查"
 
 for file in "${EFFECTIVE_FILES[@]}"; do
 	invoke_repo_command "clang-tidy 严格检查: ${file}" 1 \
 		clang-tidy "${file}" "-p=${DEBUG_BUILD_DIR}" \
+		"--checks=${TIDY_CHECKS}" \
 		"--extra-arg=-Qunused-arguments" "--quiet"
 done
 
