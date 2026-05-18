@@ -22,13 +22,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -52,7 +52,7 @@ jobs:
         run: python qmclient_scripts/generate_release_notes.py --version CI --gate-report tmp/check-gate-fixture.json --output tmp/release-notes-ci.md
 
       - name: Upload release notes smoke draft
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: governance-release-notes-smoke
           path: tmp/release-notes-ci.md
@@ -68,13 +68,13 @@ jobs:
       PYTHONUTF8: '1'
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload quick gate report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: governance-check-gate-report
           path: tmp/check-gate-ci.json
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload quick gate log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: governance-check-gate-log
           path: tmp/check-gate-ci.log
@@ -118,7 +118,7 @@ jobs:
 
       - name: Upload quick gate scope report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: governance-check-gate-scope
           path: tmp/check-gate-ci-scope.json
@@ -135,13 +135,13 @@ jobs:
       PYTHONUTF8: '1'
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -174,7 +174,7 @@ jobs:
 
       - name: Upload default gate report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: governance-check-gate-default-report
           path: tmp/check-gate-default-ci.json
@@ -183,7 +183,7 @@ jobs:
 
       - name: Upload default gate log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: governance-check-gate-default-log
           path: tmp/check-gate-default-ci.log
@@ -192,7 +192,7 @@ jobs:
 
       - name: Upload default gate scope report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: governance-check-gate-default-scope
           path: tmp/check-gate-default-ci-scope.json
