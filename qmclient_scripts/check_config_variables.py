@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-QmClient 配置变量使用检查工具
+QmClient 配置变量使用检查工具。
 
 基于上游 scripts/check_config_variables.py 适配，支持 QmClient 的配置变量文件：
-  - src/engine/shared/config_variables.h          (DDNet 上游，无前缀)
-  - src/engine/shared/config_variables_tclient.h  (TaterClient 继承，Tc 前缀)
-  - src/engine/shared/config_variables_qmclient.h (QmClient 主配置，Qm 前缀)
-  - src/engine/shared/config_variables_qmclient_extra.h (QmClient 自研，Qm 前缀)
+  - src/engine/shared/config_variables.h
+  - src/engine/shared/config_variables_tclient.h
+  - src/engine/shared/config_variables_qmclient.h
+  - src/engine/shared/config_variables_qmclient_extra.h
 
 用法：
-  python qmclient_scripts/check_config_variables.py          # 检查所有配置文件
-  python qmclient_scripts/check_config_variables.py --ddnet  # 仅检查 DDNet 上游
-  python qmclient_scripts/check_config_variables.py --qm     # 仅检查 QmClient 自有
+  python qmclient_scripts/check_config_variables.py
+  python qmclient_scripts/check_config_variables.py --ddnet
+  python qmclient_scripts/check_config_variables.py --qm
 """
 
 import os
@@ -66,26 +66,26 @@ def find_config_variables(config_variables):
 
 def check_config_file(name, filepath):
     if not os.path.exists(filepath):
-        print(f"Warning: Config file not found: {filepath}")
+        print(f"警告：未找到配置文件 {filepath}")
         return 0
     lines = read_all_lines(filepath)
     config_variables = parse_config_variables(lines)
     if not config_variables:
-        print(f"Info: No config variables found in {filepath}")
+        print(f"提示：{filepath} 中未解析到配置变量")
         return 0
     config_variables_not_found = find_config_variables(config_variables)
     for variable_code in config_variables_not_found:
-        print(f"  [{name}] The config variable '{config_variables[variable_code]}' (m_{variable_code}) is unused.")
+        print(f"  [{name}] 未使用配置项：'{config_variables[variable_code]}' (m_{variable_code})")
     if config_variables_not_found:
         return len(config_variables_not_found)
-    print(f"  [{name}] Success: No unused config variables found ({len(config_variables)} total).")
+    print(f"  [{name}] 通过：未发现未使用配置项（共 {len(config_variables)} 个）")
     return 0
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Check QmClient config variable usage")
-    parser.add_argument('--ddnet', action='store_true', help='Only check DDNet upstream config')
-    parser.add_argument('--qm', action='store_true', help='Only check QmClient-specific config (qmclient + qimeng)')
+    parser = argparse.ArgumentParser(description="检查 QmClient 配置变量是否被实际使用")
+    parser.add_argument('--ddnet', action='store_true', help='只检查 DDNet 上游配置文件')
+    parser.add_argument('--qm', action='store_true', help='只检查 QmClient / TClient / 栖梦自有配置文件')
     args = parser.parse_args()
 
     total_unused = 0
@@ -103,13 +103,13 @@ def main():
         files_to_check = CONFIG_FILES
 
     for name, filepath in files_to_check.items():
-        print(f"\nChecking {filepath} ...")
+        print(f"\n检查 {filepath} ...")
         total_unused += check_config_file(name, filepath)
 
     if total_unused:
-        print(f"\nError: {total_unused} unused config variable(s) found.")
+        print(f"\n失败：共发现 {total_unused} 个未使用配置项。")
         return 1
-    print("\nAll config variables are used.")
+    print("\n通过：所有配置项均已被使用。")
     return 0
 
 if __name__ == '__main__':

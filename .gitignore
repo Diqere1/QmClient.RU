@@ -3,18 +3,16 @@
 data/
 !/data/
 
-# Agent documentation (local only)
-AGENTS.md
-CLAUDE.md
-
 # Local documentation
 dyl/
 docs/dyl
 !docs/dyl/QmClient_docs
-.trae
-.trae/
-docs/superpowers
 .superpowers
+.trae
+.claude
+
+# tmp
+tmp/
 
 # Git worktrees
 worktrees/

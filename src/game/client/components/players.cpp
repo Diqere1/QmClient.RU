@@ -246,11 +246,12 @@ void CPlayers::RenderHookCollLine(
 	int ClientId)
 {
 	const bool HideFocusOverheadIndicators = g_Config.m_QmFocusMode != 0 &&
-		g_Config.m_QmFocusModeHideOverheadIndicators != 0;
+						 g_Config.m_QmFocusModeHideOverheadIndicators != 0;
 	if(HideFocusOverheadIndicators)
 		return;
 
-	if(GameClient()->m_TClient.ShouldHideGoresGuides())
+	const bool ManualHookCollVisible = GameClient()->m_Controls.m_aShowHookColl[g_Config.m_ClDummy] != 0;
+	if(GameClient()->m_TClient.ShouldHideGoresGuides(ManualHookCollVisible))
 		return;
 
 	// TClient
@@ -555,11 +556,12 @@ void CPlayers::RenderWeaponTrajectory(
 	int ClientId)
 {
 	const bool HideFocusOverheadIndicators = g_Config.m_QmFocusMode != 0 &&
-		g_Config.m_QmFocusModeHideOverheadIndicators != 0;
+						 g_Config.m_QmFocusModeHideOverheadIndicators != 0;
 	if(HideFocusOverheadIndicators)
 		return;
 
-	if(GameClient()->m_TClient.ShouldHideGoresGuides())
+	const bool ManualTrajectoryVisible = GameClient()->m_Controls.m_aShowWeaponTrajectory[g_Config.m_ClDummy] != 0;
+	if(GameClient()->m_TClient.ShouldHideGoresGuides(ManualTrajectoryVisible))
 		return;
 
 	if(ClientId < 0 || !g_Config.m_QmWeaponTrajectory || !GameClient()->m_Controls.m_aShowWeaponTrajectory[g_Config.m_ClDummy])
@@ -624,7 +626,7 @@ void CPlayers::RenderWeaponTrajectory(
 		const vec2 StartPos = Position + Direction * (CCharacterCore::PhysicalSize() * 0.75f);
 		float Curvature = pTuning->m_GrenadeCurvature;
 		float Speed = pTuning->m_GrenadeSpeed;
-		float Lifetime = pTuning->m_GrenadeLifetime * 10.0f;//辅助线长度
+		float Lifetime = pTuning->m_GrenadeLifetime * 10.0f; //辅助线长度
 
 		constexpr int PointCount = 180;
 		std::vector<vec2> vPoints;
@@ -1279,7 +1281,7 @@ void CPlayers::RenderPlayer(
 			GameClient()->m_Effects.SparkleTrail(BodyPos, Alpha);
 	}
 
-		if(ClientId < 0)
+	if(ClientId < 0)
 		return;
 
 	int QuadOffsetToEmoticon = NUM_WEAPONS * 2 + 4;

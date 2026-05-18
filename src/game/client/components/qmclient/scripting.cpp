@@ -13,8 +13,6 @@
 #include <game/client/gameclient.h>
 #include <game/localization.h>
 
-
-
 class CScriptRunner : CComponentInterfaces
 {
 private:
@@ -88,7 +86,7 @@ private:
 		{
 			const NETADDR *pAddress = nullptr;
 			if(Client()->State() == IClient::STATE_ONLINE)
-				pAddress = &Client()->ServerAddress();
+				pAddress = Client()->ServerAddress();
 			else if(GameClient()->m_ConnectServerInfo)
 				pAddress = &GameClient()->m_ConnectServerInfo->m_aAddresses[0];
 			else

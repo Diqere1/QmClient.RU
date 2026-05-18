@@ -1,0 +1,200 @@
+name: Governance Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - rmlUI
+      - codex/rmlui-ui-split
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  workflow-docs:
+    name: Workflow Docs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check workflow documents
+        run: python qmclient_scripts/gate/check_workflow_docs.py
+
+      - name: Generate gate report fixture
+        shell: bash
+        run: |
+          mkdir -p tmp
+          bash qmclient_scripts/gate/check-gate.sh \
+            --mode quick \
+            --base-ref HEAD \
+            --skip-preflight \
+            --skip-config-checks \
+            --skip-header-checks \
+            --skip-style-check \
+            --report-json-path tmp/check-gate-fixture.json
+
+      - name: Generate release notes smoke draft
+        run: python qmclient_scripts/generate_release_notes.py --version CI --gate-report tmp/check-gate-fixture.json --output tmp/release-notes-ci.md
+
+      - name: Upload release notes smoke draft
+        uses: actions/upload-artifact@v6
+        with:
+          name: governance-release-notes-smoke
+          path: tmp/release-notes-ci.md
+          if-no-files-found: error
+          retention-days: 7
+
+  quick-gate:
+    name: Quick Gate
+    runs-on: ubuntu-24.04
+    env:
+      GATE_BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      - name: Fetch gate baseline
+        run: git fetch origin ${{ env.GATE_BASE_REF }} --depth=1
+
+      - name: Run quick governance gate
+        run: |
+          mkdir -p tmp
+          bash qmclient_scripts/gate/check-gate.sh \
+            --mode quick \
+            --base-ref "origin/${{ env.GATE_BASE_REF }}" \
+            --enable-clang-format-check \
+            --report-json-path tmp/check-gate-ci.json \
+            --explain-scope \
+            --scope-report-path tmp/check-gate-ci-scope.json 2>&1 | tee tmp/check-gate-ci.log
+
+      - name: Refresh baseline allowlist dry-run
+        run: python qmclient_scripts/gate/refresh_baseline_debt_allowlist.py --report tmp/check-gate-ci.json --output qmclient_scripts/gate/baseline_debt_allowlist.json --dry-run
+
+      - name: Upload quick gate report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: governance-check-gate-report
+          path: tmp/check-gate-ci.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload quick gate log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: governance-check-gate-log
+          path: tmp/check-gate-ci.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload quick gate scope report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: governance-check-gate-scope
+          path: tmp/check-gate-ci-scope.json
+          if-no-files-found: error
+          retention-days: 7
+
+  default-gate-windows:
+    name: Default Gate (Windows)
+    runs-on: windows-2022
+    env:
+      GATE_BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+      MSYS2_ARG_CONV_EXCL: '*'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM clang-format
+        shell: pwsh
+        run: choco install llvm -y --no-progress
+
+      - name: Fetch gate baseline
+        shell: pwsh
+        run: git fetch origin $env:GATE_BASE_REF --depth=1
+
+      - name: Configure release test build
+        shell: pwsh
+        run: .\qmclient_scripts\cmake-windows.cmd -G Ninja -S . -B build-ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build release for generated headers
+        shell: pwsh
+        run: .\qmclient_scripts\cmake-windows.cmd --build build-ninja --target game-client -j 10
+
+      - name: Run default governance gate
+        shell: bash
+        run: |
+          mkdir -p tmp
+          bash qmclient_scripts/gate/check-gate.sh \
+            --mode default \
+            --base-ref "origin/${{ env.GATE_BASE_REF }}" \
+            --report-json-path tmp/check-gate-default-ci.json \
+            --explain-scope \
+            --scope-report-path tmp/check-gate-default-ci-scope.json 2>&1 | tee tmp/check-gate-default-ci.log
+
+      - name: Upload default gate report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: governance-check-gate-default-report
+          path: tmp/check-gate-default-ci.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload default gate log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: governance-check-gate-default-log
+          path: tmp/check-gate-default-ci.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload default gate scope report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: governance-check-gate-default-scope
+          path: tmp/check-gate-default-ci-scope.json
+          if-no-files-found: error
+          retention-days: 7

@@ -4,7 +4,7 @@ import re
 import sys
 
 
-# Set of C headers (without .h suffix)
+# C 标准头集合（不含 .h 后缀）
 C_HEADER_SET = {
 	"assert",
 	"complex",
@@ -44,12 +44,12 @@ def check_standard_headers_file(filename : Path):
 	errors = False
 	with open(filename, encoding="utf-8") as f:
 		content = f.read()
-	# First check if the file includes any C headers for more efficiency when no C header is used
+	# 先做一次快速命中判断，避免在未使用 C 头时重复扫描。
 	if C_HEADER_INCLUDE_PATTERN.search(content):
-		# Check each C header individually to print an error message with the appropriate replacement C++ header
+		# 逐个输出替换建议，便于直接修复。
 		for c_header in C_HEADER_SET:
 			if re.search(fr"#include\s+<{c_header}\.h>", content):
-				print(f"Error: '{filename}' includes C header '{c_header}.h'. Include the C++ header '{get_cpp_header(c_header)}' instead.")
+				print(f"错误：'{filename}' 使用了 C 头文件 '{c_header}.h'，请改为 C++ 头文件 '{get_cpp_header(c_header)}'。")
 				errors += 1
 	return errors
 
@@ -69,7 +69,7 @@ def check_standard_headers_directory(path : Path):
 def main():
 	if check_standard_headers_directory(Path("src")) != 0:
 		return 1
-	print("Success: No standard C headers are used.")
+	print("通过：未发现标准 C 头文件误用。")
 	return 0
 
 

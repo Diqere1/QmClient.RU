@@ -17,8 +17,6 @@
 #include <engine/textrender.h>
 #include <engine/updater.h>
 
-#include <algorithm>
-
 #include <generated/protocol.h>
 
 #include <game/client/animstate.h>
@@ -47,28 +45,28 @@ using namespace std::chrono_literals;
 
 namespace
 {
-bool PerfDebugEnabled()
-{
-	return g_Config.m_QmPerfDebug != 0;
-}
+	bool PerfDebugEnabled()
+	{
+		return g_Config.m_QmPerfDebug != 0;
+	}
 
-double PerfDebugThresholdMs()
-{
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-}
+	double PerfDebugThresholdMs()
+	{
+		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
+	}
 
-void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(!Force && DurationMs < PerfDebugThresholdMs())
-		return;
+	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	{
+		if(!PerfDebugEnabled())
+			return;
+		if(!Force && DurationMs < PerfDebugThresholdMs())
+			return;
 
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/menu", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	}
 
 }
 
@@ -189,203 +187,203 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 
 namespace
 {
-constexpr size_t MAX_LANGUAGE_CACHE = 128;
-constexpr float LANGUAGE_ROW_HEIGHT = 28.0f;
-constexpr float LANGUAGE_FONT_SIZE = 16.0f;
-constexpr float LANGUAGE_CREDITS_FONT_SIZE = 14.0f;
-constexpr float LANGUAGE_CREDITS_MARGIN = 10.0f;
-constexpr float LANGUAGE_SCROLLBAR_WIDTH = 20.0f;
+	constexpr size_t MAX_LANGUAGE_CACHE = 128;
+	constexpr float LANGUAGE_ROW_HEIGHT = 28.0f;
+	constexpr float LANGUAGE_FONT_SIZE = 16.0f;
+	constexpr float LANGUAGE_CREDITS_FONT_SIZE = 14.0f;
+	constexpr float LANGUAGE_CREDITS_MARGIN = 10.0f;
+	constexpr float LANGUAGE_SCROLLBAR_WIDTH = 20.0f;
 
-CScrollRegion gs_LanguageScrollRegion;
-bool gs_LanguageScrollToSelected = false;
-std::array<unsigned char, MAX_LANGUAGE_CACHE> gs_aLanguageRowIds{};
-std::array<CUIElement, MAX_LANGUAGE_CACHE> gs_aLanguageLabelElements;
-bool gs_LanguageLabelElementsInit = false;
-float gs_LanguageLabelWidth = -1.0f;
+	CScrollRegion gs_LanguageScrollRegion;
+	bool gs_LanguageScrollToSelected = false;
+	std::array<unsigned char, MAX_LANGUAGE_CACHE> gs_aLanguageRowIds{};
+	std::array<CUIElement, MAX_LANGUAGE_CACHE> gs_aLanguageLabelElements;
+	bool gs_LanguageLabelElementsInit = false;
+	float gs_LanguageLabelWidth = -1.0f;
 
-CScrollRegion gs_CreditsScrollRegion;
-CUIElement gs_CreditsLabelElement;
-bool gs_CreditsLabelElementInit = false;
-float gs_CreditsLineWidth = -1.0f;
-float gs_CreditsHeight = 0.0f;
-char gs_aCreditsLanguageFile[IO_MAX_PATH_LENGTH] = {};
-char gs_aLanguageCacheLanguageFile[IO_MAX_PATH_LENGTH] = {};
-int gs_SettingsDeferredPage = -1;
-int gs_SettingsDeferredFrames = 0;
+	CScrollRegion gs_CreditsScrollRegion;
+	CUIElement gs_CreditsLabelElement;
+	bool gs_CreditsLabelElementInit = false;
+	float gs_CreditsLineWidth = -1.0f;
+	float gs_CreditsHeight = 0.0f;
+	char gs_aCreditsLanguageFile[IO_MAX_PATH_LENGTH] = {};
+	char gs_aLanguageCacheLanguageFile[IO_MAX_PATH_LENGTH] = {};
+	int gs_SettingsDeferredPage = -1;
+	int gs_SettingsDeferredFrames = 0;
 
-void EnsureLanguagePageCacheInit(CUi *pUi)
-{
-	if(!gs_LanguageLabelElementsInit)
+	void EnsureLanguagePageCacheInit(CUi *pUi)
 	{
-		for(CUIElement &LabelElement : gs_aLanguageLabelElements)
-			LabelElement.Init(pUi, 1);
-		gs_LanguageLabelElementsInit = true;
+		if(!gs_LanguageLabelElementsInit)
+		{
+			for(CUIElement &LabelElement : gs_aLanguageLabelElements)
+				LabelElement.Init(pUi, 1);
+			gs_LanguageLabelElementsInit = true;
+		}
+
+		if(!gs_CreditsLabelElementInit)
+		{
+			gs_CreditsLabelElement.Init(pUi, 1);
+			gs_CreditsLabelElementInit = true;
+		}
 	}
 
-	if(!gs_CreditsLabelElementInit)
+	void LayoutLanguagePageBaseRects(float MainViewWidth, CUIRect &List, CUIRect &CreditsScroll)
 	{
-		gs_CreditsLabelElement.Init(pUi, 1);
-		gs_CreditsLabelElementInit = true;
+		CUIRect MainView;
+		MainView.x = 0.0f;
+		MainView.y = 0.0f;
+		MainView.w = MainViewWidth;
+		MainView.h = 600.0f;
+		MainView.HSplitBottom(4.0f * LANGUAGE_CREDITS_FONT_SIZE + 2.0f * LANGUAGE_CREDITS_MARGIN + CScrollRegion::HEIGHT_MAGIC_FIX, &List, &CreditsScroll);
+		List.HSplitBottom(5.0f, &List, nullptr);
 	}
-}
 
-void LayoutLanguagePageBaseRects(float MainViewWidth, CUIRect &List, CUIRect &CreditsScroll)
-{
-	CUIRect MainView;
-	MainView.x = 0.0f;
-	MainView.y = 0.0f;
-	MainView.w = MainViewWidth;
-	MainView.h = 600.0f;
-	MainView.HSplitBottom(4.0f * LANGUAGE_CREDITS_FONT_SIZE + 2.0f * LANGUAGE_CREDITS_MARGIN + CScrollRegion::HEIGHT_MAGIC_FIX, &List, &CreditsScroll);
-	List.HSplitBottom(5.0f, &List, nullptr);
-}
-
-float LanguageListLabelWidth(const CUIRect &ListRect)
-{
-	CUIRect ScrollClip = ListRect;
-	ScrollClip.VSplitRight(LANGUAGE_SCROLLBAR_WIDTH, &ScrollClip, nullptr);
-	CUIRect ItemRect = ScrollClip;
-	CUIRect Label;
-	ItemRect.h = LANGUAGE_ROW_HEIGHT;
-	ItemRect.VSplitLeft(ItemRect.h * 2.0f, nullptr, &Label);
-	return Label.w;
-}
-
-bool LanguageLabelCacheInvalid()
-{
-	if(g_Localization.Languages().size() > MAX_LANGUAGE_CACHE)
-		return true;
-
-	for(size_t i = 0; i < g_Localization.Languages().size(); ++i)
+	float LanguageListLabelWidth(const CUIRect &ListRect)
 	{
-		if(!gs_aLanguageLabelElements[i].Rect(0)->m_UITextContainer.Valid())
+		CUIRect ScrollClip = ListRect;
+		ScrollClip.VSplitRight(LANGUAGE_SCROLLBAR_WIDTH, &ScrollClip, nullptr);
+		CUIRect ItemRect = ScrollClip;
+		CUIRect Label;
+		ItemRect.h = LANGUAGE_ROW_HEIGHT;
+		ItemRect.VSplitLeft(ItemRect.h * 2.0f, nullptr, &Label);
+		return Label.w;
+	}
+
+	bool LanguageLabelCacheInvalid()
+	{
+		if(g_Localization.Languages().size() > MAX_LANGUAGE_CACHE)
 			return true;
+
+		for(size_t i = 0; i < g_Localization.Languages().size(); ++i)
+		{
+			if(!gs_aLanguageLabelElements[i].Rect(0)->m_UITextContainer.Valid())
+				return true;
+		}
+		return false;
 	}
-	return false;
-}
 
-bool UseLanguagePageCache()
-{
-	return g_Localization.Languages().size() <= MAX_LANGUAGE_CACHE;
-}
-
-void RebuildLanguageCreditsCache(CUi *pUi, const char *pCreditsText, float CreditsLineWidth)
-{
-	CUIRect CreditsCacheRect;
-	CreditsCacheRect.x = 0.0f;
-	CreditsCacheRect.y = 0.0f;
-	CreditsCacheRect.w = CreditsLineWidth;
-	CreditsCacheRect.h = 128.0f;
-	SLabelProperties CreditsLabelProps;
-	CreditsLabelProps.m_MaxWidth = CreditsCacheRect.w;
-	pUi->DoLabelStreamed(*gs_CreditsLabelElement.Rect(0), &CreditsCacheRect, pCreditsText, LANGUAGE_CREDITS_FONT_SIZE, TEXTALIGN_TL, CreditsLabelProps);
-	gs_CreditsHeight = gs_CreditsLabelElement.Rect(0)->m_Cursor.Height();
-	gs_CreditsLineWidth = CreditsLineWidth;
-	str_copy(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile, sizeof(gs_aCreditsLanguageFile));
-}
-
-bool ShouldDeferSettingsTailSection(const int Page)
-{
-	return gs_SettingsDeferredPage == Page && gs_SettingsDeferredFrames > 0;
-}
-
-int DeferredSettingsTailFrames(const int Page)
-{
-	return gs_SettingsDeferredPage == Page ? gs_SettingsDeferredFrames : 0;
-}
-
-void BeginDeferredSettingsPage(const int Page)
-{
-	gs_SettingsDeferredPage = Page;
-	switch(Page)
+	bool UseLanguagePageCache()
 	{
-	case CMenus::SETTINGS_DDNET:
-		gs_SettingsDeferredFrames = 3;
-		break;
-	case CMenus::SETTINGS_GENERAL:
-	case CMenus::SETTINGS_GRAPHICS:
-	default:
-		gs_SettingsDeferredFrames = 1;
-		break;
+		return g_Localization.Languages().size() <= MAX_LANGUAGE_CACHE;
 	}
-}
 
-void FinishDeferredSettingsFrame(const int Page)
-{
-	if(gs_SettingsDeferredPage != Page || gs_SettingsDeferredFrames <= 0)
-		return;
-
-	--gs_SettingsDeferredFrames;
-	if(gs_SettingsDeferredFrames <= 0)
-		gs_SettingsDeferredPage = -1;
-}
-
-const char *SettingsPageName(const int Page)
-{
-	switch(Page)
+	void RebuildLanguageCreditsCache(CUi *pUi, const char *pCreditsText, float CreditsLineWidth)
 	{
-	case CMenus::SETTINGS_LANGUAGE: return "language";
-	case CMenus::SETTINGS_GENERAL: return "general";
-	case CMenus::SETTINGS_PLAYER: return "player";
-	case CMenus::SETTINGS_TEE: return "tee";
-	case CMenus::SETTINGS_APPEARANCE: return "appearance";
-	case CMenus::SETTINGS_CONTROLS: return "controls";
-	case CMenus::SETTINGS_GRAPHICS: return "graphics";
-	case CMenus::SETTINGS_SOUND: return "sound";
-	case CMenus::SETTINGS_DDNET: return "ddnet";
-	case CMenus::SETTINGS_ASSETS: return "assets";
-	case CMenus::SETTINGS_TCLIENT: return "tclient";
-	case CMenus::SETTINGS_QMCLIENT: return "qmclient";
-	case CMenus::SETTINGS_PROFILES: return "profiles";
-	case CMenus::SETTINGS_CONFIGS: return "configs";
-	case CMenus::SETTINGS_CONTRIBUTORS: return "contributors";
-	default: return "unknown";
+		CUIRect CreditsCacheRect;
+		CreditsCacheRect.x = 0.0f;
+		CreditsCacheRect.y = 0.0f;
+		CreditsCacheRect.w = CreditsLineWidth;
+		CreditsCacheRect.h = 128.0f;
+		SLabelProperties CreditsLabelProps;
+		CreditsLabelProps.m_MaxWidth = CreditsCacheRect.w;
+		pUi->DoLabelStreamed(*gs_CreditsLabelElement.Rect(0), &CreditsCacheRect, pCreditsText, LANGUAGE_CREDITS_FONT_SIZE, TEXTALIGN_TL, CreditsLabelProps);
+		gs_CreditsHeight = gs_CreditsLabelElement.Rect(0)->m_Cursor.Height();
+		gs_CreditsLineWidth = CreditsLineWidth;
+		str_copy(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile, sizeof(gs_aCreditsLanguageFile));
 	}
-}
 
-static bool ApplyBackgroundEntitiesInputValue(CLineInput &Input)
-{
-	char aNormalized[IO_MAX_PATH_LENGTH];
-	const bool Changed = BuildBackgroundEntitiesCommitValueFromInput(Input.GetString(), g_Config.m_ClBackgroundEntities, aNormalized, sizeof(aNormalized));
-	if(Changed)
-		str_copy(g_Config.m_ClBackgroundEntities, aNormalized, sizeof(g_Config.m_ClBackgroundEntities));
-	if(Input.IsActive())
-		Input.Deactivate();
-	return Changed;
-}
+	bool ShouldDeferSettingsTailSection(const int Page)
+	{
+		return gs_SettingsDeferredPage == Page && gs_SettingsDeferredFrames > 0;
+	}
 
-static void SyncBackgroundEntitiesInput(CLineInput &Input, char *pSync, int SyncSize)
-{
-	char aNormalizedConfig[IO_MAX_PATH_LENGTH];
-	BuildBackgroundEntitiesValueFromInput(g_Config.m_ClBackgroundEntities, aNormalizedConfig, sizeof(aNormalizedConfig));
-	if(str_comp(pSync, aNormalizedConfig) != 0)
+	int DeferredSettingsTailFrames(const int Page)
+	{
+		return gs_SettingsDeferredPage == Page ? gs_SettingsDeferredFrames : 0;
+	}
+
+	void BeginDeferredSettingsPage(const int Page)
+	{
+		gs_SettingsDeferredPage = Page;
+		switch(Page)
+		{
+		case CMenus::SETTINGS_DDNET:
+			gs_SettingsDeferredFrames = 3;
+			break;
+		case CMenus::SETTINGS_GENERAL:
+		case CMenus::SETTINGS_GRAPHICS:
+		default:
+			gs_SettingsDeferredFrames = 1;
+			break;
+		}
+	}
+
+	void FinishDeferredSettingsFrame(const int Page)
+	{
+		if(gs_SettingsDeferredPage != Page || gs_SettingsDeferredFrames <= 0)
+			return;
+
+		--gs_SettingsDeferredFrames;
+		if(gs_SettingsDeferredFrames <= 0)
+			gs_SettingsDeferredPage = -1;
+	}
+
+	const char *SettingsPageName(const int Page)
+	{
+		switch(Page)
+		{
+		case CMenus::SETTINGS_LANGUAGE: return "language";
+		case CMenus::SETTINGS_GENERAL: return "general";
+		case CMenus::SETTINGS_PLAYER: return "player";
+		case CMenus::SETTINGS_TEE: return "tee";
+		case CMenus::SETTINGS_APPEARANCE: return "appearance";
+		case CMenus::SETTINGS_CONTROLS: return "controls";
+		case CMenus::SETTINGS_GRAPHICS: return "graphics";
+		case CMenus::SETTINGS_SOUND: return "sound";
+		case CMenus::SETTINGS_DDNET: return "ddnet";
+		case CMenus::SETTINGS_ASSETS: return "assets";
+		case CMenus::SETTINGS_TCLIENT: return "tclient";
+		case CMenus::SETTINGS_QMCLIENT: return "qmclient";
+		case CMenus::SETTINGS_PROFILES: return "profiles";
+		case CMenus::SETTINGS_CONFIGS: return "configs";
+		case CMenus::SETTINGS_CONTRIBUTORS: return "contributors";
+		default: return "unknown";
+		}
+	}
+
+	static bool ApplyBackgroundEntitiesInputValue(CLineInput &Input)
+	{
+		char aNormalized[IO_MAX_PATH_LENGTH];
+		const bool Changed = BuildBackgroundEntitiesCommitValueFromInput(Input.GetString(), g_Config.m_ClBackgroundEntities, aNormalized, sizeof(aNormalized));
+		if(Changed)
+			str_copy(g_Config.m_ClBackgroundEntities, aNormalized, sizeof(g_Config.m_ClBackgroundEntities));
+		if(Input.IsActive())
+			Input.Deactivate();
+		return Changed;
+	}
+
+	static void SyncBackgroundEntitiesInput(CLineInput &Input, char *pSync, int SyncSize)
+	{
+		char aNormalizedConfig[IO_MAX_PATH_LENGTH];
+		BuildBackgroundEntitiesValueFromInput(g_Config.m_ClBackgroundEntities, aNormalizedConfig, sizeof(aNormalizedConfig));
+		if(str_comp(pSync, aNormalizedConfig) != 0)
+		{
+			if(!Input.IsActive())
+				Input.Set(aNormalizedConfig);
+		}
+		str_copy(pSync, aNormalizedConfig, SyncSize);
+	}
+
+	static bool CommitBackgroundEntitiesInputIfActive(CLineInput &Input, char *pSync, int SyncSize)
 	{
 		if(!Input.IsActive())
-			Input.Set(aNormalizedConfig);
+			return false;
+
+		const bool Changed = ApplyBackgroundEntitiesInputValue(Input);
+		SyncBackgroundEntitiesInput(Input, pSync, SyncSize);
+		return Changed;
 	}
-	str_copy(pSync, aNormalizedConfig, SyncSize);
-}
 
-static bool CommitBackgroundEntitiesInputIfActive(CLineInput &Input, char *pSync, int SyncSize)
-{
-	if(!Input.IsActive())
-		return false;
-
-	const bool Changed = ApplyBackgroundEntitiesInputValue(Input);
-	SyncBackgroundEntitiesInput(Input, pSync, SyncSize);
-	return Changed;
-}
-
-static bool ToggleCurrentMapBackground(CLineInput &Input)
-{
-	const bool UseCurrentMap = IsCurrentMapBackgroundEntitiesValue(g_Config.m_ClBackgroundEntities);
-	Input.Deactivate();
-	if(UseCurrentMap)
-		g_Config.m_ClBackgroundEntities[0] = '\0';
-	else
-		str_copy(g_Config.m_ClBackgroundEntities, CURRENT_MAP);
-	return true;
-}
+	static bool ToggleCurrentMapBackground(CLineInput &Input)
+	{
+		const bool UseCurrentMap = IsCurrentMapBackgroundEntitiesValue(g_Config.m_ClBackgroundEntities);
+		Input.Deactivate();
+		if(UseCurrentMap)
+			g_Config.m_ClBackgroundEntities[0] = '\0';
+		else
+			str_copy(g_Config.m_ClBackgroundEntities, CURRENT_MAP);
+		return true;
+	}
 
 }
 
@@ -771,7 +769,6 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	}
 
 	Ui()->DoEditBox_Search(&s_FlagFilterInput, &QuickSearch, 14.0f, !Ui()->IsPopupOpen() && !GameClient()->m_GameConsole.IsActive());
-
 }
 
 void CMenus::RenderSettingsTee(CUIRect MainView)
@@ -1607,7 +1604,9 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			continue;
 		}
 
-		SkinListEntry.RequestLoad();
+		// Keep the selected preview responsive via FindContainerImpl(), but let the list itself
+		// ramp visible skins in gradually so opening settings doesn't burst-load textures.
+		SkinListEntry.RequestLoad(false);
 		const CSkin *pSkin = pSkinContainer->State() == CSkins::CSkinContainer::EState::LOADED ? pSkinContainer->Skin().get() : pDefaultSkin;
 
 		Item.m_Rect.VSplitLeft(60.0f, &Button, &Label);
@@ -1745,7 +1744,6 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	{
 		GameClient()->RefreshSkins(CSkinDescriptor::FLAG_SIX);
 	}
-
 }
 
 void CMenus::RenderSettingsGraphics(CUIRect MainView)
@@ -1754,6 +1752,37 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	char aBuf[128];
 	bool CheckSettings = false;
 	const bool DeferHeavyGraphics = ShouldDeferSettingsTailSection(SETTINGS_GRAPHICS);
+	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "") {
+		CUIRect Label, Controls, Slider, Input, SuffixRect;
+		const float InputWidth = 58.0f;
+		const float GapWidth = 6.0f;
+		const float SuffixWidth = pSuffix[0] != '\0' ? 18.0f : 0.0f;
+		Rect.VSplitLeft(minimum(180.0f, Rect.w * 0.42f), &Label, &Controls);
+		if(SuffixWidth > 0.0f)
+		{
+			Controls.VSplitRight(InputWidth + GapWidth + SuffixWidth, &Slider, &Input);
+			Input.VSplitRight(SuffixWidth, &Input, &SuffixRect);
+			Input.VSplitRight(GapWidth, &Input, nullptr);
+		}
+		else
+		{
+			Controls.VSplitRight(InputWidth, &Slider, &Input);
+			SuffixRect = {};
+		}
+		Slider.VSplitRight(GapWidth, &Slider, nullptr);
+		Slider.VMargin(1.0f, &Slider);
+		Input.VMargin(1.0f, &Input);
+		Ui()->DoLabel(&Label, pStr, Label.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_ML);
+		*pOption = pScale->ToAbsolute(Ui()->DoScrollbarH(pId, &Slider, pScale->ToRelative(*pOption, Min, Max)), Min, Max);
+		SValueSelectorProperties Props;
+		Props.m_UseScroll = false;
+		Props.m_TextAlign = TEXTALIGN_MC;
+		Props.m_SelectAllOnActivate = false;
+		const auto Result = Ui()->DoValueSelectorWithState(reinterpret_cast<const void *>((uintptr_t)pId ^ 0x1), &Input, "", *pOption, Min, Max, Props);
+		*pOption = (int)Result.m_Value;
+		if(SuffixWidth > 0.0f)
+			Ui()->DoLabel(&SuffixRect, pSuffix, SuffixRect.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
+	};
 
 	static const int MAX_RESOLUTIONS = 256;
 	static CVideoMode s_aModes[MAX_RESOLUTIONS];
@@ -1969,7 +1998,7 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	MainView.HSplitTop(20.0f, &Button, &MainView);
 	str_copy(aBuf, " ");
 	str_append(aBuf, Localize("Hz", "Hertz"));
-	Ui()->DoScrollbarOption(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, &Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE | CUi::SCROLLBAR_OPTION_DELAYUPDATE, aBuf);
+	DoSliderWithValueInput(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, aBuf);
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	static CButtonContainer s_UiColorResetId;
@@ -2128,27 +2157,27 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 
 			char aCurDeviceName[256 + 4];
 
-		int OldSelectedGpu = -1;
-		for(size_t i = 0; i < GpuCount; ++i)
-		{
-			if(i == 0)
+			int OldSelectedGpu = -1;
+			for(size_t i = 0; i < GpuCount; ++i)
 			{
-				str_format(aCurDeviceName, sizeof(aCurDeviceName), "%s (%s)", Localize("auto"), GpuList.m_AutoGpu.m_aName);
-				s_vpGpuIdNames[i] = aCurDeviceName;
-				if(str_comp("auto", g_Config.m_GfxGpuName) == 0)
+				if(i == 0)
 				{
-					OldSelectedGpu = 0;
+					str_format(aCurDeviceName, sizeof(aCurDeviceName), "%s (%s)", Localize("auto"), GpuList.m_AutoGpu.m_aName);
+					s_vpGpuIdNames[i] = aCurDeviceName;
+					if(str_comp("auto", g_Config.m_GfxGpuName) == 0)
+					{
+						OldSelectedGpu = 0;
+					}
+				}
+				else
+				{
+					s_vpGpuIdNames[i] = GpuList.m_vGpus[i - 1].m_aName;
+					if(str_comp(GpuList.m_vGpus[i - 1].m_aName, g_Config.m_GfxGpuName) == 0)
+					{
+						OldSelectedGpu = i;
+					}
 				}
 			}
-			else
-			{
-				s_vpGpuIdNames[i] = GpuList.m_vGpus[i - 1].m_aName;
-				if(str_comp(GpuList.m_vGpus[i - 1].m_aName, g_Config.m_GfxGpuName) == 0)
-				{
-					OldSelectedGpu = i;
-				}
-			}
-		}
 
 			static int s_OldSelectedGpu = -1;
 			if(s_OldSelectedGpu == -1)
@@ -2308,81 +2337,81 @@ void CMenus::AudioPackEditorSetStatus(const char *pMessage, bool IsError)
 
 namespace
 {
-struct SAudioPackCandidateScanContext
-{
-	IStorage *m_pStorage = nullptr;
-	std::set<std::string> *m_pEntries = nullptr;
-	char m_aScanRoot[IO_MAX_PATH_LENGTH] = "";
-	char m_aOutputPrefix[IO_MAX_PATH_LENGTH] = "";
-	char m_aRelativePath[IO_MAX_PATH_LENGTH] = "";
-};
+	struct SAudioPackCandidateScanContext
+	{
+		IStorage *m_pStorage = nullptr;
+		std::set<std::string> *m_pEntries = nullptr;
+		char m_aScanRoot[IO_MAX_PATH_LENGTH] = "";
+		char m_aOutputPrefix[IO_MAX_PATH_LENGTH] = "";
+		char m_aRelativePath[IO_MAX_PATH_LENGTH] = "";
+	};
 
 }
 
 namespace
 {
 
-static int AudioPackCandidateScanCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser)
-{
-	(void)StorageType;
-
-	auto *pContext = static_cast<SAudioPackCandidateScanContext *>(pUser);
-	if(!str_comp(pInfo->m_pName, ".") || !str_comp(pInfo->m_pName, ".."))
-		return 0;
-
-	char aRelativePath[IO_MAX_PATH_LENGTH];
-	if(pContext->m_aRelativePath[0] != '\0')
-		str_format(aRelativePath, sizeof(aRelativePath), "%s/%s", pContext->m_aRelativePath, pInfo->m_pName);
-	else
-		str_copy(aRelativePath, pInfo->m_pName);
-
-	char aScanPath[IO_MAX_PATH_LENGTH];
-	str_format(aScanPath, sizeof(aScanPath), "%s/%s", pContext->m_aScanRoot, aRelativePath);
-
-	if(IsDir)
+	static int AudioPackCandidateScanCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser)
 	{
-		if(pInfo->m_pName[0] == '.')
+		(void)StorageType;
+
+		auto *pContext = static_cast<SAudioPackCandidateScanContext *>(pUser);
+		if(!str_comp(pInfo->m_pName, ".") || !str_comp(pInfo->m_pName, ".."))
 			return 0;
 
-		SAudioPackCandidateScanContext NextContext = *pContext;
-		str_copy(NextContext.m_aRelativePath, aRelativePath, sizeof(NextContext.m_aRelativePath));
-		pContext->m_pStorage->ListDirectoryInfo(IStorage::TYPE_ALL, aScanPath, AudioPackCandidateScanCallback, &NextContext);
+		char aRelativePath[IO_MAX_PATH_LENGTH];
+		if(pContext->m_aRelativePath[0] != '\0')
+			str_format(aRelativePath, sizeof(aRelativePath), "%s/%s", pContext->m_aRelativePath, pInfo->m_pName);
+		else
+			str_copy(aRelativePath, pInfo->m_pName);
+
+		char aScanPath[IO_MAX_PATH_LENGTH];
+		str_format(aScanPath, sizeof(aScanPath), "%s/%s", pContext->m_aScanRoot, aRelativePath);
+
+		if(IsDir)
+		{
+			if(pInfo->m_pName[0] == '.')
+				return 0;
+
+			SAudioPackCandidateScanContext NextContext = *pContext;
+			str_copy(NextContext.m_aRelativePath, aRelativePath, sizeof(NextContext.m_aRelativePath));
+			pContext->m_pStorage->ListDirectoryInfo(IStorage::TYPE_ALL, aScanPath, AudioPackCandidateScanCallback, &NextContext);
+			return 0;
+		}
+
+		std::string CandidatePath;
+		if(CMenus::TryBuildAudioPackCandidatePathFromScan(pContext->m_aOutputPrefix, aRelativePath, CandidatePath))
+			pContext->m_pEntries->insert(std::move(CandidatePath));
+
 		return 0;
 	}
 
-	std::string CandidatePath;
-	if(CMenus::TryBuildAudioPackCandidatePathFromScan(pContext->m_aOutputPrefix, aRelativePath, CandidatePath))
-		pContext->m_pEntries->insert(std::move(CandidatePath));
+	static const char *ResolveAudioPackEditorPackName(const CLineInputBuffered<64> &PackNameInput, const char *pFallbackPackName)
+	{
+		if(PackNameInput.GetString()[0] != '\0')
+			return PackNameInput.GetString();
+		return pFallbackPackName != nullptr ? pFallbackPackName : "";
+	}
 
-	return 0;
-}
+	static void ResolveAudioPackEditorCurrentFilePath(IStorage *pStorage, const char *pPackName, const CMenus::SAudioPackSlot &Slot, char *pOut, int OutSize)
+	{
+		pOut[0] = '\0';
 
-static const char *ResolveAudioPackEditorPackName(const CLineInputBuffered<64> &PackNameInput, const char *pFallbackPackName)
-{
-	if(PackNameInput.GetString()[0] != '\0')
-		return PackNameInput.GetString();
-	return pFallbackPackName != nullptr ? pFallbackPackName : "";
-}
+		char aDirectPath[IO_MAX_PATH_LENGTH];
+		char aLegacyPath[IO_MAX_PATH_LENGTH];
+		char aBuiltinPath[IO_MAX_PATH_LENGTH];
 
-static void ResolveAudioPackEditorCurrentFilePath(IStorage *pStorage, const char *pPackName, const CMenus::SAudioPackSlot &Slot, char *pOut, int OutSize)
-{
-	pOut[0] = '\0';
+		str_copy(aDirectPath, CMenus::BuildAudioPackExportPath(pPackName, Slot.m_pRelativePath).c_str(), sizeof(aDirectPath));
+		str_format(aLegacyPath, sizeof(aLegacyPath), "audio/%s/audio/%s", pPackName, Slot.m_pRelativePath);
+		str_copy(aBuiltinPath, CMenus::BuildAudioPackBuiltinCandidatePath(Slot.m_pRelativePath).c_str(), sizeof(aBuiltinPath));
 
-	char aDirectPath[IO_MAX_PATH_LENGTH];
-	char aLegacyPath[IO_MAX_PATH_LENGTH];
-	char aBuiltinPath[IO_MAX_PATH_LENGTH];
-
-	str_copy(aDirectPath, CMenus::BuildAudioPackExportPath(pPackName, Slot.m_pRelativePath).c_str(), sizeof(aDirectPath));
-	str_format(aLegacyPath, sizeof(aLegacyPath), "audio/%s/audio/%s", pPackName, Slot.m_pRelativePath);
-	str_copy(aBuiltinPath, CMenus::BuildAudioPackBuiltinCandidatePath(Slot.m_pRelativePath).c_str(), sizeof(aBuiltinPath));
-
-	if(pStorage->FileExists(aDirectPath, IStorage::TYPE_ALL))
-		str_copy(pOut, aDirectPath, OutSize);
-	else if(pStorage->FileExists(aLegacyPath, IStorage::TYPE_ALL))
-		str_copy(pOut, aLegacyPath, OutSize);
-	else if(pStorage->FileExists(aBuiltinPath, IStorage::TYPE_ALL))
-		str_copy(pOut, aBuiltinPath, OutSize);
-}
+		if(pStorage->FileExists(aDirectPath, IStorage::TYPE_ALL))
+			str_copy(pOut, aDirectPath, OutSize);
+		else if(pStorage->FileExists(aLegacyPath, IStorage::TYPE_ALL))
+			str_copy(pOut, aLegacyPath, OutSize);
+		else if(pStorage->FileExists(aBuiltinPath, IStorage::TYPE_ALL))
+			str_copy(pOut, aBuiltinPath, OutSize);
+	}
 
 }
 
@@ -2928,6 +2957,37 @@ void CMenus::RenderSettingsSound(CUIRect MainView)
 	}
 
 	CUIRect Button;
+	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "") {
+		CUIRect Label, Controls, Slider, Input, SuffixRect;
+		const float InputWidth = 58.0f;
+		const float GapWidth = 6.0f;
+		const float SuffixWidth = pSuffix[0] != '\0' ? 18.0f : 0.0f;
+		Rect.VSplitLeft(minimum(180.0f, Rect.w * 0.42f), &Label, &Controls);
+		if(SuffixWidth > 0.0f)
+		{
+			Controls.VSplitRight(InputWidth + GapWidth + SuffixWidth, &Slider, &Input);
+			Input.VSplitRight(SuffixWidth, &Input, &SuffixRect);
+			Input.VSplitRight(GapWidth, &Input, nullptr);
+		}
+		else
+		{
+			Controls.VSplitRight(InputWidth, &Slider, &Input);
+			SuffixRect = {};
+		}
+		Slider.VSplitRight(GapWidth, &Slider, nullptr);
+		Slider.VMargin(1.0f, &Slider);
+		Input.VMargin(1.0f, &Input);
+		Ui()->DoLabel(&Label, pStr, Label.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_ML);
+		*pOption = pScale->ToAbsolute(Ui()->DoScrollbarH(pId, &Slider, pScale->ToRelative(*pOption, Min, Max)), Min, Max);
+		SValueSelectorProperties Props;
+		Props.m_UseScroll = false;
+		Props.m_TextAlign = TEXTALIGN_MC;
+		Props.m_SelectAllOnActivate = false;
+		const auto Result = Ui()->DoValueSelectorWithState(reinterpret_cast<const void *>((uintptr_t)pId ^ 0x1), &Input, "", *pOption, Min, Max, Props);
+		*pOption = (int)Result.m_Value;
+		if(SuffixWidth > 0.0f)
+			Ui()->DoLabel(&SuffixRect, pSuffix, SuffixRect.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
+	};
 	MainView.HSplitTop(20.0f, &Button, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_SndEnable, Localize("启用声音"), g_Config.m_SndEnable, &Button))
 	{
@@ -3142,35 +3202,35 @@ void CMenus::RenderSettingsSound(CUIRect MainView)
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndVolume, &g_Config.m_SndVolume, &Button, Localize("总音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndVolume, &g_Config.m_SndVolume, Button, Localize("总音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 
 	// volume slider game sounds
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndGameVolume, &g_Config.m_SndGameVolume, &Button, Localize("游戏音效音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndGameVolume, &g_Config.m_SndGameVolume, Button, Localize("游戏音效音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 
 	// volume slider gui sounds
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndChatVolume, &g_Config.m_SndChatVolume, &Button, Localize("聊天提示音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndChatVolume, &g_Config.m_SndChatVolume, Button, Localize("聊天提示音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 
 	// volume slider map sounds
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndMapVolume, &g_Config.m_SndMapVolume, &Button, Localize("地图声音音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndMapVolume, &g_Config.m_SndMapVolume, Button, Localize("地图声音音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 
 	// volume slider background music
 	{
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(20.0f, &Button, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_SndBackgroundMusicVolume, &g_Config.m_SndBackgroundMusicVolume, &Button, Localize("背景音乐音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, 0u, "%");
+		DoSliderWithValueInput(&g_Config.m_SndBackgroundMusicVolume, &g_Config.m_SndBackgroundMusicVolume, Button, Localize("背景音乐音量"), 0, 100, &CUi::ms_LogarithmicScrollbarScale, "%");
 	}
 }
 
@@ -3331,7 +3391,7 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 		}
 
 		const ColorRGBA BgColor = Selected ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.14f) :
-			(Ui()->HotItem() == pRowId ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f));
+						     (Ui()->HotItem() == pRowId ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f));
 		if(BgColor.a > 0.0f)
 			ItemRect.Draw(BgColor, IGraphics::CORNER_ALL, 5.0f);
 
@@ -4834,12 +4894,11 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 	}
 }
 
-	void CMenus::RenderSettingsDDNet(CUIRect MainView)
+void CMenus::RenderSettingsDDNet(CUIRect MainView)
 {
 	CUIRect Button, Left, Right, LeftLeft, Label;
 	const int DeferredTailFrames = DeferredSettingsTailFrames(SETTINGS_DDNET);
 	const bool DeferTailSections = DeferredTailFrames > 0;
-
 
 	// demo
 	CUIRect Demo;
@@ -5149,14 +5208,14 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 
 			static CButtonContainer s_BackgroundEntitiesMapPicker, s_BackgroundEntitiesReload;
 
-		if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesReload, FONT_ICON_ARROW_ROTATE_RIGHT, 0, &ReloadButton, BUTTONFLAG_LEFT))
-		{
-			BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-			g_Config.m_ClBackgroundEntities[0] = '\0';
-			s_BackgroundEntitiesInput.Set("");
-			s_aBackgroundEntitiesSync[0] = '\0';
-			BackgroundChanged = true;
-		}
+			if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesReload, FONT_ICON_ARROW_ROTATE_RIGHT, 0, &ReloadButton, BUTTONFLAG_LEFT))
+			{
+				BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
+				g_Config.m_ClBackgroundEntities[0] = '\0';
+				s_BackgroundEntitiesInput.Set("");
+				s_aBackgroundEntitiesSync[0] = '\0';
+				BackgroundChanged = true;
+			}
 
 			if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesMapPicker, FONT_ICON_FOLDER, 0, &Button, BUTTONFLAG_LEFT))
 			{
@@ -5235,7 +5294,6 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 			Ui()->DoLabel(&Label, Localize("Miscellaneous options are committed after background"), 14.0f, TEXTALIGN_ML);
 		}
 	}
-
 }
 
 CUi::EPopupMenuFunctionResult CMenus::PopupSkinQueuePresetRename(void *pContext, CUIRect View, bool Active)

@@ -65,6 +65,10 @@
 #endif
 
 #elif defined(CONF_FAMILY_WINDOWS)
+#include <winsock2.h>
+
+#include <windows.h>
+
 #include <io.h>
 #include <objbase.h>
 #include <process.h>
@@ -73,8 +77,6 @@
 #include <shlobj.h> // SHChangeNotify, SHGetKnownFolderPath
 #include <shlwapi.h>
 #include <wincrypt.h>
-#include <windows.h>
-#include <winsock2.h>
 #include <ws2tcpip.h>
 
 #include <cerrno>
@@ -2764,7 +2766,7 @@ int fs_file_time(const char *name, time_t *created, time_t *modified)
 	if(stat(name, &sb))
 		return 1;
 
-	// Unix  
+	// Unix
 	*created = sb.st_ctime;
 	*modified = sb.st_mtime;
 #else
