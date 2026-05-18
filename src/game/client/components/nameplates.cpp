@@ -46,16 +46,6 @@ static constexpr std::array<ENameplateCoreRow, kNameplateCoreRowCount> s_aDefaul
 	ENameplateCoreRow::CLAN,
 	ENameplateCoreRow::NAME};
 
-static bool FocusModeHidesNames()
-{
-	return g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideNames != 0;
-}
-
-static bool FocusModeHidesOverheadIndicators()
-{
-	return g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideOverheadIndicators != 0;
-}
-
 static bool FocusModeHidesChat()
 {
 	return g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideChat != 0;
@@ -1527,8 +1517,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 
 	const bool HideIdentity = GameClient()->ShouldHideStreamerIdentity(ClientId);
 
-	const bool HideFocusNames = FocusModeHidesNames();
-	Data.m_ShowName = !HideFocusNames && (pPlayerInfo->m_Local ? g_Config.m_ClNamePlatesOwn : g_Config.m_ClNamePlates);
+	Data.m_ShowName = pPlayerInfo->m_Local ? g_Config.m_ClNamePlatesOwn : g_Config.m_ClNamePlates;
 	GameClient()->FormatStreamerName(ClientId, Data.m_aName, sizeof(Data.m_aName));
 	Data.m_ShowFriendMark = Data.m_ShowName && g_Config.m_ClNamePlatesFriendMark && GameClient()->m_aClients[ClientId].m_Friend;
 	Data.m_ShowClientId = Data.m_ShowName && (g_Config.m_Debug || g_Config.m_ClNamePlatesIds) && !HideIdentity;
@@ -1554,9 +1543,9 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 		pPlayerInfo->m_Local &&
 		m_pData->m_CoordXAlignFrame.m_LocalAligned;
 	const bool ShowLocalAlignedCoordX = CoordXAlignHintEnabled && LocalCoordXAligned;
-	Data.m_ShowCoordX = !HideFocusNames && (g_Config.m_QmNameplateCoordX != 0 || ShowLocalAlignedCoordX);
-	Data.m_ShowCoordY = !HideFocusNames && g_Config.m_QmNameplateCoordY != 0;
-	Data.m_ShowCoords = !HideFocusNames && ((pPlayerInfo->m_Local ? g_Config.m_QmNameplateCoordsOwn : g_Config.m_QmNameplateCoords) || ShowLocalAlignedCoordX);
+	Data.m_ShowCoordX = g_Config.m_QmNameplateCoordX != 0 || ShowLocalAlignedCoordX;
+	Data.m_ShowCoordY = g_Config.m_QmNameplateCoordY != 0;
+	Data.m_ShowCoords = (pPlayerInfo->m_Local ? g_Config.m_QmNameplateCoordsOwn : g_Config.m_QmNameplateCoords) || ShowLocalAlignedCoordX;
 	Data.m_Coords = Position / 32.0f;
 	Data.m_FontSizeCoords = 18.0f + 20.0f * g_Config.m_ClNamePlatesCoordsSize / 100.0f;
 
@@ -1611,7 +1600,6 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 		ShowDirectionConfig = g_Config.m_ClVideoShowDirection;
 #endif
 	Data.m_DirLeft = Data.m_DirJump = Data.m_DirRight = false;
-	const bool HideOverheadIndicators = FocusModeHidesOverheadIndicators();
 	switch(ShowDirectionConfig)
 	{
 	case 0: // Off
@@ -1629,8 +1617,6 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	default:
 		dbg_assert_failed("ShowDirectionConfig invalid");
 	}
-	if(HideOverheadIndicators)
-		Data.m_ShowDirection = false;
 	if(Data.m_ShowDirection)
 	{
 		if(Client()->State() != IClient::STATE_DEMOPLAYBACK &&
@@ -1663,7 +1649,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	Data.m_HookStrongWeakId = 0;
 
 	const bool Following = (GameClient()->m_Snap.m_SpecInfo.m_Active && !GameClient()->m_MultiViewActivated && GameClient()->m_Snap.m_SpecInfo.m_SpectatorId != SPEC_FREEVIEW);
-	if(!HideOverheadIndicators && (GameClient()->m_Snap.m_LocalClientId != -1 || Following))
+	if(GameClient()->m_Snap.m_LocalClientId != -1 || Following)
 	{
 		const int SelectedId = Following ? GameClient()->m_Snap.m_SpecInfo.m_SpectatorId : GameClient()->m_Snap.m_LocalClientId;
 		if(SelectedId >= 0 && SelectedId < MAX_CLIENTS)
@@ -2219,13 +2205,11 @@ void CNamePlates::OnRender()
 	if(IVideo::Current())
 		ShowDirection = g_Config.m_ClVideoShowDirection;
 #endif
-	const bool HideFocusNames = FocusModeHidesNames();
-	const bool ShowCoordXAlignHint = !HideFocusNames && (g_Config.m_QmNameplateCoordXAlignHint || g_Config.m_QmNameplateCoordXAlignHintStrict);
-	const bool ShowCoords = !HideFocusNames && (g_Config.m_QmNameplateCoords || g_Config.m_QmNameplateCoordsOwn) &&
+	const bool ShowCoordXAlignHint = g_Config.m_QmNameplateCoordXAlignHint || g_Config.m_QmNameplateCoordXAlignHintStrict;
+	const bool ShowCoords = (g_Config.m_QmNameplateCoords || g_Config.m_QmNameplateCoordsOwn) &&
 				(g_Config.m_QmNameplateCoordX || g_Config.m_QmNameplateCoordY);
-	const bool RenderNames = !HideFocusNames && (g_Config.m_ClNamePlates || g_Config.m_ClNamePlatesOwn);
-	const bool HideOverheadIndicators = FocusModeHidesOverheadIndicators();
-	const bool RenderDirection = !HideOverheadIndicators && ShowDirection != 0;
+	const bool RenderNames = g_Config.m_ClNamePlates || g_Config.m_ClNamePlatesOwn;
+	const bool RenderDirection = ShowDirection != 0;
 	const bool RenderNameplates = RenderNames || RenderDirection || ShowCoords || ShowCoordXAlignHint;
 	const bool RenderChatBubbles = g_Config.m_QmChatBubble != 0 && !FocusModeHidesChat();
 	const bool RenderFreezeWakeupPopups = GameClient()->HasFreezeWakeupPopups();

@@ -11,6 +11,7 @@
 #include <generated/protocol.h>
 
 #include <game/client/animstate.h>
+#include <game/client/components/qmclient/modes.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
@@ -445,7 +446,7 @@ void CInfoMessages::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI)
+	if(ShouldHideFocusInfoMessages(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideInfoMessages != 0))
 		return;
 
 	const float Height = 1.5f * 400.0f * 3.0f;

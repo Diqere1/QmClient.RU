@@ -63,9 +63,7 @@ void SuppressActionInput(CNetObj_PlayerInput &Input, int ReleasedFire)
 
 float EffectiveFastInputOffsetTicks(const CGameClient *pGameClient)
 {
-	(void)pGameClient;
-
-	if(!g_Config.m_TcFastInput)
+	if(!pGameClient->TClientComponent().IsFastInputActive())
 		return 0.0f;
 	if(g_Config.m_TcFastInputAmount <= 0)
 		return 0.0f;
@@ -79,9 +77,9 @@ int FastInputPredictionTicks(float OffsetTicks)
 	return (int)std::ceil(OffsetTicks);
 }
 
-bool EffectiveFastInputOthers()
+bool EffectiveFastInputOthers(const CGameClient *pGameClient)
 {
-	return g_Config.m_TcFastInputOthers != 0;
+	return pGameClient->TClientComponent().IsFastInputOthersActive();
 }
 
 bool IsFrozenState(const CCharacter *pChar)
@@ -1400,7 +1398,7 @@ int CFastPractice::ApplyVisualFastInputPrediction(int FinalTickRegular, int Loca
 
 	const int FinalTickSelf = FinalTickRegular + FastInputTicks;
 	int FinalTickOthers = FinalTickSelf;
-	if(!EffectiveFastInputOthers())
+	if(!EffectiveFastInputOthers(GameClient()))
 		FinalTickOthers = FinalTickRegular;
 
 	const auto ResolveInputSlotByClientId = [&](int ClientId, int FallbackSlot) {

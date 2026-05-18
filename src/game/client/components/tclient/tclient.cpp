@@ -28,7 +28,7 @@
 #include <game/client/animstate.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/hud_editor.h>
-#include <game/client/components/qmclient/config_override.h>
+#include <game/client/components/qmclient/modes.h>
 #include <game/client/components/qmclient/data_version.h>
 #include <game/client/components/qmclient/keyword_reply_rules.h>
 #include <game/client/gameclient.h>
@@ -1859,6 +1859,13 @@ void CTClient::OnConsoleInit()
 	Console()->Chain("qm_aspect_ratio", AspectConchain, this);
 
 	Console()->Chain(
+		"qm_gores", [](IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData) {
+			pfnCallback(pResult, pCallbackUserData);
+			((CTClient *)pUserData)->ApplyGoresFastInputLink(false);
+		},
+		this);
+
+	Console()->Chain(
 		"tc_regex_chat_ignore", [](IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData) {
 			if(pResult->NumArguments() == 1)
 			{
@@ -3273,16 +3280,10 @@ void CTClient::OnStateChange(int NewState, int OldState)
 	if(NewState != IClient::STATE_ONLINE)
 	{
 		ResetAxiomAutoLoginState();
-		if(m_PrevGoresFastInputActive)
-			g_Config.m_TcFastInput = m_SavedTcFastInput;
-		if(m_PrevGoresFastInputOthersActive)
-			g_Config.m_TcFastInputOthers = m_SavedTcFastInputOthers;
 		m_GoresModeStateKnown = false;
 		m_PrevGoresModeActive = false;
-		m_PrevGoresFastInputActive = false;
-		m_PrevGoresFastInputOthersActive = false;
-		m_SavedTcFastInput = g_Config.m_TcFastInput;
-		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
+		m_GoresAutoMapKnown = false;
+		m_GoresAutoMapToken = 0;
 		ClearSwapCountdown();
 		m_aLastChatMessage[0] = '\0';
 		m_LastRepeatTime = 0;
@@ -3316,12 +3317,10 @@ void CTClient::OnStateChange(int NewState, int OldState)
 	if(NewState == IClient::STATE_ONLINE)
 	{
 		ResetAxiomAutoLoginState();
-		m_GoresModeStateKnown = true;
+		m_GoresModeStateKnown = false;
 		m_PrevGoresModeActive = IsGoresModuleEnabled();
-		m_PrevGoresFastInputActive = false;
-		m_PrevGoresFastInputOthersActive = false;
-		m_SavedTcFastInput = g_Config.m_TcFastInput;
-		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
+		m_GoresAutoMapKnown = false;
+		m_GoresAutoMapToken = 0;
 	}
 
 	// 进入服务器时重置统计数据
@@ -3334,6 +3333,7 @@ void CTClient::OnStateChange(int NewState, int OldState)
 void CTClient::OnNewSnapshot()
 {
 	SetForcedAspect();
+	ApplyGoresFastInputLink(true);
 	MaybeShowLocalSaveJoinHint();
 	// Update volleyball
 	bool IsVolleyBall = false;
@@ -3681,7 +3681,17 @@ bool CTClient::IsGoresGameMode() const
 
 bool CTClient::IsGoresModuleEnabled() const
 {
-	return g_Config.m_QmGores != 0 || (g_Config.m_QmGoresAutoEnable != 0 && IsGoresGameMode());
+	return g_Config.m_QmGores != 0;
+}
+
+bool CTClient::IsFastInputActive() const
+{
+	return g_Config.m_TcFastInput != 0;
+}
+
+bool CTClient::IsFastInputOthersActive() const
+{
+	return g_Config.m_TcFastInputOthers != 0;
 }
 
 bool CTClient::ShouldHideGoresGuides(bool ManualGuideVisible) const
@@ -4041,9 +4051,12 @@ void CTClient::BuildGoresDistanceField()
 void CTClient::ApplyFocusModeEffects()
 {
 	const bool FocusActive = g_Config.m_QmFocusMode != 0;
-	const bool HideHud = FocusActive && g_Config.m_QmFocusModeHideHud != 0;
-	const bool HideUiOverlays = ShouldHideFocusUiOverlays(FocusActive, g_Config.m_QmFocusModeHideUI != 0);
-	const bool HideNames = FocusActive && g_Config.m_QmFocusModeHideNames != 0;
+	const auto ApplyFocusOverride = [](SQmFocusConfigOverrideState &State, bool HideActive, int &ConfigValue, int HiddenValue) {
+		bool Changed = false;
+		const int NextValue = ApplyQmFocusConfigOverride(State, HideActive, ConfigValue, HiddenValue, Changed);
+		if(Changed)
+			ConfigValue = NextValue;
+	};
 	const bool StateWasKnown = m_FocusModeStateKnown;
 	if(!m_FocusModeStateKnown)
 	{
@@ -4065,79 +4078,60 @@ void CTClient::ApplyFocusModeEffects()
 			Localize(FocusActive ? "On" : "Off"));
 		GameClient()->Echo(aFocusMsg, true);
 	}
-	else if(StateWasKnown && !FocusActive && !m_FocusHudOverridden && !m_FocusUiOverlayOverridden && !m_FocusNamesOverridden)
-	{
-		return;
-	}
 
-	SConfigIntOverrideEntry aHudEntries[] = {
-		{&g_Config.m_ClShowhud, &m_SavedHudConfig.m_ClShowhud, 0},
-		{&g_Config.m_ClShowhudHealthAmmo, &m_SavedHudConfig.m_ClShowhudHealthAmmo, 0},
-		{&g_Config.m_ClShowhudScore, &m_SavedHudConfig.m_ClShowhudScore, 0},
-		{&g_Config.m_ClShowhudTimer, &m_SavedHudConfig.m_ClShowhudTimer, 0},
-		{&g_Config.m_ClShowhudTimeCpDiff, &m_SavedHudConfig.m_ClShowhudTimeCpDiff, 0},
-		{&g_Config.m_ClShowLocalTimeAlways, &m_SavedHudConfig.m_ClShowLocalTimeAlways, 0},
-		{&g_Config.m_ClSpecCursor, &m_SavedHudConfig.m_ClSpecCursor, 0},
-		{&g_Config.m_ClShowVotesAfterVoting, &m_SavedHudConfig.m_ClShowVotesAfterVoting, 0},
-		{&g_Config.m_ClShowIds, &m_SavedHudConfig.m_ClShowIds, 0},
-		{&g_Config.m_ClShowhudDDRace, &m_SavedHudConfig.m_ClShowhudDDRace, 0},
-		{&g_Config.m_ClShowhudJumpsIndicator, &m_SavedHudConfig.m_ClShowhudJumpsIndicator, 0},
-		{&g_Config.m_ClShowhudSpectatorCount, &m_SavedHudConfig.m_ClShowhudSpectatorCount, 0},
-		{&g_Config.m_ClShowhudSpectator, &m_SavedHudConfig.m_ClShowhudSpectator, 0},
-		{&g_Config.m_ClShowhudDummyActions, &m_SavedHudConfig.m_ClShowhudDummyActions, 0},
-		{&g_Config.m_ClShowhudKeyStatusReset, &m_SavedHudConfig.m_ClShowhudKeyStatusReset, 0},
-		{&g_Config.m_ClShowhudKeyStatusHammer, &m_SavedHudConfig.m_ClShowhudKeyStatusHammer, 0},
-		{&g_Config.m_ClShowhudKeyStatusControl, &m_SavedHudConfig.m_ClShowhudKeyStatusControl, 0},
-		{&g_Config.m_ClShowhudKeyStatusSync, &m_SavedHudConfig.m_ClShowhudKeyStatusSync, 0},
-		{&g_Config.m_ClShowhudPlayerPosition, &m_SavedHudConfig.m_ClShowhudPlayerPosition, 0},
-		{&g_Config.m_ClShowhudPlayerSpeed, &m_SavedHudConfig.m_ClShowhudPlayerSpeed, 0},
-		{&g_Config.m_ClShowhudPlayerAngle, &m_SavedHudConfig.m_ClShowhudPlayerAngle, 0},
-		{&g_Config.m_ClShowFreezeBars, &m_SavedHudConfig.m_ClShowFreezeBars, 0},
-	};
-	UpdateConfigIntOverrides(aHudEntries, sizeof(aHudEntries) / sizeof(aHudEntries[0]), HideHud, m_FocusHudOverridden);
-
-	SConfigIntOverrideEntry aUiOverlayEntries[] = {
-		{&g_Config.m_TcStatusBar, &m_SavedHudConfig.m_TcStatusBar, 0},
-		{&g_Config.m_TcNotifyWhenLast, &m_SavedHudConfig.m_TcNotifyWhenLast, 0},
-		{&g_Config.m_QmDummyMiniView, &m_SavedHudConfig.m_QmDummyMiniView, 0},
-		{&g_Config.m_QmPlayerStatsMapProgress, &m_SavedHudConfig.m_QmPlayerStatsMapProgress, 0},
-		{&g_Config.m_QmSmtcShowHud, &m_SavedHudConfig.m_QmSmtcShowHud, 0},
-		{&g_Config.m_QmInputOverlay, &m_SavedHudConfig.m_QmInputOverlay, 0},
-	};
-	UpdateConfigIntOverrides(aUiOverlayEntries, sizeof(aUiOverlayEntries) / sizeof(aUiOverlayEntries[0]), HideUiOverlays, m_FocusUiOverlayOverridden);
-
-	SConfigIntOverrideEntry aNameEntries[] = {
-		{&g_Config.m_ClNamePlates, &m_SavedClNamePlates, 0},
-		{&g_Config.m_ClNamePlatesOwn, &m_SavedClNamePlatesOwn, 0},
-	};
-	UpdateConfigIntOverrides(aNameEntries, sizeof(aNameEntries) / sizeof(aNameEntries[0]), HideNames, m_FocusNamesOverridden);
-
+	ApplyFocusOverride(m_FocusHudOverrideState, FocusActive && g_Config.m_QmFocusModeHideHud != 0, g_Config.m_ClShowhud, 0);
+	ApplyFocusOverride(m_FocusNamePlatesOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_ClNamePlates, 0);
+	ApplyFocusOverride(m_FocusNamePlatesOwnOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_ClNamePlatesOwn, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordsOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoords, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordsOwnOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordsOwn, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordXOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordX, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordYOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordY, 0);
+	ApplyFocusOverride(m_FocusDirectionOverrideState, FocusActive && g_Config.m_QmFocusModeHideDirectionIndicators != 0, g_Config.m_ClShowDirection, 0);
+	ApplyFocusOverride(m_FocusVideoHudOverrideState, FocusActive && g_Config.m_QmFocusModeHideHud != 0, g_Config.m_ClVideoShowhud, 0);
+	ApplyFocusOverride(m_FocusVideoDirectionOverrideState, FocusActive && g_Config.m_QmFocusModeHideDirectionIndicators != 0, g_Config.m_ClVideoShowDirection, 0);
 	m_PrevFocusModeActive = FocusActive;
 }
 
-void CTClient::ApplyGoresFastInputLink()
+void CTClient::ApplyGoresFastInputLink(bool AutoMapCheck)
 {
 	if(Client()->State() != IClient::STATE_ONLINE)
 	{
 		m_GoresModeStateKnown = false;
 		m_PrevGoresModeActive = false;
-		m_PrevGoresFastInputActive = false;
-		m_PrevGoresFastInputOthersActive = false;
+		m_GoresAutoMapKnown = false;
+		m_GoresAutoMapToken = 0;
 		return;
 	}
 
 	bool FastInputConfigChanged = false;
-	const bool GoresActive = IsGoresModuleEnabled();
+	const unsigned GoresMapToken = str_quickhash(Client()->GetCurrentMap());
+	const bool MapChanged = !m_GoresAutoMapKnown || m_GoresAutoMapToken != GoresMapToken;
+	if(AutoMapCheck && MapChanged)
+	{
+		const bool GoresGameMode = IsGoresGameMode();
+		if(g_Config.m_QmGoresAutoEnable != 0 && g_Config.m_QmGores != (GoresGameMode ? 1 : 0))
+			g_Config.m_QmGores = GoresGameMode ? 1 : 0;
+		m_GoresAutoMapKnown = true;
+		m_GoresAutoMapToken = GoresMapToken;
+	}
+
 	const bool StateWasKnown = m_GoresModeStateKnown;
-	const bool ShouldEnableFastInput = GoresActive && g_Config.m_QmGoresFastInput != 0;
-	const bool ShouldEnableFastInputOthers = GoresActive && g_Config.m_QmGoresFastInputOthers != 0;
 	if(!m_GoresModeStateKnown)
 	{
 		m_GoresModeStateKnown = true;
-		m_PrevGoresModeActive = GoresActive;
-		m_SavedTcFastInput = g_Config.m_TcFastInput;
-		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
 	}
+
+	bool TcFastInputChanged = false;
+	bool TcFastInputOthersChanged = false;
+	const bool GoresActive = g_Config.m_QmGores != 0;
+	const bool TcFastInput = ApplyQmGoresLinkedConfig(GoresActive, g_Config.m_QmGoresFastInput != 0, g_Config.m_TcFastInput != 0, TcFastInputChanged);
+	const bool TcFastInputOthers = ApplyQmGoresLinkedConfig(GoresActive, g_Config.m_QmGoresFastInputOthers != 0, g_Config.m_TcFastInputOthers != 0, TcFastInputOthersChanged);
+	if(TcFastInputChanged)
+		g_Config.m_TcFastInput = TcFastInput ? 1 : 0;
+	if(TcFastInputOthersChanged)
+		g_Config.m_TcFastInputOthers = TcFastInputOthers ? 1 : 0;
+	if(!StateWasKnown)
+		m_PrevGoresModeActive = GoresActive;
 	if(StateWasKnown && GoresActive != m_PrevGoresModeActive)
 	{
 		char aGoresMsg[128];
@@ -4148,40 +4142,8 @@ void CTClient::ApplyGoresFastInputLink()
 		GameClient()->Echo(aGoresMsg, true);
 	}
 
-	if(ShouldEnableFastInput && !m_PrevGoresFastInputActive)
-	{
-		m_SavedTcFastInput = g_Config.m_TcFastInput;
-		g_Config.m_TcFastInput = 1;
-		FastInputConfigChanged = true;
-	}
-	else if(!ShouldEnableFastInput && m_PrevGoresFastInputActive)
-	{
-		g_Config.m_TcFastInput = m_SavedTcFastInput;
-		FastInputConfigChanged = true;
-	}
-	else if(!ShouldEnableFastInput)
-	{
-		m_SavedTcFastInput = g_Config.m_TcFastInput;
-	}
+	FastInputConfigChanged = TcFastInputChanged || TcFastInputOthersChanged;
 
-	if(ShouldEnableFastInputOthers && !m_PrevGoresFastInputOthersActive)
-	{
-		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
-		g_Config.m_TcFastInputOthers = 1;
-		FastInputConfigChanged = true;
-	}
-	else if(!ShouldEnableFastInputOthers && m_PrevGoresFastInputOthersActive)
-	{
-		g_Config.m_TcFastInputOthers = m_SavedTcFastInputOthers;
-		FastInputConfigChanged = true;
-	}
-	else if(!ShouldEnableFastInputOthers)
-	{
-		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
-	}
-
-	m_PrevGoresFastInputActive = ShouldEnableFastInput;
-	m_PrevGoresFastInputOthersActive = ShouldEnableFastInputOthers;
 	m_PrevGoresModeActive = GoresActive;
 
 	if(FastInputConfigChanged)
@@ -4336,7 +4298,7 @@ bool CTClient::BuildGoresDebugRoute(std::vector<vec2> &vRoutePoints, int Dummy) 
 
 void CTClient::RenderGoresDebugRoute()
 {
-	if(Client()->State() != IClient::STATE_ONLINE || !IsGoresMapProgressDebugRouteEnabled() || ShouldHideGoresGuides())
+	if(!ShouldRenderGoresDebugRoute(Client()->State() == IClient::STATE_ONLINE, g_Config.m_QmPlayerStatsMapProgressDbgRoute != 0, IsGoresMapProgressEnabled()))
 		return;
 
 	EnsureGoresDistanceField();

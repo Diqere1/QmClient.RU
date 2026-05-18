@@ -1217,6 +1217,12 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 	}
 }
 
+void CMenus::StartLoading(int Total)
+{
+	m_LoadingState.m_Current = 0;
+	m_LoadingState.m_Total = Total;
+}
+
 void CMenus::RenderLoading(const char *pCaption, const char *pContent, int IncreaseCounter)
 {
 	// TODO: not supported right now due to separate render thread
@@ -1571,12 +1577,6 @@ void CMenus::OnInit()
 	Console()->Chain("demo_speed", ConchainDemoSpeed, this);
 
 	m_TextureBlob = Graphics()->LoadTexture("blob.png", IStorage::TYPE_ALL);
-
-	// setup load amount
-	m_LoadingState.m_Current = 0;
-	m_LoadingState.m_Total = g_pData->m_NumImages + GameClient()->ComponentCount();
-	if(!g_Config.m_ClThreadsoundloading)
-		m_LoadingState.m_Total += g_pData->m_NumSounds;
 
 	m_IsInit = true;
 

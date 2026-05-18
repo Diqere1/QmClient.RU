@@ -20,7 +20,7 @@
 #include <game/client/components/censor.h>
 #include <game/client/components/message_gradient.h>
 #include <game/client/components/qmclient/colored_parts.h>
-#include <game/client/components/qmclient/config_override.h>
+#include <game/client/components/qmclient/modes.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
@@ -1693,6 +1693,7 @@ void CChat::OnPrepareLines(float y)
 	float FontSize = this->FontSize();
 	const bool FocusModeActive = g_Config.m_QmFocusMode != 0;
 	const bool FocusHideChat = FocusModeActive && g_Config.m_QmFocusModeHideChat;
+	const bool FocusHideSystemMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
 	const bool FocusHideEcho = FocusModeActive && g_Config.m_QmFocusModeHideEcho;
 
 	const bool IsScoreBoardOpen = GameClient()->m_Scoreboard.IsActive();
@@ -1727,7 +1728,7 @@ void CChat::OnPrepareLines(float y)
 		CLine &Line = m_aLines[((m_CurrentLine - i) + MAX_LINES) % MAX_LINES];
 		if(!Line.m_Initialized)
 			break;
-		if(!ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideEcho, Line.m_ClientId == CLIENT_MSG, Line.m_ForceVisible))
+		if(!ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideSystemMessages, FocusHideEcho, Line.m_ClientId, Line.m_ForceVisible))
 			continue;
 		if(Now > Line.m_Time + VisibleTimeNoFocusTicks && !m_PrevShowChat)
 			break;
@@ -2067,9 +2068,10 @@ void CChat::OnRender()
 
 	const bool FocusModeActive = g_Config.m_QmFocusMode != 0;
 	const bool FocusHideChat = FocusModeActive && g_Config.m_QmFocusModeHideChat;
+	const bool FocusHideSystemMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
 	const bool FocusHideEcho = FocusModeActive && g_Config.m_QmFocusModeHideEcho;
 	const bool HasForceVisibleLine = std::any_of(std::begin(m_aLines), std::end(m_aLines), [](const CLine &Line) { return Line.m_Initialized && Line.m_ForceVisible; });
-	if(!ShouldRenderAnyFocusFilteredChat(FocusHideChat, FocusHideEcho, HasForceVisibleLine))
+	if(!ShouldRenderAnyFocusFilteredChat(FocusHideChat, FocusHideSystemMessages, FocusHideEcho, HasForceVisibleLine))
 		return;
 
 	const bool HudEditorPreview = GameClient()->m_HudEditor.IsActive();
@@ -2271,7 +2273,7 @@ void CChat::OnRender()
 		CLine &Line = m_aLines[((m_CurrentLine - i) + MAX_LINES) % MAX_LINES];
 		if(!Line.m_Initialized)
 			break;
-		if(!ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideEcho, Line.m_ClientId == CLIENT_MSG, Line.m_ForceVisible))
+		if(!ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideSystemMessages, FocusHideEcho, Line.m_ClientId, Line.m_ForceVisible))
 			continue;
 		if(Now > Line.m_Time + VisibleTimeNoFocusTicks && !m_PrevShowChat)
 			break;

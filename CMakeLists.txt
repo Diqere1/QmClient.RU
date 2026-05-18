@@ -2672,6 +2672,8 @@ if(CLIENT)
     components/qmclient/keyword_reply_rules.h
     components/qmclient/lyrics_component.cpp
     components/qmclient/lyrics_component.h
+    components/qmclient/modes.cpp
+    components/qmclient/modes.h
     components/qmclient/monitoring.cpp
     components/qmclient/monitoring.h
     components/qmclient/menus_qmclient.cpp
@@ -3409,7 +3411,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     os_test.cpp
     packer_test.cpp
     prng_test.cpp
-    qmclient_state_override_test.cpp
+    qm_modes_test.cpp
     qmclient_monitoring_test.cpp
     score_test.cpp
     secure_random_test.cpp
@@ -3446,6 +3448,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
+    src/game/client/components/qmclient/modes.cpp
     src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp
     src/game/client/components/qmclient/voice_capture_pipeline.cpp
@@ -4059,7 +4062,11 @@ foreach(target ${TARGETS})
     target_compile_definitions(${target} PRIVATE _USE_STD_VECTOR_ALGORITHMS=0) # Avoid unresolved MSVC STL vectorized algorithm helpers with some bundled toolchains.
     # Enable Edit & Continue (Hot Reload) support
     if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
-      set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT $<IF:$<CONFIG:Debug>,EditAndContinue,Embedded>)
+      if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT ProgramDatabase)
+      else()
+        set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT $<IF:$<CONFIG:Debug>,EditAndContinue,Embedded>)
+      endif()
       target_link_options(${target} PRIVATE $<$<CONFIG:Debug>:/INCREMENTAL>)
     endif()
     # QmClient strict build options

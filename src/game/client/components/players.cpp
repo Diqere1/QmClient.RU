@@ -20,6 +20,7 @@
 #include <game/client/components/effects.h>
 #include <game/client/components/flow.h>
 #include <game/client/components/qmclient/jelly_tee.h>
+#include <game/client/components/qmclient/modes.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
@@ -245,9 +246,7 @@ void CPlayers::RenderHookCollLine(
 	const CNetObj_Character *pPlayerChar,
 	int ClientId)
 {
-	const bool HideFocusOverheadIndicators = g_Config.m_QmFocusMode != 0 &&
-						 g_Config.m_QmFocusModeHideOverheadIndicators != 0;
-	if(HideFocusOverheadIndicators)
+	if(ShouldHideFocusGuideLines(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideGuideLines != 0))
 		return;
 
 	const bool ManualHookCollVisible = GameClient()->m_Controls.m_aShowHookColl[g_Config.m_ClDummy] != 0;
@@ -555,9 +554,7 @@ void CPlayers::RenderWeaponTrajectory(
 	const CNetObj_Character *pPlayerChar,
 	int ClientId)
 {
-	const bool HideFocusOverheadIndicators = g_Config.m_QmFocusMode != 0 &&
-						 g_Config.m_QmFocusModeHideOverheadIndicators != 0;
-	if(HideFocusOverheadIndicators)
+	if(ShouldHideFocusGuideLines(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideGuideLines != 0))
 		return;
 
 	const bool ManualTrajectoryVisible = GameClient()->m_Controls.m_aShowWeaponTrajectory[g_Config.m_ClDummy] != 0;
@@ -1774,7 +1771,7 @@ void CPlayers::OnRender()
 
 			Frozen = Predicted.m_FreezeEnd != 0 || Predicted.m_LiveFrozen;
 			// TClient
-			if(g_Config.m_TcFastInput && GameClient()->Predict())
+			if(GameClient()->TClientComponent().IsFastInputActive() && GameClient()->Predict())
 			{
 				const CCharacterCore &RegularPredicted = ClientData.m_RegularPredicted;
 				Frozen = RegularPredicted.m_FreezeEnd != 0 || RegularPredicted.m_LiveFrozen;
