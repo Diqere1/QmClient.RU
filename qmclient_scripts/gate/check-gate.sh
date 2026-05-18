@@ -638,7 +638,8 @@ invoke_strict_debug_gate() {
 		add_result "INFO" "严格构建与静态分析范围" "按首方源码差异传入 ${#SCOPE_INCLUDED_FILES[@]} 个文件（已排除 external/generated 等目录）"
 		args+=(--files "${SCOPE_INCLUDED_FILES[@]}")
 	else
-		add_result "WARN" "严格构建与静态分析范围" "未收集到首方 src 差异文件；strict-debug-check 将退回自身默认范围"
+		add_result "WARN" "严格构建与静态分析范围" "未收集到首方 src 差异文件；strict-debug-check 将保留 Debug CRT 构建，并跳过分析/ tidy 范围检查"
+		args+=(--files --skip-analyze --skip-tidy)
 	fi
 	invoke_repo_command "严格构建与静态分析入口" FAIL "${args[@]}"
 }
