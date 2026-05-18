@@ -388,6 +388,9 @@ Spectate previous
 Spectator mode
 == 旁觀者模式
 
+Spectator teleport
+== 旁觀傳送
+
 Spectators
 == 旁觀者
 
@@ -591,6 +594,9 @@ Normal message
 
 Friend message
 == 好友訊息
+
+Friend heart
+== 好友愛心
 
 Save the best demo of each race
 == 儲存競速模式最高記錄的回放
@@ -1333,6 +1339,9 @@ DDRace HUD
 Show DDRace HUD
 == 顯示 DDRace HUD
 
+HUD rainbow colors
+== HUD 彩虹色
+
 Show jumps indicator
 == 顯示跳躍次數
 
@@ -2050,6 +2059,18 @@ Size of hook strength icon and number indicator
 
 Key Presses
 == 按鍵顯示
+
+Free move
+== 自由移動
+
+X free move
+== X 自由移動
+
+Y free move
+== Y 自由移動
+
+Enable an axis, then drag visible nameplate rows in the preview.
+== 開啟軸向後，在預覽中拖動可見的暱稱板行。
 
 Show players' key presses
 == 顯示按鍵

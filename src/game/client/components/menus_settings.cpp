@@ -3954,11 +3954,12 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudDDRace, Localize("Show DDRace HUD"), &g_Config.m_ClShowhudDDRace, &RightView, LineSize);
 		if(g_Config.m_ClShowhudDDRace)
 		{
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClHudRainbowColors, Localize("HUD rainbow colors"), &g_Config.m_ClHudRainbowColors, &RightView, LineSize);
 			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudJumpsIndicator, Localize("Show jumps indicator"), &g_Config.m_ClShowhudJumpsIndicator, &RightView, LineSize);
 		}
 		else
 		{
-			RightView.HSplitTop(LineSize, nullptr, &RightView); // Create empty space for hidden option
+			RightView.HSplitTop(LineSize * 2.0f, nullptr, &RightView); // Create empty space for hidden options
 		}
 
 		// Eye with a number of spectators
@@ -4072,6 +4073,15 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		// TClient
 		DoMessageGradientLine(Chat, &RightView, aBuf, &g_Config.m_ClMessageClientColor, g_Config.m_ClMessageClientGradient, sizeof(g_Config.m_ClMessageClientGradient), ColorRGBA(0.5f, 0.78f, 1.0f), &s_ClientMessageReset, &s_ClientMessageAdd, &s_ClientMessageRemove, s_aClientMessageColorValues, true, &g_Config.m_TcShowChatClient);
 
+		static CButtonContainer s_FriendMessageHeartReset;
+		const unsigned OldFriendMessageHeartColor = g_Config.m_ClMessageFriendHeartColor;
+		DoLine_ColorPicker(&s_FriendMessageHeartReset, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &RightView, Localize("Friend heart"), &g_Config.m_ClMessageFriendHeartColor, ColorRGBA(1.0f, 0.0f, 0.0f), true);
+		if(g_Config.m_ClMessageFriendHeartColor != OldFriendMessageHeartColor)
+		{
+			Chat.RebuildChat();
+			ConfigManager()->Save();
+		}
+
 		// ***** Chat Preview ***** //
 		Ui()->DoLabel_AutoLineSize(Localize("Preview"), HeadlineFontSize,
 			TEXTALIGN_ML, &PreviewView, HeadlineHeight);
@@ -4086,6 +4096,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		ColorRGBA HighlightedColor = color_cast<ColorRGBA, ColorHSLA>(ColorHSLA(g_Config.m_ClMessageHighlightColor));
 		ColorRGBA TeamColor = color_cast<ColorRGBA, ColorHSLA>(ColorHSLA(g_Config.m_ClMessageTeamColor));
 		ColorRGBA FriendColor = color_cast<ColorRGBA, ColorHSLA>(ColorHSLA(g_Config.m_ClMessageFriendColor));
+		ColorRGBA FriendHeartColor = color_cast<ColorRGBA, ColorHSLA>(ColorHSLA(g_Config.m_ClMessageFriendHeartColor));
 		ColorRGBA NormalColor = color_cast<ColorRGBA, ColorHSLA>(ColorHSLA(g_Config.m_ClMessageColor));
 		ColorRGBA ClientColor = color_cast<ColorRGBA, ColorHSLA>(ColorHSLA(g_Config.m_ClMessageClientColor));
 		ColorRGBA DefaultNameColor(0.8f, 0.8f, 0.8f, 1.0f);
@@ -4199,7 +4210,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 				if(Line.m_Friend && g_Config.m_ClMessageFriend)
 				{
 					if(Render)
-						TextRender()->TextColor(FriendColor);
+						TextRender()->TextColor(FriendHeartColor);
 					TextRender()->TextEx(&LocalCursor, "♥ ", -1);
 				}
 			}
@@ -4468,269 +4479,19 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		if(g_Config.m_ClShowDirection > 0)
 			Ui()->DoScrollbarOption(&g_Config.m_ClDirectionSize, &g_Config.m_ClDirectionSize, &Button, Localize("Size of key press icons"), -50, 100);
 
-		// ***** Name Plate Row Order ***** //
-		struct SNamePlateRowOrderEntry
-		{
-			const char *m_pKey;
-			const char *m_pLabel;
-		};
-		static constexpr size_t kNamePlateRowOrderCount = 5;
-		static constexpr std::array<SNamePlateRowOrderEntry, kNamePlateRowOrderCount> s_aNamePlateRowOrderDefaults = {{
-			{"keys", "Key Presses"},
-			{"coords", "Coords"},
-			{"hook", "Hook Strength"},
-			{"clan", "Clan"},
-			{"name", "Name"}}};
-		static std::array<int, kNamePlateRowOrderCount> s_aNamePlateRowOrder = {0, 1, 2, 3, 4};
-		static char s_aNamePlateRowOrderConfigCache[sizeof(g_Config.m_QmNameplateRowOrder)] = {};
-		static bool s_NamePlateRowOrderInitialized = false;
-
-		auto FindNamePlateRowOrderIndexByKey = [&](const char *pKey) -> int {
-			for(size_t i = 0; i < s_aNamePlateRowOrderDefaults.size(); ++i)
-			{
-				if(str_comp(s_aNamePlateRowOrderDefaults[i].m_pKey, pKey) == 0)
-					return static_cast<int>(i);
-			}
-			return -1;
-		};
-
-		auto ParseNamePlateRowOrder = [&](const char *pConfig) {
-			s_aNamePlateRowOrder = {0, 1, 2, 3, 4};
-			if(!pConfig || pConfig[0] == '\0')
-				return;
-
-			bool aUsed[kNamePlateRowOrderCount] = {};
-			std::array<int, kNamePlateRowOrderCount> ParsedRows = {};
-			int ParsedCount = 0;
-
-			char aToken[32];
-			const char *pToken = pConfig;
-			while((pToken = str_next_token(pToken, ",", aToken, sizeof(aToken))))
-			{
-				if(aToken[0] == '\0')
-					continue;
-				const int Index = FindNamePlateRowOrderIndexByKey(aToken);
-				if(Index < 0 || aUsed[Index])
-					continue;
-				ParsedRows[ParsedCount++] = Index;
-				aUsed[Index] = true;
-				if(ParsedCount == static_cast<int>(kNamePlateRowOrderCount))
-					break;
-			}
-
-			int OutIndex = 0;
-			for(int i = 0; i < ParsedCount; ++i)
-				s_aNamePlateRowOrder[OutIndex++] = ParsedRows[i];
-			for(size_t i = 0; i < kNamePlateRowOrderCount; ++i)
-			{
-				if(aUsed[i])
-					continue;
-				s_aNamePlateRowOrder[OutIndex++] = static_cast<int>(i);
-			}
-		};
-
-		auto SerializeNamePlateRowOrder = [&](char *pOut, int OutSize) {
-			pOut[0] = '\0';
-			for(size_t i = 0; i < s_aNamePlateRowOrder.size(); ++i)
-			{
-				if(i > 0)
-					str_append(pOut, ",", OutSize);
-				const int RowIndex = s_aNamePlateRowOrder[i];
-				str_append(pOut, s_aNamePlateRowOrderDefaults[RowIndex].m_pKey, OutSize);
-			}
-		};
-
-		auto SyncNamePlateRowOrder = [&]() {
-			const bool ConfigChanged = !s_NamePlateRowOrderInitialized || str_comp(s_aNamePlateRowOrderConfigCache, g_Config.m_QmNameplateRowOrder) != 0;
-			if(ConfigChanged)
-			{
-				ParseNamePlateRowOrder(g_Config.m_QmNameplateRowOrder);
-				s_NamePlateRowOrderInitialized = true;
-			}
-
-			char aSerialized[sizeof(g_Config.m_QmNameplateRowOrder)];
-			SerializeNamePlateRowOrder(aSerialized, sizeof(aSerialized));
-			if(str_comp(aSerialized, g_Config.m_QmNameplateRowOrder) != 0)
-				str_copy(g_Config.m_QmNameplateRowOrder, aSerialized, sizeof(g_Config.m_QmNameplateRowOrder));
-			str_copy(s_aNamePlateRowOrderConfigCache, g_Config.m_QmNameplateRowOrder, sizeof(s_aNamePlateRowOrderConfigCache));
-		};
-
-		SyncNamePlateRowOrder();
-
-		struct SNamePlateRowDragState
-		{
-			int m_PressedIndex;
-			int m_DraggingIndex;
-			float m_PressStartTime;
-			vec2 m_GrabOffset;
-			float m_DraggedWidth;
-			float m_DraggedHeight;
-			bool m_HasDragRect;
-		};
-		static SNamePlateRowDragState s_NamePlateRowDragState = {-1, -1, 0.0f, vec2(0.0f, 0.0f), 0.0f, 0.0f, false};
-		const float RowDragHoldSeconds = 0.15f;
-		const float RowCardRounding = 4.0f;
-		const float RowCardSpacing = std::max(3.0f, MarginSmall * 0.8f);
-		const float DropPreviewThickness = 3.0f;
-		const ColorRGBA RowCardColor(0.0f, 0.0f, 0.0f, 0.20f);
-		const ColorRGBA RowCardHotColor(1.0f, 1.0f, 1.0f, 0.08f);
-		const ColorRGBA RowCardDraggingColor(1.0f, 0.85f, 0.2f, 0.25f);
-		const ColorRGBA DropPreviewColor(0.2f, 0.9f, 0.4f, 0.9f);
-		const ColorRGBA DragGhostColor(0.08f, 0.09f, 0.12f, 0.55f);
-
-		Ui()->DoLabel_AutoLineSize(Localize("Name order"), HeadlineFontSize, TEXTALIGN_ML, &RightView, HeadlineHeight);
+		// ***** Name Plate Free Move ***** //
+		Ui()->DoLabel_AutoLineSize(Localize("Free move"), HeadlineFontSize, TEXTALIGN_ML, &RightView, HeadlineHeight);
 		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
 
-		CUIRect RowOrderView;
-		const float RowOrderHeight = kNamePlateRowOrderCount * LineSize + (kNamePlateRowOrderCount - 1) * RowCardSpacing;
-		RightView.HSplitTop(RowOrderHeight, &RowOrderView, &RightView);
+		RightView.HSplitTop(LineSize, &Button, &RightView);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateFreeMoveX, Localize("X free move"), &g_Config.m_QmNameplateFreeMoveX, &Button, LineSize);
+		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
 
-		std::array<CUIRect, kNamePlateRowOrderCount> aRowRects;
-		CUIRect RowCursor = RowOrderView;
-		for(size_t i = 0; i < kNamePlateRowOrderCount; ++i)
-		{
-			RowCursor.HSplitTop(LineSize, &aRowRects[i], &RowCursor);
-			if(i + 1 < kNamePlateRowOrderCount)
-				RowCursor.HSplitTop(RowCardSpacing, nullptr, &RowCursor);
-		}
+		RightView.HSplitTop(LineSize, &Button, &RightView);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateFreeMoveY, Localize("Y free move"), &g_Config.m_QmNameplateFreeMoveY, &Button, LineSize);
+		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
 
-		for(size_t DisplayIndex = 0; DisplayIndex < kNamePlateRowOrderCount; ++DisplayIndex)
-		{
-			CUIRect CardRect = aRowRects[DisplayIndex];
-			const bool Inside = Ui()->MouseHovered(&CardRect);
-			if(Ui()->MouseButtonClicked(0) && Inside && Ui()->ActiveItem() == nullptr)
-			{
-				s_NamePlateRowDragState.m_PressedIndex = static_cast<int>(DisplayIndex);
-				s_NamePlateRowDragState.m_DraggingIndex = -1;
-				s_NamePlateRowDragState.m_PressStartTime = Client()->GlobalTime();
-			}
-
-			if(s_NamePlateRowDragState.m_PressedIndex == static_cast<int>(DisplayIndex) && Ui()->MouseButton(0) && s_NamePlateRowDragState.m_DraggingIndex < 0)
-			{
-				if(Inside && Client()->GlobalTime() - s_NamePlateRowDragState.m_PressStartTime >= RowDragHoldSeconds)
-				{
-					s_NamePlateRowDragState.m_DraggingIndex = static_cast<int>(DisplayIndex);
-					s_NamePlateRowDragState.m_GrabOffset = vec2(Ui()->MouseX() - CardRect.x, Ui()->MouseY() - CardRect.y);
-					s_NamePlateRowDragState.m_DraggedWidth = CardRect.w;
-					s_NamePlateRowDragState.m_DraggedHeight = CardRect.h;
-					s_NamePlateRowDragState.m_HasDragRect = true;
-				}
-			}
-
-			ColorRGBA CardColor = RowCardColor;
-			if(Inside)
-				CardColor = RowCardHotColor;
-			if(s_NamePlateRowDragState.m_DraggingIndex == static_cast<int>(DisplayIndex))
-				CardColor = RowCardDraggingColor;
-			CardRect.Draw(CardColor, IGraphics::CORNER_ALL, RowCardRounding);
-
-			CUIRect LabelRect = CardRect;
-			LabelRect.VSplitLeft(LineSize * 0.4f, nullptr, &LabelRect);
-			const int EntryIndex = s_aNamePlateRowOrder[DisplayIndex];
-			Ui()->DoLabel(&LabelRect, Localize(s_aNamePlateRowOrderDefaults[EntryIndex].m_pLabel), LineSize * 0.55f, TEXTALIGN_ML);
-		}
-
-		int DropInsertIndex = -1;
-		bool HasDropPreview = false;
-		CUIRect DropLineRect;
-		if(s_NamePlateRowDragState.m_DraggingIndex >= 0 && Ui()->MouseHovered(&RowOrderView))
-		{
-			int InsertIndex = 0;
-			for(size_t i = 0; i < kNamePlateRowOrderCount; ++i)
-			{
-				if(static_cast<int>(i) == s_NamePlateRowDragState.m_DraggingIndex)
-					continue;
-				const float MidY = aRowRects[i].y + aRowRects[i].h * 0.5f;
-				if(Ui()->MouseY() > MidY)
-					++InsertIndex;
-			}
-			InsertIndex = std::clamp(InsertIndex, 0, static_cast<int>(kNamePlateRowOrderCount - 1));
-
-			std::array<const CUIRect *, kNamePlateRowOrderCount - 1> aFilteredRects = {};
-			int FilteredCount = 0;
-			for(size_t i = 0; i < kNamePlateRowOrderCount; ++i)
-			{
-				if(static_cast<int>(i) == s_NamePlateRowDragState.m_DraggingIndex)
-					continue;
-				aFilteredRects[FilteredCount++] = &aRowRects[i];
-			}
-
-			float LineY = RowOrderView.y;
-			if(InsertIndex <= 0)
-			{
-				LineY = aFilteredRects[0]->y - RowCardSpacing * 0.5f;
-			}
-			else if(InsertIndex >= FilteredCount)
-			{
-				const CUIRect *pLast = aFilteredRects[FilteredCount - 1];
-				LineY = pLast->y + pLast->h + RowCardSpacing * 0.5f;
-			}
-			else
-			{
-				const CUIRect *pPrev = aFilteredRects[InsertIndex - 1];
-				const CUIRect *pNext = aFilteredRects[InsertIndex];
-				LineY = (pPrev->y + pPrev->h + pNext->y) * 0.5f;
-			}
-
-			DropLineRect.x = RowOrderView.x + 4.0f;
-			DropLineRect.w = std::max(0.0f, RowOrderView.w - 8.0f);
-			DropLineRect.y = LineY - DropPreviewThickness * 0.5f;
-			DropLineRect.h = DropPreviewThickness;
-			DropInsertIndex = InsertIndex;
-			HasDropPreview = true;
-		}
-
-		if(HasDropPreview)
-			DropLineRect.Draw(DropPreviewColor, IGraphics::CORNER_ALL, DropPreviewThickness);
-
-		if(s_NamePlateRowDragState.m_DraggingIndex >= 0 && s_NamePlateRowDragState.m_HasDragRect)
-		{
-			CUIRect GhostRect;
-			GhostRect.x = Ui()->MouseX() - s_NamePlateRowDragState.m_GrabOffset.x;
-			GhostRect.y = Ui()->MouseY() - s_NamePlateRowDragState.m_GrabOffset.y;
-			GhostRect.w = s_NamePlateRowDragState.m_DraggedWidth;
-			GhostRect.h = s_NamePlateRowDragState.m_DraggedHeight;
-			GhostRect.Draw(DragGhostColor, IGraphics::CORNER_ALL, RowCardRounding);
-
-			CUIRect GhostLabelRect = GhostRect;
-			GhostLabelRect.VSplitLeft(LineSize * 0.4f, nullptr, &GhostLabelRect);
-			const int DraggedEntryIndex = s_aNamePlateRowOrder[s_NamePlateRowDragState.m_DraggingIndex];
-			Ui()->DoLabel(&GhostLabelRect, Localize(s_aNamePlateRowOrderDefaults[DraggedEntryIndex].m_pLabel), LineSize * 0.55f, TEXTALIGN_ML);
-		}
-
-		const bool RowMouseReleased = !Ui()->MouseButton(0) && Ui()->LastMouseButton(0);
-		if(RowMouseReleased)
-		{
-			if(s_NamePlateRowDragState.m_DraggingIndex >= 0 && HasDropPreview && DropInsertIndex >= 0)
-			{
-				std::array<int, kNamePlateRowOrderCount> NewOrder = s_aNamePlateRowOrder;
-				const int DraggedDisplayIndex = s_NamePlateRowDragState.m_DraggingIndex;
-				const int DraggedValue = NewOrder[DraggedDisplayIndex];
-				for(int i = DraggedDisplayIndex; i < static_cast<int>(kNamePlateRowOrderCount - 1); ++i)
-					NewOrder[i] = NewOrder[i + 1];
-				for(int i = static_cast<int>(kNamePlateRowOrderCount - 1); i > DropInsertIndex; --i)
-					NewOrder[i] = NewOrder[i - 1];
-				NewOrder[DropInsertIndex] = DraggedValue;
-
-				if(NewOrder != s_aNamePlateRowOrder)
-				{
-					s_aNamePlateRowOrder = NewOrder;
-					char aSerialized[sizeof(g_Config.m_QmNameplateRowOrder)];
-					SerializeNamePlateRowOrder(aSerialized, sizeof(aSerialized));
-					if(str_comp(aSerialized, g_Config.m_QmNameplateRowOrder) != 0)
-						str_copy(g_Config.m_QmNameplateRowOrder, aSerialized, sizeof(g_Config.m_QmNameplateRowOrder));
-					str_copy(s_aNamePlateRowOrderConfigCache, g_Config.m_QmNameplateRowOrder, sizeof(s_aNamePlateRowOrderConfigCache));
-				}
-			}
-
-			s_NamePlateRowDragState.m_PressedIndex = -1;
-			s_NamePlateRowDragState.m_DraggingIndex = -1;
-			s_NamePlateRowDragState.m_PressStartTime = 0.0f;
-			s_NamePlateRowDragState.m_GrabOffset = vec2(0.0f, 0.0f);
-			s_NamePlateRowDragState.m_DraggedWidth = 0.0f;
-			s_NamePlateRowDragState.m_DraggedHeight = 0.0f;
-			s_NamePlateRowDragState.m_HasDragRect = false;
-		}
+		Ui()->DoLabel_AutoLineSize(Localize("Enable an axis, then drag visible nameplate rows in the preview."), 12.0f, TEXTALIGN_ML, &RightView, LineSize * 2.0f);
 
 		RightView.HSplitTop(MarginBetweenViews, nullptr, &RightView);
 

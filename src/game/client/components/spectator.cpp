@@ -620,7 +620,7 @@ void CSpectator::OnRender()
 		if(IsFriend)
 		{
 			TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
-			ColorRGBA FriendIconColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageFriendColor));
+			ColorRGBA FriendIconColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageFriendHeartColor));
 			FriendIconColor.a *= NameAlpha;
 			TextRender()->TextColor(FriendIconColor);
 			TextRender()->Text(IconX, IconY, IconSize, FontIcons::FONT_ICON_HEART, 220.0f);

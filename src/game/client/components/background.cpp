@@ -65,6 +65,12 @@ constexpr double MAX_BACKGROUND_VIDEO_FPS = 60.0;
 constexpr size_t MAX_BACKGROUND_VIDEO_QUEUED_FRAMES = 3;
 constexpr int MAX_BACKGROUND_IMAGE_DIMENSION = 4096;
 
+double EffectiveBackgroundVideoFrameInterval(double VideoFrameInterval)
+{
+	const int BackgroundVideoFps = std::clamp(g_Config.m_ClBackgroundVideoFps, 1, static_cast<int>(MAX_BACKGROUND_VIDEO_FPS));
+	return std::max(VideoFrameInterval, 1.0 / static_cast<double>(BackgroundVideoFps));
+}
+
 bool IsPngFileData(const uint8_t *pData, unsigned FileSize)
 {
 	static constexpr uint8_t s_aPngSignature[] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
@@ -664,6 +670,7 @@ void CBackground::ClearVideoBackground(bool UnloadTexture)
 	m_VideoDuration = 0.0;
 	m_VideoLastFrameTime = -1.0;
 	m_VideoFrameInterval = 1.0 / 30.0;
+	m_VideoLastUploadTime = 0;
 	m_VideoWidth = 0;
 	m_VideoHeight = 0;
 	m_vVideoFrameBuffer.clear();
@@ -1041,6 +1048,8 @@ bool CBackground::LoadVideoBackground(const char *pPath)
 
 	const bool DecodedFirstFrame = DecodeNextVideoFrame();
 	const bool UploadedFirstFrame = DecodedFirstFrame && UploadVideoFrame();
+	if(UploadedFirstFrame)
+		m_VideoLastUploadTime = time_get();
 	if(!DecodedFirstFrame || !UploadedFirstFrame)
 	{
 		log_warn("background/video", "Could not decode first frame of '%s': decoded=%d uploaded=%d stream=%d codec=%d codec_name=%s width=%d height=%d pix_fmt=%d duration=%.3f frame_interval=%.6f",
@@ -1223,6 +1232,7 @@ void CBackground::StopMediaFoundationVideoThread()
 void CBackground::MediaFoundationVideoThreadFunc()
 {
 	const size_t FrameBufferSize = (size_t)m_VideoWidth * (size_t)m_VideoHeight * 4;
+	double TargetFrameTime = 0.0;
 	while(!m_MfVideoThreadStop)
 	{
 		bool QueueFull = false;
@@ -1248,11 +1258,14 @@ void CBackground::MediaFoundationVideoThreadFunc()
 		if(vThreadFrameBuffer.size() != FrameBufferSize)
 			vThreadFrameBuffer.resize(FrameBufferSize);
 
-		if(!DecodeNextMediaFoundationVideoFrame(0.0, vThreadFrameBuffer))
+		const double FrameInterval = EffectiveBackgroundVideoFrameInterval(m_VideoFrameInterval);
+		if(!DecodeNextMediaFoundationVideoFrame(TargetFrameTime, vThreadFrameBuffer))
 		{
-			if(!RestartMediaFoundationVideoBackground() || !DecodeNextMediaFoundationVideoFrame(0.0, vThreadFrameBuffer))
+			TargetFrameTime = 0.0;
+			if(!RestartMediaFoundationVideoBackground() || !DecodeNextMediaFoundationVideoFrame(TargetFrameTime, vThreadFrameBuffer))
 				break;
 		}
+		TargetFrameTime = m_VideoLastFrameTime + FrameInterval;
 
 		{
 			const std::lock_guard<std::mutex> Lock(m_MfVideoFrameMutex);
@@ -1385,6 +1398,7 @@ bool CBackground::RestartVideoBackground()
 	avcodec_flush_buffers(m_pVideoCodecContext);
 	m_VideoStartTime = time_get();
 	m_VideoLastFrameTime = -m_VideoFrameInterval;
+	m_VideoLastUploadTime = 0;
 	return true;
 }
 
@@ -1415,10 +1429,11 @@ bool CBackground::UpdateVideoBackground()
 	if(m_MfVideoBackground)
 	{
 		const int64_t Now = time_get();
+		const double FrameInterval = EffectiveBackgroundVideoFrameInterval(m_VideoFrameInterval);
 		if(m_MfVideoLastUploadTime != 0)
 		{
 			const double TimeSinceUpload = (double)(Now - m_MfVideoLastUploadTime) / (double)time_freq();
-			if(TimeSinceUpload + m_VideoFrameInterval * 0.25 < m_VideoFrameInterval)
+			if(TimeSinceUpload + FrameInterval * 0.25 < FrameInterval)
 				return true;
 		}
 
@@ -1446,7 +1461,16 @@ bool CBackground::UpdateVideoBackground()
 	if(m_VideoStartTime == 0)
 		m_VideoStartTime = time_get();
 
-	const double PlaybackTime = (double)(time_get() - m_VideoStartTime) / (double)time_freq();
+	const int64_t Now = time_get();
+	const double FrameInterval = EffectiveBackgroundVideoFrameInterval(m_VideoFrameInterval);
+	if(m_VideoLastUploadTime != 0)
+	{
+		const double TimeSinceUpload = (double)(Now - m_VideoLastUploadTime) / (double)time_freq();
+		if(TimeSinceUpload + FrameInterval * 0.25 < FrameInterval)
+			return true;
+	}
+
+	const double PlaybackTime = (double)(Now - m_VideoStartTime) / (double)time_freq();
 	const double TargetFrameTime = m_VideoDuration > 0.0 ? std::fmod(PlaybackTime, m_VideoDuration) : PlaybackTime;
 
 	if(m_VideoDuration > 0.0 && PlaybackTime >= m_VideoDuration && TargetFrameTime + m_VideoFrameInterval < m_VideoLastFrameTime)
@@ -1457,7 +1481,8 @@ bool CBackground::UpdateVideoBackground()
 
 	bool Updated = false;
 	int DecodedFrames = 0;
-	while(TargetFrameTime + m_VideoFrameInterval * 0.5 >= m_VideoLastFrameTime + m_VideoFrameInterval && DecodedFrames < 4)
+	const int MaxDecodedFrames = std::clamp(static_cast<int>(std::ceil(FrameInterval / m_VideoFrameInterval)) + 1, 1, 16);
+	while(TargetFrameTime + m_VideoFrameInterval * 0.5 >= m_VideoLastFrameTime + m_VideoFrameInterval && DecodedFrames < MaxDecodedFrames)
 	{
 		if(!DecodeNextVideoFrame())
 		{
@@ -1470,7 +1495,10 @@ bool CBackground::UpdateVideoBackground()
 	}
 
 	if(Updated)
+	{
 		UploadVideoFrame();
+		m_VideoLastUploadTime = Now;
+	}
 	return true;
 #else
 	return false;

@@ -2613,6 +2613,7 @@ if(CLIENT)
     components/qmclient/input_overlay.h
     components/qmclient/jelly_tee.cpp
     components/qmclient/jelly_tee.h
+    components/qmclient/keyword_reply_rules.h
     components/qmclient/lyrics_component.cpp
     components/qmclient/lyrics_component.h
     components/qmclient/menus_qmclient.cpp
@@ -3335,6 +3336,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     jobs_test.cpp
     json_test.cpp
     jsonwriter_test.cpp
+    keyword_reply_rules_test.cpp
     linereader_test.cpp
     mapbugs_test.cpp
     mapitems_test.cpp

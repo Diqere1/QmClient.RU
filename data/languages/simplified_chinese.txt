@@ -379,6 +379,9 @@ Spectate previous
 Spectator mode
 == 旁观者模式
 
+Spectator teleport
+== 旁观传送
+
 Spectators
 == 旁观者
 
@@ -588,6 +591,9 @@ Normal message
 
 Friend message
 == 好友消息
+
+Friend heart
+== 好友爱心
 
 Save the best demo of each race
 == 保存每场游戏最佳记录的回放
@@ -1311,6 +1317,9 @@ DDRace HUD
 
 Show DDRace HUD
 == 显示 DDRace HUD
+
+HUD rainbow colors
+== HUD 彩虹色
 
 Show jumps indicator
 == 显示可跳跃次数
@@ -6950,6 +6959,18 @@ Show key stuck status
 
 Name order
 == 昵称顺序
+
+Free move
+== 自由移动
+
+X free move
+== X 自由移动
+
+Y free move
+== Y 自由移动
+
+Enable an axis, then drag visible nameplate rows in the preview.
+== 开启轴向后，在预览中拖动可见的昵称板行。
 
 Predict events (experimental)
 == 预测事件（实验性）

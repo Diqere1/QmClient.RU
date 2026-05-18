@@ -264,6 +264,7 @@ protected:
 	double m_VideoDuration = 0.0;
 	double m_VideoLastFrameTime = -1.0;
 	double m_VideoFrameInterval = 1.0 / 30.0;
+	int64_t m_VideoLastUploadTime = 0;
 	int m_VideoWidth = 0;
 	int m_VideoHeight = 0;
 	std::vector<uint8_t> m_vVideoFrameBuffer;

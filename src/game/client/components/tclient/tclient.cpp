@@ -2,6 +2,7 @@
 #include <game/client/components/qmclient/config_override.h>
 
 #include <game/client/components/qmclient/data_version.h>
+#include <game/client/components/qmclient/keyword_reply_rules.h>
 
 #include <base/hash.h>
 #include <base/log.h>
@@ -18,6 +19,7 @@
 #include <engine/serverbrowser.h>
 #include <engine/engine.h>
 #include <engine/shared/config.h>
+#include <engine/shared/csv.h>
 #include <engine/shared/json.h>
 #include <engine/shared/jsonwriter.h>
 #include <engine/shared/jobs.h>
@@ -43,6 +45,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <mutex>
 #include <queue>
@@ -64,6 +67,7 @@ static constexpr int64_t MAP_NOTES_SAVE_DELAY_SEC = 5;
 static constexpr const char *QMCLIENT_FREEZE_WAKEUP_TEXT = "快醒醒!";
 static constexpr int QMCLIENT_AXIOM_AUTO_LOGIN_MAX_ATTEMPTS = 3;
 static constexpr int QMCLIENT_AXIOM_AUTO_LOGIN_RETRY_DELAY_SECONDS = 2;
+static constexpr int LOCAL_SAVE_JOIN_HINT_MAX_ITEMS = 12;
 
 static bool TextContainsAny(const char *pText, const std::initializer_list<const char *> &Tokens)
 {
@@ -110,6 +114,9 @@ static constexpr const char *s_pFriendEnterBroadcastDefaultText = "%s joined thi
 
 static int AutoReplySeparatorLength(const char *pStr);
 static bool AppendAutoReplyRuleBlock(char *pOutRules, size_t OutRulesSize, const char *pRules);
+static bool ExtractLoadSaveCode(const char *pLine, char *pOutCode, size_t OutCodeSize);
+static void TrimLocalSaveField(std::string &Field);
+static std::array<std::string, 4> ParseLocalSaveCsvFields(const char *pLine);
 
 namespace
 {
@@ -597,7 +604,7 @@ void CTClient::OnInit()
 	{
 		bool MigratedLegacyAutoReply = false;
 		char aMergedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
-		str_copy(aMergedRules, g_Config.m_QmKeywordReplyRules, sizeof(aMergedRules));
+		QmKeywordReplyRules::DecodeFromConfig(g_Config.m_QmKeywordReplyRules, aMergedRules, sizeof(aMergedRules));
 
 		if(g_Config.m_QmQiaFenEnabled)
 		{
@@ -640,7 +647,7 @@ void CTClient::OnInit()
 		}
 
 		if(MigratedLegacyAutoReply)
-			str_copy(g_Config.m_QmKeywordReplyRules, aMergedRules, sizeof(g_Config.m_QmKeywordReplyRules));
+			QmKeywordReplyRules::EncodeForConfig(aMergedRules, g_Config.m_QmKeywordReplyRules, sizeof(g_Config.m_QmKeywordReplyRules));
 	}
 
 }
@@ -1115,7 +1122,9 @@ static bool MatchAutoReplyRules(const char *pMessage, const char *pRules, char *
 	bool aMatchedRenameFlags[MAX_MATCHED_REPLIES] = {};
 	int MatchedReplyCount = 0;
 
-	const char *pCursor = pRules;
+	char aDecodedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
+	QmKeywordReplyRules::DecodeFromConfig(pRules, aDecodedRules, sizeof(aDecodedRules));
+	const char *pCursor = aDecodedRules;
 	while(*pCursor)
 	{
 		char aLine[1024];
@@ -2713,6 +2722,11 @@ void CTClient::CheckFriendOnline()
 
 void CTClient::CheckFriendEnterGreet()
 {
+	auto ClearFriendEnterClientActive = [&]() {
+		for(bool &ClientActive : m_aFriendEnterClientActive)
+			ClientActive = false;
+	};
+
 	if(Client()->State() != IClient::STATE_ONLINE)
 	{
 		if(m_FriendEnterInitialized || !m_FriendEnterOnline.empty())
@@ -2720,6 +2734,7 @@ void CTClient::CheckFriendEnterGreet()
 			m_FriendEnterOnline.clear();
 			m_FriendEnterInitialized = false;
 		}
+		ClearFriendEnterClientActive();
 		m_FriendEnterPendingNames.clear();
 		m_FriendEnterPendingSendAt = 0.0f;
 		m_FriendEnterNextCheck = 0.0f;
@@ -2736,6 +2751,7 @@ void CTClient::CheckFriendEnterGreet()
 		m_FriendEnterPrevIgnoreClan = IgnoreClanSetting;
 		m_FriendEnterOnline.clear();
 		m_FriendEnterInitialized = false;
+		ClearFriendEnterClientActive();
 		m_FriendEnterPendingNames.clear();
 		m_FriendEnterPendingSendAt = 0.0f;
 		m_FriendEnterNextCheck = 0.0f;
@@ -2777,6 +2793,7 @@ void CTClient::CheckFriendEnterGreet()
 	{
 		m_FriendEnterOnline.clear();
 		m_FriendEnterInitialized = false;
+		ClearFriendEnterClientActive();
 		return;
 	}
 
@@ -2788,6 +2805,7 @@ void CTClient::CheckFriendEnterGreet()
 	CurrentFriends.reserve(32);
 	std::vector<std::string> NewFriends;
 	NewFriends.reserve(8);
+	bool aCurrentClientActive[MAX_CLIENTS] = {};
 	std::string Key;
 	Key.reserve(MAX_NAME_LENGTH + MAX_CLAN_LENGTH + 1);
 	const bool IgnoreClan = IgnoreClanSetting != 0;
@@ -2800,6 +2818,7 @@ void CTClient::CheckFriendEnterGreet()
 		const auto &Client = GameClient()->m_aClients[ClientId];
 		if(!Client.m_Active)
 			continue;
+		aCurrentClientActive[ClientId] = true;
 		if(ClientId == LocalMain || (HasDummy && ClientId == LocalDummy))
 			continue;
 		if(!GameClient()->Friends()->IsFriend(Client.m_aName, Client.m_aClan, true))
@@ -2807,18 +2826,22 @@ void CTClient::CheckFriendEnterGreet()
 
 		BuildFriendNotifyKey(Client.m_aName, Client.m_aClan, IgnoreClan, Key);
 		CurrentFriends.insert(Key);
-		if(m_FriendEnterOnline.find(Key) == m_FriendEnterOnline.end())
+		if(!m_aFriendEnterClientActive[ClientId])
 			NewFriends.push_back(Client.m_aName);
 	}
 
 	if(!m_FriendEnterInitialized)
 	{
 		m_FriendEnterOnline = std::move(CurrentFriends);
+		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+			m_aFriendEnterClientActive[ClientId] = aCurrentClientActive[ClientId];
 		m_FriendEnterInitialized = true;
 		return;
 	}
 
 	m_FriendEnterOnline = std::move(CurrentFriends);
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+		m_aFriendEnterClientActive[ClientId] = aCurrentClientActive[ClientId];
 
 	if(NewFriends.empty())
 		return;
@@ -3218,6 +3241,7 @@ void CTClient::OnStateChange(int NewState, int OldState)
 		InvalidateGoresDistanceField();
 		m_FriendEnterOnline.clear();
 		m_FriendEnterInitialized = false;
+		m_aLastLocalSaveHintMap[0] = '\0';
 	}
 	m_aLastGameplayLogicTick[0] = -1;
 	m_aLastGameplayLogicTick[1] = -1;
@@ -3235,6 +3259,7 @@ void CTClient::OnStateChange(int NewState, int OldState)
 void CTClient::OnNewSnapshot()
 {
 	SetForcedAspect();
+	MaybeShowLocalSaveJoinHint();
 	// Update volleyball
 	bool IsVolleyBall = false;
 	if(g_Config.m_TcVolleyBallBetterBall > 0 && g_Config.m_TcVolleyBallBetterBallSkin[0] != '\0')
@@ -4717,32 +4742,273 @@ void CTClient::SetMapNote(const char *pMapName, const char *pNote)
 	}
 }
 
+static void TrimLocalSaveField(std::string &Field)
+{
+	while(!Field.empty() && str_isspace(Field.front()))
+		Field.erase(Field.begin());
+	while(!Field.empty() && str_isspace(Field.back()))
+		Field.pop_back();
+}
+
+static bool ExtractLoadSaveCode(const char *pLine, char *pOutCode, size_t OutCodeSize)
+{
+	if(!pOutCode || OutCodeSize == 0)
+		return false;
+	pOutCode[0] = '\0';
+	if(!pLine)
+		return false;
+
+	const char *pCursor = str_skip_whitespaces_const(pLine);
+	const char *pAfterCommand = str_startswith_nocase(pCursor, "/load");
+	if(!pAfterCommand || (pAfterCommand[0] != '\0' && !str_isspace(pAfterCommand[0])))
+		return false;
+
+	pCursor = str_skip_whitespaces_const(pAfterCommand);
+	if(pCursor[0] == '\0')
+		return false;
+
+	if(pCursor[0] == '"')
+	{
+		++pCursor;
+		char *pDst = pOutCode;
+		char *pEnd = pOutCode + OutCodeSize;
+		while(pCursor[0] != '\0' && pCursor[0] != '"' && pDst + 1 < pEnd)
+		{
+			if(pCursor[0] == '\\' && pCursor[1] != '\0')
+				++pCursor;
+			*pDst++ = *pCursor++;
+		}
+		*pDst = '\0';
+		return pOutCode[0] != '\0';
+	}
+
+	str_copy(pOutCode, pCursor, OutCodeSize);
+	str_utf8_trim_right(pOutCode);
+	return pOutCode[0] != '\0';
+}
+
+static std::array<std::string, 4> ParseLocalSaveCsvFields(const char *pLine)
+{
+	std::array<std::string, 4> aFields;
+	int FieldIndex = 0;
+	bool InQuotes = false;
+
+	for(int CharIndex = 0; pLine[CharIndex] != '\0' && FieldIndex < (int)aFields.size(); ++CharIndex)
+	{
+		if(pLine[CharIndex] == '"')
+		{
+			if(InQuotes && pLine[CharIndex + 1] == '"')
+			{
+				aFields[FieldIndex].push_back('"');
+				++CharIndex;
+			}
+			else
+				InQuotes = !InQuotes;
+		}
+		else if(pLine[CharIndex] == ',' && !InQuotes)
+		{
+			++FieldIndex;
+		}
+		else
+		{
+			aFields[FieldIndex].push_back(pLine[CharIndex]);
+		}
+	}
+
+	for(std::string &Field : aFields)
+		TrimLocalSaveField(Field);
+	return aFields;
+}
+
+bool CTClient::LoadLocalSaveEntries(std::vector<SLocalSaveEntry> &vEntries, bool *pFileExists) const
+{
+	if(pFileExists)
+		*pFileExists = false;
+	vEntries.clear();
+
+	IOHANDLE File = Storage()->OpenFile(SAVES_FILE, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+		return false;
+	if(pFileExists)
+		*pFileExists = true;
+
+	char *pFileContent = io_read_all_str(File);
+	io_close(File);
+	if(!pFileContent)
+		return false;
+
+	const char *pCursor = pFileContent;
+	char aLine[2048];
+	bool FirstLine = true;
+	while((pCursor = str_next_token(pCursor, "\n", aLine, sizeof(aLine))))
+	{
+		str_utf8_trim_right(aLine);
+		if(aLine[0] == '\0')
+			continue;
+		if(FirstLine)
+		{
+			FirstLine = false;
+			if(str_startswith(aLine, "Time"))
+				continue;
+		}
+
+		std::array<std::string, 4> aFields = ParseLocalSaveCsvFields(aLine);
+		SLocalSaveEntry Entry;
+		Entry.m_Time = std::move(aFields[0]);
+		Entry.m_Players = std::move(aFields[1]);
+		Entry.m_Map = std::move(aFields[2]);
+		Entry.m_Code = std::move(aFields[3]);
+		vEntries.push_back(std::move(Entry));
+	}
+
+	free(pFileContent);
+	return true;
+}
+
+bool CTClient::RemoveLocalSaveByCode(const char *pCode)
+{
+	if(!pCode || pCode[0] == '\0')
+		return false;
+
+	std::vector<SLocalSaveEntry> vEntries;
+	bool FileExists = false;
+	if(!LoadLocalSaveEntries(vEntries, &FileExists) || vEntries.empty())
+		return false;
+
+	const char *pCurrentMap = Client()->GetCurrentMap();
+	const bool HasCurrentMap = pCurrentMap && pCurrentMap[0] != '\0';
+	auto MatchesCurrentMap = [&](const SLocalSaveEntry &Entry) {
+		if(str_comp(Entry.m_Code.c_str(), pCode) != 0)
+			return false;
+		if(!HasCurrentMap || Entry.m_Map.empty())
+			return true;
+		return str_comp_nocase(Entry.m_Map.c_str(), pCurrentMap) == 0;
+	};
+
+	const size_t OriginalSize = vEntries.size();
+	vEntries.erase(std::remove_if(vEntries.begin(), vEntries.end(), MatchesCurrentMap), vEntries.end());
+	if(vEntries.size() == OriginalSize)
+	{
+		vEntries.erase(std::remove_if(vEntries.begin(), vEntries.end(), [pCode](const SLocalSaveEntry &Entry) {
+			return str_comp(Entry.m_Code.c_str(), pCode) == 0;
+		}), vEntries.end());
+	}
+	if(vEntries.size() == OriginalSize)
+		return false;
+
+	IOHANDLE File = Storage()->OpenFile(SAVES_FILE, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+		return false;
+
+	static constexpr const char *s_apSavesHeader[] = {
+		"Time",
+		"Players",
+		"Map",
+		"Code",
+	};
+	CsvWrite(File, std::size(s_apSavesHeader), s_apSavesHeader);
+	for(const SLocalSaveEntry &Entry : vEntries)
+	{
+		const char *apColumns[std::size(s_apSavesHeader)] = {
+			Entry.m_Time.c_str(),
+			Entry.m_Players.c_str(),
+			Entry.m_Map.c_str(),
+			Entry.m_Code.c_str(),
+		};
+		CsvWrite(File, std::size(s_apSavesHeader), apColumns);
+	}
+	io_close(File);
+
+	m_aLastLocalSaveHintMap[0] = '\0';
+	return true;
+}
+
+bool CTClient::TryRemoveLocalSaveForLoadCommand(const char *pLine)
+{
+	char aCode[256];
+	if(!ExtractLoadSaveCode(pLine, aCode, sizeof(aCode)))
+		return false;
+	return RemoveLocalSaveByCode(aCode);
+}
+
+void CTClient::MaybeShowLocalSaveJoinHint()
+{
+	if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
+		return;
+
+	const char *pCurrentMap = Client()->GetCurrentMap();
+	if(!pCurrentMap || pCurrentMap[0] == '\0')
+		return;
+	if(str_comp(m_aLastLocalSaveHintMap, pCurrentMap) == 0)
+		return;
+
+	std::vector<SLocalSaveEntry> vEntries;
+	bool FileExists = false;
+	if(!LoadLocalSaveEntries(vEntries, &FileExists))
+	{
+		str_copy(m_aLastLocalSaveHintMap, pCurrentMap, sizeof(m_aLastLocalSaveHintMap));
+		return;
+	}
+
+	std::vector<const SLocalSaveEntry *> vMatchedEntries;
+	for(const SLocalSaveEntry &Entry : vEntries)
+	{
+		if(!Entry.m_Map.empty() && str_comp_nocase(Entry.m_Map.c_str(), pCurrentMap) == 0)
+			vMatchedEntries.push_back(&Entry);
+	}
+
+	if(vMatchedEntries.empty())
+	{
+		str_copy(m_aLastLocalSaveHintMap, pCurrentMap, sizeof(m_aLastLocalSaveHintMap));
+		return;
+	}
+
+	char aMessage[1024];
+	str_format(aMessage, sizeof(aMessage), "— 您在这张图有%d个存档！", (int)vMatchedEntries.size());
+	GameClient()->Echo(aMessage, true);
+
+	std::string PlayersLine = "— 保存者按顺序是";
+	std::string CodesLine = "— 密码依次为";
+	const int DisplayCount = minimum((int)vMatchedEntries.size(), LOCAL_SAVE_JOIN_HINT_MAX_ITEMS);
+	for(int EntryIndex = 0; EntryIndex < DisplayCount; ++EntryIndex)
+	{
+		const SLocalSaveEntry *pEntry = vMatchedEntries[EntryIndex];
+		if(EntryIndex > 0)
+		{
+			PlayersLine += ",";
+			CodesLine += ",";
+		}
+		PlayersLine += pEntry->m_Players.empty() ? "Unknown" : pEntry->m_Players;
+		CodesLine += pEntry->m_Code.empty() ? "no-code" : pEntry->m_Code;
+	}
+	if(DisplayCount < (int)vMatchedEntries.size())
+	{
+		PlayersLine += ",...";
+		CodesLine += ",...";
+	}
+	PlayersLine += "！";
+	CodesLine += "！";
+	GameClient()->Echo(PlayersLine.c_str(), true);
+	GameClient()->Echo(CodesLine.c_str(), true);
+
+	str_copy(m_aLastLocalSaveHintMap, pCurrentMap, sizeof(m_aLastLocalSaveHintMap));
+}
+
 void CTClient::ConSaveList(IConsole::IResult *pResult, void *pUserData)
 {
 	CTClient *pThis = static_cast<CTClient *>(pUserData);
 	// 如果用户指定了地图名，使用指定的；否则使用当前地图
 	const char *pFilterMap = pResult->NumArguments() > 0 ? pResult->GetString(0) : pThis->Client()->GetCurrentMap();
 
-	// 打开本地存档文件
-	IOHANDLE File = pThis->Storage()->OpenFile(SAVES_FILE, IOFLAG_READ, IStorage::TYPE_SAVE);
-	if(!File)
+	std::vector<SLocalSaveEntry> vEntries;
+	bool FileExists = false;
+	if(!pThis->LoadLocalSaveEntries(vEntries, &FileExists))
 	{
-		pThis->GameClient()->Echo(Localize("No local saves file found (ddnet-saves.txt)"));
-		return;
-	}
-
-	// 读取整个文件内容
-	char *pFileContent = io_read_all_str(File);
-	io_close(File);
-
-	if(!pFileContent)
-	{
-		pThis->GameClient()->Echo(Localize("Failed to read saves file"));
+		pThis->GameClient()->Echo(FileExists ? Localize("Failed to read saves file") : Localize("No local saves file found (ddnet-saves.txt)"));
 		return;
 	}
 
 	int Count = 0;
-	bool IsFirstLine = true;
 
 	// 显示标题
 	char aTitle[256];
@@ -4752,109 +5018,26 @@ void CTClient::ConSaveList(IConsole::IResult *pResult, void *pUserData)
 		str_copy(aTitle, "=== All Local Saves ===");
 	pThis->GameClient()->Echo(aTitle);
 
-	// 逐行处理
-	char *pLine = pFileContent;
-	while(*pLine)
+	for(const SLocalSaveEntry &Entry : vEntries)
 	{
-		// 找到行尾
-		char *pLineEnd = pLine;
-		while(*pLineEnd && *pLineEnd != '\n' && *pLineEnd != '\r')
-			pLineEnd++;
-
-		// 保存行尾字符并临时设为结束符
-		char LineEndChar = *pLineEnd;
-		if(*pLineEnd)
-			*pLineEnd = '\0';
-
-		// 处理这一行
-		if(pLine[0] != '\0')
+		// 过滤地图
+		if(pFilterMap && pFilterMap[0] != '\0')
 		{
-			// 跳过表头
-			if(IsFirstLine)
-			{
-				IsFirstLine = false;
-				if(!str_startswith(pLine, "Time"))
-				{
-					// 如果第一行不是表头，也要处理
-					IsFirstLine = false;
-				}
-				else
-				{
-					// 跳过表头行
-					goto next_line;
-				}
-			}
-
-			// 解析 CSV 行: Time,Players,Map,Code
-			char aTime[64] = {0};
-			char aPlayers[256] = {0};
-			char aMap[128] = {0};
-			char aCode[128] = {0};
-
-			// 简单的 CSV 解析
-			const char *pCurrent = pLine;
-			char *apFields[4] = {aTime, aPlayers, aMap, aCode};
-			int FieldSizes[4] = {sizeof(aTime), sizeof(aPlayers), sizeof(aMap), sizeof(aCode)};
-			int FieldIndex = 0;
-			bool InQuotes = false;
-
-			for(int i = 0; pCurrent[i] && FieldIndex < 4; i++)
-			{
-				if(pCurrent[i] == '"')
-				{
-					InQuotes = !InQuotes;
-				}
-				else if(pCurrent[i] == ',' && !InQuotes)
-				{
-					FieldIndex++;
-				}
-				else if(FieldIndex < 4)
-				{
-					int Len = str_length(apFields[FieldIndex]);
-					if(Len < FieldSizes[FieldIndex] - 1)
-					{
-						apFields[FieldIndex][Len] = pCurrent[i];
-						apFields[FieldIndex][Len + 1] = '\0';
-					}
-				}
-			}
-
-			// 过滤地图
-			if(pFilterMap && pFilterMap[0] != '\0')
-			{
-				// 精确匹配地图名（不区分大小写）
-				if(str_comp_nocase(aMap, pFilterMap) != 0)
-					goto next_line;
-			}
-
-			// 输出格式: [玩家名] 密码 (地图: xxx, 保存时间: xxx)
-			char aOutput[512];
-			str_format(aOutput, sizeof(aOutput), "[%s] %s (Map: %s, Time: %s)",
-				aPlayers[0] ? aPlayers : "Unknown",
-				aCode[0] ? aCode : "no-code",
-				aMap[0] ? aMap : "Unknown",
-				aTime[0] ? aTime : "Unknown");
-			pThis->GameClient()->Echo(aOutput);
-			Count++;
+			// 精确匹配地图名（不区分大小写）
+			if(str_comp_nocase(Entry.m_Map.c_str(), pFilterMap) != 0)
+				continue;
 		}
 
-next_line:
-		// 恢复行尾字符并移动到下一行
-		if(LineEndChar)
-		{
-			*pLineEnd = LineEndChar;
-			pLine = pLineEnd + 1;
-			// 跳过 \r\n 的第二个字符
-			if(LineEndChar == '\r' && *pLine == '\n')
-				pLine++;
-		}
-		else
-		{
-			break;
-		}
+		// 输出格式: [玩家名] 密码 (地图: xxx, 保存时间: xxx)
+		char aOutput[512];
+		str_format(aOutput, sizeof(aOutput), "[%s] %s (Map: %s, Time: %s)",
+			Entry.m_Players.empty() ? "Unknown" : Entry.m_Players.c_str(),
+			Entry.m_Code.empty() ? "no-code" : Entry.m_Code.c_str(),
+			Entry.m_Map.empty() ? "Unknown" : Entry.m_Map.c_str(),
+			Entry.m_Time.empty() ? "Unknown" : Entry.m_Time.c_str());
+		pThis->GameClient()->Echo(aOutput);
+		Count++;
 	}
-
-	free(pFileContent);
 
 	char aCountMsg[128];
 	str_format(aCountMsg, sizeof(aCountMsg), "Total: %d save(s)", Count);

@@ -1893,7 +1893,7 @@ void CChat::OnPrepareLines(float y)
 
 			if(Line.m_Friend && g_Config.m_ClMessageFriend)
 			{
-				TextRender()->TextColor(ColorRGBA(1.0f, 0.0f, 0.0f, 1.0f));
+				TextRender()->TextColor(color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageFriendHeartColor)));
 				TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &LineCursor, "♥ ");
 			}
 		}
@@ -2454,6 +2454,7 @@ void CChat::SendChat(int Team, const char *pLine)
 		Msg7.m_Target = -1;
 		Msg7.m_pMessage = pLine;
 		Client()->SendPackMsgActive(&Msg7, MSGFLAG_VITAL, true);
+		GameClient()->TClientComponent().TryRemoveLocalSaveForLoadCommand(pLine);
 
 		if(Client()->DummyConnected() && ShouldSyncTeamCommandToOther(pLine))
 			SendChatOnConn(!g_Config.m_ClDummy, Team, pLine);
@@ -2466,6 +2467,7 @@ void CChat::SendChat(int Team, const char *pLine)
 	Msg.m_Team = Team;
 	Msg.m_pMessage = pLine;
 	Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
+	GameClient()->TClientComponent().TryRemoveLocalSaveForLoadCommand(pLine);
 
 	if(Client()->DummyConnected() && ShouldSyncTeamCommandToOther(pLine))
 		SendChatOnConn(!g_Config.m_ClDummy, Team, pLine);
@@ -2489,6 +2491,7 @@ void CChat::SendChatOnConn(int Conn, int Team, const char *pLine)
 		Msg7.m_Target = -1;
 		Msg7.m_pMessage = pLine;
 		Client()->SendPackMsg(Conn, &Msg7, MSGFLAG_VITAL, true);
+		GameClient()->TClientComponent().TryRemoveLocalSaveForLoadCommand(pLine);
 		return;
 	}
 
@@ -2497,6 +2500,7 @@ void CChat::SendChatOnConn(int Conn, int Team, const char *pLine)
 	Msg.m_Team = Team;
 	Msg.m_pMessage = pLine;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
+	GameClient()->TClientComponent().TryRemoveLocalSaveForLoadCommand(pLine);
 }
 
 void CChat::SendChatQueued(int Team, const char *pLine, bool AllowOutgoingTranslation)

@@ -206,6 +206,71 @@ static std::array<ENameplateCoreRow, kNameplateCoreRowCount> ParseNameplateCoreR
 	return Result;
 }
 
+static constexpr int NAMEPLATE_FREE_MOVE_OFFSET_MIN = -300;
+static constexpr int NAMEPLATE_FREE_MOVE_OFFSET_MAX = 300;
+
+static bool NameplateFreeMoveEnabled()
+{
+	return g_Config.m_QmNameplateFreeMoveX != 0 || g_Config.m_QmNameplateFreeMoveY != 0;
+}
+
+static int *NameplateCoreRowOffsetX(ENameplateCoreRow Row)
+{
+	switch(Row)
+	{
+	case ENameplateCoreRow::NAME:
+		return &g_Config.m_QmNameplateNameOffsetX;
+	case ENameplateCoreRow::CLAN:
+		return &g_Config.m_QmNameplateClanOffsetX;
+	case ENameplateCoreRow::HOOK:
+		return &g_Config.m_QmNameplateHookOffsetX;
+	case ENameplateCoreRow::COORDS:
+		return &g_Config.m_QmNameplateCoordsOffsetX;
+	case ENameplateCoreRow::KEYS:
+		return &g_Config.m_QmNameplateKeysOffsetX;
+	case ENameplateCoreRow::NUM_ROWS:
+		break;
+	}
+	return nullptr;
+}
+
+static int *NameplateCoreRowOffsetY(ENameplateCoreRow Row)
+{
+	switch(Row)
+	{
+	case ENameplateCoreRow::NAME:
+		return &g_Config.m_QmNameplateNameOffsetY;
+	case ENameplateCoreRow::CLAN:
+		return &g_Config.m_QmNameplateClanOffsetY;
+	case ENameplateCoreRow::HOOK:
+		return &g_Config.m_QmNameplateHookOffsetY;
+	case ENameplateCoreRow::COORDS:
+		return &g_Config.m_QmNameplateCoordsOffsetY;
+	case ENameplateCoreRow::KEYS:
+		return &g_Config.m_QmNameplateKeysOffsetY;
+	case ENameplateCoreRow::NUM_ROWS:
+		break;
+	}
+	return nullptr;
+}
+
+static vec2 NameplateCoreRowOffset(ENameplateCoreRow Row)
+{
+	int *pOffsetX = NameplateCoreRowOffsetX(Row);
+	int *pOffsetY = NameplateCoreRowOffsetY(Row);
+	const float OffsetX = g_Config.m_QmNameplateFreeMoveX != 0 && pOffsetX != nullptr ? (float)*pOffsetX : 0.0f;
+	const float OffsetY = g_Config.m_QmNameplateFreeMoveY != 0 && pOffsetY != nullptr ? (float)*pOffsetY : 0.0f;
+	return vec2(OffsetX, OffsetY);
+}
+
+struct SNameplateCoreRowRect
+{
+	ENameplateCoreRow m_Row = ENameplateCoreRow::NUM_ROWS;
+	vec2 m_Min = vec2(0.0f, 0.0f);
+	vec2 m_Max = vec2(0.0f, 0.0f);
+	bool m_Visible = false;
+};
+
 class CNamePlateData
 {
 public:
@@ -1009,10 +1074,18 @@ public:
 class CNamePlate
 {
 private:
+	struct SCoreRowParts
+	{
+		ENameplateCoreRow m_Row = ENameplateCoreRow::NUM_ROWS;
+		size_t m_Start = 0;
+		size_t m_End = 0;
+	};
+
 	bool m_Inited = false;
 	bool m_InGame = false;
 	char m_aCoreRowOrderConfigCache[sizeof(g_Config.m_QmNameplateRowOrder)] = {};
 	PartsVector m_vpParts;
+	std::vector<SCoreRowParts> m_vCoreRows;
 	void RenderLine(CGameClient &This,
 		vec2 Pos, vec2 Size,
 		PartsVector::iterator Start, PartsVector::iterator End)
@@ -1029,6 +1102,118 @@ private:
 			}
 			if(Part.Visible() || Part.ShiftOnInvis())
 				Pos.x += Part.Size().x + Part.Padding().x;
+		}
+	}
+	vec2 RangeSize(size_t StartIndex, size_t EndIndex) const
+	{
+		vec2 LineSize = vec2(0.0f, 0.0f);
+		float WidthMax = 0.0f;
+		float HeightTotal = 0.0f;
+		bool Empty = true;
+		for(size_t PartIndex = StartIndex; PartIndex < EndIndex; ++PartIndex)
+		{
+			const CNamePlatePart &Part = *m_vpParts[PartIndex];
+			if(Part.NewLine())
+			{
+				if(!Empty)
+				{
+					WidthMax = std::max(WidthMax, LineSize.x);
+					HeightTotal += LineSize.y;
+				}
+				LineSize = vec2(0.0f, 0.0f);
+			}
+			else if(Part.Visible() || Part.ShiftOnInvis())
+			{
+				Empty = false;
+				LineSize.x += Part.Size().x + Part.Padding().x;
+				LineSize.y = std::max(LineSize.y, Part.Size().y + Part.Padding().y);
+			}
+		}
+		WidthMax = std::max(WidthMax, LineSize.x);
+		HeightTotal += LineSize.y;
+		return vec2(WidthMax, HeightTotal);
+	}
+	float RangeTopY(vec2 PositionBottomMiddle, size_t StartIndex, size_t EndIndex) const
+	{
+		vec2 Position = PositionBottomMiddle;
+		vec2 LineSize = vec2(0.0f, 0.0f);
+		bool Empty = true;
+		float Top = Position.y;
+		for(size_t PartIndex = StartIndex; PartIndex < EndIndex; ++PartIndex)
+		{
+			const CNamePlatePart &Part = *m_vpParts[PartIndex];
+			if(Part.NewLine())
+			{
+				if(!Empty)
+				{
+					Top = std::min(Top, Position.y - LineSize.y / 2.0f);
+					Position.y -= LineSize.y;
+				}
+				LineSize = vec2(0.0f, 0.0f);
+			}
+			else if(Part.Visible() || Part.ShiftOnInvis())
+			{
+				Empty = false;
+				LineSize.x += Part.Size().x + Part.Padding().x;
+				LineSize.y = std::max(LineSize.y, Part.Size().y + Part.Padding().y);
+			}
+		}
+		return std::min(Top, Position.y - LineSize.y / 2.0f);
+	}
+	void RenderRange(CGameClient &This, vec2 PositionBottomMiddle, size_t StartIndex, size_t EndIndex)
+	{
+		vec2 Position = PositionBottomMiddle;
+		vec2 LineSize = vec2(0.0f, 0.0f);
+		bool Empty = true;
+		auto Start = m_vpParts.begin() + StartIndex;
+		for(auto PartIt = Start; PartIt != m_vpParts.begin() + EndIndex; ++PartIt)
+		{
+			CNamePlatePart &Part = **PartIt;
+			if(Part.NewLine())
+			{
+				if(!Empty)
+				{
+					RenderLine(This, Position, LineSize, Start, std::next(PartIt));
+					Position.y -= LineSize.y;
+				}
+				Start = std::next(PartIt);
+				LineSize = vec2(0.0f, 0.0f);
+			}
+			else if(Part.Visible() || Part.ShiftOnInvis())
+			{
+				Empty = false;
+				LineSize.x += Part.Size().x + Part.Padding().x;
+				LineSize.y = std::max(LineSize.y, Part.Size().y + Part.Padding().y);
+			}
+		}
+		RenderLine(This, Position, LineSize, Start, m_vpParts.begin() + EndIndex);
+	}
+	void CollectFreeMoveBounds(vec2 PositionBottomMiddle, bool &HasBounds, vec2 &BoundsMin, vec2 &BoundsMax) const
+	{
+		vec2 Position = PositionBottomMiddle;
+		for(const SCoreRowParts &CoreRow : m_vCoreRows)
+		{
+			const vec2 Size = RangeSize(CoreRow.m_Start, CoreRow.m_End);
+			if(Size.x > 0.0f && Size.y > 0.0f)
+			{
+				const vec2 RowPosition = Position + NameplateCoreRowOffset(CoreRow.m_Row);
+				const vec2 RowMin = vec2(RowPosition.x - Size.x / 2.0f, RowPosition.y - Size.y);
+				const vec2 RowMax = vec2(RowPosition.x + Size.x / 2.0f, RowPosition.y);
+				if(!HasBounds)
+				{
+					BoundsMin = RowMin;
+					BoundsMax = RowMax;
+					HasBounds = true;
+				}
+				else
+				{
+					BoundsMin.x = std::min(BoundsMin.x, RowMin.x);
+					BoundsMin.y = std::min(BoundsMin.y, RowMin.y);
+					BoundsMax.x = std::max(BoundsMax.x, RowMax.x);
+					BoundsMax.y = std::max(BoundsMax.y, RowMax.y);
+				}
+			}
+			Position.y -= Size.y;
 		}
 	}
 	template<typename PartType, typename... ArgsType>
@@ -1114,10 +1299,15 @@ private:
 		for(auto &Part : m_vpParts)
 			Part->Reset(This);
 		m_vpParts.clear();
+		m_vCoreRows.clear();
 
 		const auto CoreRowsTopToBottom = ParseNameplateCoreRowOrderTopToBottom(g_Config.m_QmNameplateRowOrder);
 		for(auto It = CoreRowsTopToBottom.rbegin(); It != CoreRowsTopToBottom.rend(); ++It)
+		{
+			const size_t StartIndex = m_vpParts.size();
 			AddCoreRowModule(This, *It);
+			m_vCoreRows.push_back({*It, StartIndex, m_vpParts.size()});
+		}
 	}
 
 	void Init(CGameClient &This)
@@ -1153,32 +1343,19 @@ public:
 	void Render(CGameClient &This, const vec2 &PositionBottomMiddle)
 	{
 		dbg_assert(m_Inited, "Tried to render uninited nameplate");
-		vec2 Position = PositionBottomMiddle;
-		// X: Total width including padding of line, Y: Max height of line parts
-		vec2 LineSize = vec2(0.0f, 0.0f);
-		bool Empty = true;
-		auto Start = m_vpParts.begin();
-		for(auto PartIt = m_vpParts.begin(); PartIt != m_vpParts.end(); ++PartIt)
+		if(NameplateFreeMoveEnabled())
 		{
-			CNamePlatePart &Part = **PartIt;
-			if(Part.NewLine())
+			vec2 Position = PositionBottomMiddle;
+			for(const SCoreRowParts &CoreRow : m_vCoreRows)
 			{
-				if(!Empty)
-				{
-					RenderLine(This, Position, LineSize, Start, std::next(PartIt));
-					Position.y -= LineSize.y;
-				}
-				Start = std::next(PartIt);
-				LineSize = vec2(0.0f, 0.0f);
+				const vec2 Size = RangeSize(CoreRow.m_Start, CoreRow.m_End);
+				RenderRange(This, Position + NameplateCoreRowOffset(CoreRow.m_Row), CoreRow.m_Start, CoreRow.m_End);
+				Position.y -= Size.y;
 			}
-			else if(Part.Visible() || Part.ShiftOnInvis())
-			{
-				Empty = false;
-				LineSize.x += Part.Size().x + Part.Padding().x;
-				LineSize.y = std::max(LineSize.y, Part.Size().y + Part.Padding().y);
-			}
+			This.Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+			return;
 		}
-		RenderLine(This, Position, LineSize, Start, m_vpParts.end());
+		RenderRange(This, PositionBottomMiddle, 0, m_vpParts.size());
 		This.Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 	bool IsInitialized() const
@@ -1188,65 +1365,54 @@ public:
 	float TopY(const vec2 &PositionBottomMiddle) const
 	{
 		dbg_assert(m_Inited, "Tried to get top of uninited nameplate");
-
-		vec2 Position = PositionBottomMiddle;
-		vec2 LineSize = vec2(0.0f, 0.0f);
-		bool Empty = true;
-		float Top = Position.y;
-		for(auto PartIt = m_vpParts.begin(); PartIt != m_vpParts.end(); ++PartIt) // NOLINT(modernize-loop-convert) For consistency with Render
+		if(NameplateFreeMoveEnabled())
 		{
-			CNamePlatePart &Part = **PartIt;
-			if(Part.NewLine())
+			vec2 Position = PositionBottomMiddle;
+			float Top = Position.y;
+			for(const SCoreRowParts &CoreRow : m_vCoreRows)
 			{
-				if(!Empty)
-				{
-					Top = std::min(Top, Position.y - LineSize.y / 2.0f);
-					Position.y -= LineSize.y;
-				}
-				LineSize = vec2(0.0f, 0.0f);
+				const vec2 Size = RangeSize(CoreRow.m_Start, CoreRow.m_End);
+				Top = std::min(Top, RangeTopY(Position + NameplateCoreRowOffset(CoreRow.m_Row), CoreRow.m_Start, CoreRow.m_End));
+				Position.y -= Size.y;
 			}
-			else if(Part.Visible() || Part.ShiftOnInvis())
-			{
-				Empty = false;
-				LineSize.x += Part.Size().x + Part.Padding().x;
-				LineSize.y = std::max(LineSize.y, Part.Size().y + Part.Padding().y);
-			}
+			return Top;
 		}
-		Top = std::min(Top, Position.y - LineSize.y / 2.0f);
-		return Top;
+
+		return RangeTopY(PositionBottomMiddle, 0, m_vpParts.size());
 	}
 	vec2 Size() const
 	{
 		dbg_assert(m_Inited, "Tried to get size of uninited nameplate");
-		// X: Total width including padding of line, Y: Max height of line parts
-		vec2 LineSize = vec2(0.0f, 0.0f);
-		float WMax = 0.0f;
-		float HTotal = 0.0f;
-		bool Empty = true;
-		for(auto PartIt = m_vpParts.begin(); PartIt != m_vpParts.end(); ++PartIt) // NOLINT(modernize-loop-convert) For consistency with Render
+		if(NameplateFreeMoveEnabled())
 		{
-			CNamePlatePart &Part = **PartIt;
-			if(Part.NewLine())
-			{
-				if(!Empty)
-				{
-					if(LineSize.x > WMax)
-						WMax = LineSize.x;
-					HTotal += LineSize.y;
-				}
-				LineSize = vec2(0.0f, 0.0f);
-			}
-			else if(Part.Visible() || Part.ShiftOnInvis())
-			{
-				Empty = false;
-				LineSize.x += Part.Size().x + Part.Padding().x;
-				LineSize.y = std::max(LineSize.y, Part.Size().y + Part.Padding().y);
-			}
+			bool HasBounds = false;
+			vec2 BoundsMin = vec2(0.0f, 0.0f);
+			vec2 BoundsMax = vec2(0.0f, 0.0f);
+			CollectFreeMoveBounds(vec2(0.0f, 0.0f), HasBounds, BoundsMin, BoundsMax);
+			return HasBounds ? BoundsMax - BoundsMin : vec2(0.0f, 0.0f);
 		}
-		if(LineSize.x > WMax)
-			WMax = LineSize.x;
-		HTotal += LineSize.y;
-		return vec2(WMax, HTotal);
+		return RangeSize(0, m_vpParts.size());
+	}
+	void CollectCoreRowRects(vec2 PositionBottomMiddle, std::array<SNameplateCoreRowRect, kNameplateCoreRowCount> &aRects) const
+	{
+		for(SNameplateCoreRowRect &Rect : aRects)
+			Rect = SNameplateCoreRowRect();
+
+		vec2 Position = PositionBottomMiddle;
+		for(const SCoreRowParts &CoreRow : m_vCoreRows)
+		{
+			const vec2 Size = RangeSize(CoreRow.m_Start, CoreRow.m_End);
+			if(Size.x > 0.0f && Size.y > 0.0f)
+			{
+				SNameplateCoreRowRect &Rect = aRects[static_cast<int>(CoreRow.m_Row)];
+				const vec2 RowPosition = Position + NameplateCoreRowOffset(CoreRow.m_Row);
+				Rect.m_Row = CoreRow.m_Row;
+				Rect.m_Min = vec2(RowPosition.x - Size.x / 2.0f, RowPosition.y - Size.y);
+				Rect.m_Max = vec2(RowPosition.x + Size.x / 2.0f, RowPosition.y);
+				Rect.m_Visible = true;
+			}
+			Position.y -= Size.y;
+		}
 	}
 };
 
@@ -1257,7 +1423,19 @@ public:
 	SChatBubbleAnimState m_aChatBubbleAnim[MAX_CLIENTS];
 	SCoordXAlignState m_aCoordXAlign[MAX_CLIENTS];
 	SCoordXAlignFrameState m_CoordXAlignFrame;
+	ENameplateCoreRow m_FreeMoveDragRow = ENameplateCoreRow::NUM_ROWS;
+	vec2 m_FreeMoveDragStartMouse = vec2(0.0f, 0.0f);
+	vec2 m_FreeMoveDragStartOffset = vec2(0.0f, 0.0f);
 };
+
+static bool NameplateCoreRowRectContains(const SNameplateCoreRowRect &Rect, vec2 Position)
+{
+	return Rect.m_Visible &&
+		Position.x >= Rect.m_Min.x &&
+		Position.x <= Rect.m_Max.x &&
+		Position.y >= Rect.m_Min.y &&
+		Position.y <= Rect.m_Max.y;
+}
 
 static int RoundCoordToCentitiles(float Value)
 {
@@ -1270,12 +1448,6 @@ void CNamePlates::UpdateCoordXAlignFrameState()
 	FrameState = SCoordXAlignFrameState();
 
 	if(g_Config.m_QmNameplateCoordXAlignHint == 0 && g_Config.m_QmNameplateCoordXAlignHintStrict == 0)
-	{
-		for(SCoordXAlignState &CoordXAlignState : m_pData->m_aCoordXAlign)
-			CoordXAlignState = SCoordXAlignState();
-		return;
-	}
-	if(g_Config.m_QmNameplateCoordX == 0)
 	{
 		for(SCoordXAlignState &CoordXAlignState : m_pData->m_aCoordXAlign)
 			CoordXAlignState = SCoordXAlignState();
@@ -1370,23 +1542,29 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	GameClient()->FormatStreamerClan(ClientId, Data.m_aClan, sizeof(Data.m_aClan));
 	Data.m_FontSizeClan = 18.0f + 20.0f * g_Config.m_ClNamePlatesClanSize / 100.0f;
 
-	Data.m_ShowCoordX = !HideFocusNames && g_Config.m_QmNameplateCoordX != 0;
-	Data.m_ShowCoordY = !HideFocusNames && g_Config.m_QmNameplateCoordY != 0;
-	Data.m_ShowCoords = !HideFocusNames && (pPlayerInfo->m_Local ? g_Config.m_QmNameplateCoordsOwn : g_Config.m_QmNameplateCoords);
-	Data.m_Coords = Position / 32.0f;
-	Data.m_FontSizeCoords = 18.0f + 20.0f * g_Config.m_ClNamePlatesCoordsSize / 100.0f;
 	Data.m_CoordXAlignHint = g_Config.m_QmNameplateCoordXAlignHint != 0;
 	Data.m_CoordXAlignHintStrict = g_Config.m_QmNameplateCoordXAlignHintStrict != 0;
 	Data.m_CoordXAlignColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmNameplateCoordXAlignHintColor));
 
 	SCoordXAlignState &CoordXAlignState = m_pData->m_aCoordXAlign[ClientId];
+	const bool CoordXAlignHintEnabled =
+		(Data.m_CoordXAlignHint || Data.m_CoordXAlignHintStrict);
+	const bool LocalCoordXAligned =
+		TrackCoordXAlign &&
+		pPlayerInfo->m_Local &&
+		m_pData->m_CoordXAlignFrame.m_LocalAligned;
+	const bool ShowLocalAlignedCoordX = CoordXAlignHintEnabled && LocalCoordXAligned;
+	Data.m_ShowCoordX = !HideFocusNames && (g_Config.m_QmNameplateCoordX != 0 || ShowLocalAlignedCoordX);
+	Data.m_ShowCoordY = !HideFocusNames && g_Config.m_QmNameplateCoordY != 0;
+	Data.m_ShowCoords = !HideFocusNames && ((pPlayerInfo->m_Local ? g_Config.m_QmNameplateCoordsOwn : g_Config.m_QmNameplateCoords) || ShowLocalAlignedCoordX);
+	Data.m_Coords = Position / 32.0f;
+	Data.m_FontSizeCoords = 18.0f + 20.0f * g_Config.m_ClNamePlatesCoordsSize / 100.0f;
+
 	const bool ShouldTrackCoordXAlign =
 		TrackCoordXAlign &&
 		!pPlayerInfo->m_Local &&
 		GameClient()->m_Snap.m_LocalClientId >= 0 &&
-		Data.m_ShowCoords &&
-		Data.m_ShowCoordX &&
-		(Data.m_CoordXAlignHint || Data.m_CoordXAlignHintStrict);
+		CoordXAlignHintEnabled;
 	if(ShouldTrackCoordXAlign)
 	{
 		Data.m_CoordXAligned = CoordXAlignState.m_Aligned;
@@ -1395,7 +1573,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	{
 		if(TrackCoordXAlign)
 			CoordXAlignState = SCoordXAlignState();
-		Data.m_CoordXAligned = TrackCoordXAlign && pPlayerInfo->m_Local && m_pData->m_CoordXAlignFrame.m_LocalAligned;
+		Data.m_CoordXAligned = LocalCoordXAligned;
 	}
 
 	Data.m_FontSizeHookStrongWeak = 18.0f + 20.0f * g_Config.m_ClNamePlatesStrongSize / 100.0f;
@@ -1612,6 +1790,75 @@ void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
 	const int TeeEmote = Distance < InteractionDistance ? EMOTE_HAPPY : (Dummy ? g_Config.m_ClDummyDefaultEyes : g_Config.m_ClPlayerDefaultEyes);
 	RenderTools()->RenderTee(CAnimState::GetIdle(), &TeeRenderInfo, TeeEmote, TeeDirection, Position);
 	Position.y -= (float)g_Config.m_ClNamePlatesOffset;
+	if(NameplateFreeMoveEnabled())
+	{
+		std::array<SNameplateCoreRowRect, kNameplateCoreRowCount> aEditorRects;
+		NamePlate.CollectCoreRowRects(Position, aEditorRects);
+
+		const vec2 MousePosition = Ui()->MousePos();
+		ENameplateCoreRow HoveredRow = ENameplateCoreRow::NUM_ROWS;
+		for(const SNameplateCoreRowRect &Rect : aEditorRects)
+		{
+			if(NameplateCoreRowRectContains(Rect, MousePosition))
+				HoveredRow = Rect.m_Row;
+		}
+
+		if(m_pData->m_FreeMoveDragRow != ENameplateCoreRow::NUM_ROWS && !Ui()->MouseButton(0))
+		{
+			m_pData->m_FreeMoveDragRow = ENameplateCoreRow::NUM_ROWS;
+			m_pData->m_FreeMoveDragStartMouse = vec2(0.0f, 0.0f);
+			m_pData->m_FreeMoveDragStartOffset = vec2(0.0f, 0.0f);
+		}
+
+		if(m_pData->m_FreeMoveDragRow == ENameplateCoreRow::NUM_ROWS && HoveredRow != ENameplateCoreRow::NUM_ROWS && Ui()->MouseButtonClicked(0) && Ui()->ActiveItem() == nullptr)
+		{
+			int *pOffsetX = NameplateCoreRowOffsetX(HoveredRow);
+			int *pOffsetY = NameplateCoreRowOffsetY(HoveredRow);
+			m_pData->m_FreeMoveDragRow = HoveredRow;
+			m_pData->m_FreeMoveDragStartMouse = MousePosition;
+			m_pData->m_FreeMoveDragStartOffset = vec2(pOffsetX != nullptr ? (float)*pOffsetX : 0.0f, pOffsetY != nullptr ? (float)*pOffsetY : 0.0f);
+		}
+
+		if(m_pData->m_FreeMoveDragRow != ENameplateCoreRow::NUM_ROWS && Ui()->MouseButton(0))
+		{
+			int *pOffsetX = NameplateCoreRowOffsetX(m_pData->m_FreeMoveDragRow);
+			int *pOffsetY = NameplateCoreRowOffsetY(m_pData->m_FreeMoveDragRow);
+			if(g_Config.m_QmNameplateFreeMoveX != 0 && pOffsetX != nullptr)
+			{
+				const int NewOffsetX = std::clamp(round_to_int(m_pData->m_FreeMoveDragStartOffset.x + MousePosition.x - m_pData->m_FreeMoveDragStartMouse.x), NAMEPLATE_FREE_MOVE_OFFSET_MIN, NAMEPLATE_FREE_MOVE_OFFSET_MAX);
+				*pOffsetX = NewOffsetX;
+			}
+			if(g_Config.m_QmNameplateFreeMoveY != 0 && pOffsetY != nullptr)
+			{
+				const int NewOffsetY = std::clamp(round_to_int(m_pData->m_FreeMoveDragStartOffset.y + MousePosition.y - m_pData->m_FreeMoveDragStartMouse.y), NAMEPLATE_FREE_MOVE_OFFSET_MIN, NAMEPLATE_FREE_MOVE_OFFSET_MAX);
+				*pOffsetY = NewOffsetY;
+			}
+			NamePlate.CollectCoreRowRects(Position, aEditorRects);
+		}
+
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		for(const SNameplateCoreRowRect &Rect : aEditorRects)
+		{
+			if(!Rect.m_Visible)
+				continue;
+			const bool Dragging = m_pData->m_FreeMoveDragRow == Rect.m_Row;
+			const bool Hovered = HoveredRow == Rect.m_Row;
+			if(Dragging)
+				Graphics()->SetColor(ColorRGBA(0.25f, 0.85f, 1.0f, 0.22f));
+			else if(Hovered)
+				Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.14f));
+			else
+				Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.06f));
+			Graphics()->DrawRectExt(Rect.m_Min.x, Rect.m_Min.y, Rect.m_Max.x - Rect.m_Min.x, Rect.m_Max.y - Rect.m_Min.y, 4.0f, IGraphics::CORNER_ALL);
+		}
+		Graphics()->QuadsEnd();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+	else
+	{
+		m_pData->m_FreeMoveDragRow = ENameplateCoreRow::NUM_ROWS;
+	}
 	NamePlate.Render(*GameClient(), Position);
 	NamePlate.Reset(*GameClient());
 }
@@ -1973,12 +2220,13 @@ void CNamePlates::OnRender()
 		ShowDirection = g_Config.m_ClVideoShowDirection;
 #endif
 	const bool HideFocusNames = FocusModeHidesNames();
+	const bool ShowCoordXAlignHint = !HideFocusNames && (g_Config.m_QmNameplateCoordXAlignHint || g_Config.m_QmNameplateCoordXAlignHintStrict);
 	const bool ShowCoords = !HideFocusNames && (g_Config.m_QmNameplateCoords || g_Config.m_QmNameplateCoordsOwn) &&
 				(g_Config.m_QmNameplateCoordX || g_Config.m_QmNameplateCoordY);
 	const bool RenderNames = !HideFocusNames && (g_Config.m_ClNamePlates || g_Config.m_ClNamePlatesOwn);
 	const bool HideOverheadIndicators = FocusModeHidesOverheadIndicators();
 	const bool RenderDirection = !HideOverheadIndicators && ShowDirection != 0;
-	const bool RenderNameplates = RenderNames || RenderDirection || ShowCoords;
+	const bool RenderNameplates = RenderNames || RenderDirection || ShowCoords || ShowCoordXAlignHint;
 	const bool RenderChatBubbles = g_Config.m_QmChatBubble != 0 && !FocusModeHidesChat();
 	const bool RenderFreezeWakeupPopups = GameClient()->HasFreezeWakeupPopups();
 	if(!RenderNameplates && !RenderChatBubbles && !RenderFreezeWakeupPopups)

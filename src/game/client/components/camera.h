@@ -99,8 +99,10 @@ public:
 	void OnReset() override;
 
 	void SetView(ivec2 Pos, bool Relative = false);
+	void SetViewWorld(vec2 Pos);
 	void GotoSwitch(int Number, int Offset = -1);
 	void GotoTele(int Number, int Offset = -1);
+	void SpectatorTeleportToHoveredTele();
 
 	void SetZoom(float Target, int Smoothness, bool IsUser);
 	bool ZoomAllowed() const;
@@ -126,6 +128,7 @@ private:
 	static void ConSetViewRelative(IConsole::IResult *pResult, void *pUserData);
 	static void ConGotoSwitch(IConsole::IResult *pResult, void *pUserData);
 	static void ConGotoTele(IConsole::IResult *pResult, void *pUserData);
+	static void ConSpectatorTeleportToHoveredTele(IConsole::IResult *pResult, void *pUserData);
 
 	bool m_ForceFreeview;
 	vec2 m_ForceFreeviewPos;

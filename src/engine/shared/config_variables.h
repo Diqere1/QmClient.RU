@@ -78,6 +78,7 @@ MACRO_CONFIG_INT(ClShowhudPlayerSpeed, cl_showhud_player_speed, 0, 0, 1, CFGFLAG
 MACRO_CONFIG_INT(ClShowhudPlayerAngle, cl_showhud_player_angle, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内 HUD（玩家瞄准角度）")
 MACRO_CONFIG_INT(ClHudAnimations, cl_hud_animations, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用 HUD 动画")
 MACRO_CONFIG_INT(ClHudAnimationSpeed, cl_hud_animation_speed, 100, 0, 200, CFGFLAG_CLIENT | CFGFLAG_SAVE, "HUD 动画速度（百分比）")
+MACRO_CONFIG_INT(ClHudRainbowColors, cl_hud_rainbow_colors, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用 HUD 彩虹色")
 MACRO_CONFIG_INT(ClShowhudDDRace, cl_showhud_ddrace, 1, 0, 1, CFGFLAG_SAVE | CFGFLAG_CLIENT, "显示游戏内 HUD (DDRace HUD)")
 MACRO_CONFIG_INT(ClShowhudJumpsIndicator, cl_showhud_jumps_indicator, 1, 0, 1, CFGFLAG_SAVE | CFGFLAG_CLIENT, "显示游戏中的 HUD（你已经使用过的跳跃）")
 MACRO_CONFIG_INT(ClShowhudSpectator, cl_showhud_spectator, 1, 0, 1, CFGFLAG_SAVE | CFGFLAG_CLIENT, "显示游戏内 HUD（观众 HUD）")
@@ -658,6 +659,7 @@ MACRO_CONFIG_COL(ClKillMessageHighlightColor, cl_kill_message_highlight_color, 2
 
 MACRO_CONFIG_INT(ClMessageFriend, cl_message_friend, 1, 0, 1, CFGFLAG_SAVE | CFGFLAG_CLIENT, "为朋友启用着色和爱心")
 MACRO_CONFIG_COL(ClMessageFriendColor, cl_message_friend_color, 65425, CFGFLAG_CLIENT | CFGFLAG_SAVE, "好友留言颜色")
+MACRO_CONFIG_COL(ClMessageFriendHeartColor, cl_message_friend_heart_color, 65408, CFGFLAG_CLIENT | CFGFLAG_SAVE, "好友消息爱心颜色")
 
 MACRO_CONFIG_INT(ConnTimeout, conn_timeout, 100, 5, 1000, CFGFLAG_SAVE | CFGFLAG_CLIENT | CFGFLAG_SERVER, "网络超时")
 MACRO_CONFIG_INT(ConnTimeoutProtection, conn_timeout_protection, 1000, 5, 10000, CFGFLAG_SERVER, "网络超时保护")
@@ -685,6 +687,7 @@ MACRO_CONFIG_INT(ClShowQuads, cl_showquads, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SA
 MACRO_CONFIG_COL(ClBackgroundColor, cl_background_color, 128, CFGFLAG_CLIENT | CFGFLAG_SAVE, "背景颜色") // 0 0 128
 MACRO_CONFIG_COL(ClBackgroundEntitiesColor, cl_background_entities_color, 128, CFGFLAG_CLIENT | CFGFLAG_SAVE, "背景（实体）颜色") // 0 0 128
 MACRO_CONFIG_STR(ClBackgroundEntities, cl_background_entities, IO_MAX_PATH_LENGTH, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "背景（实体）")
+MACRO_CONFIG_INT(ClBackgroundVideoFps, cl_background_video_fps, 30, 1, 60, CFGFLAG_CLIENT | CFGFLAG_SAVE, "实体层视频背景的最大帧率")
 MACRO_CONFIG_STR(ClRunOnJoin, cl_run_on_join, 100, "", CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "加入服务器时运行的命令")
 
 // menu background map

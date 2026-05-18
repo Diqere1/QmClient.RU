@@ -254,6 +254,17 @@ class CTClient : public CComponent
 	void MaybeSaveMapNotes();
 
 	// 本地存档列表
+	struct SLocalSaveEntry
+	{
+		std::string m_Time;
+		std::string m_Players;
+		std::string m_Map;
+		std::string m_Code;
+	};
+	char m_aLastLocalSaveHintMap[128] = "";
+	bool LoadLocalSaveEntries(std::vector<SLocalSaveEntry> &vEntries, bool *pFileExists = nullptr) const;
+	bool RemoveLocalSaveByCode(const char *pCode);
+	void MaybeShowLocalSaveJoinHint();
 	static void ConSaveList(IConsole::IResult *pResult, void *pUserData);
 
 	// 复读功能
@@ -292,6 +303,7 @@ class CTClient : public CComponent
 	void CheckFriendOnline();
 	// 好友进图自动打招呼
 	std::unordered_set<std::string> m_FriendEnterOnline;
+	bool m_aFriendEnterClientActive[MAX_CLIENTS] = {};
 	int m_FriendEnterPrevEnabled = -1;
 	int m_FriendEnterPrevIgnoreClan = -1;
 	bool m_FriendEnterInitialized = false;
@@ -365,6 +377,7 @@ public:
 	void UpdateMapCategoryCache(const char *pMapName, const char *pCategoryKey);
 	const char *GetMapNote(const char *pMapName) const;
 	void SetMapNote(const char *pMapName, const char *pNote);
+	bool TryRemoveLocalSaveForLoadCommand(const char *pLine);
 	bool IsGoresMapProgressEnabled() const;
 	bool ShouldHideGoresGuides() const;
 	bool HasGoresMapProgress(int Dummy = 0) const

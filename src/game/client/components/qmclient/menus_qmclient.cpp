@@ -28,6 +28,7 @@
 #include <game/client/components/tclient/bindchat.h>
 #include <game/client/components/tclient/bindwheel.h>
 #include <game/client/components/tclient/trails.h>
+#include <game/client/components/qmclient/keyword_reply_rules.h>
 #include <game/client/components/qmclient/translate_ui_settings.h>
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
@@ -2917,6 +2918,12 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		SearchCard.y = SearchCardStartY;
 		SearchCard.h = SearchCardHeight;
 		s_GlassCards.push_back(SearchCard);
+		if(Ui()->MouseButtonClicked(0) && !Ui()->MouseHovered(&SearchCard) &&
+			(Ui()->ActiveItem() == &ModuleSearchInput || ModuleSearchInput.IsActive()))
+		{
+			Ui()->ReleaseActiveTextInput(&ModuleSearchInput);
+			ModuleSearchInput.Deactivate();
+		}
 		MainView.HSplitTop(SearchCardHeight, nullptr, &MainView);
 		MainView.HSplitTop(LG_CardSpacing, nullptr, &MainView);
 		char aSearchExtra[128];
@@ -4235,7 +4242,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				static std::vector<CButtonContainer> s_vKeywordRemoveRuleButtons;
 				{
 					CPerfTimer StageTimer;
-					SyncRuleRowsFromConfig(s_vKeywordRuleRows, s_KeywordRuleRowsInited, g_Config.m_QmKeywordReplyRules);
+					char aDecodedKeywordRules[sizeof(g_Config.m_QmKeywordReplyRules)];
+					QmKeywordReplyRules::DecodeFromConfig(g_Config.m_QmKeywordReplyRules, aDecodedKeywordRules, sizeof(aDecodedKeywordRules));
+					SyncRuleRowsFromConfig(s_vKeywordRuleRows, s_KeywordRuleRowsInited, aDecodedKeywordRules);
 					char aRuleExtra[96];
 					str_format(aRuleExtra, sizeof(aRuleExtra), "rows=%d active=%d", (int)s_vKeywordRuleRows.size(), g_Config.m_QmKeywordReplyEnabled);
 					LogQmPerfStage("keyword_rules_sync", StageTimer.ElapsedMs(), false, aRuleExtra);
@@ -4288,7 +4297,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				char aKeywordRules[sizeof(g_Config.m_QmKeywordReplyRules)];
 				BuildAutoReplyRulesFromRows(s_vKeywordRuleRows, aKeywordRules, sizeof(aKeywordRules));
-				str_copy(g_Config.m_QmKeywordReplyRules, aKeywordRules, sizeof(g_Config.m_QmKeywordReplyRules));
+				QmKeywordReplyRules::EncodeForConfig(aKeywordRules, g_Config.m_QmKeywordReplyRules, sizeof(g_Config.m_QmKeywordReplyRules));
 
 				bool KeywordHalfFilled = false;
 				for(const auto &pRuleRow : s_vKeywordRuleRows)

@@ -4447,7 +4447,7 @@ void CHud::RenderKeyStatus()
 	ColorHSLA KeyRainbowHsla(KeyHue, 0.75f, 0.6f, 1.0f);
 	ColorRGBA KeyRainbowColor = color_cast<ColorRGBA>(KeyRainbowHsla);
 
-	TextRender()->TextColor(KeyRainbowColor);
+	TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? KeyRainbowColor : TextRender()->DefaultTextColor());
 	if(Lines.m_ShowKey)
 	{
 		TextRender()->Text(TextX, TextY, Layout.m_FontSize, Lines.m_pKeyStatusText, -1.0f);
@@ -4865,12 +4865,13 @@ void CHud::RenderMovementInformation()
 				const float StatsHue = std::fmod(StatsTime * 0.2f + 0.1f, 1.0f);
 				ColorHSLA RainbowHsla(StatsHue, 0.75f, 0.6f, 1.0f);
 				ColorRGBA RainbowColor = color_cast<ColorRGBA>(RainbowHsla);
+				const ColorRGBA DefaultHudTextColor = TextRender()->DefaultTextColor();
 
 				// 平均/最大存活时长
 				float AvgAlive = Stats.GetAverageAliveTime(TickSpeed);
 				float MaxAlive = Stats.GetMaxAliveTime(TickSpeed);
 				str_format(aBuf, sizeof(aBuf), Localize("Alive: %.1fs/%.1fs"), AvgAlive, MaxAlive);
-				TextRender()->TextColor(RainbowColor);
+				TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? RainbowColor : DefaultHudTextColor);
 				TextRender()->Text(LeftX, y, Fontsize, aBuf, -1.0f);
 				TextRender()->TextColor(TextRender()->DefaultTextColor());
 				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
@@ -4880,7 +4881,7 @@ void CHud::RenderMovementInformation()
 				ColorHSLA RainbowHsla2(Hue2, 0.75f, 0.6f, 1.0f);
 				ColorRGBA RainbowColor2 = color_cast<ColorRGBA>(RainbowHsla2);
 				str_format(aBuf, sizeof(aBuf), Localize("Rescue/Freeze: %d/%d"), Stats.m_RescueCount, Stats.m_FreezeCount);
-				TextRender()->TextColor(RainbowColor2);
+				TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? RainbowColor2 : DefaultHudTextColor);
 				TextRender()->Text(LeftX, y, Fontsize, aBuf, -1.0f);
 				TextRender()->TextColor(TextRender()->DefaultTextColor());
 				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
@@ -4892,7 +4893,7 @@ void CHud::RenderMovementInformation()
 				float LeftRatio = Stats.GetHookLeftRatio() * 100.0f;
 				float RightRatio = Stats.GetHookRightRatio() * 100.0f;
 				str_format(aBuf, sizeof(aBuf), Localize("Hooking L/R: %.0f%%/%.0f%%"), LeftRatio, RightRatio);
-				TextRender()->TextColor(RainbowColor3);
+				TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? RainbowColor3 : DefaultHudTextColor);
 				TextRender()->Text(LeftX, y, Fontsize, aBuf, -1.0f);
 				TextRender()->TextColor(TextRender()->DefaultTextColor());
 				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
@@ -4911,7 +4912,8 @@ void CHud::RenderMovementInformation()
 					const float Hue4 = std::fmod(StatsTime * 0.2f + 0.4f, 1.0f);
 					ColorHSLA RainbowHsla4(Hue4, 0.75f, 0.6f, 1.0f);
 					ColorRGBA RainbowColor4 = color_cast<ColorRGBA>(RainbowHsla4);
-					TextRender()->TextColor(RainbowColor4);
+					const ColorRGBA ProgressColor = g_Config.m_ClHudRainbowColors ? RainbowColor4 : color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmPlayerStatsMapProgressColor, true));
+					TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? RainbowColor4 : DefaultHudTextColor);
 					TextRender()->Text(LeftX, y, Fontsize, aBuf, -1.0f);
 					TextRender()->TextColor(TextRender()->DefaultTextColor());
 					y += MOVEMENT_INFORMATION_LINE_HEIGHT;
@@ -4922,7 +4924,7 @@ void CHud::RenderMovementInformation()
 					const float BarY = y + (MOVEMENT_INFORMATION_LINE_HEIGHT - BarHeight) * 0.5f;
 					Graphics()->DrawRect(BarX, BarY, BarWidth, BarHeight, ColorRGBA(1.0f, 1.0f, 1.0f, 0.18f), IGraphics::CORNER_ALL, 1.0f);
 					if(HasProgress)
-						Graphics()->DrawRect(BarX, BarY, BarWidth * std::clamp(Progress, 0.0f, 1.0f), BarHeight, RainbowColor4.WithAlpha(0.85f), IGraphics::CORNER_ALL, 1.0f);
+						Graphics()->DrawRect(BarX, BarY, BarWidth * std::clamp(Progress, 0.0f, 1.0f), BarHeight, ProgressColor.WithAlpha(0.85f), IGraphics::CORNER_ALL, 1.0f);
 					y += MOVEMENT_INFORMATION_LINE_HEIGHT;
 				}
 			}
@@ -4940,7 +4942,7 @@ void CHud::RenderMovementInformation()
 		ColorHSLA KeyRainbowHsla(KeyHue, 0.75f, 0.6f, 1.0f);
 		ColorRGBA KeyRainbowColor = color_cast<ColorRGBA>(KeyRainbowHsla);
 
-		TextRender()->TextColor(KeyRainbowColor);
+		TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? KeyRainbowColor : TextRender()->DefaultTextColor());
 		if(KeyStatusLines.m_ShowKey)
 		{
 			TextRender()->Text(KeyTextX, KeyTextY, KeyStatusLayout.m_FontSize, KeyStatusLines.m_pKeyStatusText, -1.0f);
