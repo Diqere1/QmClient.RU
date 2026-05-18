@@ -244,4 +244,3 @@ DDNet 是实时联网游戏。以下问题在 review 时必须额外关注：
     - Windows 下构建是否通过 `qmclient_scripts/cmake-windows.cmd` 启动（MSVC环境）
 - Vulkan 着色器报错或资源页面闪退，先检查是否从正确的构建目录运行
 - UI 相关的，必须先了解原本的 UI 框架是如何创建的，禁止自己瞎猜去重新构建 UI 
-- UI 相关的，必须先了解原本的 UI 框架是如何创建的，禁止自己瞎猜去重新构建 UI 
