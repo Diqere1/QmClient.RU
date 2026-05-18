@@ -72,28 +72,28 @@
 
 namespace
 {
-bool PerfDebugEnabled()
-{
-	return g_Config.m_QmPerfDebug != 0;
-}
+	bool PerfDebugEnabled()
+	{
+		return g_Config.m_QmPerfDebug != 0;
+	}
 
-double PerfDebugThresholdMs()
-{
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-}
+	double PerfDebugThresholdMs()
+	{
+		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
+	}
 
-void LogPerfStage(const char *pSystem, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(!Force && DurationMs < PerfDebugThresholdMs())
-		return;
+	void LogPerfStage(const char *pSystem, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	{
+		if(!PerfDebugEnabled())
+			return;
+		if(!Force && DurationMs < PerfDebugThresholdMs())
+			return;
 
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg(pSystem, "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg(pSystem, "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg(pSystem, "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg(pSystem, "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	}
 }
 #ifdef main
 #undef main
@@ -107,6 +107,7 @@ void LogPerfStage(const char *pSystem, const char *pStage, const double Duration
 
 #if defined(CONF_FAMILY_WINDOWS)
 #include <windows.h>
+
 #include <dbghelp.h>
 #ifdef ERROR
 #undef ERROR
@@ -429,6 +430,64 @@ float CClient::PacketLoss() const
 	return m_aNetClient[g_Config.m_ClDummy].PacketLoss();
 }
 
+void CClient::UpdateNetStatsSnapshot() const
+{
+	const std::chrono::nanoseconds Now = time_get_nanoseconds();
+	if(Now - m_NetstatsLastUpdate <= 1s)
+		return;
+
+	m_NetstatsSampleInterval = m_NetstatsLastUpdate.count() > 0 ? Now - m_NetstatsLastUpdate : std::chrono::nanoseconds::zero();
+	m_NetstatsLastUpdate = Now;
+	m_NetstatsPrev = m_NetstatsCurrent;
+	net_stats(&m_NetstatsCurrent);
+}
+
+float CClient::SnapshotLatencyMs() const
+{
+	if(State() != IClient::STATE_ONLINE || m_CurrentServerInfo.m_Latency < 0)
+		return 0.0f;
+	return (float)m_CurrentServerInfo.m_Latency;
+}
+
+float CClient::PredictionLatencyMs() const
+{
+	const int64_t Now = time_get();
+	return (float)((m_PredictedTime.Get(Now) - m_aGameTime[g_Config.m_ClDummy].Get(Now)) * 1000 / (float)time_freq());
+}
+
+float CClient::PredictionMarginMs() const
+{
+	return (float)PredictionMargin();
+}
+
+float CClient::PredictionJitterMs() const
+{
+	return std::max(0.0f, m_AutoMarginLatencyJitterMs);
+}
+
+float CClient::GameTimeMarginMs() const
+{
+	return m_aLastGameTimeMarginMs[g_Config.m_ClDummy];
+}
+
+bool CClient::IsGameConnectionAlive() const
+{
+	return State() == IClient::STATE_ONLINE;
+}
+
+void CClient::NetStatsSnapshot(NETSTATS &Prev, NETSTATS &Current, std::chrono::nanoseconds &LastUpdate) const
+{
+	UpdateNetStatsSnapshot();
+	Prev = m_NetstatsPrev;
+	Current = m_NetstatsCurrent;
+	LastUpdate = m_NetstatsSampleInterval;
+}
+
+int CClient::PendingResendCount() const
+{
+	return m_aNetClient[g_Config.m_ClDummy].PendingResendCount();
+}
+
 void CClient::SendInput()
 {
 	int64_t Now = time_get();
@@ -547,12 +606,14 @@ void CClient::SetState(EClientState State)
 
 	if(State == IClient::STATE_ONLINE)
 	{
-		const bool Registered = m_ServerBrowser.IsRegistered(ServerAddress());
+		const NETADDR *pServerAddr = ServerAddress();
+		dbg_assert(pServerAddr != nullptr, "online state requires server address");
+		const bool Registered = m_ServerBrowser.IsRegistered(*pServerAddr);
 		CServerInfo CurrentServerInfo;
 		GetServerInfo(&CurrentServerInfo);
 
 		Discord()->SetGameInfo(CurrentServerInfo, m_aCurrentMap, Registered);
-		Steam()->SetGameInfo(ServerAddress(), m_aCurrentMap, Registered);
+		Steam()->SetGameInfo(*pServerAddr, m_aCurrentMap, Registered);
 	}
 	else if(OldState == IClient::STATE_ONLINE)
 	{
@@ -732,10 +793,10 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 	// Disconnect will not change the state if we are already quitting/restarting
 	if(m_State == IClient::STATE_QUITTING || m_State == IClient::STATE_RESTARTING)
 		return;
+	const NETADDR *pLastAddr = m_aNetClient[CONN_MAIN].ServerAddress();
+	const NETADDR LastAddr = pLastAddr ? *pLastAddr : NETADDR{};
 	Disconnect();
 	dbg_assert(m_State == IClient::STATE_OFFLINE, "Disconnect must ensure that client is offline");
-
-	const NETADDR LastAddr = ServerAddress();
 
 	if(pAddress != m_aConnectAddressStr)
 		str_copy(m_aConnectAddressStr, pAddress);
@@ -965,12 +1026,15 @@ void CClient::DummyConnect()
 	g_Config.m_ClDummyCopyMoves = 0;
 	g_Config.m_ClDummyHammer = 0;
 
+	const NETADDR *pMainAddr = m_aNetClient[CONN_MAIN].ServerAddress();
+	if(!pMainAddr)
+		return;
 	m_DummyConnecting = true;
 	// connect to the server
 	if(IsSixup())
-		m_aNetClient[CONN_DUMMY].Connect7(m_aNetClient[CONN_MAIN].ServerAddress(), 1);
+		m_aNetClient[CONN_DUMMY].Connect7(pMainAddr, 1);
 	else
-		m_aNetClient[CONN_DUMMY].Connect(m_aNetClient[CONN_MAIN].ServerAddress(), 1);
+		m_aNetClient[CONN_DUMMY].Connect(pMainAddr, 1);
 
 	m_aGametimeMarginGraphs[CONN_DUMMY].Init(-150.0f, 150.0f);
 }
@@ -1060,13 +1124,7 @@ void CClient::RenderDebug()
 		return;
 	}
 
-	const std::chrono::nanoseconds Now = time_get_nanoseconds();
-	if(Now - m_NetstatsLastUpdate > 1s)
-	{
-		m_NetstatsLastUpdate = Now;
-		m_NetstatsPrev = m_NetstatsCurrent;
-		net_stats(&m_NetstatsCurrent);
-	}
+	UpdateNetStatsSnapshot();
 
 	char aBuffer[512];
 	const float FontSize = 16.0f;
@@ -1185,22 +1243,12 @@ void CClient::RenderGraphs()
 	if(!g_Config.m_DbgGraphs)
 		return;
 
-	// Make sure graph positions and sizes are aligned with pixels to avoid lines overlapping graph edges
 	Graphics()->MapScreen(0, 0, Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
-	const float GraphW = std::round(Graphics()->ScreenWidth() / 4.0f);
-	const float GraphH = std::round(Graphics()->ScreenHeight() / 6.0f);
 	const float GraphSpacing = std::round(Graphics()->ScreenWidth() / 100.0f);
-	const float GraphX = Graphics()->ScreenWidth() - GraphW - GraphSpacing;
+	const float GraphX = Graphics()->ScreenWidth() - GraphSpacing;
 
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
-	TextRender()->Text(GraphX, GraphSpacing * 5 - 12.0f - 10.0f, 12.0f, Localize("Press Ctrl+Shift+G to toggle debug graphs"));
-
-	m_FpsGraph.Scale(time_freq());
-	m_FpsGraph.Render(Graphics(), TextRender(), GraphX, GraphSpacing * 5, GraphW, GraphH, Localize("FPS"));
-	m_InputtimeMarginGraph.Scale(5 * time_freq());
-	m_InputtimeMarginGraph.Render(Graphics(), TextRender(), GraphX, GraphSpacing * 6 + GraphH, GraphW, GraphH, Localize("Prediction margin"));
-	m_aGametimeMarginGraphs[g_Config.m_ClDummy].Scale(5 * time_freq());
-	m_aGametimeMarginGraphs[g_Config.m_ClDummy].Render(Graphics(), TextRender(), GraphX, GraphSpacing * 7 + GraphH * 2, GraphW, GraphH, Localize("Game time margin"));
+	GameClient()->RenderQmMonitoringHud(GraphX, GraphSpacing);
 }
 
 void CClient::Restart()
@@ -1619,7 +1667,8 @@ void CClient::ProcessServerInfo(int RawType, NETADDR *pFrom, const void *pData, 
 		//
 		// SERVERINFO_EXTENDED_MORE doesn't carry any server
 		// information, so just skip it.
-		if(net_addr_comp(&ServerAddress(), pFrom) == 0 && RawType != SERVERINFO_EXTENDED_MORE)
+		const NETADDR *pServerAddr = ServerAddress();
+		if(pServerAddr != nullptr && net_addr_comp(pServerAddr, pFrom) == 0 && RawType != SERVERINFO_EXTENDED_MORE)
 		{
 			// Only accept server info that has a type that is
 			// newer or equal to something the server already sent
@@ -1646,7 +1695,7 @@ void CClient::ProcessServerInfo(int RawType, NETADDR *pFrom, const void *pData, 
 			if(ValidPong)
 			{
 				int LatencyMs = (time_get() - m_CurrentServerCurrentPingTime) * 1000 / time_freq();
-				m_ServerBrowser.SetCurrentServerPing(ServerAddress(), LatencyMs);
+				m_ServerBrowser.SetCurrentServerPing(*pServerAddr, LatencyMs);
 				m_CurrentServerInfo.m_Latency = LatencyMs;
 				m_CurrentServerPingInfoType = SavedType;
 				m_CurrentServerCurrentPingTime = -1;
@@ -1995,7 +2044,9 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			if(m_ServerCapabilities.m_PingEx && m_CurrentServerCurrentPingTime >= 0 && *pId == m_CurrentServerPingUuid)
 			{
 				int LatencyMs = (time_get() - m_CurrentServerCurrentPingTime) * 1000 / time_freq();
-				m_ServerBrowser.SetCurrentServerPing(ServerAddress(), LatencyMs);
+				const NETADDR *pServerAddr = ServerAddress();
+				if(pServerAddr)
+					m_ServerBrowser.SetCurrentServerPing(*pServerAddr, LatencyMs);
 				m_CurrentServerInfo.m_Latency = LatencyMs;
 				m_CurrentServerCurrentPingTime = -1;
 
@@ -2072,7 +2123,10 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			}
 			if(Conn == CONN_MAIN)
 			{
-				NETADDR ServerAddr = ServerAddress();
+				const NETADDR *pServerAddr = ServerAddress();
+				if(!pServerAddr)
+					return;
+				NETADDR ServerAddr = *pServerAddr;
 				ServerAddr.port = RedirectPort;
 				char aAddr[NETADDR_MAXSTRSIZE];
 				net_addr_str(&ServerAddr, aAddr, sizeof(aAddr), true);
@@ -2081,7 +2135,8 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			else
 			{
 				DummyDisconnect("redirect");
-				if(ServerAddress().port != RedirectPort)
+				const NETADDR *pServerAddr = ServerAddress();
+				if(!pServerAddr || pServerAddr->port != RedirectPort)
 				{
 					// Only allow redirecting to the same port to reconnect. The dummy
 					// should not be connected to a different server than the main, as
@@ -2445,6 +2500,7 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 						int64_t Now = m_aGameTime[Conn].Get(time_get());
 						int64_t TickStart = GameTick * time_freq() / GameTickSpeed();
 						int64_t TimeLeft = (TickStart - Now) * 1000 / time_freq();
+						m_aLastGameTimeMarginMs[Conn] = (float)TimeLeft;
 						m_aGameTime[Conn].Update(&m_aGametimeMarginGraphs[Conn], (GameTick - 1) * time_freq() / GameTickSpeed(), TimeLeft, CSmoothTime::ADJUSTDIRECTION_DOWN);
 					}
 
@@ -3067,7 +3123,9 @@ void CClient::Update()
 			if(m_CurrentServerInfoRequestTime >= 0 &&
 				time_get() > m_CurrentServerInfoRequestTime)
 			{
-				m_ServerBrowser.RequestCurrentServer(ServerAddress());
+				const NETADDR *pServerAddr = ServerAddress();
+				if(pServerAddr)
+					m_ServerBrowser.RequestCurrentServer(*pServerAddr);
 				m_CurrentServerInfoRequestTime = time_get() + time_freq() * 2;
 			}
 
@@ -3085,7 +3143,9 @@ void CClient::Update()
 				m_CurrentServerPingUuid = RandomUuid();
 				if(!m_ServerCapabilities.m_PingEx)
 				{
-					m_ServerBrowser.RequestCurrentServerWithRandomToken(ServerAddress(), &m_CurrentServerPingBasicToken, &m_CurrentServerPingToken);
+					const NETADDR *pServerAddr = ServerAddress();
+					if(pServerAddr)
+						m_ServerBrowser.RequestCurrentServerWithRandomToken(*pServerAddr, &m_CurrentServerPingBasicToken, &m_CurrentServerPingToken);
 				}
 				else
 				{
@@ -3710,7 +3770,6 @@ void CClient::Run()
 
 	// shutdown text render while graphics are still available
 	m_pTextRender->Shutdown();
-
 }
 
 bool CClient::InitNetworkClient(char *pError, size_t ErrorSize)
@@ -4540,15 +4599,15 @@ void CClient::UpdateHangHeartbeat()
 	SHangInfo &Info = m_aHangInfo[NextIndex];
 	Info.m_State = m_State;
 	str_copy(Info.m_aCurrentMap, m_aCurrentMap, sizeof(Info.m_aCurrentMap));
-	const NETADDR &Addr = ServerAddress();
-	if(Addr.type == NETTYPE_INVALID)
+	const NETADDR *pAddr = ServerAddress();
+	if(!pAddr || pAddr->type == NETTYPE_INVALID)
 	{
 		str_copy(Info.m_aServerAddr, "unknown", sizeof(Info.m_aServerAddr));
 	}
 	else
 	{
 		char aAddr[NETADDR_MAXSTRSIZE];
-		net_addr_str(&Addr, aAddr, sizeof(aAddr), true);
+		net_addr_str(pAddr, aAddr, sizeof(aAddr), true);
 		str_copy(Info.m_aServerAddr, aAddr, sizeof(Info.m_aServerAddr));
 	}
 	m_HangInfoIndex.store(NextIndex, std::memory_order_release);
@@ -5783,7 +5842,8 @@ int CClient::PredictionMargin() const
 
 	const int BaseMaxLatencyTicks = GameTickSpeed() + (BaseMargin * GameTickSpeed()) / 1000;
 	const bool ConnectionProblems = m_aNetClient[g_Config.m_ClDummy].GotProblems(BaseMaxLatencyTicks * time_freq() / GameTickSpeed());
-	const CServerBrowser::CServerEntry *pCurrentServerEntry = const_cast<CServerBrowser &>(m_ServerBrowser).Find(ServerAddress());
+	const NETADDR *pServerAddr = ServerAddress();
+	const CServerBrowser::CServerEntry *pCurrentServerEntry = pServerAddr ? const_cast<CServerBrowser &>(m_ServerBrowser).Find(*pServerAddr) : nullptr;
 	const bool HasMeasuredPing = pCurrentServerEntry != nullptr && !pCurrentServerEntry->m_Info.m_LatencyIsEstimated && pCurrentServerEntry->m_Info.m_Latency >= 0;
 	const float MeasuredPingMargin = HasMeasuredPing ? pCurrentServerEntry->m_Info.m_Latency * 0.5f : 0.0f;
 	const float LiveConnectionMargin = std::max({MeasuredPingMargin, m_AutoMarginLatencyAverageMs, (float)LivePredictionMs});

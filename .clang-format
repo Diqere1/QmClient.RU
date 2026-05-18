@@ -53,10 +53,14 @@ IncludeCategories:
     Priority:        7
   - Regex:           '^<steam/'
     Priority:        8
-  - Regex:           '^<.*\.h>'
+  - Regex:           '^<winsock2\.h>'
     Priority:        9
-  - Regex:           '.*'
+  - Regex:           '^<windows\.h>'
     Priority:        10
+  - Regex:           '^<.*\.h>'
+    Priority:        11
+  - Regex:           '.*'
+    Priority:        12
 IncludeIsMainRegex: '$'
 IndentWidth: 8
 KeepEmptyLinesAtTheStartOfBlocks: false

@@ -1,0 +1,17 @@
+<rml>
+	<head>
+		<title>RmlUI unavailable</title>
+		<link type="text/rcss" href="ui_unavailable.rcss"/>
+	</head>
+	<body>
+		<div id="shell">
+		<div class="label">RmlUI</div>
+		<div id="surface">surface_not_set</div>
+		<div id="reason">surface_not_implemented</div>
+		<div class="hint">This interface is not available in the active RmlUI stack.</div>
+		<div class="recovery-label">Recovery</div>
+		<div id="recovery_command">qm_ui_stack legacy</div>
+		<div id="recovery_hint">Open F1 console, run qm_ui_stack legacy, then restart the client.</div>
+	</div>
+	</body>
+</rml>

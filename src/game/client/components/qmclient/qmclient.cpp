@@ -1,4 +1,5 @@
 #include "qmclient.h"
+
 #include <base/hash.h>
 #include <base/lock.h>
 #include <base/log.h>
@@ -7,19 +8,19 @@
 
 #include <engine/client.h>
 #include <engine/client/enums.h>
+#include <engine/client/updater.h>
+#include <engine/engine.h>
 #include <engine/external/regex.h>
 #include <engine/external/tinyexpr.h>
 #include <engine/friends.h>
 #include <engine/graphics.h>
 #include <engine/keys.h>
+#include <engine/map.h>
 #include <engine/serverbrowser.h>
-#include <engine/engine.h>
 #include <engine/shared/config.h>
+#include <engine/shared/jobs.h>
 #include <engine/shared/json.h>
 #include <engine/shared/jsonwriter.h>
-#include <engine/shared/jobs.h>
-#include <engine/client/updater.h>
-#include <engine/map.h>
 #include <engine/storage.h>
 
 #include <generated/client_data.h>
@@ -31,8 +32,8 @@
 #include <game/client/render.h>
 #include <game/client/ui.h>
 #include <game/layers.h>
-#include <game/mapitems.h>
 #include <game/localization.h>
+#include <game/mapitems.h>
 #include <game/version.h>
 
 #include <algorithm>
@@ -58,9 +59,47 @@
 static constexpr int QMCLIENT_SYNC_INTERVAL_SECONDS = 30;
 static constexpr int QMCLIENT_VOICE_SYNC_INTERVAL_SECONDS = 10;
 static constexpr const char *QMCLIENT_DEFAULT_VOICE_SERVER = "42.194.185.210:9987";
+// Recognition, online-user distribution and voice presence are served by the
+// voice service itself (default :9987) and use the /qm/* namespace.
 static constexpr const char *QMCLIENT_TOKEN_PATH = "/qm/token";
 static constexpr const char *QMCLIENT_REPORT_PATH = "/qm/report";
 static constexpr const char *QMCLIENT_USERS_PATH = "/qm/users.json";
+static void LogQmClientRecognitionEvent(const char *pStage, const char *pDetail)
+{
+	log_info("qmclient", "recognition %s: %s", pStage, pDetail ? pDetail : "");
+}
+
+static void LogQmClientDistributionRequestEvent(const char *pStage, const char *pDetail)
+{
+	log_info("qmclient", "distribution %s: %s", pStage, pDetail ? pDetail : "");
+}
+
+static void LogQmClientDistributionEvent(const char *pStage, int Users, int Dummies, int LocalMarks)
+{
+	log_info("qmclient", "distribution %s: users=%d dummies=%d local_marks=%d", pStage, Users, Dummies, LocalMarks);
+}
+
+static void LogQmClientDistributionFailureEvent(const char *pStage, const char *pDetail)
+{
+	log_warn("qmclient", "distribution %s: %s", pStage, pDetail ? pDetail : "");
+}
+
+static void LogQmClientVoicePresenceEvent(const char *pStage, const char *pServerAddress, int Players)
+{
+	log_info("qmclient", "voice_presence %s: server='%s' players=%d", pStage, pServerAddress ? pServerAddress : "", Players);
+}
+
+static void LogQmClientVoicePresenceResultEvent(const char *pStage, const char *pServerAddress, int Players, int StatusCode, EHttpState State)
+{
+	log_info("qmclient", "voice_presence %s: server='%s' players=%d status=%d state=%d",
+		pStage,
+		pServerAddress ? pServerAddress : "",
+		Players,
+		StatusCode,
+		(int)State);
+}
+// Version/health/playtime endpoints are provided by the separate center HTTP
+// service (:8080) and intentionally do not use the /qm/* prefix.
 static constexpr const char *QMCLIENT_HEALTH_URL = "http://42.194.185.210:8080/healthz";
 static constexpr const char *QMCLIENT_PLAYTIME_START_URL = "http://42.194.185.210:8080/playtime/start";
 static constexpr const char *QMCLIENT_PLAYTIME_STOP_URL = "http://42.194.185.210:8080/playtime/stop";
@@ -126,406 +165,302 @@ static constexpr const char *s_pFriendEnterBroadcastDefaultText = "%s joined thi
 [[maybe_unused]] static bool AppendAutoReplyRuleBlock(char *pOutRules, size_t OutRulesSize, const char *pRules);
 static const json_value *JsonObjectField(const json_value *pObject, const char *pName);
 static bool JsonReadNonNegativeInt64(const json_value *pValue, int64_t &OutValue);
-static bool JsonReadBoolean(const json_value *pValue, bool &OutValue);
 
 namespace
 {
-enum class ETextPopupType
-{
-	FREEZE_WAKEUP = 0,
-	COMBO_AMAZING,
-	COMBO_FANTASTIC,
-	COMBO_UNBELIEVABLE,
-	COMBO_UNSTOPPABLE,
-	NUM_TYPES,
-};
-
-struct STextPopupDefinition
-{
-	const char *m_pText;
-};
-
-[[maybe_unused]] static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
-	{QMCLIENT_FREEZE_WAKEUP_TEXT},
-	{"Amazing!"},
-	{"Fantastic!"},
-	{"Unbelievable!"},
-	{"Unstoppable!"},
-}};
-
-class CQmClientUsersParseJob : public IJob
-{
-public:
-	struct SClientMark
+	enum class ETextPopupType
 	{
-		int m_ClientId = -1;
-		bool m_FootParticlesEnabled = false;
-		bool m_RemoteParticlesEnabled = false;
-		bool m_VoiceSupported = false;
-		std::string m_Qid;
+		FREEZE_WAKEUP = 0,
+		COMBO_AMAZING,
+		COMBO_FANTASTIC,
+		COMBO_UNBELIEVABLE,
+		COMBO_UNSTOPPABLE,
+		NUM_TYPES,
 	};
 
-	struct SResult
+	struct STextPopupDefinition
 	{
-		bool m_Parsed = false;
-		std::vector<SQmClientServerDistribution> m_vServerDistribution;
-		std::vector<SClientMark> m_vLocalServerMarks;
-		int m_OnlineUserCount = 0;
-		int m_OnlineDummyCount = 0;
+		const char *m_pText;
 	};
 
-private:
-	std::shared_ptr<CHttpRequest> m_pTask;
-	char m_aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	int64_t m_ExpireTick = 0;
-	CLock m_Lock;
-	SResult m_Result;
+	[[maybe_unused]] static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
+		{QMCLIENT_FREEZE_WAKEUP_TEXT},
+		{"Amazing!"},
+		{"Fantastic!"},
+		{"Unbelievable!"},
+		{"Unstoppable!"},
+	}};
 
-	void Run() override REQUIRES(!m_Lock)
+	class CQmClientUsersParseJob : public IJob
 	{
-		SResult Result;
-		if(m_pTask && m_pTask->State() == EHttpState::DONE)
+	public:
+		using SResult = SQmClientUsersParseResult;
+
+	private:
+		std::shared_ptr<CHttpRequest> m_pTask;
+		char m_aServerAddress[NETADDR_MAXSTRSIZE] = "";
+		int64_t m_ExpireTick = 0;
+		CLock m_Lock;
+		SResult m_Result;
+
+		void Run() override REQUIRES(!m_Lock)
 		{
-			json_value *pRoot = m_pTask->ResultJson();
-			if(pRoot != nullptr)
+			SResult Result;
+			if(m_pTask && m_pTask->State() == EHttpState::DONE)
 			{
-				const json_value *pUsers = pRoot;
-				if(pUsers->type == json_object)
+				json_value *pRoot = m_pTask->ResultJson();
+				if(pRoot != nullptr)
 				{
-					const json_value *pUsersField = JsonObjectField(pUsers, "users");
-					if(pUsersField != &json_value_none)
-						pUsers = pUsersField;
+					ParseQmClientUsersJson(pRoot, m_aServerAddress, Result);
+					json_value_free(pRoot);
 				}
-
-				if(pUsers->type == json_array)
-				{
-					Result.m_Parsed = true;
-					std::unordered_map<std::string, size_t> ServerIndexByAddress;
-					ServerIndexByAddress.reserve(pUsers->u.array.length);
-					Result.m_vServerDistribution.reserve(pUsers->u.array.length);
-
-					for(unsigned Index = 0; Index < pUsers->u.array.length; ++Index)
-					{
-						const json_value *pEntry = pUsers->u.array.values[Index];
-						if(!pEntry || pEntry->type != json_object)
-							continue;
-
-						const json_value *pServerAddress = JsonObjectField(pEntry, "server_address");
-						if(pServerAddress == &json_value_none)
-							pServerAddress = JsonObjectField(pEntry, "server");
-						if(pServerAddress == &json_value_none || pServerAddress->type != json_string)
-							continue;
-
-						const json_value *pPlayerId = JsonObjectField(pEntry, "player_id");
-						if(pPlayerId == &json_value_none)
-							pPlayerId = JsonObjectField(pEntry, "id");
-						if(pPlayerId == &json_value_none || (pPlayerId->type != json_integer && pPlayerId->type != json_double))
-							continue;
-
-						const int ClientId = json_int_get(pPlayerId);
-						bool Dummy = false;
-						const json_value *pDummy = JsonObjectField(pEntry, "dummy");
-						if(pDummy != &json_value_none)
-							JsonReadBoolean(pDummy, Dummy);
-
-						const std::string ServerAddress = pServerAddress->u.string.ptr;
-						const auto ItServer = ServerIndexByAddress.find(ServerAddress);
-						if(ItServer == ServerIndexByAddress.end())
-						{
-							ServerIndexByAddress[ServerAddress] = Result.m_vServerDistribution.size();
-							Result.m_vServerDistribution.push_back({ServerAddress, 0, 0});
-						}
-						SQmClientServerDistribution &ServerDistribution = Result.m_vServerDistribution[ServerIndexByAddress[ServerAddress]];
-						if(Dummy)
-						{
-							++ServerDistribution.m_DummyCount;
-							++Result.m_OnlineDummyCount;
-						}
-						else
-						{
-							++ServerDistribution.m_UserCount;
-							++Result.m_OnlineUserCount;
-						}
-
-						if(str_comp(ServerAddress.c_str(), m_aServerAddress) != 0)
-							continue;
-
-						SClientMark &Mark = Result.m_vLocalServerMarks.emplace_back();
-						Mark.m_ClientId = ClientId;
-
-						const json_value *pQidField = JsonObjectField(pEntry, "qid");
-						if(pQidField != &json_value_none && pQidField->type == json_string)
-							Mark.m_Qid = pQidField->u.string.ptr;
-
-						const json_value *pFootParticlesEnabled = JsonObjectField(pEntry, "foot_particles_enabled");
-						JsonReadBoolean(pFootParticlesEnabled, Mark.m_FootParticlesEnabled);
-
-						const json_value *pRemoteParticlesEnabled = JsonObjectField(pEntry, "remote_particles_enabled");
-						JsonReadBoolean(pRemoteParticlesEnabled, Mark.m_RemoteParticlesEnabled);
-
-						Mark.m_VoiceSupported = true;
-						const json_value *pVoiceSupported = JsonObjectField(pEntry, "voice_supported");
-						if(pVoiceSupported != &json_value_none)
-							JsonReadBoolean(pVoiceSupported, Mark.m_VoiceSupported);
-					}
-
-					std::sort(Result.m_vServerDistribution.begin(), Result.m_vServerDistribution.end(), [](const SQmClientServerDistribution &Left, const SQmClientServerDistribution &Right) {
-						if(Left.m_UserCount != Right.m_UserCount)
-							return Left.m_UserCount > Right.m_UserCount;
-						if(Left.m_DummyCount != Right.m_DummyCount)
-							return Left.m_DummyCount > Right.m_DummyCount;
-						return str_comp(Left.m_ServerAddress.c_str(), Right.m_ServerAddress.c_str()) < 0;
-					});
-				}
-				json_value_free(pRoot);
 			}
+
+			{
+				const CLockScope Lock(m_Lock);
+				m_Result = std::move(Result);
+			}
+			m_pTask = nullptr;
 		}
 
+	public:
+		CQmClientUsersParseJob(std::shared_ptr<CHttpRequest> pTask, const char *pServerAddress, int64_t ExpireTick) :
+			m_pTask(std::move(pTask)),
+			m_ExpireTick(ExpireTick)
+		{
+			str_copy(m_aServerAddress, pServerAddress, sizeof(m_aServerAddress));
+		}
+
+		SResult TakeResult() REQUIRES(!m_Lock)
 		{
 			const CLockScope Lock(m_Lock);
-			m_Result = std::move(Result);
+			SResult Result = std::move(m_Result);
+			m_Result = SResult();
+			return Result;
 		}
-		m_pTask = nullptr;
-	}
 
-public:
-	CQmClientUsersParseJob(std::shared_ptr<CHttpRequest> pTask, const char *pServerAddress, int64_t ExpireTick) :
-		m_pTask(std::move(pTask)),
-		m_ExpireTick(ExpireTick)
-	{
-		str_copy(m_aServerAddress, pServerAddress, sizeof(m_aServerAddress));
-	}
-
-	SResult TakeResult() REQUIRES(!m_Lock)
-	{
-		const CLockScope Lock(m_Lock);
-		SResult Result = std::move(m_Result);
-		m_Result = SResult();
-		return Result;
-	}
-
-	int64_t ExpireTick() const { return m_ExpireTick; }
-};
-
-class CQmDdnetPlayerStatsParseJob : public IJob
-{
-public:
-	struct SResult
-	{
-		bool m_Parsed = false;
-		std::string m_FavoritePartner;
-		int m_TotalFinishes = -1;
+		int64_t ExpireTick() const { return m_ExpireTick; }
 	};
 
-private:
-	std::shared_ptr<CHttpRequest> m_pTask;
-	CLock m_Lock;
-	SResult m_Result;
-
-	void Run() override REQUIRES(!m_Lock)
+	class CQmDdnetPlayerStatsParseJob : public IJob
 	{
-		SResult Result;
-		if(m_pTask && m_pTask->State() == EHttpState::DONE && m_pTask->StatusCode() == 200)
+	public:
+		struct SResult
 		{
-			json_value *pRoot = m_pTask->ResultJson();
-			if(pRoot && pRoot->type == json_object)
+			bool m_Parsed = false;
+			std::string m_FavoritePartner;
+			int m_TotalFinishes = -1;
+		};
+
+	private:
+		std::shared_ptr<CHttpRequest> m_pTask;
+		CLock m_Lock;
+		SResult m_Result;
+
+		void Run() override REQUIRES(!m_Lock)
+		{
+			SResult Result;
+			if(m_pTask && m_pTask->State() == EHttpState::DONE && m_pTask->StatusCode() == 200)
 			{
-				const json_value *pFavoritePartners = JsonObjectField(pRoot, "favorite_partners");
-				if(pFavoritePartners->type == json_array)
+				json_value *pRoot = m_pTask->ResultJson();
+				if(pRoot && pRoot->type == json_object)
 				{
-					const char *pBestPartner = nullptr;
-					int BestPartnerFinishes = -1;
-					for(unsigned i = 0; i < pFavoritePartners->u.array.length; ++i)
+					const json_value *pFavoritePartners = JsonObjectField(pRoot, "favorite_partners");
+					if(pFavoritePartners->type == json_array)
 					{
-						const json_value &Partner = (*pFavoritePartners)[i];
-						if(Partner.type != json_object)
-							continue;
-
-						const json_value *pName = JsonObjectField(&Partner, "name");
-						if(pName->type != json_string)
-							continue;
-
-						const char *pPartnerName = json_string_get(pName);
-						if(!pPartnerName || pPartnerName[0] == '\0')
-							continue;
-
-						int PartnerFinishes = 0;
-						const json_value *pFinishes = JsonObjectField(&Partner, "finishes");
-						if(pFinishes->type == json_integer && pFinishes->u.integer > 0)
+						const char *pBestPartner = nullptr;
+						int BestPartnerFinishes = -1;
+						for(unsigned i = 0; i < pFavoritePartners->u.array.length; ++i)
 						{
-							if(pFinishes->u.integer > std::numeric_limits<int>::max())
-								PartnerFinishes = std::numeric_limits<int>::max();
-							else
-								PartnerFinishes = (int)pFinishes->u.integer;
-						}
-
-						if(!pBestPartner ||
-							PartnerFinishes > BestPartnerFinishes ||
-							(PartnerFinishes == BestPartnerFinishes && str_comp_nocase(pPartnerName, pBestPartner) < 0))
-						{
-							pBestPartner = pPartnerName;
-							BestPartnerFinishes = PartnerFinishes;
-						}
-					}
-
-					if(pBestPartner)
-						Result.m_FavoritePartner = pBestPartner;
-				}
-
-				const json_value *pTypes = JsonObjectField(pRoot, "types");
-				if(pTypes->type == json_object)
-				{
-					Result.m_Parsed = true;
-					int64_t TotalFinishes = 0;
-					for(unsigned i = 0; i < pTypes->u.object.length; ++i)
-					{
-						const json_value *pTypeObj = pTypes->u.object.values[i].value;
-						if(!pTypeObj || pTypeObj->type != json_object)
-							continue;
-
-						const json_value *pMaps = JsonObjectField(pTypeObj, "maps");
-						if(pMaps->type != json_object)
-							continue;
-
-						for(unsigned j = 0; j < pMaps->u.object.length; ++j)
-						{
-							const json_value *pMapObj = pMaps->u.object.values[j].value;
-							if(!pMapObj || pMapObj->type != json_object)
+							const json_value &Partner = (*pFavoritePartners)[i];
+							if(Partner.type != json_object)
 								continue;
 
-							const json_value *pFinishes = JsonObjectField(pMapObj, "finishes");
-							if(pFinishes->type != json_integer || pFinishes->u.integer <= 0 || TotalFinishes >= std::numeric_limits<int>::max())
+							const json_value *pName = JsonObjectField(&Partner, "name");
+							if(pName->type != json_string)
 								continue;
 
-							int64_t SafeAdd = pFinishes->u.integer;
-							if(SafeAdd > std::numeric_limits<int>::max())
-								SafeAdd = std::numeric_limits<int>::max();
+							const char *pPartnerName = json_string_get(pName);
+							if(!pPartnerName || pPartnerName[0] == '\0')
+								continue;
 
-							const int64_t MaxTotal = std::numeric_limits<int>::max();
-							if(SafeAdd > MaxTotal - TotalFinishes)
-								TotalFinishes = MaxTotal;
-							else
-								TotalFinishes += SafeAdd;
+							int PartnerFinishes = 0;
+							const json_value *pFinishes = JsonObjectField(&Partner, "finishes");
+							if(pFinishes->type == json_integer && pFinishes->u.integer > 0)
+							{
+								if(pFinishes->u.integer > std::numeric_limits<int>::max())
+									PartnerFinishes = std::numeric_limits<int>::max();
+								else
+									PartnerFinishes = (int)pFinishes->u.integer;
+							}
+
+							if(!pBestPartner ||
+								PartnerFinishes > BestPartnerFinishes ||
+								(PartnerFinishes == BestPartnerFinishes && str_comp_nocase(pPartnerName, pBestPartner) < 0))
+							{
+								pBestPartner = pPartnerName;
+								BestPartnerFinishes = PartnerFinishes;
+							}
 						}
+
+						if(pBestPartner)
+							Result.m_FavoritePartner = pBestPartner;
 					}
-					Result.m_TotalFinishes = (int)TotalFinishes;
+
+					const json_value *pTypes = JsonObjectField(pRoot, "types");
+					if(pTypes->type == json_object)
+					{
+						Result.m_Parsed = true;
+						int64_t TotalFinishes = 0;
+						for(unsigned i = 0; i < pTypes->u.object.length; ++i)
+						{
+							const json_value *pTypeObj = pTypes->u.object.values[i].value;
+							if(!pTypeObj || pTypeObj->type != json_object)
+								continue;
+
+							const json_value *pMaps = JsonObjectField(pTypeObj, "maps");
+							if(pMaps->type != json_object)
+								continue;
+
+							for(unsigned j = 0; j < pMaps->u.object.length; ++j)
+							{
+								const json_value *pMapObj = pMaps->u.object.values[j].value;
+								if(!pMapObj || pMapObj->type != json_object)
+									continue;
+
+								const json_value *pFinishes = JsonObjectField(pMapObj, "finishes");
+								if(pFinishes->type != json_integer || pFinishes->u.integer <= 0 || TotalFinishes >= std::numeric_limits<int>::max())
+									continue;
+
+								int64_t SafeAdd = pFinishes->u.integer;
+								if(SafeAdd > std::numeric_limits<int>::max())
+									SafeAdd = std::numeric_limits<int>::max();
+
+								const int64_t MaxTotal = std::numeric_limits<int>::max();
+								if(SafeAdd > MaxTotal - TotalFinishes)
+									TotalFinishes = MaxTotal;
+								else
+									TotalFinishes += SafeAdd;
+							}
+						}
+						Result.m_TotalFinishes = (int)TotalFinishes;
+					}
+					json_value_free(pRoot);
 				}
-				json_value_free(pRoot);
 			}
+
+			{
+				const CLockScope Lock(m_Lock);
+				m_Result = std::move(Result);
+			}
+			m_pTask = nullptr;
 		}
 
+	public:
+		explicit CQmDdnetPlayerStatsParseJob(std::shared_ptr<CHttpRequest> pTask) :
+			m_pTask(std::move(pTask))
+		{
+		}
+
+		SResult TakeResult() REQUIRES(!m_Lock)
 		{
 			const CLockScope Lock(m_Lock);
-			m_Result = std::move(Result);
+			SResult Result = std::move(m_Result);
+			m_Result = SResult();
+			return Result;
 		}
-		m_pTask = nullptr;
-	}
+	};
 
-public:
-	explicit CQmDdnetPlayerStatsParseJob(std::shared_ptr<CHttpRequest> pTask) :
-		m_pTask(std::move(pTask))
+	class CQmClientLifecycleMarkerWriteJob : public IJob
 	{
-	}
+		IStorage *m_pStorage = nullptr;
+		std::string m_Content;
 
-	SResult TakeResult() REQUIRES(!m_Lock)
-	{
-		const CLockScope Lock(m_Lock);
-		SResult Result = std::move(m_Result);
-		m_Result = SResult();
-		return Result;
-	}
-};
-
-class CQmClientLifecycleMarkerWriteJob : public IJob
-{
-	IStorage *m_pStorage = nullptr;
-	std::string m_Content;
-
-	void Run() override
-	{
-		if(m_pStorage == nullptr || State() == IJob::STATE_ABORTED)
-			return;
-
-		m_pStorage->CreateFolder("qmclient", IStorage::TYPE_SAVE);
-		IOHANDLE File = m_pStorage->OpenFile(QMCLIENT_LIFECYCLE_MARKER_FILE, IOFLAG_WRITE, IStorage::TYPE_SAVE);
-		if(!File)
-			return;
-		if(State() == IJob::STATE_ABORTED)
+		void Run() override
 		{
+			if(m_pStorage == nullptr || State() == IJob::STATE_ABORTED)
+				return;
+
+			m_pStorage->CreateFolder("qmclient", IStorage::TYPE_SAVE);
+			IOHANDLE File = m_pStorage->OpenFile(QMCLIENT_LIFECYCLE_MARKER_FILE, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+			if(!File)
+				return;
+			if(State() == IJob::STATE_ABORTED)
+			{
+				io_close(File);
+				return;
+			}
+
+			io_write(File, m_Content.data(), m_Content.size());
 			io_close(File);
-			return;
 		}
 
-		io_write(File, m_Content.data(), m_Content.size());
-		io_close(File);
-	}
+	public:
+		CQmClientLifecycleMarkerWriteJob(IStorage *pStorage, std::string Content) :
+			m_pStorage(pStorage),
+			m_Content(std::move(Content))
+		{
+			Abortable(true);
+		}
+	};
 
-public:
-	CQmClientLifecycleMarkerWriteJob(IStorage *pStorage, std::string Content) :
-		m_pStorage(pStorage),
-		m_Content(std::move(Content))
+	enum class EFreezeWakeupType
 	{
-		Abortable(true);
-	}
-};
+		NONE,
+		LOCAL_HAMMER,
+		EXTERNAL_HAMMER,
+	};
 
-enum class EFreezeWakeupType
-{
-	NONE,
-	LOCAL_HAMMER,
-	EXTERNAL_HAMMER,
-};
-
-[[maybe_unused]] int ComboPopupTextTypeFromCount(int ComboCount)
-{
-	switch(ComboCount)
+	[[maybe_unused]] int ComboPopupTextTypeFromCount(int ComboCount)
 	{
-	case 2: return (int)ETextPopupType::COMBO_AMAZING;
-	case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
-	case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
-	default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
+		switch(ComboCount)
+		{
+		case 2: return (int)ETextPopupType::COMBO_AMAZING;
+		case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
+		case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
+		default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
+		}
 	}
-}
 
-bool IsComboPopupTextType(int TextType)
-{
-	return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
-		TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
-}
-
-[[maybe_unused]] float TextPopupDuration(int TextType)
-{
-	return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
-}
-
-[[maybe_unused]] EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
-{
-	const CCharacter *pPredictedChar = pGameClient->m_PredictedWorld.GetCharacterById(ClientId);
-	if(pPredictedChar == nullptr)
-		return EFreezeWakeupType::NONE;
-
-	const int LastDamageTick = pPredictedChar->GetLastDamageTick();
-	const int DamageTickDelta = pGameClient->m_PredictedWorld.GameTick() - LastDamageTick;
-	const int DamageTickWindow = maximum(2, pGameClient->m_PredictedWorld.GameTickSpeed() / 6);
-	const int DamageFrom = pPredictedChar->GetLastDamageFrom();
-	if(LastDamageTick <= 0 ||
-		DamageTickDelta < 0 ||
-		DamageTickDelta > DamageTickWindow ||
-		pPredictedChar->GetLastDamageWeapon() != WEAPON_HAMMER ||
-		DamageFrom < 0)
+	bool IsComboPopupTextType(int TextType)
 	{
-		return EFreezeWakeupType::NONE;
+		return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
+		       TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
 	}
 
-	if(DamageFrom == ClientId ||
-		DamageFrom == pGameClient->m_aLocalIds[0] ||
-		DamageFrom == pGameClient->m_aLocalIds[1])
+	[[maybe_unused]] float TextPopupDuration(int TextType)
 	{
-		return EFreezeWakeupType::LOCAL_HAMMER;
+		return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
 	}
 
-	return EFreezeWakeupType::EXTERNAL_HAMMER;
-}
+	[[maybe_unused]] EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
+	{
+		const CCharacter *pPredictedChar = pGameClient->m_PredictedWorld.GetCharacterById(ClientId);
+		if(pPredictedChar == nullptr)
+			return EFreezeWakeupType::NONE;
+
+		const int LastDamageTick = pPredictedChar->GetLastDamageTick();
+		const int DamageTickDelta = pGameClient->m_PredictedWorld.GameTick() - LastDamageTick;
+		const int DamageTickWindow = maximum(2, pGameClient->m_PredictedWorld.GameTickSpeed() / 6);
+		const int DamageFrom = pPredictedChar->GetLastDamageFrom();
+		if(LastDamageTick <= 0 ||
+			DamageTickDelta < 0 ||
+			DamageTickDelta > DamageTickWindow ||
+			pPredictedChar->GetLastDamageWeapon() != WEAPON_HAMMER ||
+			DamageFrom < 0)
+		{
+			return EFreezeWakeupType::NONE;
+		}
+
+		if(DamageFrom == ClientId ||
+			DamageFrom == pGameClient->m_aLocalIds[0] ||
+			DamageFrom == pGameClient->m_aLocalIds[1])
+		{
+			return EFreezeWakeupType::LOCAL_HAMMER;
+		}
+
+		return EFreezeWakeupType::EXTERNAL_HAMMER;
+	}
 }
 
 struct SKeywordReplyRule
@@ -877,29 +812,6 @@ static bool JsonReadNonNegativeInt64(const json_value *pValue, int64_t &OutValue
 		if(pValue->u.dbl < 0.0)
 			return false;
 		OutValue = (int64_t)pValue->u.dbl;
-		return true;
-	}
-	return false;
-}
-
-static bool JsonReadBoolean(const json_value *pValue, bool &OutValue)
-{
-	if(!pValue)
-		return false;
-
-	if(pValue->type == json_boolean)
-	{
-		OutValue = json_boolean_get(pValue) != 0;
-		return true;
-	}
-	if(pValue->type == json_integer)
-	{
-		OutValue = pValue->u.integer != 0;
-		return true;
-	}
-	if(pValue->type == json_double)
-	{
-		OutValue = pValue->u.dbl != 0.0;
 		return true;
 	}
 	return false;
@@ -1512,6 +1424,8 @@ void CQmClient::ResetQmClientRecognitionTasks()
 	AbortTask(m_pQmClientUsersSendTask);
 	m_pQmClientUsersParseJob = nullptr;
 	m_aQmClientAuthToken[0] = '\0';
+	m_aQmClientPendingVoicePresenceServerAddress[0] = '\0';
+	m_QmClientPendingVoicePresencePlayers = 0;
 	m_QmClientLastSync = 0;
 	ClearQmClientServerDistribution();
 }
@@ -1646,6 +1560,7 @@ void CQmClient::FetchQmClientAuthToken()
 	m_pQmClientAuthTokenTask->IpResolve(IPRESOLVE::V4);
 	m_pQmClientAuthTokenTask->LogProgress(HTTPLOG::FAILURE);
 	Http()->Run(m_pQmClientAuthTokenTask);
+	LogQmClientRecognitionEvent("token_request", aUrl);
 }
 
 void CQmClient::SendQmClientPlayerData()
@@ -1659,7 +1574,11 @@ void CQmClient::SendQmClientPlayerData()
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
 	if(Client()->State() == IClient::STATE_ONLINE)
-		net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	{
+		const NETADDR *pServerAddr = Client()->ServerAddress();
+		if(pServerAddr)
+			net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
+	}
 	if(aServerAddress[0] == '\0')
 		return;
 
@@ -1675,6 +1594,7 @@ void CQmClient::SendQmClientPlayerData()
 	JsonWriter.WriteIntValue((int)time_timestamp());
 	JsonWriter.WriteAttribute("players");
 	JsonWriter.BeginArray();
+	int PlayerCount = 0;
 
 	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
 	{
@@ -1697,6 +1617,7 @@ void CQmClient::SendQmClientPlayerData()
 		JsonWriter.WriteAttribute("voice_supported");
 		JsonWriter.WriteBoolValue(true);
 		JsonWriter.EndObject();
+		PlayerCount++;
 	}
 
 	JsonWriter.EndArray();
@@ -1713,6 +1634,9 @@ void CQmClient::SendQmClientPlayerData()
 	m_pQmClientUsersSendTask->IpResolve(IPRESOLVE::V4);
 	m_pQmClientUsersSendTask->LogProgress(HTTPLOG::FAILURE);
 	Http()->Run(m_pQmClientUsersSendTask);
+	str_copy(m_aQmClientPendingVoicePresenceServerAddress, aServerAddress, sizeof(m_aQmClientPendingVoicePresenceServerAddress));
+	m_QmClientPendingVoicePresencePlayers = PlayerCount;
+	LogQmClientVoicePresenceEvent("report_request", aServerAddress, PlayerCount);
 }
 
 void CQmClient::FetchQmClientUsers()
@@ -1730,6 +1654,7 @@ void CQmClient::FetchQmClientUsers()
 	m_pQmClientUsersTask->IpResolve(IPRESOLVE::V4);
 	m_pQmClientUsersTask->LogProgress(HTTPLOG::FAILURE);
 	Http()->Run(m_pQmClientUsersTask);
+	LogQmClientDistributionRequestEvent("request", aUrl);
 }
 
 void CQmClient::FinishQmClientAuthToken()
@@ -1750,6 +1675,11 @@ void CQmClient::FinishQmClientAuthToken()
 	{
 		str_copy(m_aQmClientAuthToken, pToken->u.string.ptr, sizeof(m_aQmClientAuthToken));
 		m_QmClientLastSync = 0;
+		LogQmClientRecognitionEvent("token_ok", "auth token updated");
+	}
+	else
+	{
+		LogQmClientRecognitionEvent("token_missing", "response did not contain auth token");
 	}
 	json_value_free(pRoot);
 }
@@ -1771,11 +1701,15 @@ void CQmClient::FinishQmClientUsers()
 		ClearQmClientServerDistribution();
 
 		if(!Result.m_Parsed)
+		{
+			LogQmClientDistributionFailureEvent("parse_failed", "users payload could not be parsed");
 			return;
+		}
 
 		m_vQmClientServerDistribution = std::move(Result.m_vServerDistribution);
 		m_QmClientOnlineUserCount = Result.m_OnlineUserCount;
 		m_QmClientOnlineDummyCount = Result.m_OnlineDummyCount;
+		LogQmClientDistributionEvent("parse_ok", Result.m_OnlineUserCount, Result.m_OnlineDummyCount, (int)Result.m_vLocalServerMarks.size());
 		for(const auto &Mark : Result.m_vLocalServerMarks)
 		{
 			GameClient()->MarkQ1menGSyncClient(Mark.m_ClientId, ExpireTick, Mark.m_FootParticlesEnabled, Mark.m_RemoteParticlesEnabled, Mark.m_Qid.c_str());
@@ -1799,13 +1733,21 @@ void CQmClient::FinishQmClientUsers()
 		GameClient()->ClearQ1menGSyncMarks();
 		GameClient()->ClearQmVoiceSyncMarks();
 		ClearQmClientServerDistribution();
+		const int StatusCode = m_pQmClientUsersTask->StatusCode();
+		char aFailure[128];
+		str_format(aFailure, sizeof(aFailure), "state=%d status=%d", (int)m_pQmClientUsersTask->State(), StatusCode);
 		m_pQmClientUsersTask = nullptr;
+		LogQmClientDistributionFailureEvent("request_failed", aFailure);
 		return;
 	}
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
 	if(Client()->State() == IClient::STATE_ONLINE)
-		net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	{
+		const NETADDR *pServerAddr = Client()->ServerAddress();
+		if(pServerAddr)
+			net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
+	}
 	const bool FastSync = NeedsFastQmClientSync();
 	const int SyncInterval = FastSync ? QMCLIENT_VOICE_SYNC_INTERVAL_SECONDS : QMCLIENT_SYNC_INTERVAL_SECONDS;
 	const int64_t ExpireTick = time_get() + (int64_t)SyncInterval * time_freq() * 2;
@@ -1860,8 +1802,21 @@ void CQmClient::UpdateQmClientRecognition()
 	{
 		// Report can fail after center service restart (stale auth token).
 		// Clear token to force refetch on the next sync cycle.
-		if(m_pQmClientUsersSendTask->State() != EHttpState::DONE || m_pQmClientUsersSendTask->StatusCode() == 401)
-			m_aQmClientAuthToken[0] = '\0';
+		const int StatusCode = m_pQmClientUsersSendTask->StatusCode();
+		const EHttpState State = m_pQmClientUsersSendTask->State();
+		const bool HttpOk = StatusCode >= 200 && StatusCode < 300;
+		if(State != EHttpState::DONE || !HttpOk)
+		{
+			LogQmClientVoicePresenceResultEvent("report_failed", m_aQmClientPendingVoicePresenceServerAddress, m_QmClientPendingVoicePresencePlayers, StatusCode, State);
+			if(StatusCode == 401)
+				m_aQmClientAuthToken[0] = '\0';
+		}
+		else
+		{
+			LogQmClientVoicePresenceResultEvent("report_ok", m_aQmClientPendingVoicePresenceServerAddress, m_QmClientPendingVoicePresencePlayers, StatusCode, State);
+		}
+		m_aQmClientPendingVoicePresenceServerAddress[0] = '\0';
+		m_QmClientPendingVoicePresencePlayers = 0;
 		m_pQmClientUsersSendTask = nullptr;
 	}
 

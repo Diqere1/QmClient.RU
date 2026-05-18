@@ -1,7 +1,7 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
-#ifndef GAME_CLIENT_QM_UI_QM_LAYOUT_H
-#define GAME_CLIENT_QM_UI_QM_LAYOUT_H
+#ifndef GAME_CLIENT_QMUI_QMLAYOUT_H
+#define GAME_CLIENT_QMUI_QMLAYOUT_H
 
 #include <vector>
 

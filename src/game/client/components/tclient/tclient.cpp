@@ -1,7 +1,4 @@
 #include "tclient.h"
-#include <game/client/components/qmclient/config_override.h>
-
-#include <game/client/components/qmclient/data_version.h>
 
 #include <base/hash.h>
 #include <base/log.h>
@@ -10,19 +7,19 @@
 
 #include <engine/client.h>
 #include <engine/client/enums.h>
+#include <engine/client/updater.h>
+#include <engine/engine.h>
 #include <engine/external/regex.h>
 #include <engine/external/tinyexpr.h>
 #include <engine/friends.h>
 #include <engine/graphics.h>
 #include <engine/keys.h>
+#include <engine/map.h>
 #include <engine/serverbrowser.h>
-#include <engine/engine.h>
 #include <engine/shared/config.h>
+#include <engine/shared/jobs.h>
 #include <engine/shared/json.h>
 #include <engine/shared/jsonwriter.h>
-#include <engine/shared/jobs.h>
-#include <engine/client/updater.h>
-#include <engine/map.h>
 #include <engine/storage.h>
 
 #include <generated/client_data.h>
@@ -30,13 +27,15 @@
 #include <game/client/animstate.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/hud_editor.h>
+#include <game/client/components/qmclient/config_override.h>
+#include <game/client/components/qmclient/data_version.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/render.h>
 #include <game/client/ui.h>
 #include <game/layers.h>
-#include <game/mapitems.h>
 #include <game/localization.h>
+#include <game/mapitems.h>
 #include <game/version.h>
 
 #include <algorithm>
@@ -113,86 +112,86 @@ static bool AppendAutoReplyRuleBlock(char *pOutRules, size_t OutRulesSize, const
 
 namespace
 {
-enum class ETextPopupType
-{
-	FREEZE_WAKEUP = 0,
-	COMBO_AMAZING,
-	COMBO_FANTASTIC,
-	COMBO_UNBELIEVABLE,
-	COMBO_UNSTOPPABLE,
-	NUM_TYPES,
-};
-
-struct STextPopupDefinition
-{
-	const char *m_pText;
-};
-
-static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
-	{QMCLIENT_FREEZE_WAKEUP_TEXT},
-	{"Amazing!"},
-	{"Fantastic!"},
-	{"Unbelievable!"},
-	{"Unstoppable!"},
-}};
-
-enum class EFreezeWakeupType
-{
-	NONE,
-	LOCAL_HAMMER,
-	EXTERNAL_HAMMER,
-};
-
-int ComboPopupTextTypeFromCount(int ComboCount)
-{
-	switch(ComboCount)
+	enum class ETextPopupType
 	{
-	case 2: return (int)ETextPopupType::COMBO_AMAZING;
-	case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
-	case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
-	default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
-	}
-}
+		FREEZE_WAKEUP = 0,
+		COMBO_AMAZING,
+		COMBO_FANTASTIC,
+		COMBO_UNBELIEVABLE,
+		COMBO_UNSTOPPABLE,
+		NUM_TYPES,
+	};
 
-bool IsComboPopupTextType(int TextType)
-{
-	return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
-		TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
-}
-
-float TextPopupDuration(int TextType)
-{
-	return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
-}
-
-EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
-{
-	const CCharacter *pPredictedChar = pGameClient->m_PredictedWorld.GetCharacterById(ClientId);
-	if(pPredictedChar == nullptr)
-		return EFreezeWakeupType::NONE;
-
-	const int LastDamageTick = pPredictedChar->GetLastDamageTick();
-	const int DamageTickDelta = pGameClient->m_PredictedWorld.GameTick() - LastDamageTick;
-	const int DamageTickWindow = maximum(2, pGameClient->m_PredictedWorld.GameTickSpeed() / 6);
-	const int DamageFrom = pPredictedChar->GetLastDamageFrom();
-	if(LastDamageTick <= 0 ||
-		DamageTickDelta < 0 ||
-		DamageTickDelta > DamageTickWindow ||
-		pPredictedChar->GetLastDamageWeapon() != WEAPON_HAMMER ||
-		DamageFrom < 0)
+	struct STextPopupDefinition
 	{
-		return EFreezeWakeupType::NONE;
+		const char *m_pText;
+	};
+
+	static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
+		{QMCLIENT_FREEZE_WAKEUP_TEXT},
+		{"Amazing!"},
+		{"Fantastic!"},
+		{"Unbelievable!"},
+		{"Unstoppable!"},
+	}};
+
+	enum class EFreezeWakeupType
+	{
+		NONE,
+		LOCAL_HAMMER,
+		EXTERNAL_HAMMER,
+	};
+
+	int ComboPopupTextTypeFromCount(int ComboCount)
+	{
+		switch(ComboCount)
+		{
+		case 2: return (int)ETextPopupType::COMBO_AMAZING;
+		case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
+		case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
+		default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
+		}
 	}
 
-	if(DamageFrom == ClientId ||
-		DamageFrom == pGameClient->m_aLocalIds[0] ||
-		DamageFrom == pGameClient->m_aLocalIds[1])
+	bool IsComboPopupTextType(int TextType)
 	{
-		return EFreezeWakeupType::LOCAL_HAMMER;
+		return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
+		       TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
 	}
 
-	return EFreezeWakeupType::EXTERNAL_HAMMER;
-}
+	float TextPopupDuration(int TextType)
+	{
+		return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
+	}
+
+	EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
+	{
+		const CCharacter *pPredictedChar = pGameClient->m_PredictedWorld.GetCharacterById(ClientId);
+		if(pPredictedChar == nullptr)
+			return EFreezeWakeupType::NONE;
+
+		const int LastDamageTick = pPredictedChar->GetLastDamageTick();
+		const int DamageTickDelta = pGameClient->m_PredictedWorld.GameTick() - LastDamageTick;
+		const int DamageTickWindow = maximum(2, pGameClient->m_PredictedWorld.GameTickSpeed() / 6);
+		const int DamageFrom = pPredictedChar->GetLastDamageFrom();
+		if(LastDamageTick <= 0 ||
+			DamageTickDelta < 0 ||
+			DamageTickDelta > DamageTickWindow ||
+			pPredictedChar->GetLastDamageWeapon() != WEAPON_HAMMER ||
+			DamageFrom < 0)
+		{
+			return EFreezeWakeupType::NONE;
+		}
+
+		if(DamageFrom == ClientId ||
+			DamageFrom == pGameClient->m_aLocalIds[0] ||
+			DamageFrom == pGameClient->m_aLocalIds[1])
+		{
+			return EFreezeWakeupType::LOCAL_HAMMER;
+		}
+
+		return EFreezeWakeupType::EXTERNAL_HAMMER;
+	}
 }
 
 struct SKeywordReplyRule
@@ -442,7 +441,7 @@ enum EGoresCMapValue
 static bool IsPlayerTeleportInputTileForGoresDistanceField(int TeleType)
 {
 	return TeleType == TILE_TELEIN || TeleType == TILE_TELEINEVIL ||
-		TeleType == TILE_TELECHECKIN || TeleType == TILE_TELECHECKINEVIL;
+	       TeleType == TILE_TELECHECKIN || TeleType == TILE_TELECHECKINEVIL;
 }
 
 static bool IsDirectTeleportInputTileForGoresDistanceField(int TeleType)
@@ -642,7 +641,6 @@ void CTClient::OnInit()
 		if(MigratedLegacyAutoReply)
 			str_copy(g_Config.m_QmKeywordReplyRules, aMergedRules, sizeof(g_Config.m_QmKeywordReplyRules));
 	}
-
 }
 
 void CTClient::OnShutdown()
@@ -700,9 +698,9 @@ void CTClient::TryAppendKeywordReplyRenameSuffix(bool UseDummy)
 
 	const int NameLen = str_length(pConfigName);
 	const bool AlreadyHasQia = NameLen >= 3 &&
-		(unsigned char)pConfigName[NameLen - 3] == 0xE6 &&
-		(unsigned char)pConfigName[NameLen - 2] == 0x81 &&
-		(unsigned char)pConfigName[NameLen - 1] == 0xB0;
+				   (unsigned char)pConfigName[NameLen - 3] == 0xE6 &&
+				   (unsigned char)pConfigName[NameLen - 2] == 0x81 &&
+				   (unsigned char)pConfigName[NameLen - 1] == 0xB0;
 	if(AlreadyHasQia || NameLen + 3 >= ConfigNameSize)
 		return;
 
@@ -1186,7 +1184,8 @@ const char *CTClient::CurrentCommunityIdForFinishCheck() const
 		return nullptr;
 
 	const char *pCommunityId = nullptr;
-	const IServerBrowser::CServerEntry *pEntry = pServerBrowser->Find(Client()->ServerAddress());
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	const IServerBrowser::CServerEntry *pEntry = pServerAddr ? pServerBrowser->Find(*pServerAddr) : nullptr;
 	if(pEntry)
 		pCommunityId = pEntry->m_Info.m_aCommunityId;
 	else if(GameClient()->m_ConnectServerInfo)
@@ -1222,6 +1221,9 @@ void CTClient::ResetAxiomAutoLoginState()
 	m_AxiomAutoLoginAttempts = 0;
 	m_AxiomAutoLoginNextTryTick = 0;
 	m_aAxiomAutoLoginServer[0] = '\0';
+	m_AxiomDummyAutoLoginSent = false;
+	m_AxiomDummyWasConnected = false;
+	m_aAxiomDummyAutoLoginServer[0] = '\0';
 }
 
 void CTClient::TrySendAxiomLogin()
@@ -1234,7 +1236,9 @@ void CTClient::TrySendAxiomLogin()
 		return;
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
 	if(aServerAddress[0] != '\0')
 		str_copy(m_aAxiomAutoLoginServer, aServerAddress, sizeof(m_aAxiomAutoLoginServer));
 
@@ -1251,6 +1255,29 @@ void CTClient::TrySendAxiomLogin()
 		GameClient()->Echo(Localize("Attempting Axiom auto login"));
 		m_AxiomAutoLoginAnnounced = true;
 	}
+}
+
+void CTClient::TrySendAxiomDummyLogin()
+{
+	if(g_Config.m_QmAxiomAutoLogin == 0 || g_Config.m_QmAxiomDummyLoginPassword[0] == '\0')
+		return;
+	if(Client()->State() != IClient::STATE_ONLINE || !Client()->DummyConnected() || !IsAxiomCommunity())
+		return;
+	if(m_AxiomDummyAutoLoginSent)
+		return;
+
+	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
+	if(aServerAddress[0] != '\0')
+		str_copy(m_aAxiomDummyAutoLoginServer, aServerAddress, sizeof(m_aAxiomDummyAutoLoginServer));
+
+	char aLoginCommand[192];
+	str_format(aLoginCommand, sizeof(aLoginCommand), "/login %s", g_Config.m_QmAxiomDummyLoginPassword);
+	GameClient()->m_Chat.SendChatOnConn(IClient::CONN_DUMMY, 0, aLoginCommand);
+	m_AxiomDummyAutoLoginSent = true;
+	GameClient()->Echo(Localize("Attempting Axiom dummy auto login"));
 }
 
 void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
@@ -1290,7 +1317,7 @@ void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
 
 void CTClient::UpdateAxiomAutoLogin()
 {
-	if(Client()->State() != IClient::STATE_ONLINE || g_Config.m_QmAxiomAutoLogin == 0 || g_Config.m_QmAxiomLoginPassword[0] == '\0')
+	if(Client()->State() != IClient::STATE_ONLINE || g_Config.m_QmAxiomAutoLogin == 0)
 	{
 		ResetAxiomAutoLoginState();
 		return;
@@ -1302,16 +1329,46 @@ void CTClient::UpdateAxiomAutoLogin()
 	}
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
 	if(m_aAxiomAutoLoginServer[0] != '\0' && aServerAddress[0] != '\0' && str_comp(m_aAxiomAutoLoginServer, aServerAddress) != 0)
 		ResetAxiomAutoLoginState();
 
-	if(m_AxiomAutoLoginSucceeded || m_AxiomAutoLoginWaitingReply)
-		return;
+	if(g_Config.m_QmAxiomLoginPassword[0] == '\0')
+	{
+		m_AxiomAutoLoginAnnounced = false;
+		m_AxiomAutoLoginSucceeded = false;
+		m_AxiomAutoLoginWaitingReply = false;
+		m_AxiomAutoLoginAttempts = 0;
+		m_AxiomAutoLoginNextTryTick = 0;
+		m_aAxiomAutoLoginServer[0] = '\0';
+	}
+	else if(!m_AxiomAutoLoginSucceeded && !m_AxiomAutoLoginWaitingReply)
+	{
+		const int64_t Now = time_get();
+		if(m_AxiomAutoLoginAttempts == 0 || (m_AxiomAutoLoginNextTryTick > 0 && Now >= m_AxiomAutoLoginNextTryTick))
+			TrySendAxiomLogin();
+	}
 
-	const int64_t Now = time_get();
-	if(m_AxiomAutoLoginAttempts == 0 || (m_AxiomAutoLoginNextTryTick > 0 && Now >= m_AxiomAutoLoginNextTryTick))
-		TrySendAxiomLogin();
+	const bool DummyConnected = Client()->DummyConnected();
+	if(!DummyConnected || g_Config.m_QmAxiomDummyLoginPassword[0] == '\0')
+	{
+		m_AxiomDummyAutoLoginSent = false;
+		m_aAxiomDummyAutoLoginServer[0] = '\0';
+	}
+	else
+	{
+		if(m_aAxiomDummyAutoLoginServer[0] != '\0' && aServerAddress[0] != '\0' && str_comp(m_aAxiomDummyAutoLoginServer, aServerAddress) != 0)
+		{
+			m_AxiomDummyAutoLoginSent = false;
+			m_aAxiomDummyAutoLoginServer[0] = '\0';
+		}
+
+		if(!m_AxiomDummyWasConnected || !m_AxiomDummyAutoLoginSent)
+			TrySendAxiomDummyLogin();
+	}
+	m_AxiomDummyWasConnected = DummyConnected;
 }
 
 void CTClient::OnMessage(int MsgType, void *pRawMsg)
@@ -1533,22 +1590,22 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 
 namespace
 {
-bool ExtractSwapRequesterName(const char *pText, const char *pMarker, char *pOut, int OutSize)
-{
-	if(OutSize <= 0)
-		return false;
-	pOut[0] = '\0';
-	if(pText == nullptr || pMarker == nullptr)
-		return false;
+	bool ExtractSwapRequesterName(const char *pText, const char *pMarker, char *pOut, int OutSize)
+	{
+		if(OutSize <= 0)
+			return false;
+		pOut[0] = '\0';
+		if(pText == nullptr || pMarker == nullptr)
+			return false;
 
-	const char *pMarkerPos = str_find_nocase(pText, pMarker);
-	if(pMarkerPos == nullptr || pMarkerPos == pText)
-		return false;
+		const char *pMarkerPos = str_find_nocase(pText, pMarker);
+		if(pMarkerPos == nullptr || pMarkerPos == pText)
+			return false;
 
-	const int NameLength = minimum<int>(pMarkerPos - pText, OutSize - 1);
-	str_truncate(pOut, OutSize, pText, NameLength);
-	return pOut[0] != '\0';
-}
+		const int NameLength = minimum<int>(pMarkerPos - pText, OutSize - 1);
+		str_truncate(pOut, OutSize, pText, NameLength);
+		return pOut[0] != '\0';
+	}
 }
 
 void CTClient::HandleSwapCountdownMessage(const char *pText, int Dummy)
@@ -2104,7 +2161,7 @@ void CTClient::CheckFreeze()
 					// Parse comma-separated messages and pick one randomly
 					char aMessages[128];
 					str_copy(aMessages, g_Config.m_TcFreezeChatMessage);
-					
+
 					// Count messages and store pointers
 					std::vector<const char *> vMessages;
 					char *pToken = strtok(aMessages, ",");
@@ -2117,7 +2174,7 @@ void CTClient::CheckFreeze()
 							vMessages.push_back(pToken);
 						pToken = strtok(nullptr, ",");
 					}
-					
+
 					// Pick a random message and send
 					if(!vMessages.empty())
 					{
@@ -2440,8 +2497,8 @@ void CTClient::RenderFreezeWakeupPopups()
 		const float FadeOut = 1.0f - std::clamp((Progress - 0.7f) / 0.3f, 0.0f, 1.0f);
 		const float Rise = (1.0f - PopIn) * 6.0f;
 		const vec2 AnchorPos = GameClient()->m_aClients[Popup.m_AnchorClientId].m_RenderPos +
-			vec2(QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET.x * Popup.m_HorizontalSign, QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET.y) +
-			vec2(QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT.x * Popup.m_HorizontalSign, QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT.y) * Progress;
+				       vec2(QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET.x * Popup.m_HorizontalSign, QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET.y) +
+				       vec2(QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT.x * Popup.m_HorizontalSign, QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT.y) * Progress;
 		const vec2 Pos =
 			Popup.m_HorizontalSign < 0.0f ?
 				vec2(AnchorPos.x - PopupCache.m_TextSize.x, AnchorPos.y - Rise) :
@@ -2666,7 +2723,7 @@ void CTClient::CheckFriendOnline()
 				{
 					char aBuf[256];
 					const char *pMap = pEntry->m_aMap[0] != '\0' ? pEntry->m_aMap : Localize("Unknown");
-				str_format(aBuf, sizeof(aBuf), Localize("Your friend %s is online and currently on map %s!"), Client.m_aName, pMap);
+					str_format(aBuf, sizeof(aBuf), Localize("Your friend %s is online and currently on map %s!"), Client.m_aName, pMap);
 					GameClient()->m_Chat.Echo(aBuf);
 					SFriendOnlineState State;
 					State.m_LastSeen = Now;
@@ -3193,6 +3250,16 @@ void CTClient::OnStateChange(int NewState, int OldState)
 	if(NewState != IClient::STATE_ONLINE)
 	{
 		ResetAxiomAutoLoginState();
+		if(m_PrevGoresFastInputActive)
+			g_Config.m_TcFastInput = m_SavedTcFastInput;
+		if(m_PrevGoresFastInputOthersActive)
+			g_Config.m_TcFastInputOthers = m_SavedTcFastInputOthers;
+		m_GoresModeStateKnown = false;
+		m_PrevGoresModeActive = false;
+		m_PrevGoresFastInputActive = false;
+		m_PrevGoresFastInputOthersActive = false;
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
 		ClearSwapCountdown();
 		m_aLastChatMessage[0] = '\0';
 		m_LastRepeatTime = 0;
@@ -3223,7 +3290,15 @@ void CTClient::OnStateChange(int NewState, int OldState)
 	m_aLastGameplayLogicTick[1] = -1;
 
 	if(NewState == IClient::STATE_ONLINE)
+	{
 		ResetAxiomAutoLoginState();
+		m_GoresModeStateKnown = true;
+		m_PrevGoresModeActive = IsGoresModuleEnabled();
+		m_PrevGoresFastInputActive = false;
+		m_PrevGoresFastInputOthersActive = false;
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
+	}
 
 	// 进入服务器时重置统计数据
 	if(NewState == IClient::STATE_ONLINE && g_Config.m_QmPlayerStatsResetOnJoin)
@@ -3584,9 +3659,9 @@ bool CTClient::IsGoresModuleEnabled() const
 	return g_Config.m_QmGores != 0 || (g_Config.m_QmGoresAutoEnable != 0 && IsGoresGameMode());
 }
 
-bool CTClient::ShouldHideGoresGuides() const
+bool CTClient::ShouldHideGoresGuides(bool ManualGuideVisible) const
 {
-	return IsGoresModuleEnabled() && g_Config.m_QmGoresHideGuides != 0;
+	return ShouldHideGoresGuide(IsGoresModuleEnabled(), g_Config.m_QmGoresHideGuides != 0, ManualGuideVisible);
 }
 
 bool CTClient::HasBlockingGoresWeapon() const
@@ -3596,18 +3671,18 @@ bool CTClient::HasBlockingGoresWeapon() const
 
 	const CCharacterCore &Core = GameClient()->m_PredictedPrevChar;
 	return Core.m_aWeapons[WEAPON_SHOTGUN].m_Got ||
-		Core.m_aWeapons[WEAPON_GRENADE].m_Got ||
-		Core.m_aWeapons[WEAPON_LASER].m_Got ||
-		Core.m_aWeapons[WEAPON_NINJA].m_Got;
+	       Core.m_aWeapons[WEAPON_GRENADE].m_Got ||
+	       Core.m_aWeapons[WEAPON_LASER].m_Got ||
+	       Core.m_aWeapons[WEAPON_NINJA].m_Got;
 }
 
 bool CTClient::ShouldAppendGoresPrevWeapon() const
 {
 	return Client()->State() == IClient::STATE_ONLINE &&
-		!GameClient()->m_Snap.m_SpecInfo.m_Active &&
-		GameClient()->m_Snap.m_pLocalCharacter != nullptr &&
-		IsGoresModuleEnabled() &&
-		!HasBlockingGoresWeapon();
+	       !GameClient()->m_Snap.m_SpecInfo.m_Active &&
+	       GameClient()->m_Snap.m_pLocalCharacter != nullptr &&
+	       IsGoresModuleEnabled() &&
+	       !HasBlockingGoresWeapon();
 }
 
 void CTClient::UpdateGoresWeaponCycle()
@@ -3721,7 +3796,7 @@ void CTClient::BuildGoresDistanceField()
 		const bool HasReward = IsRewardTileForGoresDistanceField(Tile) || IsRewardTileForGoresDistanceField(FrontTile);
 		const bool HasTeleport = pTele && pTele[Index].m_Type != 0;
 		const bool IsBlocked = !IsStart && !IsFinish &&
-			(IsHardBlockedForGoresDistanceField(Tile) || IsHardBlockedForGoresDistanceField(FrontTile));
+				       (IsHardBlockedForGoresDistanceField(Tile) || IsHardBlockedForGoresDistanceField(FrontTile));
 		if(IsStart)
 			HasStart = true;
 		if(IsFinish)
@@ -4017,60 +4092,77 @@ void CTClient::ApplyFocusModeEffects()
 
 void CTClient::ApplyGoresFastInputLink()
 {
-	const bool GoresActive = g_Config.m_QmGores != 0;
-	const bool PreviousGoresActive = m_PrevGoresModeActive;
+	if(Client()->State() != IClient::STATE_ONLINE)
+	{
+		m_GoresModeStateKnown = false;
+		m_PrevGoresModeActive = false;
+		m_PrevGoresFastInputActive = false;
+		m_PrevGoresFastInputOthersActive = false;
+		return;
+	}
+
+	bool FastInputConfigChanged = false;
+	const bool GoresActive = IsGoresModuleEnabled();
 	const bool StateWasKnown = m_GoresModeStateKnown;
-	const int PreviousTcFastInput = StateWasKnown ? m_PrevTcFastInput : g_Config.m_TcFastInput;
-	const int PreviousTcFastInputOthers = StateWasKnown ? m_PrevTcFastInputOthers : g_Config.m_TcFastInputOthers;
-	const int PreviousQmGoresFastInput = StateWasKnown ? m_PrevQmGoresFastInput : g_Config.m_QmGoresFastInput;
-	const int PreviousQmGoresFastInputOthers = StateWasKnown ? m_PrevQmGoresFastInputOthers : g_Config.m_QmGoresFastInputOthers;
+	const bool ShouldEnableFastInput = GoresActive && g_Config.m_QmGoresFastInput != 0;
+	const bool ShouldEnableFastInputOthers = GoresActive && g_Config.m_QmGoresFastInputOthers != 0;
 	if(!m_GoresModeStateKnown)
 	{
 		m_GoresModeStateKnown = true;
-		m_PrevGoresModeActive = false;
+		m_PrevGoresModeActive = GoresActive;
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
 	}
-	else if(GoresActive == m_PrevGoresModeActive &&
-		g_Config.m_TcFastInput == m_PrevTcFastInput &&
-		g_Config.m_TcFastInputOthers == m_PrevTcFastInputOthers &&
-		g_Config.m_QmGoresFastInput == m_PrevQmGoresFastInput &&
-		g_Config.m_QmGoresFastInputOthers == m_PrevQmGoresFastInputOthers)
+	if(StateWasKnown && GoresActive != m_PrevGoresModeActive)
 	{
-		return;
-	}
-	if(GoresActive != m_PrevGoresModeActive)
-	{
-		if(StateWasKnown)
-		{
-			char aGoresMsg[128];
-			str_format(aGoresMsg, sizeof(aGoresMsg), "%s%s: %s",
-				GoresActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
-				Localize("Gores Mode"),
-				Localize(GoresActive ? "On" : "Off"));
-			GameClient()->Echo(aGoresMsg, true);
-		}
+		char aGoresMsg[128];
+		str_format(aGoresMsg, sizeof(aGoresMsg), "%s%s: %s",
+			GoresActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
+			Localize("Gores Mode"),
+			Localize(GoresActive ? "On" : "Off"));
+		GameClient()->Echo(aGoresMsg, true);
 	}
 
-	g_Config.m_QmGoresFastInput = DeriveGoresAutoTogglePreference(
-		GoresActive,
-		PreviousGoresActive,
-		PreviousQmGoresFastInput,
-		g_Config.m_QmGoresFastInput,
-		PreviousTcFastInput,
-		g_Config.m_TcFastInput);
-	g_Config.m_QmGoresFastInputOthers = DeriveGoresAutoTogglePreference(
-		GoresActive,
-		PreviousGoresActive,
-		PreviousQmGoresFastInputOthers,
-		g_Config.m_QmGoresFastInputOthers,
-		PreviousTcFastInputOthers,
-		g_Config.m_TcFastInputOthers);
-	g_Config.m_TcFastInput = DeriveGoresLinkedConfigValue(PreviousGoresActive, GoresActive, g_Config.m_QmGoresFastInput != 0, g_Config.m_TcFastInput);
-	g_Config.m_TcFastInputOthers = DeriveGoresLinkedConfigValue(PreviousGoresActive, GoresActive, g_Config.m_QmGoresFastInputOthers != 0, g_Config.m_TcFastInputOthers);
-	m_PrevTcFastInput = g_Config.m_TcFastInput;
-	m_PrevTcFastInputOthers = g_Config.m_TcFastInputOthers;
-	m_PrevQmGoresFastInput = g_Config.m_QmGoresFastInput;
-	m_PrevQmGoresFastInputOthers = g_Config.m_QmGoresFastInputOthers;
+	if(ShouldEnableFastInput && !m_PrevGoresFastInputActive)
+	{
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+		g_Config.m_TcFastInput = 1;
+		FastInputConfigChanged = true;
+	}
+	else if(!ShouldEnableFastInput && m_PrevGoresFastInputActive)
+	{
+		g_Config.m_TcFastInput = m_SavedTcFastInput;
+		FastInputConfigChanged = true;
+	}
+	else if(!ShouldEnableFastInput)
+	{
+		m_SavedTcFastInput = g_Config.m_TcFastInput;
+	}
+
+	if(ShouldEnableFastInputOthers && !m_PrevGoresFastInputOthersActive)
+	{
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
+		g_Config.m_TcFastInputOthers = 1;
+		FastInputConfigChanged = true;
+	}
+	else if(!ShouldEnableFastInputOthers && m_PrevGoresFastInputOthersActive)
+	{
+		g_Config.m_TcFastInputOthers = m_SavedTcFastInputOthers;
+		FastInputConfigChanged = true;
+	}
+	else if(!ShouldEnableFastInputOthers)
+	{
+		m_SavedTcFastInputOthers = g_Config.m_TcFastInputOthers;
+	}
+
+	m_PrevGoresFastInputActive = ShouldEnableFastInput;
+	m_PrevGoresFastInputOthersActive = ShouldEnableFastInputOthers;
 	m_PrevGoresModeActive = GoresActive;
+
+	if(FastInputConfigChanged)
+	{
+		GameClient()->RequestPredictionRefresh();
+	}
 }
 
 bool CTClient::BuildGoresDebugRoute(std::vector<vec2> &vRoutePoints, int Dummy) const
@@ -4116,8 +4208,8 @@ bool CTClient::BuildGoresDebugRoute(std::vector<vec2> &vRoutePoints, int Dummy) 
 	const vec2 RefPos = GameClient()->m_aClients[ClientId].m_RenderPos;
 	const auto IsReachableIndex = [&](int Index) {
 		return Index >= 0 && Index < MapCellCount &&
-			m_vGoresCMap[(size_t)Index] != GORES_CMAP_BLOCKED &&
-			m_vGoresDistanceToFinish[(size_t)Index] != DISTANCE_INF;
+		       m_vGoresCMap[(size_t)Index] != GORES_CMAP_BLOCKED &&
+		       m_vGoresDistanceToFinish[(size_t)Index] != DISTANCE_INF;
 	};
 
 	int StartIndex = pCollision->GetPureMapIndex(RefPos);
@@ -4838,7 +4930,7 @@ void CTClient::ConSaveList(IConsole::IResult *pResult, void *pUserData)
 			Count++;
 		}
 
-next_line:
+	next_line:
 		// 恢复行尾字符并移动到下一行
 		if(LineEndChar)
 		{

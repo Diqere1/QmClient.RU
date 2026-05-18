@@ -331,6 +331,7 @@ public:
 	int SecurityToken() const { return m_SecurityToken; }
 	float PacketLoss() const;
 	CStaticRingBuffer<CNetChunkResend, NET_CONN_BUFFERSIZE> *ResendBuffer() { return &m_Buffer; }
+	const CStaticRingBuffer<CNetChunkResend, NET_CONN_BUFFERSIZE> *ResendBuffer() const { return &m_Buffer; }
 
 	void ResumeConnection(const NETADDR *pAddr, int Sequence, int Ack, SECURITY_TOKEN SecurityToken, CStaticRingBuffer<CNetChunkResend, NET_CONN_BUFFERSIZE> *pResendBuffer, bool Sixup);
 
@@ -598,11 +599,12 @@ public:
 
 	// error and state
 	int NetType() const { return net_socket_type(m_Socket); }
-	int State();
+	int State() const;
 	const NETADDR *ServerAddress() const { return m_Connection.PeerAddress(); }
 	void ConnectAddresses(const NETADDR **ppAddrs, int *pNumAddrs) const { m_Connection.ConnectAddresses(ppAddrs, pNumAddrs); }
 	bool GotProblems(int64_t MaxLatency) const;
 	float PacketLoss() const;
+	int PendingResendCount() const;
 	const char *ErrorString() const;
 
 	// stun

@@ -165,6 +165,8 @@ option(EXCEPTION_HANDLING "Enable crashdumps (only works with Windows)" ON)
 option(IPO "Enable interprocedural optimizations" ON)
 option(FUSE_LD "Linker to use" OFF)
 option(SECURITY_COMPILER_FLAGS "Whether to set security-relevant compiler flags like -D_FORTIFY_SOURCE=2 and -fstack-protector-strong" ON)
+option(QM_MSVC_ANALYZE "Enable MSVC /analyze static analysis (Windows only)" OFF)
+option(QM_STRICT_WARNINGS "Treat compiler warnings as errors" OFF)
 
 if(TARGET_OS STREQUAL "android")
   set(DISCORD OFF)
@@ -354,7 +356,7 @@ if(NOT MSVC AND NOT HAIKU)
   endif()
 
   if(TARGET_OS STREQUAL "mac")
-    add_cxx_compiler_flag_if_supported(OUR_FLAGS -stdlib=libc++)
+    add_cxx_compiler_flag_if_supported(OUR_FLAGS_OWN -stdlib=libc++)
   endif()
 
   if(EXCEPTION_HANDLING)
@@ -1985,9 +1987,19 @@ endforeach()
 if(DATA)
   # Keep the whole runtime data directory in sync with the build directory on every build.
   # This custom target has no OUTPUT, so it always runs when game-client is built.
-  add_custom_target(sync_runtime_data
+  set(SYNC_RUNTIME_DATA_COMMANDS
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/data" "${PROJECT_BINARY_DIR}/data"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/data/shader/vulkan"
+  )
+  foreach(vulkan_shader_file ${VULKAN_SHADER_FILE_LIST})
+    list(APPEND SYNC_RUNTIME_DATA_COMMANDS
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${PROJECT_BINARY_DIR}/${vulkan_shader_file}"
+      "${PROJECT_BINARY_DIR}/data/shader/vulkan/")
+  endforeach()
+  add_custom_target(sync_runtime_data
+    ${SYNC_RUNTIME_DATA_COMMANDS}
     COMMENT "Sync data directory to build directory"
   )
 endif()
@@ -2289,6 +2301,43 @@ set_src(ENGINE_EXTERNAL GLOB src/engine/external
   tinyexpr.cpp
   tinyexpr.h
 )
+# RNNoise must be compiled in for normal developer builds so the in-client
+# noise suppression selector is real, not a build-time placeholder. Keep the
+# generated rnnoise_data.* model files vendored together with the official
+# library sources.
+set(ENGINE_EXTERNAL_RNNOISE
+  src/engine/external/rnnoise/include/rnnoise.h
+  src/engine/external/rnnoise/src/_kiss_fft_guts.h
+  src/engine/external/rnnoise/src/arch.h
+  src/engine/external/rnnoise/src/celt_lpc.c
+  src/engine/external/rnnoise/src/celt_lpc.h
+  src/engine/external/rnnoise/src/common.h
+  src/engine/external/rnnoise/src/cpu_support.h
+  src/engine/external/rnnoise/src/denoise.c
+  src/engine/external/rnnoise/src/denoise.h
+  src/engine/external/rnnoise/src/kiss_fft.c
+  src/engine/external/rnnoise/src/kiss_fft.h
+  src/engine/external/rnnoise/src/nnet.c
+  src/engine/external/rnnoise/src/nnet.h
+  src/engine/external/rnnoise/src/nnet_arch.h
+  src/engine/external/rnnoise/src/nnet_default.c
+  src/engine/external/rnnoise/src/opus_types.h
+  src/engine/external/rnnoise/src/parse_lpcnet_weights.c
+  src/engine/external/rnnoise/src/pitch.c
+  src/engine/external/rnnoise/src/pitch.h
+  src/engine/external/rnnoise/src/rnn.c
+  src/engine/external/rnnoise/src/rnn.h
+  src/engine/external/rnnoise/src/rnnoise_data.c
+  src/engine/external/rnnoise/src/rnnoise_data.h
+  src/engine/external/rnnoise/src/rnnoise_tables.c
+  src/engine/external/rnnoise/src/vec.h
+  src/engine/external/rnnoise/src/vec_avx.h
+  src/engine/external/rnnoise/src/vec_neon.h
+  src/engine/external/rnnoise/src/x86/dnn_x86.h
+  src/engine/external/rnnoise/src/x86/x86_arch_macros.h
+  src/engine/external/rnnoise/src/x86/x86cpu.h
+)
+list(APPEND ENGINE_EXTERNAL ${ENGINE_EXTERNAL_RNNOISE})
 
 # ChaiScript for tclient
 file(GLOB_RECURSE ENGINE_EXTERNAL_CHAISCRIPT
@@ -2615,9 +2664,13 @@ if(CLIENT)
     components/qmclient/jelly_tee.h
     components/qmclient/lyrics_component.cpp
     components/qmclient/lyrics_component.h
+    components/qmclient/monitoring.cpp
+    components/qmclient/monitoring.h
     components/qmclient/menus_qmclient.cpp
     components/qmclient/qmclient.cpp
     components/qmclient/qmclient.h
+    components/qmclient/qmclient_utils.cpp
+    components/qmclient/qmclient_utils.h
     components/tclient/mod.cpp
     components/tclient/mod.h
     components/tclient/moving_tiles.cpp
@@ -2649,7 +2702,8 @@ if(CLIENT)
     components/qmclient/translate_ui_settings.h
     components/qmclient/voice_component.cpp
     components/qmclient/voice_component.h
-    components/qmclient/voice_callback.h
+    components/qmclient/voice_capture_pipeline.cpp
+    components/qmclient/voice_capture_pipeline.h
     components/qmclient/voice_core.cpp
     components/qmclient/voice_core.h
     components/qmclient/voice_utils.cpp
@@ -3347,6 +3401,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     packer_test.cpp
     prng_test.cpp
     qmclient_state_override_test.cpp
+    qmclient_monitoring_test.cpp
     score_test.cpp
     secure_random_test.cpp
     server_test.cpp
@@ -3382,7 +3437,9 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
+    src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp
+    src/game/client/components/qmclient/voice_capture_pipeline.cpp
     src/game/client/components/qmclient/voice_utils.cpp
     src/engine/client/blocklist_driver.cpp
     src/engine/client/blocklist_driver.h
@@ -3407,7 +3464,10 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     ${DEPS}
   )
   target_link_libraries(${TARGET_TESTRUNNER} ${PNG_LIBRARIES} ${WebP_LIBRARIES} ${GTEST_LIBRARIES} ${LIBS_SERVER})
-  target_include_directories(${TARGET_TESTRUNNER} SYSTEM PRIVATE ${GTEST_INCLUDE_DIRS})
+  target_include_directories(${TARGET_TESTRUNNER} SYSTEM PRIVATE
+    ${GTEST_INCLUDE_DIRS}
+    ${SDL2_INCLUDE_DIRS}
+  )
 
   list(APPEND TARGETS_OWN ${TARGET_TESTRUNNER})
   list(APPEND TARGETS_LINK ${TARGET_TESTRUNNER})
@@ -3993,6 +4053,13 @@ foreach(target ${TARGETS})
       set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT $<IF:$<CONFIG:Debug>,EditAndContinue,Embedded>)
       target_link_options(${target} PRIVATE $<$<CONFIG:Debug>:/INCREMENTAL>)
     endif()
+    # QmClient strict build options
+    if(QM_MSVC_ANALYZE)
+      target_compile_options(${target} PRIVATE /analyze)
+    endif()
+    if(QM_STRICT_WARNINGS)
+      target_compile_options(${target} PRIVATE /WX)
+    endif()
   endif()
   if(OUR_FLAGS_LINK)
     target_link_libraries(${target} ${OUR_FLAGS_LINK})
@@ -4057,12 +4124,15 @@ foreach(target ${TARGETS_OWN})
     target_compile_definitions(${target} PRIVATE _UNICODE) # C-runtime
   endif()
   if(OUR_FLAGS_OWN)
-    target_compile_options(${target} PRIVATE ${OUR_FLAGS_OWN})
+    target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${OUR_FLAGS_OWN}>)
   endif()
   target_include_directories(${target} PRIVATE ${PROJECT_BINARY_DIR}/src)
   target_include_directories(${target} PRIVATE src)
   target_include_directories(${target} PRIVATE src/rust-bridge)
+  target_include_directories(${target} PRIVATE src/engine/external/rnnoise/include)
+  target_include_directories(${target} PRIVATE src/engine/external/rnnoise/src)
   target_compile_definitions(${target} PRIVATE $<$<CONFIG:Debug>:CONF_DEBUG>)
+  target_compile_definitions(${target} PRIVATE CONF_RNNOISE)
   set(COMMON_SYSTEM_INCLUDE_DIRS ${CURL_INCLUDE_DIRS} ${SQLite3_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
   if(TARGET_OS STREQUAL "mac")
     # Do not pass SDK usr/include explicitly on macOS. libc++ expects to

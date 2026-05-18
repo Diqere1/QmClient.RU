@@ -10,6 +10,21 @@
 #include <algorithm>
 #include <array>
 
+namespace
+{
+	const char *ConnectionGradeLabel(EQmConnectionGrade Grade)
+	{
+		switch(Grade)
+		{
+		case EQmConnectionGrade::NORMAL: return "正常";
+		case EQmConnectionGrade::ELEVATED: return "偏高";
+		case EQmConnectionGrade::SEVERE: return "严重";
+		case EQmConnectionGrade::DISCONNECTED: return "断开";
+		}
+		return "断开";
+	}
+}
+
 CStatusItem::CStatusItem(std::function<void()> Render, std::function<float()> Width, const char *pLetters, const char *pName, const char *pDisplayName, const char *pDesc, bool ShowLabel)
 {
 	m_RenderItem = std::move(Render);
@@ -227,6 +242,112 @@ void CStatusBar::ZoomRender()
 	const double ZoomStep = std::cos((30.0f * pi) / 180.0f);
 	const float ConsoleZoom = std::log(GameClient()->m_Camera.m_Zoom * std::pow(ZoomStep, 10)) / std::log(ZoomStep);
 	str_format(aBuf, sizeof(aBuf), "%.2f", ConsoleZoom);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::DownstreamWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000ms");
+}
+
+void CStatusBar::DownstreamRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "ms", GameClient()->m_QmMonitoring.Snapshot().m_Network.m_SnapshotLatencyMs);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::UpstreamWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000ms");
+}
+
+void CStatusBar::UpstreamRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "ms", GameClient()->m_QmMonitoring.Snapshot().m_Network.m_PredictionLatencyMs);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::JitterWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000ms");
+}
+
+void CStatusBar::JitterRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "ms", GameClient()->m_QmMonitoring.Snapshot().m_Network.m_JitterMs);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::PacketLossWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000.0%");
+}
+
+void CStatusBar::PacketLossRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "%", GameClient()->m_QmMonitoring.Snapshot().m_Network.m_PacketLossPct, 1);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::DownRateWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000.0KiB/s");
+}
+
+void CStatusBar::DownRateRender()
+{
+	char aBuf[32];
+	FormatRateValue(aBuf, sizeof(aBuf), GameClient()->m_QmMonitoring.Snapshot().m_Network.m_DownBytesPerSec);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::UpRateWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000.0KiB/s");
+}
+
+void CStatusBar::UpRateRender()
+{
+	char aBuf[32];
+	FormatRateValue(aBuf, sizeof(aBuf), GameClient()->m_QmMonitoring.Snapshot().m_Network.m_UpBytesPerSec);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::ConnectionGradeWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "严重");
+}
+
+void CStatusBar::ConnectionGradeRender()
+{
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, Localize(ConnectionGradeLabel(GameClient()->m_QmMonitoring.Snapshot().m_Verdict.m_Grade)));
+}
+
+float CStatusBar::CpuWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "100%");
+}
+
+void CStatusBar::CpuRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "%", GameClient()->m_QmMonitoring.Snapshot().m_Performance.m_CpuUsagePct);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::MemoryWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "4096MB");
+}
+
+void CStatusBar::MemoryRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "MB", GameClient()->m_QmMonitoring.Snapshot().m_Performance.m_MemoryUsageMb);
 	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
 }
 

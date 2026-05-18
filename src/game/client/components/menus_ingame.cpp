@@ -21,8 +21,6 @@
 #include <engine/shared/http.h>
 #include <engine/shared/json.h>
 #include <engine/shared/localization.h>
-
-#include <generated/protocol.h>
 #include <engine/storage.h>
 #include <engine/textrender.h>
 
@@ -48,274 +46,274 @@ using namespace std::chrono_literals;
 
 namespace
 {
-constexpr const char *REPORT_SCAN_PATH = "/v1/scan";
-constexpr const char *REPORT_CONTENT_TYPE = "application/json; charset=utf-8";
+	constexpr const char *REPORT_SCAN_PATH = "/v1/scan";
+	constexpr const char *REPORT_CONTENT_TYPE = "application/json; charset=utf-8";
 
-void HmacSha256Hex(const char *pSecret, const char *pMessage, char *pBuffer, int BufferSize)
-{
-	const unsigned char *pSecretBytes = reinterpret_cast<const unsigned char *>(pSecret);
-	size_t SecretLength = str_length(pSecret);
-	unsigned char aKeyBlock[64] = {0};
-
-	if(SecretLength > sizeof(aKeyBlock))
+	void HmacSha256Hex(const char *pSecret, const char *pMessage, char *pBuffer, int BufferSize)
 	{
-		const SHA256_DIGEST SecretDigest = sha256(pSecretBytes, SecretLength);
-		mem_copy(aKeyBlock, SecretDigest.data, sizeof(SecretDigest.data));
-	}
-	else
-	{
-		mem_copy(aKeyBlock, pSecretBytes, SecretLength);
-	}
+		const unsigned char *pSecretBytes = reinterpret_cast<const unsigned char *>(pSecret);
+		size_t SecretLength = str_length(pSecret);
+		unsigned char aKeyBlock[64] = {0};
 
-	unsigned char aOuterPad[64];
-	unsigned char aInnerPad[64];
-	for(size_t KeyIndex = 0; KeyIndex < sizeof(aKeyBlock); ++KeyIndex)
-	{
-		aOuterPad[KeyIndex] = aKeyBlock[KeyIndex] ^ 0x5c;
-		aInnerPad[KeyIndex] = aKeyBlock[KeyIndex] ^ 0x36;
-	}
-
-	SHA256_CTX InnerContext;
-	sha256_init(&InnerContext);
-	sha256_update(&InnerContext, aInnerPad, sizeof(aInnerPad));
-	sha256_update(&InnerContext, pMessage, str_length(pMessage));
-	const SHA256_DIGEST InnerDigest = sha256_finish(&InnerContext);
-
-	SHA256_CTX OuterContext;
-	sha256_init(&OuterContext);
-	sha256_update(&OuterContext, aOuterPad, sizeof(aOuterPad));
-	sha256_update(&OuterContext, InnerDigest.data, sizeof(InnerDigest.data));
-	const SHA256_DIGEST Digest = sha256_finish(&OuterContext);
-	sha256_str(Digest, pBuffer, BufferSize);
-}
-
-void BuildReportUrl(const char *pPath, char *pBuffer, int BufferSize)
-{
-	str_copy(pBuffer, g_Config.m_QmReportEndpoint, BufferSize);
-	while(pBuffer[0] != '\0' && pBuffer[str_length(pBuffer) - 1] == '/')
-		pBuffer[str_length(pBuffer) - 1] = '\0';
-	str_append(pBuffer, pPath, BufferSize);
-}
-
-bool AddReportHeaders(CHttpRequest *pRequest, const char *pPath, const char *pBody)
-{
-	if(g_Config.m_QmReportAppId[0] == '\0' || g_Config.m_QmReportSecret[0] == '\0')
-		return false;
-
-	char aTimestamp[32];
-	str_format(aTimestamp, sizeof(aTimestamp), "%" PRId64, time_timestamp());
-
-	char aNonce[33];
-	secure_random_password(aNonce, sizeof(aNonce), 32);
-
-	const SHA256_DIGEST BodyDigest = sha256(pBody, str_length(pBody));
-	char aBodySha256[SHA256_MAXSTRSIZE];
-	sha256_str(BodyDigest, aBodySha256, sizeof(aBodySha256));
-
-	char aMessage[1024];
-	str_format(aMessage, sizeof(aMessage), "POST\n%s\n%s\n%s\n%s", pPath, aTimestamp, aNonce, aBodySha256);
-
-	char aSignature[SHA256_MAXSTRSIZE];
-	HmacSha256Hex(g_Config.m_QmReportSecret, aMessage, aSignature, sizeof(aSignature));
-
-	pRequest->HeaderString("Content-Type", REPORT_CONTENT_TYPE);
-	pRequest->HeaderString("X-Adrastia-App-Id", g_Config.m_QmReportAppId);
-	pRequest->HeaderString("X-Adrastia-Timestamp", aTimestamp);
-	pRequest->HeaderString("X-Adrastia-Nonce", aNonce);
-	pRequest->HeaderString("X-Adrastia-Signature", aSignature);
-	return true;
-}
-
-std::shared_ptr<CHttpRequest> CreateReportRequest(const char *pPath, const char *pBody)
-{
-	char aUrl[256];
-	BuildReportUrl(pPath, aUrl, sizeof(aUrl));
-
-	auto pRequest = std::make_shared<CHttpRequest>(aUrl);
-	pRequest->AllowInsecureProtocol();
-	pRequest->LogProgress(HTTPLOG::FAILURE);
-	pRequest->FailOnErrorStatus(false);
-	pRequest->Timeout(CTimeout{10000, 30000, 100, 10});
-	if(!AddReportHeaders(pRequest.get(), pPath, pBody))
-		return nullptr;
-	pRequest->Post(reinterpret_cast<const unsigned char *>(pBody), str_length(pBody));
-	return pRequest;
-}
-
-struct SUnfinishedMapsQuery
-{
-	enum class EState
-	{
-		IDLE,
-		RUNNING,
-		READY,
-		FAILED,
-	};
-
-	std::shared_ptr<CHttpRequest> m_pRequest;
-	std::unordered_map<std::string, std::vector<std::string>> m_UnfinishedByType;
-	EState m_State = EState::IDLE;
-
-	void Reset()
-	{
-		if(m_pRequest)
-			m_pRequest->Abort();
-		m_pRequest.reset();
-		m_UnfinishedByType.clear();
-		m_State = EState::IDLE;
-	}
-
-	void Start(IHttp *pHttp, const char *pPlayerName)
-	{
-		if(!pHttp || !pPlayerName || pPlayerName[0] == '\0')
+		if(SecretLength > sizeof(aKeyBlock))
 		{
-			Reset();
-			m_State = EState::FAILED;
-			return;
+			const SHA256_DIGEST SecretDigest = sha256(pSecretBytes, SecretLength);
+			mem_copy(aKeyBlock, SecretDigest.data, sizeof(SecretDigest.data));
+		}
+		else
+		{
+			mem_copy(aKeyBlock, pSecretBytes, SecretLength);
 		}
 
-		Reset();
-		m_State = EState::RUNNING;
+		unsigned char aOuterPad[64];
+		unsigned char aInnerPad[64];
+		for(size_t KeyIndex = 0; KeyIndex < sizeof(aKeyBlock); ++KeyIndex)
+		{
+			aOuterPad[KeyIndex] = aKeyBlock[KeyIndex] ^ 0x5c;
+			aInnerPad[KeyIndex] = aKeyBlock[KeyIndex] ^ 0x36;
+		}
 
-		char aEncodedName[256];
-		EscapeUrl(aEncodedName, sizeof(aEncodedName), pPlayerName);
+		SHA256_CTX InnerContext;
+		sha256_init(&InnerContext);
+		sha256_update(&InnerContext, aInnerPad, sizeof(aInnerPad));
+		sha256_update(&InnerContext, pMessage, str_length(pMessage));
+		const SHA256_DIGEST InnerDigest = sha256_finish(&InnerContext);
 
-		char aUrl[512];
-		str_format(aUrl, sizeof(aUrl), "https://ddnet.org/players/?json2=%s", aEncodedName);
+		SHA256_CTX OuterContext;
+		sha256_init(&OuterContext);
+		sha256_update(&OuterContext, aOuterPad, sizeof(aOuterPad));
+		sha256_update(&OuterContext, InnerDigest.data, sizeof(InnerDigest.data));
+		const SHA256_DIGEST Digest = sha256_finish(&OuterContext);
+		sha256_str(Digest, pBuffer, BufferSize);
+	}
+
+	void BuildReportUrl(const char *pPath, char *pBuffer, int BufferSize)
+	{
+		str_copy(pBuffer, g_Config.m_QmReportEndpoint, BufferSize);
+		while(pBuffer[0] != '\0' && pBuffer[str_length(pBuffer) - 1] == '/')
+			pBuffer[str_length(pBuffer) - 1] = '\0';
+		str_append(pBuffer, pPath, BufferSize);
+	}
+
+	bool AddReportHeaders(CHttpRequest *pRequest, const char *pPath, const char *pBody)
+	{
+		if(g_Config.m_QmReportAppId[0] == '\0' || g_Config.m_QmReportSecret[0] == '\0')
+			return false;
+
+		char aTimestamp[32];
+		str_format(aTimestamp, sizeof(aTimestamp), "%" PRId64, time_timestamp());
+
+		char aNonce[33];
+		secure_random_password(aNonce, sizeof(aNonce), 32);
+
+		const SHA256_DIGEST BodyDigest = sha256(pBody, str_length(pBody));
+		char aBodySha256[SHA256_MAXSTRSIZE];
+		sha256_str(BodyDigest, aBodySha256, sizeof(aBodySha256));
+
+		char aMessage[1024];
+		str_format(aMessage, sizeof(aMessage), "POST\n%s\n%s\n%s\n%s", pPath, aTimestamp, aNonce, aBodySha256);
+
+		char aSignature[SHA256_MAXSTRSIZE];
+		HmacSha256Hex(g_Config.m_QmReportSecret, aMessage, aSignature, sizeof(aSignature));
+
+		pRequest->HeaderString("Content-Type", REPORT_CONTENT_TYPE);
+		pRequest->HeaderString("X-Adrastia-App-Id", g_Config.m_QmReportAppId);
+		pRequest->HeaderString("X-Adrastia-Timestamp", aTimestamp);
+		pRequest->HeaderString("X-Adrastia-Nonce", aNonce);
+		pRequest->HeaderString("X-Adrastia-Signature", aSignature);
+		return true;
+	}
+
+	std::shared_ptr<CHttpRequest> CreateReportRequest(const char *pPath, const char *pBody)
+	{
+		char aUrl[256];
+		BuildReportUrl(pPath, aUrl, sizeof(aUrl));
 
 		auto pRequest = std::make_shared<CHttpRequest>(aUrl);
-		pRequest->Timeout(CTimeout{10000, 30000, 100, 10});
+		pRequest->AllowInsecureProtocol();
 		pRequest->LogProgress(HTTPLOG::FAILURE);
 		pRequest->FailOnErrorStatus(false);
-		m_pRequest = pRequest;
-		pHttp->Run(pRequest);
-	}
-
-	bool IsReady() const { return m_State == EState::READY; }
-	bool IsLoading() const { return m_State == EState::RUNNING; }
-	bool HasData() const { return m_State == EState::READY; }
-
-	const std::vector<std::string> *FindType(const char *pTypeKey) const
-	{
-		if(!pTypeKey || pTypeKey[0] == '\0')
+		pRequest->Timeout(CTimeout{10000, 30000, 100, 10});
+		if(!AddReportHeaders(pRequest.get(), pPath, pBody))
 			return nullptr;
-
-		auto It = m_UnfinishedByType.find(pTypeKey);
-		if(It != m_UnfinishedByType.end())
-			return &It->second;
-
-		if(const char *pRest = str_startswith(pTypeKey, "DDmaX "))
-		{
-			char aKey[32];
-			str_format(aKey, sizeof(aKey), "DDmaX.%s", pRest);
-			It = m_UnfinishedByType.find(aKey);
-			if(It != m_UnfinishedByType.end())
-				return &It->second;
-		}
-		if(const char *pRest = str_startswith(pTypeKey, "DDmaX."))
-		{
-			char aKey[32];
-			str_copy(aKey, "DDmaX ");
-			str_append(aKey, pRest, sizeof(aKey));
-			It = m_UnfinishedByType.find(aKey);
-			if(It != m_UnfinishedByType.end())
-				return &It->second;
-		}
-		return nullptr;
+		pRequest->Post(reinterpret_cast<const unsigned char *>(pBody), str_length(pBody));
+		return pRequest;
 	}
 
-	void Update()
+	struct SUnfinishedMapsQuery
 	{
-		if(!m_pRequest || !m_pRequest->Done())
-			return;
-
-		const EHttpState State = m_pRequest->State();
-		if(State != EHttpState::DONE || m_pRequest->StatusCode() != 200)
+		enum class EState
 		{
-			Reset();
-			m_State = EState::FAILED;
-			return;
+			IDLE,
+			RUNNING,
+			READY,
+			FAILED,
+		};
+
+		std::shared_ptr<CHttpRequest> m_pRequest;
+		std::unordered_map<std::string, std::vector<std::string>> m_UnfinishedByType;
+		EState m_State = EState::IDLE;
+
+		void Reset()
+		{
+			if(m_pRequest)
+				m_pRequest->Abort();
+			m_pRequest.reset();
+			m_UnfinishedByType.clear();
+			m_State = EState::IDLE;
 		}
 
-		json_value *pRoot = m_pRequest->ResultJson();
-		if(!pRoot || pRoot->type != json_object)
+		void Start(IHttp *pHttp, const char *pPlayerName)
 		{
-			if(pRoot)
-				json_value_free(pRoot);
-			Reset();
-			m_State = EState::FAILED;
-			return;
-		}
-
-		const json_value *pTypes = json_object_get(pRoot, "types");
-		if(pTypes == &json_value_none || pTypes->type != json_object)
-		{
-			json_value_free(pRoot);
-			Reset();
-			m_State = EState::FAILED;
-			return;
-		}
-
-		for(unsigned i = 0; i < pTypes->u.object.length; ++i)
-		{
-			const char *pTypeName = pTypes->u.object.values[i].name;
-			const json_value *pTypeObj = pTypes->u.object.values[i].value;
-			if(!pTypeName || !pTypeObj || pTypeObj->type != json_object)
-				continue;
-
-			const json_value *pMaps = json_object_get(pTypeObj, "maps");
-			if(pMaps == &json_value_none || pMaps->type != json_object)
-				continue;
-
-			std::vector<std::string> Unfinished;
-			Unfinished.reserve(pMaps->u.object.length);
-			for(unsigned j = 0; j < pMaps->u.object.length; ++j)
+			if(!pHttp || !pPlayerName || pPlayerName[0] == '\0')
 			{
-				const char *pMapName = pMaps->u.object.values[j].name;
-				const json_value *pMapObj = pMaps->u.object.values[j].value;
-				if(!pMapName || !pMapObj || pMapObj->type != json_object)
-					continue;
-
-				const json_value *pFinishes = json_object_get(pMapObj, "finishes");
-				int Finishes = 0;
-				if(pFinishes != &json_value_none && pFinishes->type == json_integer)
-					Finishes = (int)pFinishes->u.integer;
-				if(Finishes == 0)
-					Unfinished.emplace_back(pMapName);
+				Reset();
+				m_State = EState::FAILED;
+				return;
 			}
 
-			m_UnfinishedByType.emplace(pTypeName, std::move(Unfinished));
+			Reset();
+			m_State = EState::RUNNING;
+
+			char aEncodedName[256];
+			EscapeUrl(aEncodedName, sizeof(aEncodedName), pPlayerName);
+
+			char aUrl[512];
+			str_format(aUrl, sizeof(aUrl), "https://ddnet.org/players/?json2=%s", aEncodedName);
+
+			auto pRequest = std::make_shared<CHttpRequest>(aUrl);
+			pRequest->Timeout(CTimeout{10000, 30000, 100, 10});
+			pRequest->LogProgress(HTTPLOG::FAILURE);
+			pRequest->FailOnErrorStatus(false);
+			m_pRequest = pRequest;
+			pHttp->Run(pRequest);
 		}
 
-		json_value_free(pRoot);
-		m_pRequest.reset();
-		m_State = EState::READY;
+		bool IsReady() const { return m_State == EState::READY; }
+		bool IsLoading() const { return m_State == EState::RUNNING; }
+		bool HasData() const { return m_State == EState::READY; }
+
+		const std::vector<std::string> *FindType(const char *pTypeKey) const
+		{
+			if(!pTypeKey || pTypeKey[0] == '\0')
+				return nullptr;
+
+			auto It = m_UnfinishedByType.find(pTypeKey);
+			if(It != m_UnfinishedByType.end())
+				return &It->second;
+
+			if(const char *pRest = str_startswith(pTypeKey, "DDmaX "))
+			{
+				char aKey[32];
+				str_format(aKey, sizeof(aKey), "DDmaX.%s", pRest);
+				It = m_UnfinishedByType.find(aKey);
+				if(It != m_UnfinishedByType.end())
+					return &It->second;
+			}
+			if(const char *pRest = str_startswith(pTypeKey, "DDmaX."))
+			{
+				char aKey[32];
+				str_copy(aKey, "DDmaX ");
+				str_append(aKey, pRest, sizeof(aKey));
+				It = m_UnfinishedByType.find(aKey);
+				if(It != m_UnfinishedByType.end())
+					return &It->second;
+			}
+			return nullptr;
+		}
+
+		void Update()
+		{
+			if(!m_pRequest || !m_pRequest->Done())
+				return;
+
+			const EHttpState State = m_pRequest->State();
+			if(State != EHttpState::DONE || m_pRequest->StatusCode() != 200)
+			{
+				Reset();
+				m_State = EState::FAILED;
+				return;
+			}
+
+			json_value *pRoot = m_pRequest->ResultJson();
+			if(!pRoot || pRoot->type != json_object)
+			{
+				if(pRoot)
+					json_value_free(pRoot);
+				Reset();
+				m_State = EState::FAILED;
+				return;
+			}
+
+			const json_value *pTypes = json_object_get(pRoot, "types");
+			if(pTypes == &json_value_none || pTypes->type != json_object)
+			{
+				json_value_free(pRoot);
+				Reset();
+				m_State = EState::FAILED;
+				return;
+			}
+
+			for(unsigned i = 0; i < pTypes->u.object.length; ++i)
+			{
+				const char *pTypeName = pTypes->u.object.values[i].name;
+				const json_value *pTypeObj = pTypes->u.object.values[i].value;
+				if(!pTypeName || !pTypeObj || pTypeObj->type != json_object)
+					continue;
+
+				const json_value *pMaps = json_object_get(pTypeObj, "maps");
+				if(pMaps == &json_value_none || pMaps->type != json_object)
+					continue;
+
+				std::vector<std::string> Unfinished;
+				Unfinished.reserve(pMaps->u.object.length);
+				for(unsigned j = 0; j < pMaps->u.object.length; ++j)
+				{
+					const char *pMapName = pMaps->u.object.values[j].name;
+					const json_value *pMapObj = pMaps->u.object.values[j].value;
+					if(!pMapName || !pMapObj || pMapObj->type != json_object)
+						continue;
+
+					const json_value *pFinishes = json_object_get(pMapObj, "finishes");
+					int Finishes = 0;
+					if(pFinishes != &json_value_none && pFinishes->type == json_integer)
+						Finishes = (int)pFinishes->u.integer;
+					if(Finishes == 0)
+						Unfinished.emplace_back(pMapName);
+				}
+
+				m_UnfinishedByType.emplace(pTypeName, std::move(Unfinished));
+			}
+
+			json_value_free(pRoot);
+			m_pRequest.reset();
+			m_State = EState::READY;
+		}
+	};
+
+	int ParseCallvoteMapStars(const char *pDescription)
+	{
+		if(!pDescription)
+			return -1;
+
+		const char *pStars = str_find(pDescription, "/5");
+		if(!pStars || pStars <= pDescription)
+			return -1;
+
+		const char *pStarNumber = pStars;
+		while(pStarNumber > pDescription && pStarNumber[-1] >= '0' && pStarNumber[-1] <= '9')
+			--pStarNumber;
+		if(pStarNumber == pStars)
+			return -1;
+
+		char aStars[8];
+		const int StarNumberLength = minimum((int)(pStars - pStarNumber), (int)sizeof(aStars) - 1);
+		str_copy(aStars, pStarNumber, StarNumberLength + 1);
+		const int Stars = str_toint(aStars);
+		if(Stars < 1 || Stars > 5)
+			return -1;
+		return Stars;
 	}
-};
-
-int ParseCallvoteMapStars(const char *pDescription)
-{
-	if(!pDescription)
-		return -1;
-
-	const char *pStars = str_find(pDescription, "/5");
-	if(!pStars || pStars <= pDescription)
-		return -1;
-
-	const char *pStarNumber = pStars;
-	while(pStarNumber > pDescription && pStarNumber[-1] >= '0' && pStarNumber[-1] <= '9')
-		--pStarNumber;
-	if(pStarNumber == pStars)
-		return -1;
-
-	char aStars[8];
-	const int StarNumberLength = minimum((int)(pStars - pStarNumber), (int)sizeof(aStars) - 1);
-	str_copy(aStars, pStarNumber, StarNumberLength + 1);
-	const int Stars = str_toint(aStars);
-	if(Stars < 1 || Stars > 5)
-		return -1;
-	return Stars;
-}
 } // namespace
 
 void CMenus::ResetReportScan()
@@ -345,7 +343,9 @@ void CMenus::StartReportScan()
 		return;
 	}
 
-	net_addr_str(&Client()->ServerAddress(), m_aReportScanAddress, sizeof(m_aReportScanAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, m_aReportScanAddress, sizeof(m_aReportScanAddress), true);
 	if(m_aReportScanAddress[0] == '\0')
 	{
 		GameClient()->Echo("无法获取当前服务器地址");
