@@ -220,6 +220,7 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	CGraph m_InputtimeMarginGraph;
 	CGraph m_aGametimeMarginGraphs[NUM_DUMMIES];
 	CGraph m_FpsGraph;
+	float m_aLastGameTimeMarginMs[NUM_DUMMIES] = {0.0f, 0.0f};
 
 	// the game snapshots are modifiable by the game
 	CSnapshotStorage m_aSnapshotStorage[NUM_DUMMIES];
@@ -300,10 +301,13 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	std::shared_ptr<ILogger> m_pFileLogger = nullptr;
 	std::shared_ptr<ILogger> m_pStdoutLogger = nullptr;
 
-	// For RenderDebug function
-	NETSTATS m_NetstatsPrev = {};
-	NETSTATS m_NetstatsCurrent = {};
-	std::chrono::nanoseconds m_NetstatsLastUpdate = std::chrono::nanoseconds(0);
+	void UpdateNetStatsSnapshot() const;
+
+	// Shared by RenderDebug and Qm monitoring.
+	mutable NETSTATS m_NetstatsPrev = {};
+	mutable NETSTATS m_NetstatsCurrent = {};
+	mutable std::chrono::nanoseconds m_NetstatsLastUpdate = std::chrono::nanoseconds(0);
+	mutable std::chrono::nanoseconds m_NetstatsSampleInterval = std::chrono::nanoseconds(0);
 
 	// For DummyName function
 	char m_aAutomaticDummyName[MAX_NAME_LENGTH];
@@ -391,6 +395,14 @@ public:
 	CSnapItem SnapGetItem(int SnapId, int Index) const override;
 	int GetPredictionTick() override;
 	EPredictionMarginState PredictionMarginState() const override;
+	float SnapshotLatencyMs() const override;
+	float PredictionLatencyMs() const override;
+	float PredictionMarginMs() const override;
+	float PredictionJitterMs() const override;
+	float GameTimeMarginMs() const override;
+	bool IsGameConnectionAlive() const override;
+	void NetStatsSnapshot(NETSTATS &Prev, NETSTATS &Current, std::chrono::nanoseconds &LastUpdate) const override;
+	int PendingResendCount() const override;
 	const void *SnapFindItem(int SnapId, int Type, int Id) const override;
 	int SnapNumItems(int SnapId) const override;
 	void SnapSetStaticsize(int ItemType, int Size) override;
@@ -430,7 +442,7 @@ public:
 
 	bool IsSixup() const override { return m_Sixup; }
 
-	const NETADDR &ServerAddress() const override { return *m_aNetClient[CONN_MAIN].ServerAddress(); }
+	const NETADDR *ServerAddress() const override { return m_aNetClient[CONN_MAIN].ServerAddress(); }
 	int ConnectNetTypes() const override;
 	const char *ConnectAddressString() const override { return m_aConnectAddressStr; }
 	const char *MapDownloadName() const override { return m_aMapdownloadName; }

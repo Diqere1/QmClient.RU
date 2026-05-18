@@ -1,0 +1,13 @@
+<rml>
+	<head>
+		<title>QmClient settings modal</title>
+		<link type="text/rcss" href="settings_modal.rcss"/>
+	</head>
+	<body>
+		<div id="settings_modal_root">
+			<div id="settings_modal_title">设置</div>
+			<div id="settings_modal_body">当前没有可展示的弹窗内容。</div>
+			<div id="settings_modal_actions" data-settings-modal-action="close">关闭</div>
+		</div>
+	</body>
+</rml>

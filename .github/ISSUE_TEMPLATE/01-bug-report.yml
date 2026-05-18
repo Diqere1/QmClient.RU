@@ -1,0 +1,93 @@
+name: Bug 报告
+description: 报告一个 Bug
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug 描述
+      description: 简要描述遇到的问题
+      placeholder: "例如：进入设置页面时客户端崩溃"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 重现步骤
+      description: 描述如何重现这个 Bug
+      placeholder: |
+        1. 启动客户端
+        2. 点击「设置」按钮
+        3. 选择「视频」选项卡
+        4. 客户端崩溃
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 描述你期望发生什么
+      placeholder: "例如：应该正常打开视频设置页面"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 描述实际发生了什么
+      placeholder: "例如：客户端崩溃，弹出错误提示框"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      description: 在哪些平台上遇到这个问题？（可多选）
+      multiple: true
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Android
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 客户端版本
+      description: 你使用的 QmClient 版本号（可在客户端标题栏或设置中查看）
+      placeholder: "例如：v1.2.3 或 16.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / 录屏
+      description: 如有截图或录屏，可拖拽上传到此处（可选）
+      placeholder: "拖拽图片或视频文件到此处"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 如有相关日志片段，可粘贴到此处（可选）
+      render: shell
+      placeholder: |
+        // 从客户端日志中粘贴相关内容
+        // 日志文件通常位于：
+        // Windows: %APPDATA%\QmClient\logs\
+        // Linux: ~/.qmclient/logs/
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充信息
+      description: 其他可能有助于排查问题的信息（可选）
+      placeholder: "例如：问题是否只在特定地图/服务器出现，是否与配置项相关等"

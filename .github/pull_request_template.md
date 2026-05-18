@@ -1,16 +1,81 @@
-<!-- What is the motivation for the changes of this pull request? -->
+## 变更说明
 
-<!-- Note that builds and other checks will be run for your change. Don't feel intimidated by failures in some of the checks. If you can't resolve them yourself, experienced devs can also resolve them before merging your pull request. -->
+<!-- 描述这次 PR 做了什么、为什么需要这个改动。Reviewer 只读这段话就能理解 PR 的目的。 -->
 
-## Checklist
+## 改动内容
 
-- [ ] Tested the change ingame
-- [ ] Provided screenshots if it is a visual change
-- [ ] Tested in combination with possibly related configuration options
-- [ ] Written a unit test (especially base/) or added coverage to integration test
-- [ ] Considered possible null pointers and out of bounds array indexing
-- [ ] Changed no physics that affect existing maps
-- [ ] Tested the change with [ASan+UBSan or valgrind's memcheck](https://github.com/ddnet/ddnet/#using-addresssanitizer--undefinedbehavioursanitizer-or-valgrinds-memcheck) (optional)
-- [ ] I didn't use generative AI to generate more than single-line completions
+<!-- 按类型分组列出具体改动。可用类型：feat / fix / refactor / perf / docs / build。删除未涉及的类型。 -->
 
-<!-- If you did not check the AI box above, please briefly describe how AI was used (1–2 sentences). Example: "AI helped me draft initial documentation", "AI helped me translate from my native language to English" or "AI suggested refactoring options, which I reviewed and modified". -->
+### feat
+
+-
+
+### fix
+
+-
+
+### refactor
+
+-
+
+### perf
+
+-
+
+### docs
+
+-
+
+### build
+
+-
+
+## 测试方法
+
+<!-- 描述如何验证这次改动，给出可复现的步骤 -->
+
+1.
+2.
+3.
+
+## 检查清单
+
+<!-- 提交 PR 前逐项确认。删除不适用的条目。 -->
+
+- [ ] 已自查代码，无明显错误
+- [ ] 代码风格符合项目规范
+- [ ] 新增或更新了对应的测试
+- [ ] 本地测试通过
+- [ ] 不引入新的编译警告
+
+### 兼容性
+
+- [ ] 未修改物理行为（影响已有地图）
+- [ ] 未破坏网络协议兼容性
+- [ ] 未破坏 demo、skin 等文件格式兼容性
+- [ ] 未让已有 rank 变得不可达
+
+### 视觉变更（如适用）
+
+- [ ] 附带截图或录屏
+
+### 高风险区域（涉及时勾选）
+
+- [ ] 涉及 physics / collision / prediction
+- [ ] 涉及 snapshot / input / timer
+- [ ] 涉及 replay / demo / map behaviour
+- [ ] 涉及 protocol fields
+
+<!-- 若勾选了高风险区域，请在「变更说明」中补充 client / server / shared 影响侧。 -->
+
+## 关联 Issue
+
+<!-- 使用 Closes #123 或 Fixes #456 可在合并时自动关闭对应 Issue -->
+
+## 截图 / 录屏
+
+<!-- 涉及 UI 变更时附带截图或录屏 -->
+
+---
+
+<!-- 构建和其他检查会自动运行。如果某些检查失败不必担心，资深开发者可以在合并前协助解决。 -->

@@ -1,0 +1,143 @@
+<div class="workspace_page" id="servers_workspace">
+	<div id="servers_shell_grid">
+		<div id="servers_main_column">
+			<div id="servers_overview_panel" class="panel">
+				<div id="servers_topline">
+					<div id="servers_header_copy">
+						<div class="panel_kicker" id="servers_panel_kicker">首屏主任务</div>
+						<div class="panel_title" id="servers_page_title">服务器列表工作台</div>
+						<div class="panel_body" id="servers_header_summary">左侧确认当前选择与地图，中部完成选服与比较，右侧查看排行和次级工具。</div>
+					</div>
+					<div id="servers_topline_actions">
+						<div class="pill_button ghost" id="server_action_refresh" data-serverbrowser-action="refresh">刷新列表</div>
+						<div class="pill_button ghost" id="server_action_cycle_sort" data-serverbrowser-action="cycle_sort">切换排序</div>
+						<div class="pill_button ghost" id="server_action_reset_filter" data-serverbrowser-action="reset_filter">重置筛选</div>
+					</div>
+				</div>
+				<div id="servers_primary_task_row">
+					<div class="server_task_tile accent">
+						<div class="server_task_index">01</div>
+						<div class="server_task_copy">
+							<div class="server_task_title" id="server_task_title_1">当前选择</div>
+							<div class="server_task_body" id="server_task_body_1">先确认服务器、地址、人数、模式和延迟。</div>
+						</div>
+					</div>
+					<div class="server_task_tile focus">
+						<div class="server_task_index">02</div>
+						<div class="server_task_copy">
+							<div class="server_task_title" id="server_task_title_2">列表主区</div>
+							<div class="server_task_body" id="server_task_body_2">刷新、排序、筛选和列表行反馈都集中在这里完成。</div>
+						</div>
+					</div>
+					<div class="server_task_tile">
+						<div class="server_task_index">03</div>
+						<div class="server_task_copy">
+							<div class="server_task_title" id="server_task_title_3">排行与次级工具</div>
+							<div class="server_task_body" id="server_task_body_3">把地图、排行和高级工具压到右侧，不和主选服区抢焦点。</div>
+						</div>
+					</div>
+				</div>
+				<div class="chip_row" id="servers_filter_row">
+					<div class="chip accent" id="server_scope_1">互联网</div>
+					<div class="chip" id="server_scope_2">收藏</div>
+					<div class="chip" id="server_scope_3">社区</div>
+					<div class="chip" id="server_scope_4">局域网</div>
+				</div>
+				<div id="servers_content_grid">
+					<div class="servers_column" id="servers_info_column">
+						<div class="server_info_block" id="server_details_panel">
+							<div class="subsection_title" id="server_details_title">当前选择</div>
+							<div class="panel_title medium" id="selected_server_name">当前服务器</div>
+							<div class="panel_body strong" id="selected_server_address">地址</div>
+							<div class="chip_row compact_chips">
+								<div class="chip accent" id="selected_server_meta_1">人数</div>
+								<div class="chip" id="selected_server_meta_2">模式</div>
+								<div class="chip" id="selected_server_meta_3">延迟</div>
+							</div>
+							<div class="panel_body spacious" id="selected_server_summary">服务器摘要</div>
+						</div>
+						<div class="server_info_block" id="map_card_panel">
+							<div class="subsection_title" id="map_preview_title">地图预览</div>
+							<div class="panel_title medium" id="map_card_title">地图信息</div>
+							<div class="map_preview_placeholder" id="map_preview_placeholder">地图预览</div>
+							<div class="panel_body" id="map_card_body">地图详情</div>
+						</div>
+					</div>
+					<div class="servers_column" id="servers_list_column">
+						<div id="server_list_panel">
+							<div id="server_list_header">
+								<div>
+									<div class="subsection_title" id="server_list_section_title">列表主区</div>
+									<div class="panel_title medium" id="server_list_title">服务器列表</div>
+								</div>
+								<div id="server_list_header_note">刷新、排序和筛选反馈优先在主列表内展示。</div>
+							</div>
+							<div id="server_list_row_stack">
+								<div class="list_entry server_row accent_entry" id="server_row_1">服务器行 1</div>
+								<div class="list_entry server_row" id="server_row_2">服务器行 2</div>
+								<div class="list_entry server_row" id="server_row_3">服务器行 3</div>
+								<div class="list_entry server_row" id="server_row_4">服务器行 4</div>
+								<div class="list_entry server_row" id="server_row_5">服务器行 5</div>
+							</div>
+						</div>
+					</div>
+					<div class="servers_column" id="servers_rank_column">
+						<div id="rank_card_panel">
+							<div class="subsection_title" id="rank_summary_title">排行摘要</div>
+							<div class="panel_title medium" id="rank_card_title">排行摘要</div>
+							<div id="rank_podium">
+								<div class="podium_bar silver"></div>
+								<div class="podium_bar gold"></div>
+								<div class="podium_bar bronze"></div>
+							</div>
+							<div class="panel_body" id="rank_card_body">排行详情</div>
+						</div>
+						<div id="server_aux_panel">
+							<div class="subsection_title" id="server_aux_title">次级工具</div>
+							<div class="panel_title medium" id="server_aux_heading">筛选与排序</div>
+							<div class="list_entry compact_list accent_entry" id="server_aux_item_1">高级筛选、批量动作和更多浏览入口继续下沉到右侧。</div>
+							<div class="list_entry compact_list" id="server_aux_item_2">首屏先把主任务压成选服清单，次级工具只保留补充信息。</div>
+							<div class="list_entry compact_list" id="server_aux_item_3">在窄高窗口和 square 模式下，这一列会自动后置，不遮挡主列表。</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div id="servers_footer_strip" class="panel">
+				<div class="footer_metric">
+					<div class="footer_metric_label" id="server_footer_label_1">页面</div>
+					<div class="footer_metric_value">服务器列表</div>
+				</div>
+				<div class="footer_metric">
+					<div class="footer_metric_label" id="server_footer_label_2">当前选择</div>
+					<div class="footer_metric_value">由当前浏览器选中项驱动</div>
+				</div>
+				<div class="footer_metric emphasis">
+					<div class="footer_metric_label" id="server_footer_label_3">状态</div>
+					<div class="footer_metric_value" id="server_status_summary">当前选中、刷新、筛选和排序动作已经接到 RmlUI 交互流。</div>
+				</div>
+			</div>
+		</div>
+		<div id="servers_side_tools">
+			<div class="tool_tile">
+				<div class="tool_tile_glyph">筛</div>
+				<div class="tool_tile_label" id="server_tool_label_1">筛选</div>
+			</div>
+			<div class="tool_tile">
+				<div class="tool_tile_glyph">排</div>
+				<div class="tool_tile_label" id="server_tool_label_2">排序</div>
+			</div>
+			<div class="tool_tile">
+				<div class="tool_tile_glyph">刷</div>
+				<div class="tool_tile_label" id="server_tool_label_3">刷新</div>
+			</div>
+			<div class="tool_tile">
+				<div class="tool_tile_glyph">图</div>
+				<div class="tool_tile_label" id="server_tool_label_4">地图</div>
+			</div>
+			<div class="tool_tile">
+				<div class="tool_tile_glyph">加</div>
+				<div class="tool_tile_label" id="server_tool_label_5">扩展</div>
+			</div>
+		</div>
+	</div>
+</div>

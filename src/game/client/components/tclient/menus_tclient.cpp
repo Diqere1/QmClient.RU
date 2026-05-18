@@ -5,9 +5,9 @@
 #include <base/system.h>
 #include <base/types.h>
 
+#include <engine/engine.h>
 #include <engine/graphics.h>
 #include <engine/image.h>
-#include <engine/engine.h>
 #include <engine/keys.h>
 #include <engine/serverbrowser.h>
 #include <engine/shared/config.h>
@@ -23,11 +23,11 @@
 #include <game/client/components/countryflags.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/menus.h>
+#include <game/client/components/qmclient/translate_ui_settings.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/tclient/bindchat.h>
 #include <game/client/components/tclient/bindwheel.h>
 #include <game/client/components/tclient/trails.h>
-#include <game/client/components/qmclient/translate_ui_settings.h>
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
 #include <game/client/skin.h>
@@ -78,174 +78,174 @@ extern bool g_CommandBindCacheInitialized;
 namespace
 {
 
-bool PerfDebugEnabled()
-{
-	return g_Config.m_QmPerfDebug != 0;
-}
-
-double PerfDebugThresholdMs()
-{
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-}
-
-[[maybe_unused]] void LogQmPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
-
-void LogTClientPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
-
-[[maybe_unused]] const char *QmSettingsTabName(int Tab)
-{
-	switch(Tab)
+	bool PerfDebugEnabled()
 	{
-	case 0: return "visuals";
-	case 1: return "functions";
-	case 2: return "hud";
-	case 3: return "contributors";
-	case 4: return "config";
-	default: return "unknown";
+		return g_Config.m_QmPerfDebug != 0;
 	}
-}
 
-int gs_TClientSettingsDeferredFrames = 0;
-int gs_TClientTabDeferredFrames = 0;
-int gs_TClientDeferredTab = -1;
-int gs_QmVisualDeferredFrames = 0;
-
-void BeginDeferredTClientSettings()
-{
-	gs_TClientSettingsDeferredFrames = 6;
-}
-
-void BeginDeferredTClientTab(const int Tab)
-{
-	gs_TClientDeferredTab = Tab;
-	switch(Tab)
+	double PerfDebugThresholdMs()
 	{
-	case TCLIENT_TAB_SETTINGS:
-		gs_TClientTabDeferredFrames = 5;
-		break;
-	case TCLIENT_TAB_BINDWHEEL:
-		gs_TClientTabDeferredFrames = 4;
-		break;
-	case TCLIENT_TAB_STATUSBAR:
-		gs_TClientTabDeferredFrames = 5;
-		break;
-	case TCLIENT_TAB_WARLIST:
-		gs_TClientTabDeferredFrames = 4;
-		break;
-	case TCLIENT_TAB_BINDCHAT:
-		gs_TClientTabDeferredFrames = 2;
-		break;
-	case TCLIENT_TAB_INFO:
-		gs_TClientTabDeferredFrames = 4;
-		break;
-	default:
-		gs_TClientTabDeferredFrames = 2;
-		break;
+		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 	}
-}
 
-bool ShouldDeferTClientVisualStage(const float ScrollY, const int MinRemainingFrames)
-{
-	return gs_TClientSettingsDeferredFrames >= MinRemainingFrames && absolute(ScrollY) <= 1.0f;
-}
-
-[[maybe_unused]] bool ShouldDeferTClientTabContent(const int Tab)
-{
-	return gs_TClientDeferredTab == Tab && gs_TClientTabDeferredFrames > 0;
-}
-
-int GetDeferredTClientTabFrames(const int Tab)
-{
-	return gs_TClientDeferredTab == Tab ? gs_TClientTabDeferredFrames : 0;
-}
-
-void FinishDeferredTClientSettingsFrame()
-{
-	if(gs_TClientSettingsDeferredFrames > 0)
-		--gs_TClientSettingsDeferredFrames;
-}
-
-void FinishDeferredTClientTabFrame(const int Tab)
-{
-	if(gs_TClientDeferredTab != Tab || gs_TClientTabDeferredFrames <= 0)
-		return;
-	--gs_TClientTabDeferredFrames;
-	if(gs_TClientTabDeferredFrames <= 0)
-		gs_TClientDeferredTab = -1;
-}
-
-[[maybe_unused]] void BeginDeferredQmVisualTab()
-{
-	gs_QmVisualDeferredFrames = 1;
-}
-
-[[maybe_unused]] bool ShouldDeferQmVisualHeavyStage(const int ActiveTab, const float ScrollY)
-{
-	return ActiveTab == 0 && gs_QmVisualDeferredFrames > 0 && absolute(ScrollY) <= 1.0f;
-}
-
-[[maybe_unused]] void FinishDeferredQmVisualFrame(const int ActiveTab)
-{
-	if(ActiveTab == 0 && gs_QmVisualDeferredFrames > 0)
-		--gs_QmVisualDeferredFrames;
-}
-
-struct SSectionCullContext
-{
-	float m_ViewportTop;
-	float m_ViewportBottom;
-	float m_PrefetchPadding;
-};
-
-bool IsSectionVisible(const CUIRect &SectionRect, const SSectionCullContext &Context)
-{
-	return SectionRect.y + SectionRect.h >= Context.m_ViewportTop - Context.m_PrefetchPadding &&
-		SectionRect.y <= Context.m_ViewportBottom + Context.m_PrefetchPadding;
-}
-
-uint64_t HashBytesFnv1a64(uint64_t Hash, const void *pData, size_t DataSize)
-{
-	const uint8_t *pBytes = static_cast<const uint8_t *>(pData);
-	for(size_t i = 0; i < DataSize; ++i)
+	[[maybe_unused]] void LogQmPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
 	{
-		Hash ^= pBytes[i];
-		Hash *= 1099511628211ull;
+		if(!PerfDebugEnabled())
+			return;
+		if(DurationMs < PerfDebugThresholdMs())
+			return;
+
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
 	}
-	return Hash;
-}
 
-template<typename T>
-uint64_t HashValueFnv1a64(uint64_t Hash, const T &Value)
-{
-	return HashBytesFnv1a64(Hash, &Value, sizeof(Value));
-}
+	void LogTClientPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
+	{
+		if(!PerfDebugEnabled())
+			return;
+		if(DurationMs < PerfDebugThresholdMs())
+			return;
 
-[[maybe_unused]] uint64_t HashStringFnv1a64(uint64_t Hash, const char *pString)
-{
-	return pString == nullptr ? Hash : HashBytesFnv1a64(Hash, pString, str_length(pString));
-}
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
+		else
+			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	}
+
+	[[maybe_unused]] const char *QmSettingsTabName(int Tab)
+	{
+		switch(Tab)
+		{
+		case 0: return "visuals";
+		case 1: return "functions";
+		case 2: return "hud";
+		case 3: return "contributors";
+		case 4: return "config";
+		default: return "unknown";
+		}
+	}
+
+	int gs_TClientSettingsDeferredFrames = 0;
+	int gs_TClientTabDeferredFrames = 0;
+	int gs_TClientDeferredTab = -1;
+	int gs_QmVisualDeferredFrames = 0;
+
+	void BeginDeferredTClientSettings()
+	{
+		gs_TClientSettingsDeferredFrames = 6;
+	}
+
+	void BeginDeferredTClientTab(const int Tab)
+	{
+		gs_TClientDeferredTab = Tab;
+		switch(Tab)
+		{
+		case TCLIENT_TAB_SETTINGS:
+			gs_TClientTabDeferredFrames = 5;
+			break;
+		case TCLIENT_TAB_BINDWHEEL:
+			gs_TClientTabDeferredFrames = 4;
+			break;
+		case TCLIENT_TAB_STATUSBAR:
+			gs_TClientTabDeferredFrames = 5;
+			break;
+		case TCLIENT_TAB_WARLIST:
+			gs_TClientTabDeferredFrames = 4;
+			break;
+		case TCLIENT_TAB_BINDCHAT:
+			gs_TClientTabDeferredFrames = 2;
+			break;
+		case TCLIENT_TAB_INFO:
+			gs_TClientTabDeferredFrames = 4;
+			break;
+		default:
+			gs_TClientTabDeferredFrames = 2;
+			break;
+		}
+	}
+
+	bool ShouldDeferTClientVisualStage(const float ScrollY, const int MinRemainingFrames)
+	{
+		return gs_TClientSettingsDeferredFrames >= MinRemainingFrames && absolute(ScrollY) <= 1.0f;
+	}
+
+	[[maybe_unused]] bool ShouldDeferTClientTabContent(const int Tab)
+	{
+		return gs_TClientDeferredTab == Tab && gs_TClientTabDeferredFrames > 0;
+	}
+
+	int GetDeferredTClientTabFrames(const int Tab)
+	{
+		return gs_TClientDeferredTab == Tab ? gs_TClientTabDeferredFrames : 0;
+	}
+
+	void FinishDeferredTClientSettingsFrame()
+	{
+		if(gs_TClientSettingsDeferredFrames > 0)
+			--gs_TClientSettingsDeferredFrames;
+	}
+
+	void FinishDeferredTClientTabFrame(const int Tab)
+	{
+		if(gs_TClientDeferredTab != Tab || gs_TClientTabDeferredFrames <= 0)
+			return;
+		--gs_TClientTabDeferredFrames;
+		if(gs_TClientTabDeferredFrames <= 0)
+			gs_TClientDeferredTab = -1;
+	}
+
+	[[maybe_unused]] void BeginDeferredQmVisualTab()
+	{
+		gs_QmVisualDeferredFrames = 1;
+	}
+
+	[[maybe_unused]] bool ShouldDeferQmVisualHeavyStage(const int ActiveTab, const float ScrollY)
+	{
+		return ActiveTab == 0 && gs_QmVisualDeferredFrames > 0 && absolute(ScrollY) <= 1.0f;
+	}
+
+	[[maybe_unused]] void FinishDeferredQmVisualFrame(const int ActiveTab)
+	{
+		if(ActiveTab == 0 && gs_QmVisualDeferredFrames > 0)
+			--gs_QmVisualDeferredFrames;
+	}
+
+	struct SSectionCullContext
+	{
+		float m_ViewportTop;
+		float m_ViewportBottom;
+		float m_PrefetchPadding;
+	};
+
+	bool IsSectionVisible(const CUIRect &SectionRect, const SSectionCullContext &Context)
+	{
+		return SectionRect.y + SectionRect.h >= Context.m_ViewportTop - Context.m_PrefetchPadding &&
+		       SectionRect.y <= Context.m_ViewportBottom + Context.m_PrefetchPadding;
+	}
+
+	uint64_t HashBytesFnv1a64(uint64_t Hash, const void *pData, size_t DataSize)
+	{
+		const uint8_t *pBytes = static_cast<const uint8_t *>(pData);
+		for(size_t i = 0; i < DataSize; ++i)
+		{
+			Hash ^= pBytes[i];
+			Hash *= 1099511628211ull;
+		}
+		return Hash;
+	}
+
+	template<typename T>
+	uint64_t HashValueFnv1a64(uint64_t Hash, const T &Value)
+	{
+		return HashBytesFnv1a64(Hash, &Value, sizeof(Value));
+	}
+
+	[[maybe_unused]] uint64_t HashStringFnv1a64(uint64_t Hash, const char *pString)
+	{
+		return pString == nullptr ? Hash : HashBytesFnv1a64(Hash, pString, str_length(pString));
+	}
 
 }
 
@@ -1809,229 +1809,229 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			return BoxRect;
 		};
 
-	// ***** Visual: Font & Cursor ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutVisualFontSection(MeasuredColumn, false);
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Visual: Font & Cursor ***** //
 		{
-			CPerfTimer VisualSectionTimer;
-			DrawSectionBox(BoxRect);
-			if(CompactVisualFontSection)
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutVisualFontSection(MeasuredColumn, false);
+			if(IsSectionVisible(BoxRect, CullContext))
 			{
-				char aBuf[128];
-				const char *pCurrentFont = g_Config.m_TcCustomFont[0] != '\0' ? g_Config.m_TcCustomFont : Localize("Default");
-				str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", pCurrentFont, Localize("Cursor"), g_Config.m_TcCursorScale);
-				DrawCompactDeferredSection(BoxRect, Localize("Visual: Font & Cursor"), aBuf);
+				CPerfTimer VisualSectionTimer;
+				DrawSectionBox(BoxRect);
+				if(CompactVisualFontSection)
+				{
+					char aBuf[128];
+					const char *pCurrentFont = g_Config.m_TcCustomFont[0] != '\0' ? g_Config.m_TcCustomFont : Localize("Default");
+					str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", pCurrentFont, Localize("Cursor"), g_Config.m_TcCursorScale);
+					DrawCompactDeferredSection(BoxRect, Localize("Visual: Font & Cursor"), aBuf);
+					s_VisualFontSectionCachedHeight = BoxRect.h;
+					Column = MeasuredColumn;
+				}
+				else
+				{
+					BoxRect = LayoutVisualFontSection(Column, true);
+					s_VisualFontSectionCachedHeight = BoxRect.h;
+				}
+				LogSettingsStage("tclient_settings_left_visual_font_section", VisualSectionTimer);
+			}
+			else
+			{
 				s_VisualFontSectionCachedHeight = BoxRect.h;
 				Column = MeasuredColumn;
 			}
+		}
+
+		// ***** Visual: Nameplates ***** //
+		{
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutVisualNameplateSection(MeasuredColumn, false);
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				CPerfTimer VisualSectionTimer;
+				DrawSectionBox(BoxRect);
+				if(CompactVisualNameplateSection)
+				{
+					char aBuf[160];
+					str_format(aBuf, sizeof(aBuf), "%s/%s/%s", g_Config.m_TcNameplatePingCircle ? Localize("Ping") : "-",
+						g_Config.m_TcNameplateCountry ? Localize("Country") : "-",
+						g_Config.m_TcWhiteFeet ? Localize("White feet") : "-");
+					DrawCompactDeferredSection(BoxRect, Localize("Visual: Nameplates"), aBuf);
+					s_VisualNameplateSectionCachedHeight = BoxRect.h;
+					Column = MeasuredColumn;
+				}
+				else
+				{
+					BoxRect = LayoutVisualNameplateSection(Column, true);
+					s_VisualNameplateSectionCachedHeight = BoxRect.h;
+				}
+				LogSettingsStage("tclient_settings_left_visual_nameplates_section", VisualSectionTimer);
+			}
 			else
 			{
-				BoxRect = LayoutVisualFontSection(Column, true);
-				s_VisualFontSectionCachedHeight = BoxRect.h;
-			}
-			LogSettingsStage("tclient_settings_left_visual_font_section", VisualSectionTimer);
-		}
-		else
-		{
-			s_VisualFontSectionCachedHeight = BoxRect.h;
-			Column = MeasuredColumn;
-		}
-	}
-
-	// ***** Visual: Nameplates ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutVisualNameplateSection(MeasuredColumn, false);
-		if(IsSectionVisible(BoxRect, CullContext))
-		{
-			CPerfTimer VisualSectionTimer;
-			DrawSectionBox(BoxRect);
-			if(CompactVisualNameplateSection)
-			{
-				char aBuf[160];
-				str_format(aBuf, sizeof(aBuf), "%s/%s/%s", g_Config.m_TcNameplatePingCircle ? Localize("Ping") : "-",
-					g_Config.m_TcNameplateCountry ? Localize("Country") : "-",
-					g_Config.m_TcWhiteFeet ? Localize("White feet") : "-");
-				DrawCompactDeferredSection(BoxRect, Localize("Visual: Nameplates"), aBuf);
 				s_VisualNameplateSectionCachedHeight = BoxRect.h;
 				Column = MeasuredColumn;
 			}
+		}
+
+		// ***** Visual: Effects ***** //
+		{
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutVisualEffectsSection(MeasuredColumn, false);
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				CPerfTimer VisualSectionTimer;
+				DrawSectionBox(BoxRect);
+				if(CompactVisualEffectsSection)
+				{
+					char aBuf[160];
+					const char *pTinyTeeMode = !g_Config.m_TcTinyTees ? Localize("None") : (g_Config.m_TcTinyTeesOthers ? Localize("All") : Localize("Self"));
+					str_format(aBuf, sizeof(aBuf), "%s | Jelly %s", pTinyTeeMode, g_Config.m_QmJellyTee ? Localize("On") : Localize("Off"));
+					DrawCompactDeferredSection(BoxRect, Localize("Visual: Effects"), aBuf);
+					s_VisualEffectsSectionCachedHeight = BoxRect.h;
+					Column = MeasuredColumn;
+				}
+				else
+				{
+					BoxRect = LayoutVisualEffectsSection(Column, true);
+					s_VisualEffectsSectionCachedHeight = BoxRect.h;
+				}
+				LogSettingsStage("tclient_settings_left_visual_effects_section", VisualSectionTimer);
+			}
 			else
 			{
-				BoxRect = LayoutVisualNameplateSection(Column, true);
-				s_VisualNameplateSectionCachedHeight = BoxRect.h;
-			}
-			LogSettingsStage("tclient_settings_left_visual_nameplates_section", VisualSectionTimer);
-		}
-		else
-		{
-			s_VisualNameplateSectionCachedHeight = BoxRect.h;
-			Column = MeasuredColumn;
-		}
-	}
-
-	// ***** Visual: Effects ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutVisualEffectsSection(MeasuredColumn, false);
-		if(IsSectionVisible(BoxRect, CullContext))
-		{
-			CPerfTimer VisualSectionTimer;
-			DrawSectionBox(BoxRect);
-			if(CompactVisualEffectsSection)
-			{
-				char aBuf[160];
-				const char *pTinyTeeMode = !g_Config.m_TcTinyTees ? Localize("None") : (g_Config.m_TcTinyTeesOthers ? Localize("All") : Localize("Self"));
-				str_format(aBuf, sizeof(aBuf), "%s | Jelly %s", pTinyTeeMode, g_Config.m_QmJellyTee ? Localize("On") : Localize("Off"));
-				DrawCompactDeferredSection(BoxRect, Localize("Visual: Effects"), aBuf);
 				s_VisualEffectsSectionCachedHeight = BoxRect.h;
 				Column = MeasuredColumn;
 			}
-			else
-			{
-				BoxRect = LayoutVisualEffectsSection(Column, true);
-				s_VisualEffectsSectionCachedHeight = BoxRect.h;
-			}
-			LogSettingsStage("tclient_settings_left_visual_effects_section", VisualSectionTimer);
 		}
-		else
-		{
-			s_VisualEffectsSectionCachedHeight = BoxRect.h;
-			Column = MeasuredColumn;
-		}
-	}
 
 		LogSettingsStage("tclient_settings_left_visual_total", VisualSectionsTotalTimer);
 
-	// ***** Input ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutInputSection(MeasuredColumn, false);
-		s_InputSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Input ***** //
 		{
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutInputSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutInputSection(MeasuredColumn, false);
 			s_InputSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutInputSection(Column, true);
+				s_InputSectionCachedHeight = BoxRect.h;
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** Anti Latency Tools ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutAntiLatencyToolsSection(MeasuredColumn, false);
-		s_AntiLatencyToolsSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Anti Latency Tools ***** //
 		{
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutAntiLatencyToolsSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutAntiLatencyToolsSection(MeasuredColumn, false);
 			s_AntiLatencyToolsSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutAntiLatencyToolsSection(Column, true);
+				s_AntiLatencyToolsSectionCachedHeight = BoxRect.h;
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** Improved Anti Ping ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutAntiPingSmoothingSection(MeasuredColumn, false);
-		s_AntiPingSmoothingSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Improved Anti Ping ***** //
 		{
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutAntiPingSmoothingSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutAntiPingSmoothingSection(MeasuredColumn, false);
 			s_AntiPingSmoothingSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutAntiPingSmoothingSection(Column, true);
+				s_AntiPingSmoothingSectionCachedHeight = BoxRect.h;
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** Execute on join ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutAutoExecuteSection(MeasuredColumn, false);
-		s_AutoExecuteSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Execute on join ***** //
 		{
-			CPerfTimer AutoExecuteTimer;
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutAutoExecuteSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutAutoExecuteSection(MeasuredColumn, false);
 			s_AutoExecuteSectionCachedHeight = BoxRect.h;
-			LogSettingsStage("tclient_settings_left_auto_execute", AutoExecuteTimer);
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				CPerfTimer AutoExecuteTimer;
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutAutoExecuteSection(Column, true);
+				s_AutoExecuteSectionCachedHeight = BoxRect.h;
+				LogSettingsStage("tclient_settings_left_auto_execute", AutoExecuteTimer);
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** Voting ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutVotingSection(MeasuredColumn, false);
-		s_VotingSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Voting ***** //
 		{
-			CPerfTimer VotingTimer;
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutVotingSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutVotingSection(MeasuredColumn, false);
 			s_VotingSectionCachedHeight = BoxRect.h;
-			LogSettingsStage("tclient_settings_left_voting", VotingTimer);
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				CPerfTimer VotingTimer;
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutVotingSection(Column, true);
+				s_VotingSectionCachedHeight = BoxRect.h;
+				LogSettingsStage("tclient_settings_left_voting", VotingTimer);
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** 自动回复 ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutAutoReplySection(MeasuredColumn, false);
-		s_AutoReplySectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** 自动回复 ***** //
 		{
-			CPerfTimer AutoReplyTimer;
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutAutoReplySection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutAutoReplySection(MeasuredColumn, false);
 			s_AutoReplySectionCachedHeight = BoxRect.h;
-			LogSettingsStage("tclient_settings_left_auto_reply", AutoReplyTimer);
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				CPerfTimer AutoReplyTimer;
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutAutoReplySection(Column, true);
+				s_AutoReplySectionCachedHeight = BoxRect.h;
+				LogSettingsStage("tclient_settings_left_auto_reply", AutoReplyTimer);
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** Player Indicator ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutPlayerIndicatorSection(MeasuredColumn, false);
-		s_PlayerIndicatorSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Player Indicator ***** //
 		{
-			CPerfTimer PlayerIndicatorTimer;
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutPlayerIndicatorSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutPlayerIndicatorSection(MeasuredColumn, false);
 			s_PlayerIndicatorSectionCachedHeight = BoxRect.h;
-			LogSettingsStage("tclient_settings_left_player_indicator_total", PlayerIndicatorTimer);
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				CPerfTimer PlayerIndicatorTimer;
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutPlayerIndicatorSection(Column, true);
+				s_PlayerIndicatorSectionCachedHeight = BoxRect.h;
+				LogSettingsStage("tclient_settings_left_player_indicator_total", PlayerIndicatorTimer);
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** 宠物 ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutPetSection(MeasuredColumn, false);
-		s_PetSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** 宠物 ***** //
 		{
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutPetSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutPetSection(MeasuredColumn, false);
 			s_PetSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutPetSection(Column, true);
+				s_PetSectionCachedHeight = BoxRect.h;
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
 		LeftView = Column;
 		LogSettingsStage("tclient_settings_left_column", LeftColumnTimer);
@@ -2740,168 +2740,164 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			return BoxRect;
 		};
 
-	// ***** HUD ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutHudSection(MeasuredColumn, false);
-		s_HudSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** HUD ***** //
 		{
-			CPerfTimer HudSectionTimer;
-			DrawSectionBox(BoxRect);
-			if(CompactHudSection)
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutHudSection(MeasuredColumn, false);
+			s_HudSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
 			{
-				char aBuf[160];
-				str_format(aBuf, sizeof(aBuf), "Vote HUD %s | Mini debug %s", g_Config.m_TcMiniVoteHud ? Localize("On") : Localize("Off"),
-					g_Config.m_TcMiniDebug ? Localize("On") : Localize("Off"));
-				DrawCompactDeferredSection(BoxRect, Localize("HUD"), aBuf);
-				s_HudSectionCachedHeight = BoxRect.h;
-				Column = MeasuredColumn;
+				CPerfTimer HudSectionTimer;
+				DrawSectionBox(BoxRect);
+				if(CompactHudSection)
+				{
+					char aBuf[160];
+					str_format(aBuf, sizeof(aBuf), "Vote HUD %s | Mini debug %s", g_Config.m_TcMiniVoteHud ? Localize("On") : Localize("Off"),
+						g_Config.m_TcMiniDebug ? Localize("On") : Localize("Off"));
+					DrawCompactDeferredSection(BoxRect, Localize("HUD"), aBuf);
+					s_HudSectionCachedHeight = BoxRect.h;
+					Column = MeasuredColumn;
+				}
+				else
+				{
+					BoxRect = LayoutHudSection(Column, true);
+					s_HudSectionCachedHeight = BoxRect.h;
+				}
+				LogSettingsStage("tclient_settings_right_hud_total", HudSectionTimer);
 			}
 			else
-			{
-				BoxRect = LayoutHudSection(Column, true);
-				s_HudSectionCachedHeight = BoxRect.h;
-			}
-			LogSettingsStage("tclient_settings_right_hud_total", HudSectionTimer);
-		}
-		else
-			Column = MeasuredColumn;
-	}
-
-	// ***** Frozen Tee Display ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutTeeStatusBarSection(MeasuredColumn, false);
-		s_TeeStatusBarSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
-		{
-			DrawSectionBox(BoxRect);
-			if(CompactTeeStatusBarSection)
-			{
-				char aBuf[160];
-				str_format(aBuf, sizeof(aBuf), "%s | %s %d", g_Config.m_TcShowFrozenHud ? Localize("Enabled") : Localize("Disabled"),
-					Localize("Rows"), g_Config.m_TcFrozenMaxRows);
-				DrawCompactDeferredSection(BoxRect, Localize("Tee status bar"), aBuf);
-				s_TeeStatusBarSectionCachedHeight = BoxRect.h;
 				Column = MeasuredColumn;
+		}
+
+		// ***** Frozen Tee Display ***** //
+		{
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutTeeStatusBarSection(MeasuredColumn, false);
+			s_TeeStatusBarSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				if(CompactTeeStatusBarSection)
+				{
+					char aBuf[160];
+					str_format(aBuf, sizeof(aBuf), "%s | %s %d", g_Config.m_TcShowFrozenHud ? Localize("Enabled") : Localize("Disabled"),
+						Localize("Rows"), g_Config.m_TcFrozenMaxRows);
+					DrawCompactDeferredSection(BoxRect, Localize("Tee status bar"), aBuf);
+					s_TeeStatusBarSectionCachedHeight = BoxRect.h;
+					Column = MeasuredColumn;
+				}
+				else
+				{
+					BoxRect = LayoutTeeStatusBarSection(Column, true);
+					s_TeeStatusBarSectionCachedHeight = BoxRect.h;
+				}
 			}
 			else
-			{
-				BoxRect = LayoutTeeStatusBarSection(Column, true);
-				s_TeeStatusBarSectionCachedHeight = BoxRect.h;
-			}
-		}
-		else
-			Column = MeasuredColumn;
-	}
-
-	// ***** Tile Outlines ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutTileOutlinesSection(MeasuredColumn, false);
-		if(IsSectionVisible(BoxRect, CullContext))
-		{
-			CPerfTimer TileOutlinesTimer;
-			DrawSectionBox(BoxRect);
-			if(CompactTileOutlinesSection)
-			{
-				char aBuf[160];
-				str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", g_Config.m_TcOutline ? Localize("Enabled") : Localize("Disabled"),
-					Localize("Opacity"), g_Config.m_TcOutlineAlpha);
-				DrawCompactDeferredSection(BoxRect, Localize("Tile outlines"), aBuf);
 				Column = MeasuredColumn;
+		}
+
+		// ***** Tile Outlines ***** //
+		{
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutTileOutlinesSection(MeasuredColumn, false);
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				CPerfTimer TileOutlinesTimer;
+				DrawSectionBox(BoxRect);
+				if(CompactTileOutlinesSection)
+				{
+					char aBuf[160];
+					str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", g_Config.m_TcOutline ? Localize("Enabled") : Localize("Disabled"),
+						Localize("Opacity"), g_Config.m_TcOutlineAlpha);
+					DrawCompactDeferredSection(BoxRect, Localize("Tile outlines"), aBuf);
+					Column = MeasuredColumn;
+				}
+				else
+					BoxRect = LayoutTileOutlinesSection(Column, true);
+				LogSettingsStage("tclient_settings_tile_outlines_section", TileOutlinesTimer);
 			}
 			else
-				BoxRect = LayoutTileOutlinesSection(Column, true);
-			LogSettingsStage("tclient_settings_tile_outlines_section", TileOutlinesTimer);
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** Ghost Tools ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutGhostToolsSection(MeasuredColumn, false);
-		s_GhostToolsSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Ghost Tools ***** //
 		{
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutGhostToolsSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutGhostToolsSection(MeasuredColumn, false);
 			s_GhostToolsSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutGhostToolsSection(Column, true);
+				s_GhostToolsSectionCachedHeight = BoxRect.h;
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** 彩虹! ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutRainbowSection(MeasuredColumn, false);
-		s_RainbowSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** 彩虹! ***** //
 		{
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutRainbowSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutRainbowSection(MeasuredColumn, false);
 			s_RainbowSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutRainbowSection(Column, true);
+				s_RainbowSectionCachedHeight = BoxRect.h;
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** Tee Trails ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutTeeTrailsSection(MeasuredColumn, false);
-		s_TeeTrailsSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** Tee Trails ***** //
 		{
-			CPerfTimer TeeTrailsTimer;
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutTeeTrailsSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutTeeTrailsSection(MeasuredColumn, false);
 			s_TeeTrailsSectionCachedHeight = BoxRect.h;
-			LogSettingsStage("tclient_settings_right_tee_trails_total", TeeTrailsTimer);
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				CPerfTimer TeeTrailsTimer;
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutTeeTrailsSection(Column, true);
+				s_TeeTrailsSectionCachedHeight = BoxRect.h;
+				LogSettingsStage("tclient_settings_right_tee_trails_total", TeeTrailsTimer);
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-	// ***** 背景绘画 ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutBackgroundDrawSection(MeasuredColumn, false);
-		s_BackgroundDrawSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** 背景绘画 ***** //
 		{
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutBackgroundDrawSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutBackgroundDrawSection(MeasuredColumn, false);
 			s_BackgroundDrawSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutBackgroundDrawSection(Column, true);
+				s_BackgroundDrawSectionCachedHeight = BoxRect.h;
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-
-
-	// ***** 终点恰分改名 ***** //
-	{
-		CUIRect MeasuredColumn = Column;
-		CUIRect BoxRect = LayoutFinishNameSection(MeasuredColumn, false);
-		s_FinishNameSectionCachedHeight = BoxRect.h;
-		if(IsSectionVisible(BoxRect, CullContext))
+		// ***** 终点恰分改名 ***** //
 		{
-			DrawSectionBox(BoxRect);
-			BoxRect = LayoutFinishNameSection(Column, true);
+			CUIRect MeasuredColumn = Column;
+			CUIRect BoxRect = LayoutFinishNameSection(MeasuredColumn, false);
 			s_FinishNameSectionCachedHeight = BoxRect.h;
+			if(IsSectionVisible(BoxRect, CullContext))
+			{
+				DrawSectionBox(BoxRect);
+				BoxRect = LayoutFinishNameSection(Column, true);
+				s_FinishNameSectionCachedHeight = BoxRect.h;
+			}
+			else
+				Column = MeasuredColumn;
 		}
-		else
-			Column = MeasuredColumn;
-	}
 
-
-
-	// ***** END OF PAGE 1 SETTINGS ***** //
+		// ***** END OF PAGE 1 SETTINGS ***** //
 		RightView = Column;
 		LogSettingsStage("tclient_settings_right_column", RightColumnTimer);
 	}
@@ -3828,13 +3824,22 @@ void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 		const char *apCodes[] = {
 			Localize("a = Angle"),
 			Localize("p = Ping"),
-			Localize("d = Prediction"),
-			Localize("c = Position"),
+			Localize("d = 预测值"),
+			Localize("c = 坐标"),
 			Localize("l = Local Time"),
 			Localize("r = Race Time"),
 			Localize("f = FPS"),
 			Localize("v = Velocity"),
 			Localize("z = Zoom"),
+			Localize("u = 下行"),
+			Localize("n = 上行"),
+			Localize("j = 抖动"),
+			Localize("k = 丢包"),
+			Localize("i = 下速"),
+			Localize("o = 上速"),
+			Localize("q = 连接"),
+			Localize("x = CPU"),
+			Localize("y = 内存"),
 			Localize("_ or ' ' = Space"),
 		};
 		View.HSplitTop(HeadlineHeight, &Label, &View);
@@ -4021,7 +4026,7 @@ void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 		s_DropDownNames.reserve(GameClient()->m_StatusBar.m_StatusItemTypes.size());
 		for(const CStatusItem &StatusItemType : GameClient()->m_StatusBar.m_StatusItemTypes)
 		{
-			s_DropDownNameStorage.emplace_back(Localize(StatusItemType.m_aName));
+			s_DropDownNameStorage.emplace_back(Localize(GetStatusBarEditorLabel(&StatusItemType)));
 			s_DropDownNames.push_back(s_DropDownNameStorage.back().c_str());
 		}
 	}
@@ -5009,21 +5014,21 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 	{
 		auto IsLegacyMigratedQmConfig = [](const char *pScriptName) {
 			return str_comp(pScriptName, "tc_hide_chat_bubbles") == 0 ||
-				str_comp(pScriptName, "tc_chat_bubble") == 0 ||
-				str_comp(pScriptName, "tc_chat_bubble_duration") == 0 ||
-				str_comp(pScriptName, "tc_chat_bubble_alpha") == 0 ||
-				str_comp(pScriptName, "tc_chat_bubble_font_size") == 0 ||
-				str_comp(pScriptName, "tc_chat_bubble_bg_color") == 0 ||
-				str_comp(pScriptName, "tc_chat_bubble_text_color") == 0 ||
-				str_comp(pScriptName, "tc_chat_bubble_animation") == 0 ||
-				str_comp(pScriptName, "cl_scoreboard_points") == 0 ||
-				str_comp(pScriptName, "cl_scoreboard_sort_mode") == 0 ||
-				str_comp(pScriptName, "cl_dummy_miniview") == 0 ||
-				str_comp(pScriptName, "cl_dummy_miniview_auto") == 0 ||
-				str_comp(pScriptName, "cl_dummy_miniview_size") == 0 ||
-				str_comp(pScriptName, "cl_dummy_miniview_zoom") == 0 ||
-				str_comp(pScriptName, "cl_smtc_enable") == 0 ||
-				str_comp(pScriptName, "cl_smtc_show_hud") == 0;
+			       str_comp(pScriptName, "tc_chat_bubble") == 0 ||
+			       str_comp(pScriptName, "tc_chat_bubble_duration") == 0 ||
+			       str_comp(pScriptName, "tc_chat_bubble_alpha") == 0 ||
+			       str_comp(pScriptName, "tc_chat_bubble_font_size") == 0 ||
+			       str_comp(pScriptName, "tc_chat_bubble_bg_color") == 0 ||
+			       str_comp(pScriptName, "tc_chat_bubble_text_color") == 0 ||
+			       str_comp(pScriptName, "tc_chat_bubble_animation") == 0 ||
+			       str_comp(pScriptName, "cl_scoreboard_points") == 0 ||
+			       str_comp(pScriptName, "cl_scoreboard_sort_mode") == 0 ||
+			       str_comp(pScriptName, "cl_dummy_miniview") == 0 ||
+			       str_comp(pScriptName, "cl_dummy_miniview_auto") == 0 ||
+			       str_comp(pScriptName, "cl_dummy_miniview_size") == 0 ||
+			       str_comp(pScriptName, "cl_dummy_miniview_zoom") == 0 ||
+			       str_comp(pScriptName, "cl_smtc_enable") == 0 ||
+			       str_comp(pScriptName, "cl_smtc_show_hud") == 0;
 		};
 		auto Collector = [](const SConfigVariable *pVar, void *pUserData) {
 			auto *pVec = static_cast<std::vector<const SConfigVariable *> *>(pUserData);
@@ -5084,9 +5089,9 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 
 	// Check if any tag filter is enabled
 	bool AnyTagEnabled = s_TcUiTagVisual || s_TcUiTagHud || s_TcUiTagInput ||
-						 s_TcUiTagChat || s_TcUiTagAudio || s_TcUiTagAutomation ||
-						 s_TcUiTagSocial || s_TcUiTagCamera || s_TcUiTagGameplay ||
-						 s_TcUiTagMisc;
+			     s_TcUiTagChat || s_TcUiTagAudio || s_TcUiTagAutomation ||
+			     s_TcUiTagSocial || s_TcUiTagCamera || s_TcUiTagGameplay ||
+			     s_TcUiTagMisc;
 
 	const char *pSearch = s_SearchInput.GetString();
 

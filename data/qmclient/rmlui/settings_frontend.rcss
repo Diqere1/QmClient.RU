@@ -1,0 +1,273 @@
+body {
+	margin: 0;
+	font-family: "DejaVu Sans";
+	color: #f3efe2;
+	background: #17120f;
+}
+
+#settings_frontend_root {
+	padding: 20dp 22dp 22dp 22dp;
+	background-color: #18120f;
+	height: 100%;
+	min-height: 0;
+}
+
+#settings_toolbar {
+	margin-bottom: 16dp;
+	padding: 16dp 18dp 14dp 18dp;
+	background: #221913;
+	border-width: 1dp;
+	border-color: #4d3a2a;
+	border-radius: 14dp;
+}
+
+#settings_toolbar_main {
+	display: flex;
+	flex-direction: column;
+	gap: 6dp;
+}
+
+#settings_toolbar_actions {
+	margin-top: 12dp;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8dp;
+}
+
+.settings_toolbar_chip {
+	padding: 6dp 10dp;
+	background: #30241c;
+	border-width: 1dp;
+	border-color: #5d4430;
+	border-radius: 999dp;
+	color: #e7c89c;
+	font-size: 12dp;
+}
+
+#settings_route_title {
+	font-size: 24dp;
+	font-weight: bold;
+}
+
+#settings_route_subtitle {
+	margin-top: 6dp;
+	font-size: 14dp;
+	color: #c9baa8;
+}
+
+#settings_search_slot {
+	margin-top: 12dp;
+	font-size: 12dp;
+	color: #9d8b79;
+	line-height: 1.45;
+}
+
+#settings_frontend_body {
+	display: flex;
+	gap: 16dp;
+	height: 100%;
+	min-height: 0;
+	align-items: stretch;
+}
+
+.settings_shell_panel {
+	padding: 16dp;
+	border-width: 1dp;
+	border-radius: 14dp;
+	overflow-y: auto;
+	min-height: 0;
+}
+
+.settings_shell_primary {
+	flex: 1.45;
+	min-width: 0;
+}
+
+.settings_side_stack {
+	width: 32%;
+	min-width: 240dp;
+	max-width: 420dp;
+	display: flex;
+	flex-direction: column;
+	gap: 14dp;
+	min-height: 0;
+}
+
+.settings_aux_shell {
+	background: #211913;
+	border-color: #433223;
+}
+
+.settings_aux_shell_domain {
+	flex: 0 0 auto;
+	min-height: 132dp;
+}
+
+.settings_aux_shell_context {
+	flex: 1;
+	min-height: 0;
+	opacity: 0.88;
+}
+
+#settings_workspace {
+	background: #1d1611;
+	border-color: #4a3625;
+}
+
+#settings_restart_banner {
+	margin-bottom: 14dp;
+	padding: 12dp 14dp;
+	background: #5e3a20;
+	border-width: 1dp;
+	border-color: #92613a;
+	border-radius: 10dp;
+	color: #ffe3c2;
+	line-height: 1.4;
+}
+
+.settings_rail_title,
+.settings_context_title,
+.settings_section_title {
+	margin-bottom: 8dp;
+	font-size: 13dp;
+	font-weight: bold;
+	color: #e7c89c;
+}
+
+.settings_rail_primary,
+.settings_context_body {
+	font-size: 16dp;
+}
+
+.settings_rail_secondary {
+	margin-top: 6dp;
+	font-size: 12dp;
+	color: #b69f8b;
+	line-height: 1.45;
+}
+
+.settings_context_block + .settings_context_block,
+.settings_section + .settings_section {
+	margin-top: 16dp;
+}
+
+.settings_control_row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12dp;
+	padding: 12dp;
+	background: #241b14;
+	border-width: 1dp;
+	border-color: #4a3728;
+	border-radius: 10dp;
+}
+
+.settings_control_label {
+	color: #f2e7d7;
+	flex: 1;
+}
+
+.settings_control_value {
+	color: #c9baa8;
+	text-align: right;
+}
+
+.settings_control_value_with_action {
+	flex: 1;
+}
+
+.settings_control_button,
+.settings_inline_action {
+	padding: 7dp 11dp;
+	background: #2b2118;
+	color: #f3efe2;
+	border-width: 1dp;
+	border-color: #5f4732;
+	border-radius: 8dp;
+}
+
+.settings_control_button {
+	min-width: 120dp;
+	text-align: center;
+	font-weight: bold;
+}
+
+.settings_inline_action {
+	margin-left: 10dp;
+	font-size: 12dp;
+	color: #ffd7a7;
+}
+
+.settings_control_button:hover,
+.settings_control_button:focus,
+.settings_inline_action:hover,
+.settings_inline_action:focus {
+	background: #3a2b1f;
+	border-color: #a57950;
+}
+
+.settings_control_button:active,
+.settings_inline_action:active {
+	transform: translateY(1dp);
+}
+
+.settings_control_button[data-settings-bool-value="0"] {
+	background: #6a4625;
+	border-color: #c28a55;
+	color: #fff1dd;
+}
+
+.settings_control_button[data-settings-bool-value="1"] {
+	background: #273426;
+	border-color: #5e8d58;
+	color: #eff9ec;
+}
+
+.settings_empty_state {
+	color: #b69f8b;
+	line-height: 1.5;
+}
+
+#settings_frontend_root.is-compact #settings_frontend_body,
+#settings_frontend_root.is-square #settings_frontend_body {
+	flex-direction: column;
+	height: 100%;
+}
+
+#settings_frontend_root.is-compact #settings_workspace,
+#settings_frontend_root.is-square #settings_workspace {
+	width: 100%;
+	min-width: 0;
+}
+
+#settings_frontend_root.is-compact .settings_side_stack,
+#settings_frontend_root.is-square .settings_side_stack {
+	width: 100%;
+	max-width: none;
+	min-width: 0;
+}
+
+#settings_frontend_root.is-compact .settings_aux_shell_domain,
+#settings_frontend_root.is-square .settings_aux_shell_domain {
+	min-height: 0;
+}
+
+#settings_frontend_root.is-compact .settings_aux_shell_context,
+#settings_frontend_root.is-square .settings_aux_shell_context {
+	flex: 0 0 auto;
+	max-height: 200dp;
+	opacity: 0.74;
+}
+
+#settings_frontend_root.is-ultrawide #settings_frontend_body {
+	max-width: 1720dp;
+}
+
+#settings_frontend_root.is-ultrawide .settings_shell_primary {
+	flex: 1.7;
+}
+
+#settings_frontend_root.is-ultrawide .settings_side_stack {
+	max-width: 400dp;
+}

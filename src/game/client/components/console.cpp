@@ -1896,12 +1896,12 @@ bool CGameConsole::CInstance::ExportSelectedChat()
 		return false;
 	}
 
-	if(!m_pGameConsole->Storage()->CreateFolder("dumps", IStorage::TYPE_SAVE) && !m_pGameConsole->Storage()->FolderExists("dumps", IStorage::TYPE_SAVE))
+	if(!m_pGameConsole->Storage()->CreateFolder("qmclient", IStorage::TYPE_SAVE) && !m_pGameConsole->Storage()->FolderExists("qmclient", IStorage::TYPE_SAVE))
 	{
 		m_pGameConsole->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "console", Localize("聊天记录导出失败"));
 		return false;
 	}
-	if(!m_pGameConsole->Storage()->CreateFolder("dumps/local_chat_export", IStorage::TYPE_SAVE) && !m_pGameConsole->Storage()->FolderExists("dumps/local_chat_export", IStorage::TYPE_SAVE))
+	if(!m_pGameConsole->Storage()->CreateFolder("qmclient/chat_log", IStorage::TYPE_SAVE) && !m_pGameConsole->Storage()->FolderExists("qmclient/chat_log", IStorage::TYPE_SAVE))
 	{
 		m_pGameConsole->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "console", Localize("聊天记录导出失败"));
 		return false;
@@ -1910,7 +1910,7 @@ bool CGameConsole::CInstance::ExportSelectedChat()
 	char aTimestamp[20];
 	str_timestamp(aTimestamp, sizeof(aTimestamp));
 	char aBaseFilename[IO_MAX_PATH_LENGTH];
-	str_format(aBaseFilename, sizeof(aBaseFilename), "dumps/local_chat_export/local_chat_export_%s", aTimestamp);
+	str_format(aBaseFilename, sizeof(aBaseFilename), "qmclient/chat_log/local_chat_export_%s", aTimestamp);
 
 	char aTxtFilename[IO_MAX_PATH_LENGTH];
 	char aHtmlFilename[IO_MAX_PATH_LENGTH];

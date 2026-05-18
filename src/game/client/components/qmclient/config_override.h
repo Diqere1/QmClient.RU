@@ -115,6 +115,11 @@ inline int DeriveGoresAutoTogglePreference(bool CurrentGoresActive, bool Previou
 	return CurrentAutoToggle != 0 ? 1 : 0;
 }
 
+inline bool ShouldHideGoresGuide(bool GoresEnabled, bool HideGuidesEnabled, bool ManualGuideVisible)
+{
+	return GoresEnabled && HideGuidesEnabled && !ManualGuideVisible;
+}
+
 inline EFocusConfigGroup GetFocusConfigGroup(EFocusConfigTarget Target)
 {
 	switch(Target)
