@@ -303,7 +303,7 @@ collect_default_scope() {
 	write_default_scope_diagnostics
 }
 
-get_analyze_source_files() {
+get_source_files() {
 	local path normalized
 	local filtered=()
 	for path in "$@"; do
@@ -515,7 +515,8 @@ write_json_report() {
 		printf '  },\n'
 		printf '  "EffectiveScope": {\n'
 		printf '    "Files": '; write_json_string_array "${EFFECTIVE_FILES[@]}"; printf ',\n'
-		printf '    "AnalyzeSourceFiles": '; write_json_string_array "${ANALYZE_SOURCE_FILES[@]}"; printf '\n'
+		printf '    "AnalyzeTriggerFiles": '; write_json_string_array "${ANALYZE_SOURCE_FILES[@]}"; printf ',\n'
+		printf '    "ClangTidyFiles": '; write_json_string_array "${CLANG_TIDY_FILES[@]}"; printf '\n'
 		printf '  },\n'
 		printf '  "Summary": {\n'
 		printf '    "Pass": %s,\n' "${RESULT_PASS}"
@@ -655,92 +656,52 @@ EFFECTIVE_FILES=("${INPUT_FILES[@]}")
 
 pushd "${REPO_ROOT}" >/dev/null
 
-# 判断是否需要运行 /analyze（必须在启动并行构建前完成范围计算）
+# 判断是否需要运行 /analyze（必须在执行构建前完成范围计算）
 RUN_ANALYZE=0
 if [[ ${SKIP_ANALYZE} -eq 0 && "${CM_CMD}" == "cmd.exe" ]]; then
 	if [[ ${ANALYZE_ALL} -eq 0 ]]; then
-		mapfile -t ANALYZE_SOURCE_FILES < <(get_analyze_source_files "${INPUT_FILES[@]}")
+		mapfile -t ANALYZE_SOURCE_FILES < <(get_source_files "${INPUT_FILES[@]}")
 		if [[ ${#ANALYZE_SOURCE_FILES[@]} -eq 0 ]]; then
 			mark_degraded "MSVC /analyze 范围" "当前改动只有头文件或无可分析编译单元，/analyze 阶段已跳过"
 		else
-			add_result "INFO" "MSVC /analyze 范围" "仅扫描 ${#ANALYZE_SOURCE_FILES[@]} 个改动编译单元"
+			add_result "INFO" "MSVC /analyze 触发范围" "${#ANALYZE_SOURCE_FILES[@]} 个改动源文件触发 /analyze；实际分析范围由 game-client 构建目标和 Ninja 增量状态决定"
 		fi
 	else
-		add_result "INFO" "MSVC /analyze 范围" "已显式传入 --analyze-all，将执行全量首方源码分析"
+		add_result "INFO" "MSVC /analyze 触发范围" "已显式传入 --analyze-all，将执行 game-client 目标的 /analyze 构建"
 	fi
 	if [[ ${ANALYZE_ALL} -eq 1 || ${#ANALYZE_SOURCE_FILES[@]} -gt 0 ]]; then
 		RUN_ANALYZE=1
 	fi
 fi
 
-# --- 并行构建 ---
-# Debug CRT 和 MSVC /analyze 使用独立构建目录，可并行执行
-# 子进程内的 add_result 调用不会影响父进程 RESULT_ITEMS，但日志仍输出到终端
-PARALLEL_TMPDIR="$(mktemp -d)"
-DEBUG_PID=""
-ANALYZE_PID=""
-
 if [[ "${CM_CMD}" == "cmd.exe" ]]; then
 	CM_SCRIPT_WIN="$(to_windows_path "${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd")"
 
-	# Debug 构建（后台）
-	(
-		invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
-			"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
-			-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-			-DQM_STRICT_WARNINGS=ON
-		echo $? > "${PARALLEL_TMPDIR}/debug_exit"
-	) &
-	DEBUG_PID=$!
+	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
+		"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
+		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+		-DQM_STRICT_WARNINGS=ON
 
-	# /analyze 构建（后台，如果需要）
 	if [[ ${RUN_ANALYZE} -eq 1 ]]; then
 		ANALYZE_ARGS=(
 			"${CM_CMD}" /c "${CM_SCRIPT_WIN}" -G Ninja -S . -B "${ANALYZE_BUILD_DIR}"
 			-DCMAKE_BUILD_TYPE=Debug
 			-DQM_MSVC_ANALYZE=ON
 		)
-		(
-			invoke_configure_and_build "MSVC /analyze" "${ANALYZE_BUILD_DIR}" 1 "${ANALYZE_ARGS[@]}"
-			echo $? > "${PARALLEL_TMPDIR}/analyze_exit"
-		) &
-		ANALYZE_PID=$!
+		invoke_configure_and_build "MSVC /analyze" "${ANALYZE_BUILD_DIR}" 1 "${ANALYZE_ARGS[@]}"
 	fi
 else
-	# 非 Windows：只有 Debug 构建（不需要并行）
 	invoke_configure_and_build "Debug CRT" "${DEBUG_BUILD_DIR}" 1 \
 		"${CM_CMD}" -G Ninja -S . -B "${DEBUG_BUILD_DIR}" \
 		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 		-DQM_STRICT_WARNINGS=ON
 fi
 
-# 等待 Debug 构建完成
-if [[ -n "${DEBUG_PID:-}" ]]; then
-	wait "${DEBUG_PID}"
-	DEBUG_EXIT=$(cat "${PARALLEL_TMPDIR}/debug_exit" 2>/dev/null || echo 1)
-	if [[ "${DEBUG_EXIT}" != "0" ]]; then
-		add_result "FAIL" "Debug CRT 构建" "Debug CRT 构建失败，退出码 ${DEBUG_EXIT}"
-	else
-		add_result "PASS" "Debug CRT 构建" "Debug CRT 构建通过（并行执行）"
-	fi
-fi
-
-# 等待 /analyze 构建完成
-if [[ -n "${ANALYZE_PID:-}" ]]; then
-	wait "${ANALYZE_PID}"
-	ANALYZE_EXIT=$(cat "${PARALLEL_TMPDIR}/analyze_exit" 2>/dev/null || echo 1)
-	if [[ "${ANALYZE_EXIT}" != "0" ]]; then
-		add_result "FAIL" "MSVC /analyze 构建" "MSVC /analyze 构建失败，退出码 ${ANALYZE_EXIT}"
-	else
-		add_result "PASS" "MSVC /analyze 构建" "MSVC /analyze 构建通过（并行执行）"
-	fi
-elif [[ ${SKIP_ANALYZE} -eq 1 ]]; then
+if [[ ${SKIP_ANALYZE} -eq 1 ]]; then
 	add_result "WARN" "MSVC /analyze" "已显式传入 --skip-analyze，跳过 /analyze 阶段"
 elif [[ "${CM_CMD}" != "cmd.exe" ]]; then
 	mark_degraded "MSVC /analyze" "当前不是 Windows/MSVC 环境，bash 版本不会伪造 /analyze；该阶段已按设计降级跳过"
 fi
-
-rm -rf "${PARALLEL_TMPDIR}"
 
 if [[ ${SKIP_TIDY} -eq 1 ]]; then
 	add_result "WARN" "clang-tidy" "已显式传入 --skip-tidy，跳过 tidy 阶段"
@@ -779,15 +740,18 @@ CLANG_TIDY_FILES=()
 for file in "${INPUT_FILES[@]}"; do
 	[[ -z "${file}" ]] && continue
 	file="$(normalize_input_file_arg "${file}")"
+	if [[ ! "${file}" =~ \.(c|cc|cpp)$ ]]; then
+		continue
+	fi
 	if [[ -f "${file}" ]]; then
 		CLANG_TIDY_FILES+=("${file}")
 	elif [[ -f "${REPO_ROOT}/${file}" ]]; then
 		CLANG_TIDY_FILES+=("${REPO_ROOT}/${file}")
 	fi
 done
-mapfile -t EFFECTIVE_FILES < <(printf '%s\n' "${CLANG_TIDY_FILES[@]}" | unique_lines)
+mapfile -t CLANG_TIDY_FILES < <(printf '%s\n' "${CLANG_TIDY_FILES[@]}" | unique_lines)
 
-if [[ ${#EFFECTIVE_FILES[@]} -eq 0 ]]; then
+if [[ ${#CLANG_TIDY_FILES[@]} -eq 0 ]]; then
 	write_section "clang-tidy"
 	printf '没有可供 clang-tidy 检查的 C/C++ 文件。\n'
 	add_result "WARN" "clang-tidy" "当前没有可检查的 C/C++ 文件，tidy 阶段已跳过"
@@ -796,9 +760,9 @@ if [[ ${#EFFECTIVE_FILES[@]} -eq 0 ]]; then
 fi
 
 	TIDY_CHECKS="-*,bugprone-assignment-in-if-condition,bugprone-dangling-handle,bugprone-inaccurate-erase,bugprone-misplaced-widening-cast,bugprone-stringview-nullptr,bugprone-suspicious-enum-usage,bugprone-unchecked-optional-access,bugprone-use-after-move,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-nullability.*,modernize-use-override,performance-for-range-copy,performance-unnecessary-copy-initialization"
-add_result "INFO" "clang-tidy 范围" "将对 ${#EFFECTIVE_FILES[@]} 个文件执行严格 tidy 检查"
+add_result "INFO" "clang-tidy 范围" "将对 ${#CLANG_TIDY_FILES[@]} 个源文件执行严格 tidy 检查"
 
-for file in "${EFFECTIVE_FILES[@]}"; do
+for file in "${CLANG_TIDY_FILES[@]}"; do
 	invoke_repo_command "clang-tidy 严格检查: ${file}" 1 \
 		clang-tidy "${file}" "-p=${DEBUG_BUILD_DIR}" \
 		"--checks=${TIDY_CHECKS}" \

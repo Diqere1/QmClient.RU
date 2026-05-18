@@ -1813,6 +1813,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const float GapWidth = std::clamp(6.0f * UiScale, 3.0f, 6.0f);
 		const float SuffixWidth = pSuffix[0] != '\0' ? std::clamp(18.0f * UiScale, 14.0f, 20.0f) : 0.0f;
 		const float MinSliderWidth = std::clamp(46.0f * UiScale, 36.0f, 46.0f);
+		bool HasSuffixRect = false;
 		if(ControlColumn.w > InputWidth + GapWidth + SuffixWidth + MinSliderWidth)
 		{
 			if(SuffixWidth > 0.0f)
@@ -1820,6 +1821,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				ControlColumn.VSplitRight(InputWidth + GapWidth + SuffixWidth, &SliderRect, &InputRect);
 				InputRect.VSplitRight(SuffixWidth, &InputRect, &SuffixRect);
 				InputRect.VSplitRight(GapWidth, &InputRect, nullptr);
+				HasSuffixRect = true;
 			}
 			else
 			{
@@ -1843,7 +1845,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		Props.m_SelectAllOnActivate = false;
 		const auto Result = Ui()->DoValueSelectorWithState(pId, &InputRect, "", *pValue, MinValue, MaxValue, Props);
 		*pValue = (int)Result.m_Value;
-		if(SuffixWidth > 0.0f)
+		if(HasSuffixRect)
 			Ui()->DoLabel(&SuffixRect, pSuffix, SuffixRect.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
 	};
 
