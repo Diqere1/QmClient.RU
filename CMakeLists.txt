@@ -2344,6 +2344,7 @@ set(ENGINE_EXTERNAL_RNNOISE
   src/engine/external/rnnoise/src/x86/x86_arch_macros.h
   src/engine/external/rnnoise/src/x86/x86cpu.h
 )
+set_source_files_properties(src/engine/external/rnnoise/src/rnnoise_data.c PROPERTIES COMPILE_DEFINITIONS DISABLE_DEBUG_FLOAT)
 list(APPEND ENGINE_EXTERNAL ${ENGINE_EXTERNAL_RNNOISE})
 
 # ChaiScript for tclient
@@ -4063,9 +4064,9 @@ foreach(target ${TARGETS})
     # Enable Edit & Continue (Hot Reload) support
     if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
       if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT ProgramDatabase)
+        set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>")
       else()
-        set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT $<IF:$<CONFIG:Debug>,EditAndContinue,Embedded>)
+        set_property(TARGET ${target} PROPERTY MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug>:EditAndContinue>$<$<CONFIG:RelWithDebInfo>:ProgramDatabase>")
       endif()
       target_link_options(${target} PRIVATE $<$<CONFIG:Debug>:/INCREMENTAL>)
     endif()
