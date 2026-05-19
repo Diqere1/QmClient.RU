@@ -172,9 +172,7 @@ namespace
 {
 	float EffectiveFastInputOffsetTicks(const CGameClient *pGameClient)
 	{
-		(void)pGameClient;
-
-		if(!g_Config.m_TcFastInput)
+		if(!pGameClient->TClientComponent().IsFastInputActive())
 			return 0.0f;
 		if(g_Config.m_TcFastInputAmount <= 0)
 			return 0.0f;
@@ -188,9 +186,9 @@ namespace
 		return (int)std::ceil(OffsetTicks);
 	}
 
-	bool EffectiveFastInputOthers()
+	bool EffectiveFastInputOthers(const CGameClient *pGameClient)
 	{
-		return g_Config.m_TcFastInputOthers != 0;
+		return pGameClient->TClientComponent().IsFastInputOthersActive();
 	}
 
 } // namespace
@@ -623,6 +621,11 @@ void CGameClient::OnInit()
 	const char *pLoadingMessageComponents = Localize("Initializing components");
 	const char *pLoadingMessageComponentsSpecial = Localize("Why are you slowmo replaying to read this?");
 	char aLoadingMessage[256];
+
+	int LoadingTotal = g_pData->m_NumImages + ComponentCount();
+	if(!g_Config.m_ClThreadsoundloading)
+		LoadingTotal += g_pData->m_NumSounds;
+	m_Menus.StartLoading(LoadingTotal);
 
 	// init all components
 	int SkippedComps = 1;
@@ -2262,14 +2265,14 @@ void CGameClient::ProcessEvents()
 		else if(Item.m_Type == NETEVENTTYPE_SOUNDWORLD)
 		{
 			const CNetEvent_SoundWorld *pEvent = (const CNetEvent_SoundWorld *)Item.m_pData;
-			if(!Config()->m_SndGame)
-				continue;
-
 			if(Client()->IsSixup() && pEvent->m_SoundId == SOUND_PLAYER_AIRJUMP)
 			{
 				m_Effects.AirJump(vec2(pEvent->m_X, pEvent->m_Y), Alpha, Volume);
 				continue;
 			}
+
+			if(!Config()->m_SndGame)
+				continue;
 
 			if(m_GameInfo.m_RaceSounds && ((pEvent->m_SoundId == SOUND_GUN_FIRE && !g_Config.m_SndGun) || (pEvent->m_SoundId == SOUND_PLAYER_PAIN_LONG && !g_Config.m_SndLongPain)))
 				continue;
@@ -3738,7 +3741,7 @@ void CGameClient::OnPredict()
 	// prediction actually happens here
 
 	const int FastInputTicks = GetFastInputPredictionTicks();
-	const bool FastInputOthers = EffectiveFastInputOthers();
+	const bool FastInputOthers = EffectiveFastInputOthers(this);
 
 	int FinalTickRegular = Client()->PredGameTick(g_Config.m_ClDummy); // The vanilla final tick disregarding fast input
 	int FinalTickSelf = FinalTickRegular + FastInputTicks; // the final tick for just our local tee
@@ -3787,7 +3790,7 @@ void CGameClient::OnPredict()
 		CNetObj_PlayerInput DummyFastInput = {};
 		bool DummyFirst = pInputData && pDummyInputData && pDummyChar->GetCid() < pLocalChar->GetCid();
 
-		if(g_Config.m_TcFastInput && Tick > FinalTickRegular)
+		if(m_TClient.IsFastInputActive() && Tick > FinalTickRegular)
 		{
 			pInputData = &m_Controls.m_aFastInput[LocalTee];
 			if(GetDummyFastInput(DummyFastInput, pDummyInputData, pDummyChar, LocalTee, DummyTee))
@@ -5294,12 +5297,12 @@ void CGameClient::UpdateRenderedCharacters()
 
 			if(IsPracticeParticipant)
 			{
-				if(g_Config.m_TcFastInput && (i == m_Snap.m_LocalClientId || g_Config.m_TcFastInputOthers))
+				if(m_TClient.IsFastInputActive() && (i == m_Snap.m_LocalClientId || m_TClient.IsFastInputOthersActive()))
 					Pos = GetFastInputPos(i);
 			}
 			else if(g_Config.m_TcRemoveAnti)
 				Pos = GetFreezePos(i);
-			else if(g_Config.m_TcFastInput && (i == m_Snap.m_LocalClientId || (PredictDummy() && i == m_aLocalIds[!g_Config.m_ClDummy])))
+			else if(m_TClient.IsFastInputActive() && (i == m_Snap.m_LocalClientId || (PredictDummy() && i == m_aLocalIds[!g_Config.m_ClDummy])))
 			{
 				Pos = GetFastInputPos(i);
 			}
@@ -5328,7 +5331,7 @@ void CGameClient::UpdateRenderedCharacters()
 
 				if(g_Config.m_TcRemoveAnti && m_pClient->m_IsLocalFrozen)
 					Pos = GetFreezePos(i);
-				else if(g_Config.m_TcFastInput && g_Config.m_TcFastInputOthers && !g_Config.m_TcAntiPingImproved)
+				else if(m_TClient.IsFastInputActive() && m_TClient.IsFastInputOthersActive() && !g_Config.m_TcAntiPingImproved)
 					Pos = GetFastInputPos(i);
 
 				if(g_Config.m_TcShowOthersGhosts && g_Config.m_TcSwapGhosts && !(m_aClients[i].m_FreezeEnd > 0 && g_Config.m_TcHideFrozenGhosts))
@@ -5430,7 +5433,7 @@ void CGameClient::DetectStrongHook()
 
 vec2 CGameClient::GetSmoothPos(int ClientId)
 {
-	const int FastInputTicks = g_Config.m_TcFastInput ? (g_Config.m_TcFastInputAmount + 19) / 20 : 0;
+	const int FastInputTicks = m_TClient.IsFastInputActive() ? (g_Config.m_TcFastInputAmount + 19) / 20 : 0;
 	vec2 Pos = mix(m_aClients[ClientId].m_PrevPredicted.m_Pos, m_aClients[ClientId].m_Predicted.m_Pos, Client()->PredIntraGameTick(g_Config.m_ClDummy));
 	int64_t Now = time_get();
 	for(int i = 0; i < 2; i++)
@@ -5444,7 +5447,7 @@ vec2 CGameClient::GetSmoothPos(int ClientId)
 			float SmoothIntra;
 			Client()->GetSmoothTick(&SmoothTick, &SmoothIntra, MixAmount);
 
-			if(ClientId != m_Snap.m_LocalClientId && g_Config.m_TcFastInputOthers && FastInputTicks > 0)
+			if(ClientId != m_Snap.m_LocalClientId && m_TClient.IsFastInputOthersActive() && FastInputTicks > 0)
 				SmoothTick += FastInputTicks;
 
 			if(SmoothTick > 0 &&
@@ -5458,7 +5461,7 @@ vec2 CGameClient::GetSmoothPos(int ClientId)
 
 int CGameClient::GetFastInputPredictionAmountMs()
 {
-	if(!g_Config.m_TcFastInput)
+	if(!m_TClient.IsFastInputActive())
 		return 0;
 	return std::max(0, g_Config.m_TcFastInputAmount);
 }
@@ -5554,12 +5557,12 @@ vec2 CGameClient::GetFreezePos(int ClientId)
 	FastInputTicks += CarryOverTicks;
 
 	const bool IsLocal = ClientId == m_Snap.m_LocalClientId || (PredictDummy() && ClientId == m_aLocalIds[!g_Config.m_ClDummy]);
-	if(IsLocal && g_Config.m_TcFastInput)
+	if(IsLocal && m_TClient.IsFastInputActive())
 	{
 		SmoothTick += FastInputTicks;
 		SmoothIntra = FinalIntra;
 	}
-	else if(!IsLocal && g_Config.m_TcFastInputOthers && g_Config.m_TcFastInput)
+	else if(!IsLocal && m_TClient.IsFastInputOthersActive() && m_TClient.IsFastInputActive())
 	{
 		SmoothTick += FastInputTicks;
 		SmoothIntra = FinalIntra;
@@ -6996,6 +6999,11 @@ void CGameClient::StoreSave(const char *pTeamMembers, const char *pGeneratedCode
 bool CGameClient::CheckNewInput()
 {
 	return m_Controls.CheckNewInput();
+}
+
+bool CGameClient::IsFastInputActive() const
+{
+	return m_TClient.IsFastInputActive();
 }
 
 void CGameClient::SetConnectInfo(const NETADDR *pAddress)

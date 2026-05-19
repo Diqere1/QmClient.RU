@@ -1160,6 +1160,7 @@ public:
 	int m_SmoothTick = 0;
 	float m_SmoothIntraTick = 0;
 	bool CheckNewInput() override;
+	bool IsFastInputActive() const override;
 	void RequestPredictionRefresh() { RequestPredictionRefreshAfterConfigChange(); }
 	std::optional<CServerInfo> m_ConnectServerInfo = std::nullopt;
 	void SetConnectInfo(const NETADDR *pAddress) override;

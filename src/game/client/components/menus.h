@@ -1524,6 +1524,7 @@ public:
 	CMenus();
 	int Sizeof() const override { return sizeof(*this); }
 
+	void StartLoading(int Total);
 	void RenderLoading(const char *pCaption, const char *pContent, int IncreaseCounter);
 	void FinishLoading();
 

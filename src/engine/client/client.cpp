@@ -3106,7 +3106,7 @@ void CClient::Update()
 					SendInput();
 				}
 
-				if(g_Config.m_TcFastInput && GameClient()->CheckNewInput())
+				if(GameClient()->IsFastInputActive() && GameClient()->CheckNewInput())
 				{
 					Repredict = true;
 				}

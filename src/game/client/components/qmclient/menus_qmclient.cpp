@@ -3157,7 +3157,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
 				}
 
-				if(g_Config.m_QmGores)
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresAutoEnable, Localize("Gores 模式下自动启用"), &g_Config.m_QmGoresAutoEnable, &Row, LG_LineHeight);
+				CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
+
+				if(g_Config.m_QmGores || g_Config.m_QmGoresAutoEnable)
 				{
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresFastInput, Localize("Auto-toggle fast input"), &g_Config.m_QmGoresFastInput, &Row, LG_LineHeight);
@@ -3170,10 +3174,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresDisableIfWeapons, Localize("拾取其他武器后禁用"), &g_Config.m_QmGoresDisableIfWeapons, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresAutoEnable, Localize("Gores 模式下自动启用"), &g_Config.m_QmGoresAutoEnable, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmGoresHideGuides, Localize("隐藏辅助线"), &g_Config.m_QmGoresHideGuides, &Row, LG_LineHeight);
@@ -3232,40 +3232,50 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusMode, Localize("启用禅模式"), &g_Config.m_QmFocusMode, &Row, LG_LineHeight);
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
-				if(g_Config.m_QmFocusMode)
-				{
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusModeHideHud, Localize("隐藏 HUD"), &g_Config.m_QmFocusModeHideHud, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+				CUIRect LeftColumn, RightColumn;
+				CardContent.VSplitMid(&LeftColumn, &RightColumn, LG_CardPadding);
 
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusModeHideUI, Localize("隐藏不必要的 UI"), &g_Config.m_QmFocusModeHideUI, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+				auto DoFocusSectionLabel = [&](CUIRect &Target, const char *pLabel) {
+					Target.HSplitTop(LG_LineHeight * 0.72f, &Row, &Target);
+					TextRender()->TextColor(ColorRGBA(0.72f, 0.72f, 0.78f, 0.86f));
+					Ui()->DoLabel(&Row, Localize(pLabel), LG_BodySize * 0.82f, TEXTALIGN_ML);
+					TextRender()->TextColor(TextRender()->DefaultTextColor());
+					Target.HSplitTop(LG_LineSpacing * 0.45f, nullptr, &Target);
+				};
+				auto DoFocusCheckbox = [&](CUIRect &Target, int *pConfig, const char *pLabel) {
+					Target.HSplitTop(LG_LineHeight, &Row, &Target);
+					DoButton_CheckBoxAutoVMarginAndSet(pConfig, Localize(pLabel), pConfig, &Row, LG_LineHeight);
+					Target.HSplitTop(LG_LineSpacing, nullptr, &Target);
+				};
 
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusModeHideNames, Localize("隐藏玩家姓名"), &g_Config.m_QmFocusModeHideNames, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+				DoFocusSectionLabel(LeftColumn, "界面");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideHud, "隐藏 HUD");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideMapProgress, "隐藏地图进度");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideInfoMessages, "隐藏击杀/完成");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideScoreboard, "隐藏记分板");
 
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusModeHideOverheadIndicators, Localize("隐藏方向和辅助线"), &g_Config.m_QmFocusModeHideOverheadIndicators, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+				DoFocusSectionLabel(LeftColumn, "玩家");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideNames, "隐藏玩家身份");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideDirectionIndicators, "隐藏方向");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideGuideLines, "隐藏辅助线");
 
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusModeHideEffects, Localize("隐藏视觉效果"), &g_Config.m_QmFocusModeHideEffects, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+				DoFocusSectionLabel(LeftColumn, "视觉");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideJumpEffects, "隐藏跳跃特效");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideKillEffects, "隐藏自杀特效");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideExplosionEffects, "隐藏炮击特效");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideFreezeEffects, "隐藏冻结特效");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideHammerEffects, "隐藏锤击特效");
 
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusModeHideChat, Localize("隐藏聊天"), &g_Config.m_QmFocusModeHideChat, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+				DoFocusSectionLabel(RightColumn, "声音");
+				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeMuteJumpSounds, "静音跳跃");
+				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeMuteHammerSounds, "静音锤击");
 
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusModeHideEcho, Localize("Hide Echo Messages"), &g_Config.m_QmFocusModeHideEcho, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFocusModeHideScoreboard, Localize("隐藏记分板"), &g_Config.m_QmFocusModeHideScoreboard, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
-				}
+				DoFocusSectionLabel(RightColumn, "聊天");
+				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeHideChat, "隐藏玩家消息");
+				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeHideSystemMessages, "隐藏系统消息");
+				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeHideEcho, "隐藏 Echo 消息");
+				CardContent.y = std::max(LeftColumn.y, RightColumn.y);
+				CardContent.HSplitTop(LG_LineSpacing * 0.7f, nullptr, &CardContent);
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				{
