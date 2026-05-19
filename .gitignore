@@ -7,6 +7,19 @@ data/
 dyl/
 docs/dyl
 !docs/dyl/QmClient_docs
+
+# Agent workspace files
+AGENTS.md
+Agent.md
+Agents.md
+CLAUDE.md
+Claude.md
+CODEX.md
+Codex.md
+docs/superpowers/
+.ai
+.agents/
+.codex/
 .superpowers
 .trae
 .claude
