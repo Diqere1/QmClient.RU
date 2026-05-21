@@ -10,6 +10,9 @@
 #include <generated/client_data7.h>
 #include <generated/protocol.h>
 
+#include <game/client/QmUi/QmAnim.h>
+#include <game/client/QmUi/QmLayout.h>
+#include <game/client/QmUi/QmLegacy.h>
 #include <game/client/animstate.h>
 #include <game/client/components/countryflags.h>
 #include <game/client/components/motd.h>
@@ -17,9 +20,6 @@
 #include <game/client/components/qmclient/modes.h>
 #include <game/client/components/statboard.h>
 #include <game/client/gameclient.h>
-#include <game/client/QmUi/QmAnim.h>
-#include <game/client/QmUi/QmLayout.h>
-#include <game/client/QmUi/QmLegacy.h>
 #include <game/client/ui.h>
 #include <game/localization.h>
 
@@ -31,63 +31,63 @@
 
 namespace
 {
-float ResolveAnimatedValue(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, EUiAnimProperty Property, float Target, float &LastTarget, float DurationSec)
-{
-	constexpr float Epsilon = 0.001f;
-	const float Current = AnimRuntime.GetValue(NodeKey, Property, Target);
-	const bool TargetChanged = std::abs(Target - LastTarget) > Epsilon;
-	const bool NeedsSync = !AnimRuntime.HasActiveAnimation(NodeKey, Property) && std::abs(Target - Current) > Epsilon;
-
-	if(TargetChanged || NeedsSync)
+	float ResolveAnimatedValue(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, EUiAnimProperty Property, float Target, float &LastTarget, float DurationSec)
 	{
-		SUiAnimRequest Request;
-		Request.m_NodeKey = NodeKey;
-		Request.m_Property = Property;
-		Request.m_Target = Target;
-		Request.m_Transition.m_DurationSec = DurationSec;
-		Request.m_Transition.m_DelaySec = 0.0f;
-		Request.m_Transition.m_Priority = 1;
-		Request.m_Transition.m_Interrupt = EUiAnimInterruptPolicy::MERGE_TARGET;
-		Request.m_Transition.m_Easing = EEasing::EASE_OUT;
-		AnimRuntime.RequestAnimation(Request);
-		LastTarget = Target;
+		constexpr float Epsilon = 0.001f;
+		const float Current = AnimRuntime.GetValue(NodeKey, Property, Target);
+		const bool TargetChanged = std::abs(Target - LastTarget) > Epsilon;
+		const bool NeedsSync = !AnimRuntime.HasActiveAnimation(NodeKey, Property) && std::abs(Target - Current) > Epsilon;
+
+		if(TargetChanged || NeedsSync)
+		{
+			SUiAnimRequest Request;
+			Request.m_NodeKey = NodeKey;
+			Request.m_Property = Property;
+			Request.m_Target = Target;
+			Request.m_Transition.m_DurationSec = DurationSec;
+			Request.m_Transition.m_DelaySec = 0.0f;
+			Request.m_Transition.m_Priority = 1;
+			Request.m_Transition.m_Interrupt = EUiAnimInterruptPolicy::MERGE_TARGET;
+			Request.m_Transition.m_Easing = EEasing::EASE_OUT;
+			AnimRuntime.RequestAnimation(Request);
+			LastTarget = Target;
+		}
+
+		return AnimRuntime.GetValue(NodeKey, Property, Target);
 	}
 
-	return AnimRuntime.GetValue(NodeKey, Property, Target);
-}
+	uint64_t SoundMuteButtonNodeKey(int Index)
+	{
+		static constexpr uint64_t NodeBase = 0x73636F72655F6D00ULL; // "score_m"
+		return NodeBase + static_cast<uint64_t>(Index);
+	}
 
-uint64_t SoundMuteButtonNodeKey(int Index)
-{
-	static constexpr uint64_t NodeBase = 0x73636F72655F6D00ULL; // "score_m"
-	return NodeBase + static_cast<uint64_t>(Index);
-}
+	uint64_t SoundMuteInfoNodeKey()
+	{
+		static constexpr uint64_t NodeKey = 0x73636F72655F694EULL; // "score_iN"
+		return NodeKey;
+	}
 
-uint64_t SoundMuteInfoNodeKey()
-{
-	static constexpr uint64_t NodeKey = 0x73636F72655F694EULL; // "score_iN"
-	return NodeKey;
-}
+	struct SSoundMuteButtonDef
+	{
+		int CConfig::*m_pConfig;
+		const char *m_pIcon;
+		const char *m_pTitle;
+		const char *m_pDescription;
+	};
 
-struct SSoundMuteButtonDef
-{
-	int *m_pConfig;
-	const char *m_pIcon;
-	const char *m_pTitle;
-	const char *m_pDescription;
-};
-
-static const SSoundMuteButtonDef gs_aSoundMuteButtonDefs[] = {
-	{&g_Config.m_ClSndMuteWeapon, FontIcons::FONT_ICON_CIRCLE, "武器音效", "屏蔽主要武器发射与命中相关声音。"},
-	{&g_Config.m_ClSndMuteWeaponSwitch, FontIcons::FONT_ICON_ARROWS_LEFT_RIGHT, "武器切换音效", "屏蔽武器切换及相关切换提示音。"},
-	{&g_Config.m_ClSndMuteWeaponNoAmmo, FontIcons::FONT_ICON_TRIANGLE_EXCLAMATION, "无弹药提示音", "屏蔽武器无弹药时的提示音。"},
-	{&g_Config.m_ClSndMuteHook, FontIcons::FONT_ICON_ARROWS_ROTATE, "钩子音效", "屏蔽钩子发射、收回等相关声音。"},
-	{&g_Config.m_ClSndMuteMovement, FontIcons::FONT_ICON_ARROWS_UP_DOWN, "移动音效", "屏蔽行走与跳跃等移动相关声音。"},
-	{&g_Config.m_ClSndMutePlayerState, FontIcons::FONT_ICON_HEART_CRACK, "玩家状态音效", "屏蔽玩家状态变化相关声音。"},
-	{&g_Config.m_ClSndMutePickup, FontIcons::FONT_ICON_SQUARE_PLUS, "拾取音效", "屏蔽道具与武器拾取相关声音。"},
-	{&g_Config.m_ClSndMuteFlag, FontIcons::FONT_ICON_FLAG_CHECKERED, "旗帜音效", "屏蔽 CTF 旗帜事件相关声音。"},
-	{&g_Config.m_ClSndMuteMapSound, FontIcons::FONT_ICON_MAP, "地图音效", "屏蔽地图环境与脚本触发音效。"},
-};
-static_assert((sizeof(gs_aSoundMuteButtonDefs) / sizeof(gs_aSoundMuteButtonDefs[0])) == 9, "Sound mute button count mismatch");
+	static const SSoundMuteButtonDef gs_aSoundMuteButtonDefs[] = {
+		{&CConfig::m_ClSndMuteWeapon, FontIcons::FONT_ICON_CIRCLE, "武器音效", "屏蔽主要武器发射与命中相关声音。"},
+		{&CConfig::m_ClSndMuteWeaponSwitch, FontIcons::FONT_ICON_ARROWS_LEFT_RIGHT, "武器切换音效", "屏蔽武器切换及相关切换提示音。"},
+		{&CConfig::m_ClSndMuteWeaponNoAmmo, FontIcons::FONT_ICON_TRIANGLE_EXCLAMATION, "无弹药提示音", "屏蔽武器无弹药时的提示音。"},
+		{&CConfig::m_ClSndMuteHook, FontIcons::FONT_ICON_ARROWS_ROTATE, "钩子音效", "屏蔽钩子发射、收回等相关声音。"},
+		{&CConfig::m_ClSndMuteMovement, FontIcons::FONT_ICON_ARROWS_UP_DOWN, "移动音效", "屏蔽行走与跳跃等移动相关声音。"},
+		{&CConfig::m_ClSndMutePlayerState, FontIcons::FONT_ICON_HEART_CRACK, "玩家状态音效", "屏蔽玩家状态变化相关声音。"},
+		{&CConfig::m_ClSndMutePickup, FontIcons::FONT_ICON_SQUARE_PLUS, "拾取音效", "屏蔽道具与武器拾取相关声音。"},
+		{&CConfig::m_ClSndMuteFlag, FontIcons::FONT_ICON_FLAG_CHECKERED, "旗帜音效", "屏蔽 CTF 旗帜事件相关声音。"},
+		{&CConfig::m_ClSndMuteMapSound, FontIcons::FONT_ICON_MAP, "地图音效", "屏蔽地图环境与脚本触发音效。"},
+	};
+	static_assert((sizeof(gs_aSoundMuteButtonDefs) / sizeof(gs_aSoundMuteButtonDefs[0])) == 9, "Sound mute button count mismatch");
 }
 
 CScoreboard::CScoreboard()
@@ -702,14 +702,13 @@ void CScoreboard::RenderSoundMuteBar(CUIRect ScoreboardRect)
 		}
 
 		float Alpha = TargetAlpha;
-		float Scale = TargetScale;
 		float OffsetX = TargetOffsetX;
 		float YOffset = TargetYOffset;
 		if(pAnimRuntime != nullptr)
 		{
 			const uint64_t NodeKey = SoundMuteButtonNodeKey(i);
 			Alpha = ResolveAnimatedValue(*pAnimRuntime, NodeKey, EUiAnimProperty::ALPHA, TargetAlpha, m_SoundMuteButtonAnimState.m_aTargetAlpha[i], 0.12f);
-			Scale = ResolveAnimatedValue(*pAnimRuntime, NodeKey, EUiAnimProperty::SCALE, TargetScale, m_SoundMuteButtonAnimState.m_aTargetScale[i], 0.12f);
+			ResolveAnimatedValue(*pAnimRuntime, NodeKey, EUiAnimProperty::SCALE, TargetScale, m_SoundMuteButtonAnimState.m_aTargetScale[i], 0.12f);
 			OffsetX = ResolveAnimatedValue(*pAnimRuntime, NodeKey, EUiAnimProperty::POS_X, TargetOffsetX, m_SoundMuteButtonAnimState.m_aTargetOffsetX[i], 0.12f);
 			YOffset = ResolveAnimatedValue(*pAnimRuntime, NodeKey, EUiAnimProperty::POS_Y, TargetYOffset, m_SoundMuteButtonAnimState.m_aTargetReveal[i], 0.12f);
 		}
@@ -722,8 +721,7 @@ void CScoreboard::RenderSoundMuteBar(CUIRect ScoreboardRect)
 		}
 
 		Alpha = std::clamp(Alpha, 0.0f, 1.0f);
-		Scale = 1.0f;
-		if(Alpha <= 0.01f || Scale <= 0.01f)
+		if(Alpha <= 0.01f)
 			continue;
 
 		CUIRect Button = {ColumnX, ColumnY + i * (ButtonSize + Gap), ButtonSize, ButtonSize};
@@ -738,14 +736,14 @@ void CScoreboard::RenderSoundMuteBar(CUIRect ScoreboardRect)
 
 		aAnimatedRects[i] = Button;
 
-		const bool Active = *gs_aSoundMuteButtonDefs[i].m_pConfig != 0;
+		const bool Active = g_Config.*gs_aSoundMuteButtonDefs[i].m_pConfig != 0;
 		const bool Clickable = IsNearest;
 		const float RenderAlpha = Alpha * ContentAlpha;
 		const ColorRGBA ButtonColor = Active ?
 						      ColorRGBA(1.0f, 0.32f, 0.32f, 0.95f * RenderAlpha) :
 						      ColorRGBA(0.82f, 0.88f, 0.96f, 0.45f * RenderAlpha);
 		if(Ui()->DoButton_FontIcon(&s_aButtons[i], gs_aSoundMuteButtonDefs[i].m_pIcon, 0, &Button, BUTTONFLAG_LEFT, IGraphics::CORNER_ALL, true, ButtonColor) && Clickable)
-			*gs_aSoundMuteButtonDefs[i].m_pConfig ^= 1;
+			g_Config.*gs_aSoundMuteButtonDefs[i].m_pConfig ^= 1;
 		RestoreTextColors();
 
 		if(Clickable && Ui()->HotItem() == &s_aButtons[i])
@@ -1031,7 +1029,7 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
 						else if(CurrentDDTeamSize <= 1)
 							str_format(aBuf, sizeof(aBuf), "%d", DDTeam);
 						else
-						 str_format(aBuf, sizeof(aBuf), Localize("%d\n(%d/%d)", "Team and size"), DDTeam, CurrentDDTeamSize, MaxTeamSize);
+							str_format(aBuf, sizeof(aBuf), Localize("%d\n(%d/%d)", "Team and size"), DDTeam, CurrentDDTeamSize, MaxTeamSize);
 						TextRender()->Text(State.m_TeamStartX, maximum(State.m_TeamStartY + Row.h / 2.0f - TeamFontSize, State.m_TeamStartY + 1.5f /* padding top */), TeamFontSize, aBuf);
 					}
 					else
@@ -1313,7 +1311,7 @@ void CScoreboard::RenderRecordingNotification(float x)
 			str_time((int64_t)GameClient()->DemoRecorder(Recorder)->Length() * 100, TIME_HOURS, aTime, sizeof(aTime));
 			str_append(aBuf, pName);
 			str_append(aBuf, " ");
-		 str_append(aBuf, aTime);
+			str_append(aBuf, aTime);
 			str_append(aBuf, "  ");
 		}
 	};
@@ -1363,8 +1361,6 @@ void CScoreboard::OnRender()
 
 	if(ShouldHideFocusScoreboard(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideScoreboard != 0))
 		return;
-
-
 
 	// 当记分板可见时（骗你的,不可见也查），为所有活跃玩家触发查询点
 	if(g_Config.m_QmScoreboardPoints || g_Config.m_QmScoreboardSortMode)

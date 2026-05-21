@@ -295,6 +295,7 @@ bool CSkins::IsVanillaSkin(const char *pName)
 	});
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CSkinScanUser
 {
 public:

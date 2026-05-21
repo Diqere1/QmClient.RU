@@ -7,26 +7,31 @@
 #include <engine/shared/ringbuffer.h>
 #include <engine/storage.h>
 
-class CAssertionLogger : public ILogger
+namespace
 {
-	struct SDebugMessageItem
+
+	class CAssertionLogger : public ILogger
 	{
-		char m_aMessage[1024];
+		struct SDebugMessageItem
+		{
+			char m_aMessage[1024];
+		};
+
+		CLock m_DbgMessageMutex;
+		CStaticRingBuffer<SDebugMessageItem, sizeof(SDebugMessageItem) * 64, CRingBufferBase::FLAG_RECYCLE> m_DbgMessages;
+
+		char m_aAssertLogPath[IO_MAX_PATH_LENGTH];
+		char m_aGameName[256];
+
+		void Dump() REQUIRES(!m_DbgMessageMutex);
+
+	public:
+		CAssertionLogger(const char *pAssertLogPath, const char *pGameName);
+		void Log(const CLogMessage *pMessage) override REQUIRES(!m_DbgMessageMutex);
+		void GlobalFinish() override REQUIRES(!m_DbgMessageMutex);
 	};
 
-	CLock m_DbgMessageMutex;
-	CStaticRingBuffer<SDebugMessageItem, sizeof(SDebugMessageItem) * 64, CRingBufferBase::FLAG_RECYCLE> m_DbgMessages;
-
-	char m_aAssertLogPath[IO_MAX_PATH_LENGTH];
-	char m_aGameName[256];
-
-	void Dump() REQUIRES(!m_DbgMessageMutex);
-
-public:
-	CAssertionLogger(const char *pAssertLogPath, const char *pGameName);
-	void Log(const CLogMessage *pMessage) override REQUIRES(!m_DbgMessageMutex);
-	void GlobalFinish() override REQUIRES(!m_DbgMessageMutex);
-};
+} // namespace
 
 void CAssertionLogger::Log(const CLogMessage *pMessage)
 {

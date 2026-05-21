@@ -41,13 +41,18 @@ void CByteBufferWriter::Write(const void *pData, size_t Size)
 	mem_copy(&m_vBuffer[WriteOffset], pData, Size);
 }
 
-class CUserErrorStruct
+namespace
 {
-public:
-	CByteBufferReader *m_pReader;
-	const char *m_pContextName;
-	std::jmp_buf m_JmpBuf;
-};
+
+	class CUserErrorStruct
+	{
+	public:
+		CByteBufferReader *m_pReader;
+		const char *m_pContextName;
+		std::jmp_buf m_JmpBuf;
+	};
+
+} // namespace
 
 [[noreturn]] static void PngErrorCallback(png_structp pPngStruct, png_const_charp pErrorMessage)
 {
@@ -433,7 +438,7 @@ bool CImageLoader::LoadWebP(CByteBufferReader &Reader, const char *pContextName,
 
 	// Use libwebp to decode WebP
 	int Width = 0, Height = 0;
-	
+
 	// First check if it's a valid WebP file and get dimensions
 	if(!WebPGetInfo(vData.data(), vData.size(), &Width, &Height))
 	{
@@ -493,7 +498,7 @@ bool CImageLoader::LoadWebP(CByteBufferReader &Reader, const char *pContextName,
 	static constexpr uint8_t WEBP_RIFF[] = {'R', 'I', 'F', 'F'};
 	static constexpr uint8_t WEBP_WEBP[] = {'W', 'E', 'B', 'P'};
 	const bool IsWebP = mem_comp(aHeader.data(), WEBP_RIFF, std::size(WEBP_RIFF)) == 0 &&
-		mem_comp(aHeader.data() + 8, WEBP_WEBP, std::size(WEBP_WEBP)) == 0;
+			    mem_comp(aHeader.data() + 8, WEBP_WEBP, std::size(WEBP_WEBP)) == 0;
 	if(IsWebP)
 	{
 		log_error("webp", "cannot load '%s': client was built without libwebp support", pContextName);

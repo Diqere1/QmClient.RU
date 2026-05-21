@@ -230,4 +230,4 @@ JSON 报告当前至少应包含：
 
 - `qmclient_scripts/gate/strict-debug-check.sh` 现在是严格子入口的统一规范源
 - `clang-format` 与 `fix_style.py` 的职责边界还需要长期观察，不建议现在直接二选一
-- CI 应优先复用本脚本的模式定义和报告格式，而不是另起一套规则；当前入口为 `.github/workflows/governance.yml`
+- CI 应优先复用本脚本的模式定义和报告格式，而不是另起一套规则；当前 source hygiene 入口为 `.github/workflows/style.yml`，构建 / 测试 / 发布入口为 `.github/workflows/build.yml`

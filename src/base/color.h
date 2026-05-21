@@ -24,11 +24,17 @@ constexpr float RgbToHue(float r, float g, float b)
 	{
 		float c = h_max - h_min;
 		if(h_max == r)
+		{
 			hue = (g - b) / c + (g < b ? 6 : 0);
+		}
 		else if(h_max == g)
+		{
 			hue = (b - r) / c + 2;
+		}
 		else
+		{
 			hue = (r - g) / c + 4;
+		}
 	}
 
 	return hue / 6.0f;
@@ -101,7 +107,9 @@ public:
 	constexpr unsigned PackAlphaLast(bool Alpha = true) const
 	{
 		if(Alpha)
+		{
 			return ((unsigned)round_to_int(x * 255.0f) << 24) + ((unsigned)round_to_int(y * 255.0f) << 16) + ((unsigned)round_to_int(z * 255.0f) << 8) + (unsigned)round_to_int(a * 255.0f);
+		}
 		return ((unsigned)round_to_int(x * 255.0f) << 16) + ((unsigned)round_to_int(y * 255.0f) << 8) + (unsigned)round_to_int(z * 255.0f);
 	}
 
@@ -145,6 +153,7 @@ class ColorHSLA : public color4_base<ColorHSLA>
 {
 public:
 	using color4_base::color4_base;
+	using color4_base::Pack;
 	constexpr ColorHSLA() = default;
 
 	constexpr static const float DARKEST_LGT = 0.5f;
@@ -155,11 +164,6 @@ public:
 		ColorHSLA col = *this;
 		col.l = Darkest + col.l * (1.0f - Darkest);
 		return col;
-	}
-
-	constexpr unsigned Pack(bool Alpha = true) const
-	{
-		return color4_base::Pack(Alpha);
 	}
 
 	constexpr unsigned Pack(float Darkest, bool Alpha = false) const

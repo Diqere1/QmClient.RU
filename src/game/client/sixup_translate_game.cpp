@@ -26,7 +26,9 @@ static int GetStrTeam7(int Team, bool Teamplay)
 			return STR_TEAM_BLUE;
 	}
 	else if(Team == 0)
+	{
 		return STR_TEAM_GAME;
+	}
 
 	return STR_TEAM_SPECTATORS;
 }
@@ -46,6 +48,7 @@ enum
 	PARA_III,
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CGameMsg7
 {
 	int m_Action;

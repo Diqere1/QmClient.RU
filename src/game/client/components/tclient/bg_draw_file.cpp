@@ -1,9 +1,32 @@
 #include "bg_draw_file.h"
 
+#include <cstdlib>
 #include <cstring>
 
 #define MAX_LINE_LENGTH 256
 #define MAX_PARTS_PER_ITEM 4096
+
+namespace
+{
+	bool ParseFloat(char *&pCursor, float &Value, bool Required)
+	{
+		char *pEnd = nullptr;
+		const float Parsed = std::strtof(pCursor, &pEnd);
+		if(pEnd == pCursor)
+			return !Required;
+		Value = Parsed;
+		pCursor = pEnd;
+		if(*pCursor == ',')
+		{
+			++pCursor;
+		}
+		else if(*pCursor != '\0')
+		{
+			return false;
+		}
+		return true;
+	}
+}
 
 bool BgDrawFile::Write(const std::function<bool(const char *)> &WriteLine, const CBgDrawItemData &Data)
 {
@@ -31,12 +54,19 @@ bool BgDrawFile::Read(const std::function<bool(char *pBuf, int Length)> &ReadLin
 			return !Data.empty();
 		if(aBuf[0] == '#')
 			continue;
-		float x, y;
+		float x = 0.0f, y = 0.0f;
 		float w = 5.0f;
 		float r = 1.0f, g = 1.0f, b = 1.0f, a = 1.0f;
-		int Ret = std::sscanf(aBuf, "%f,%f,%f,%f,%f,%f,%f", &x, &y, &w, &r, &g, &b, &a);
-		if(Ret < 2)
+		char *pCursor = aBuf;
+		if(!ParseFloat(pCursor, x, true) || !ParseFloat(pCursor, y, true))
 			continue; // Need x and y
+		if(ParseFloat(pCursor, w, false) &&
+			ParseFloat(pCursor, r, false) &&
+			ParseFloat(pCursor, g, false) &&
+			ParseFloat(pCursor, b, false))
+		{
+			ParseFloat(pCursor, a, false);
+		}
 		Data.emplace_back(x, y, w, r, g, b, a);
 	}
 	return true;

@@ -20,6 +20,7 @@ MODE="default"
 ANALYZE_ALL=0
 SKIP_PREFLIGHT=0
 SKIP_CONFIG_CHECKS=0
+SKIP_WORKFLOW_DOCS=0
 SKIP_HEADER_CHECKS=0
 SKIP_STYLE_CHECK=0
 SKIP_STRICT_DEBUG=0
@@ -35,6 +36,7 @@ DRY_RUN=0
 EXPLAIN_SCOPE=0
 REPORT_JSON_PATH=""
 SCOPE_REPORT_PATH=""
+BRANCH_SCOPE_ONLY=0
 
 MODE_TARGET=""
 MODE_EXPECTATION=""
@@ -432,9 +434,11 @@ get_worktree_bucket() {
 ensure_scope_diagnostics() {
 	[[ ${SCOPE_DIAGNOSTICS_READY} -eq 0 ]] || return 0
 	mapfile -t SCOPE_BRANCH_FILES < <(get_branch_diff_files)
-	mapfile -t SCOPE_UNSTAGED_FILES < <(get_worktree_bucket unstaged)
-	mapfile -t SCOPE_STAGED_FILES < <(get_worktree_bucket staged)
-	mapfile -t SCOPE_UNTRACKED_FILES < <(get_worktree_bucket untracked)
+	if [[ ${BRANCH_SCOPE_ONLY} -eq 0 ]]; then
+		mapfile -t SCOPE_UNSTAGED_FILES < <(get_worktree_bucket unstaged)
+		mapfile -t SCOPE_STAGED_FILES < <(get_worktree_bucket staged)
+		mapfile -t SCOPE_UNTRACKED_FILES < <(get_worktree_bucket untracked)
+	fi
 
 	local combined=("${SCOPE_BRANCH_FILES[@]}" "${SCOPE_UNSTAGED_FILES[@]}" "${SCOPE_STAGED_FILES[@]}" "${SCOPE_UNTRACKED_FILES[@]}")
 	local path normalized reason
@@ -716,6 +720,7 @@ usage() {
   --analyze-all
   --skip-preflight
   --skip-config-checks
+  --skip-workflow-docs
   --skip-header-checks
   --skip-style-check
   --skip-strict-debug
@@ -729,6 +734,7 @@ usage() {
   --strict-environment
   --dry-run
   --explain-scope
+  --branch-scope-only
   --report-json-path PATH
   --scope-report-path PATH
 EOF
@@ -742,6 +748,7 @@ while [[ $# -gt 0 ]]; do
 		--analyze-all) ANALYZE_ALL=1; shift ;;
 		--skip-preflight) SKIP_PREFLIGHT=1; shift ;;
 		--skip-config-checks) SKIP_CONFIG_CHECKS=1; shift ;;
+		--skip-workflow-docs) SKIP_WORKFLOW_DOCS=1; shift ;;
 		--skip-header-checks) SKIP_HEADER_CHECKS=1; shift ;;
 		--skip-style-check) SKIP_STYLE_CHECK=1; shift ;;
 		--skip-strict-debug) SKIP_STRICT_DEBUG=1; shift ;;
@@ -755,6 +762,7 @@ while [[ $# -gt 0 ]]; do
 		--strict-environment) STRICT_ENVIRONMENT=1; shift ;;
 		--dry-run) DRY_RUN=1; shift ;;
 		--explain-scope) EXPLAIN_SCOPE=1; shift ;;
+		--branch-scope-only) BRANCH_SCOPE_ONLY=1; shift ;;
 		--report-json-path) REPORT_JSON_PATH="$2"; shift 2 ;;
 		--scope-report-path) SCOPE_REPORT_PATH="$2"; shift 2 ;;
 		-h|--help) usage; exit 0 ;;
@@ -773,7 +781,9 @@ write_scope_diagnostics
 if [[ ${SKIP_CONFIG_CHECKS} -eq 0 ]]; then
 	invoke_config_checks || true
 fi
-invoke_workflow_doc_checks || true
+if [[ ${SKIP_WORKFLOW_DOCS} -eq 0 ]]; then
+	invoke_workflow_doc_checks || true
+fi
 if [[ ${SKIP_HEADER_CHECKS} -eq 0 ]]; then
 	invoke_header_checks || true
 fi

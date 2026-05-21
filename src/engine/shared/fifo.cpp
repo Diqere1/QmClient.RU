@@ -118,7 +118,9 @@ void CFifo::Init(IConsole *pConsole, const char *pFifoFile, int Flag)
 		dbg_msg("fifo", "failed to create named pipe '%s' (%ld %s)", m_aFilename, LastError, ErrorMsg.c_str());
 	}
 	else
+	{
 		dbg_msg("fifo", "created named pipe '%s'", m_aFilename);
+	}
 }
 
 void CFifo::Shutdown()

@@ -59,6 +59,7 @@ enum
 	NUMBER_OF_TCLIENT_TABS
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 typedef struct
 {
 	const char *m_pName;
@@ -266,6 +267,7 @@ const float MarginBetweenViews = 30.0f;
 const float ColorPickerLabelSize = 13.0f;
 const float ColorPickerLineSpacing = 5.0f;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SAutoReplyRulePlain
 {
 	std::string m_Keywords;
@@ -274,6 +276,7 @@ struct SAutoReplyRulePlain
 	bool m_Regex = false;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SAutoReplyRuleInputRow
 {
 	char m_aTrigger[512] = "";
@@ -1392,7 +1395,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_visual_main_controls", MainControlsTimer);
 			}
 			else
+			{
 				SkipVisualBlock(LineSize);
+			}
 			if(g_Config.m_QmJellyTee)
 			{
 				if(ShouldRenderVisualBlock(LineSize * 3.0f))
@@ -1699,7 +1704,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_auto_reply_muted", MutedTimer);
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, nullptr, &CurrentColumn);
+			}
 			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 
 			if(Render)
@@ -1717,7 +1724,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_auto_reply_minimized", MinimizedTimer);
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, nullptr, &CurrentColumn);
+			}
 			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
@@ -1745,7 +1754,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_player_indicator_base", BaseTimer);
 			}
 			else
+			{
 				SkipSection(CurrentColumn, 0.0f, LineSize * 6.0f);
+			}
 
 			if(Render && ShouldRenderSection(CurrentColumn, 0.0f, LineSize * 6.0f))
 			{
@@ -1790,7 +1801,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_player_indicator_warlist", WarListTimer);
 			}
 			else if(!Render || g_Config.m_TcWarListIndicator)
+			{
 				SkipSection(CurrentColumn, 0.0f, LineSize * 4.0f);
+			}
 
 			if(Render && (!g_Config.m_TcWarListIndicatorColors || !g_Config.m_TcWarListIndicator) &&
 				ShouldRenderSection(CurrentColumn, 0.0f, (ColorPickerLineSize + ColorPickerLineSpacing) * 3.0f))
@@ -1803,7 +1816,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_player_indicator_colors", ColorsTimer);
 			}
 			else if(!Render || (!g_Config.m_TcWarListIndicatorColors || !g_Config.m_TcWarListIndicator))
+			{
 				SkipSection(CurrentColumn, 0.0f, (ColorPickerLineSize + ColorPickerLineSpacing) * 3.0f);
+			}
 
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
 			return BoxRect;
@@ -1917,7 +1932,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				s_InputSectionCachedHeight = BoxRect.h;
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Anti Latency Tools ***** //
@@ -1932,7 +1949,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				s_AntiLatencyToolsSectionCachedHeight = BoxRect.h;
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Improved Anti Ping ***** //
@@ -1947,7 +1966,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				s_AntiPingSmoothingSectionCachedHeight = BoxRect.h;
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Execute on join ***** //
@@ -1964,7 +1985,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_auto_execute", AutoExecuteTimer);
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Voting ***** //
@@ -1981,7 +2004,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_voting", VotingTimer);
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** 自动回复 ***** //
@@ -1998,7 +2023,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_auto_reply", AutoReplyTimer);
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Player Indicator ***** //
@@ -2015,7 +2042,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_left_player_indicator_total", PlayerIndicatorTimer);
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** 宠物 ***** //
@@ -2030,7 +2059,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				s_PetSectionCachedHeight = BoxRect.h;
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		LeftView = Column;
@@ -2085,7 +2116,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 					Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
 				}
 				else
+				{
 					Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+				}
 			}
 
 			if(Render)
@@ -2098,10 +2131,14 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 					Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
 				}
 				else
+				{
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcNotifyWhenLast, Localize("Notify when only one tee is still alive:"), &g_Config.m_TcNotifyWhenLast, &CurrentColumn, LineSize);
+				}
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+			}
 			CUIRect NotificationConfig;
 			CurrentColumn.HSplitTop(LineSize + MarginSmall, Render ? &NotificationConfig : &TmpRect, &CurrentColumn);
 			if(Render)
@@ -2163,10 +2200,14 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 					Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
 				}
 				else
+				{
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcShowCenter, Localize("Show the screen center line"), &g_Config.m_TcShowCenter, &CurrentColumn, LineSize);
+				}
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+			}
 			CurrentColumn.HSplitTop(LineSize + MarginSmall, Render ? &Button : &TmpRect, &CurrentColumn);
 			if(Render)
 			{
@@ -2248,7 +2289,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 					Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
 				}
 				else
+				{
 					Ui()->DoScrollbarOption(&g_Config.m_TcFrozenMaxRows, &g_Config.m_TcFrozenMaxRows, &Button, Localize("Maximum rows"), 1, 6);
+				}
 			}
 			CurrentColumn.HSplitTop(LineSize, Render ? &Button : &TmpRect, &CurrentColumn);
 			if(Render)
@@ -2260,7 +2303,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 					Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
 				}
 				else
+				{
 					Ui()->DoScrollbarOption(&g_Config.m_TcFrozenHudTeeSize, &g_Config.m_TcFrozenHudTeeSize, &Button, Localize("Tee size"), 8, 27);
+				}
 			}
 			if(Render)
 			{
@@ -2396,7 +2441,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 					CurrentColumn.HSplitTop(ColorPickerLineSpacing, nullptr, &CurrentColumn);
 				}
 				else
+				{
 					SkipTileOutlineBlock(OutlineColorOnlyHeight);
+				}
 				if(ShouldRenderTileOutlineBlock(OutlineEntryHeight))
 					DrawDeferredOutlineLabel(Localize("Unfreeze"), g_Config.m_TcOutlineUnfreeze, g_Config.m_TcOutlineWidthUnfreeze);
 				else
@@ -2411,7 +2458,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 					CurrentColumn.HSplitTop(ColorPickerLineSpacing, nullptr, &CurrentColumn);
 				}
 				else
+				{
 					SkipTileOutlineBlock(OutlineColorOnlyHeight);
+				}
 				if(ShouldRenderTileOutlineBlock(OutlineEntryHeight))
 					DrawDeferredOutlineLabel(Localize("Kill"), g_Config.m_TcOutlineKill, g_Config.m_TcOutlineWidthKill);
 				else
@@ -2488,7 +2537,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcSwapGhosts, Localize("Swap ghosts with regular players"), &g_Config.m_TcSwapGhosts, &CurrentColumn, LineSize);
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize * 2.0f, nullptr, &CurrentColumn);
+			}
 			CurrentColumn.HSplitTop(LineSize, Render ? &Button : &TmpRect, &CurrentColumn);
 			if(Render)
 				Ui()->DoScrollbarOption(&g_Config.m_TcPredGhostsAlpha, &g_Config.m_TcPredGhostsAlpha, &Button, Localize("Predicted ghost opacity"), 0, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
@@ -2503,7 +2554,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				DoLine_KeyReader(CurrentColumn, s_ReaderButtonGhost, s_ClearButtonGhost, Localize("Toggle ghost key"), "toggle tc_show_others_ghosts 0 1");
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize * 3.0f, nullptr, &CurrentColumn);
+			}
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
 			return BoxRect;
 		};
@@ -2526,7 +2579,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcRainbowOthers, Localize("Rainbow others"), &g_Config.m_TcRainbowOthers, &CurrentColumn, LineSize);
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize * 4.0f, nullptr, &CurrentColumn);
+			}
 
 			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 			static std::vector<const char *> s_RainbowDropDownNames;
@@ -2588,7 +2643,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_right_tee_trails_base", BaseTimer);
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize * 4.0f, nullptr, &CurrentColumn);
+			}
 
 			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 			static std::vector<const char *> s_TrailDropDownNames;
@@ -2615,7 +2672,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				}
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+			}
 			CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
 
 			if(Render && g_Config.m_TcTeeTrailColorMode == CTrails::COLORMODE_SOLID)
@@ -2638,7 +2697,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				}
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(ColorPickerLineSize + ColorPickerLineSpacing, nullptr, &CurrentColumn);
+			}
 
 			if(Render)
 			{
@@ -2669,7 +2730,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				}
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize * 3.0f, nullptr, &CurrentColumn);
+			}
 
 			CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
@@ -2708,7 +2771,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				DoLine_KeyReader(CurrentColumn, s_ReaderButtonDraw, s_ClearButtonDraw, Localize("Draw where mouse is"), "+bg_draw");
 			}
 			else
+			{
 				CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+			}
 			CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
 			return BoxRect;
@@ -2766,7 +2831,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_right_hud_total", HudSectionTimer);
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Frozen Tee Display ***** //
@@ -2793,7 +2860,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				}
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Tile Outlines ***** //
@@ -2813,11 +2882,15 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 					Column = MeasuredColumn;
 				}
 				else
+				{
 					BoxRect = LayoutTileOutlinesSection(Column, true);
+				}
 				LogSettingsStage("tclient_settings_tile_outlines_section", TileOutlinesTimer);
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Ghost Tools ***** //
@@ -2832,7 +2905,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				s_GhostToolsSectionCachedHeight = BoxRect.h;
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** 彩虹! ***** //
@@ -2847,7 +2922,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				s_RainbowSectionCachedHeight = BoxRect.h;
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** Tee Trails ***** //
@@ -2864,7 +2941,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				LogSettingsStage("tclient_settings_right_tee_trails_total", TeeTrailsTimer);
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** 背景绘画 ***** //
@@ -2879,7 +2958,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				s_BackgroundDrawSectionCachedHeight = BoxRect.h;
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** 终点恰分改名 ***** //
@@ -2894,7 +2975,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				s_FinishNameSectionCachedHeight = BoxRect.h;
 			}
 			else
+			{
 				Column = MeasuredColumn;
+			}
 		}
 
 		// ***** END OF PAGE 1 SETTINGS ***** //
@@ -3089,7 +3172,9 @@ void CMenus::RenderSettingsTClientBindWheel(CUIRect MainView)
 			Ui()->DoLabel(&Label, aBuf, FontSize, TEXTALIGN_ML);
 		}
 		else
+		{
 			Ui()->DoLabel(&Label, Localize("Select a bind to edit"), FontSize, TEXTALIGN_ML);
+		}
 	}
 
 	CPerfTimer FooterTextTimer;
@@ -3460,7 +3545,9 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 			Ui()->DoLabel(&Label, aBuf, FontSize, TEXTALIGN_ML);
 		}
 		else
+		{
 			Ui()->DoLabel(&Label, Localize("No entry selected"), FontSize, TEXTALIGN_ML);
+		}
 		Column2.HSplitTop(MarginSmall, nullptr, &Column2);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListAllowDuplicates, Localize("Allow Duplicate Entries"), &g_Config.m_TcWarListAllowDuplicates, &Column2, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarList, Localize("Enable warlist"), &g_Config.m_TcWarList, &Column2, LineSize);
@@ -3499,7 +3586,9 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 	s_ClanInput.SetBuffer(s_aEntryClan, sizeof(s_aEntryClan));
 	s_ClanInput.SetEmptyText(Localize("Clan"));
 	if(s_IsClan)
+	{
 		Ui()->DoEditBox(&s_ClanInput, &ButtonR, 12.0f);
+	}
 	else
 	{
 		ButtonR.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f), 15, 3.0f);
@@ -4150,7 +4239,9 @@ void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 		if(DoButtonLineSize_Menu(s_pItemButtons[i], Localize(GetStatusBarEditorLabel(StatusItem)), 0, &TempItemButton, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, Col))
 		{
 			if(s_SelectedItem == -2)
+			{
 				s_SelectedItem++;
+			}
 			else if(s_SelectedItem != i)
 			{
 				s_SelectedItem = i;
@@ -4795,6 +4886,16 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 		s_StrInputs.clear();
 		s_ColInputs.clear();
 	};
+	auto SortStagedKeys = [](auto &Staged) {
+		std::vector<const SConfigVariable *> vKeys;
+		vKeys.reserve(Staged.size());
+		for(const auto &Entry : Staged)
+			vKeys.push_back(Entry.first);
+		std::sort(vKeys.begin(), vKeys.end(), [](const SConfigVariable *pLeft, const SConfigVariable *pRight) {
+			return str_comp(pLeft->m_pScriptName, pRight->m_pScriptName) < 0;
+		});
+		return vKeys;
+	};
 
 	size_t ChangesCount = 0;
 
@@ -4838,29 +4939,32 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 		const bool ApplyClicked = DoButton_Menu(&s_ApplyBtn, Localize("Apply Changes"), DisabledStyle, &ApplyBtn);
 		if(ChangesCount > 0 && ApplyClicked)
 		{
-			for(const auto &it : s_StagedInts)
+			for(const SConfigVariable *pVar : SortStagedKeys(s_StagedInts))
 			{
-				const SConfigVariable *pVar = it.first;
+				const auto Entry = s_StagedInts.find(pVar);
+				dbg_assert(Entry != s_StagedInts.end(), "missing staged int");
 				char aCmd[256];
-				str_format(aCmd, sizeof(aCmd), "%s %d", pVar->m_pScriptName, it.second.m_Value);
+				str_format(aCmd, sizeof(aCmd), "%s %d", pVar->m_pScriptName, Entry->second.m_Value);
 				Console()->ExecuteLine(aCmd);
 			}
-			for(const auto &it : s_StagedStrs)
+			for(const SConfigVariable *pVar : SortStagedKeys(s_StagedStrs))
 			{
-				const SConfigVariable *pVar = it.first;
+				const auto Entry = s_StagedStrs.find(pVar);
+				dbg_assert(Entry != s_StagedStrs.end(), "missing staged string");
 				char aEsc[1024];
 				aEsc[0] = '\0';
 				char *pDst = aEsc;
-				str_escape(&pDst, it.second.m_Value.c_str(), aEsc + sizeof(aEsc));
+				str_escape(&pDst, Entry->second.m_Value.c_str(), aEsc + sizeof(aEsc));
 				char aCmd[1200];
 				str_format(aCmd, sizeof(aCmd), "%s \"%s\"", pVar->m_pScriptName, aEsc);
 				Console()->ExecuteLine(aCmd);
 			}
-			for(const auto &it : s_StagedCols)
+			for(const SConfigVariable *pVar : SortStagedKeys(s_StagedCols))
 			{
-				const SConfigVariable *pVar = it.first;
+				const auto Entry = s_StagedCols.find(pVar);
+				dbg_assert(Entry != s_StagedCols.end(), "missing staged color");
 				char aCmd[256];
-				str_format(aCmd, sizeof(aCmd), "%s %u", pVar->m_pScriptName, it.second.m_Value);
+				str_format(aCmd, sizeof(aCmd), "%s %u", pVar->m_pScriptName, Entry->second.m_Value);
 				Console()->ExecuteLine(aCmd);
 			}
 			ClearStagedAndCaches();
@@ -5098,24 +5202,24 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 	auto IsEffectiveDefaultVar = [&](const SConfigVariable *p) -> bool {
 		if(p->m_Type == SConfigVariable::VAR_INT)
 		{
-			const SIntConfigVariable *pint = static_cast<const SIntConfigVariable *>(p);
-			auto it = s_StagedInts.find(p);
-			int v = it != s_StagedInts.end() ? it->second.m_Value : *pint->m_pVariable;
-			return v == pint->m_Default;
+			const SIntConfigVariable *pInt = static_cast<const SIntConfigVariable *>(p);
+			auto Iter = s_StagedInts.find(p);
+			int v = Iter != s_StagedInts.end() ? Iter->second.m_Value : *pInt->m_pVariable;
+			return v == pInt->m_Default;
 		}
 		if(p->m_Type == SConfigVariable::VAR_STRING)
 		{
-			const SStringConfigVariable *ps = static_cast<const SStringConfigVariable *>(p);
-			auto it = s_StagedStrs.find(p);
-			const char *v = it != s_StagedStrs.end() ? it->second.m_Value.c_str() : ps->m_pStr;
-			return str_comp(v, ps->m_pDefault) == 0;
+			const SStringConfigVariable *pString = static_cast<const SStringConfigVariable *>(p);
+			auto Iter = s_StagedStrs.find(p);
+			const char *v = Iter != s_StagedStrs.end() ? Iter->second.m_Value.c_str() : pString->m_pStr;
+			return str_comp(v, pString->m_pDefault) == 0;
 		}
 		if(p->m_Type == SConfigVariable::VAR_COLOR)
 		{
-			const SColorConfigVariable *pc = static_cast<const SColorConfigVariable *>(p);
-			auto it = s_StagedCols.find(p);
-			unsigned v = it != s_StagedCols.end() ? it->second.m_Value : *pc->m_pVariable;
-			return v == pc->m_Default;
+			const SColorConfigVariable *pColor = static_cast<const SColorConfigVariable *>(p);
+			auto Iter = s_StagedCols.find(p);
+			unsigned v = Iter != s_StagedCols.end() ? Iter->second.m_Value : *pColor->m_pVariable;
+			return v == pColor->m_Default;
 		}
 		return true;
 	};
@@ -5178,12 +5282,14 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 		}
 	};
 
-	EConfigSource CurrentSource = static_cast<EConfigSource>(-1);
+	bool HasCurrentSource = false;
+	EConfigSource CurrentSource = EConfigSource::DDNET;
 	for(const SConfigVariable *pVar : vpFiltered)
 	{
 		const EConfigSource Source = GetConfigSource(pVar);
-		if(Source != CurrentSource)
+		if(!HasCurrentSource || Source != CurrentSource)
 		{
+			HasCurrentSource = true;
 			CurrentSource = Source;
 			CUIRect Header;
 			Content.HSplitTop(HeadlineHeight, &Header, &Content);
@@ -5269,7 +5375,8 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 			// treat 0 1 ints as checkboxes
 			if(pInt->m_Min == 0 && pInt->m_Max == 1)
 			{
-				const int Effective = s_StagedInts.count(pVar) ? s_StagedInts[pVar].m_Value : *pInt->m_pVariable;
+				const auto StagedInt = s_StagedInts.find(pVar);
+				const int Effective = StagedInt != s_StagedInts.end() ? StagedInt->second.m_Value : *pInt->m_pVariable;
 				if(DoButton_CheckBox(pVar, "", Effective, &Controls))
 				{
 					const int NewVal = Effective ? 0 : 1;
@@ -5282,7 +5389,8 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 			else
 			{
 				SIntState &State = s_IntInputs[pVar];
-				const int Effective = s_StagedInts.count(pVar) ? s_StagedInts[pVar].m_Value : *pInt->m_pVariable;
+				const auto StagedInt = s_StagedInts.find(pVar);
+				const int Effective = StagedInt != s_StagedInts.end() ? StagedInt->second.m_Value : *pInt->m_pVariable;
 				if(!State.m_Inited)
 				{
 					State.m_Input.SetInteger(Effective);
@@ -5324,7 +5432,8 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 		{
 			const SStringConfigVariable *pStr = static_cast<const SStringConfigVariable *>(pVar);
 			SStrState &State = s_StrInputs[pVar];
-			const char *Effective = s_StagedStrs.count(pVar) ? s_StagedStrs[pVar].m_Value.c_str() : pStr->m_pStr;
+			const auto StagedStr = s_StagedStrs.find(pVar);
+			const char *Effective = StagedStr != s_StagedStrs.end() ? StagedStr->second.m_Value.c_str() : pStr->m_pStr;
 			if(!State.m_Inited)
 			{
 				State.m_Input.Set(Effective);
@@ -5358,7 +5467,8 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 			CButtonContainer &ResetId = s_ColorResetIds[pVar];
 
 			SColState &ColState = s_ColInputs[pVar];
-			unsigned Effective = s_StagedCols.count(pVar) ? s_StagedCols[pVar].m_Value : *pCol->m_pVariable;
+			const auto StagedCol = s_StagedCols.find(pVar);
+			unsigned Effective = StagedCol != s_StagedCols.end() ? StagedCol->second.m_Value : *pCol->m_pVariable;
 			if(!ColState.m_Inited)
 			{
 				ColState.m_Working = Effective;

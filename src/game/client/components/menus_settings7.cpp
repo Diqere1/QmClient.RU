@@ -3,8 +3,6 @@
 #include "menus.h"
 #include "skins7.h"
 
-#include <algorithm>
-
 #include <base/math.h>
 #include <base/system.h>
 
@@ -30,6 +28,7 @@
 #include <game/client/ui_scrollregion.h>
 #include <game/localization.h>
 
+#include <algorithm>
 #include <vector>
 
 using namespace FontIcons;
@@ -102,7 +101,9 @@ void CMenus::RenderSettingsTee7(CUIRect MainView)
 				m_SkinNameInput.Append(m_pSelectedSkin->m_aName);
 			}
 			else
+			{
 				m_SkinNameInput.Set(m_pSelectedSkin->m_aName);
+			}
 		}
 	}
 

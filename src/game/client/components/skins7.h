@@ -90,6 +90,7 @@ public:
 		SResult m_Result;
 		bool m_Completed = false;
 
+	protected:
 		void Run() override REQUIRES(!m_Mutex);
 
 	public:

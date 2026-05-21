@@ -16,6 +16,7 @@
 
 static constexpr LOG_COLOR BIND_PRINT_COLOR{255, 255, 204};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum EDeepflyMode
 {
 	DEEPFLY_MODE_NONE = -1,
@@ -144,9 +145,9 @@ static bool IsIndirectDeepflyScriptCommand(const char *pCommand)
 	// The HUD mode is refreshed again when those nested bind commands run, so
 	// the wrapper script itself should not count as a deepfly custom bind.
 	return str_startswith_nocase(pCommand, "bind ") != nullptr ||
-		str_startswith_nocase(pCommand, "unbind ") != nullptr ||
-		str_comp_nocase(pCommand, "unbindall") == 0 ||
-		str_startswith_nocase(pCommand, "exec ") != nullptr;
+	       str_startswith_nocase(pCommand, "unbind ") != nullptr ||
+	       str_comp_nocase(pCommand, "unbindall") == 0 ||
+	       str_startswith_nocase(pCommand, "exec ") != nullptr;
 }
 
 static int DetectDeepflyModeFromBindCommand(const char *pCommand)
@@ -590,7 +591,9 @@ void CBinds::ConBinds(IConsole::IResult *pResult, void *pUserData)
 		else
 		{
 			if(!pBinds->m_aapKeyBindings[BindSlot.m_ModifierMask][BindSlot.m_Key])
+			{
 				log_info_color(BIND_PRINT_COLOR, "binds", "%s is not bound", pKeyName);
+			}
 			else
 			{
 				char *pBuf = pBinds->GetKeyBindCommand(BindSlot.m_ModifierMask, BindSlot.m_Key);

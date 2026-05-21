@@ -19,9 +19,9 @@
 #include <generated/client_data.h>
 
 #include <game/client/component.h>
+#include <game/client/components/assets_resource_registry.h>
 #include <game/client/components/community_icons.h>
 #include <game/client/components/mapimages.h>
-#include <game/client/components/assets_resource_registry.h>
 #include <game/client/components/menus_ingame_touch_controls.h>
 #include <game/client/components/menus_settings_controls.h>
 #include <game/client/components/menus_start.h>
@@ -31,8 +31,8 @@
 #include <game/client/ui.h>
 #include <game/voting.h>
 
-#include <chrono>
 #include <array>
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -67,7 +67,7 @@ class CMenus;
 
 namespace NTranslateUiSettings
 {
-void RenderTranslateUiModule(CMenus *pMenus, CUIRect &CardContent, float LineHeight, float BodySize, float LineSpacing);
+	void RenderTranslateUiModule(CMenus *pMenus, CUIRect &CardContent, float LineHeight, float BodySize, float LineSpacing);
 }
 
 class CMenus : public CComponent
@@ -583,14 +583,14 @@ public:
 		return {};
 	}
 
-	inline static int ClampAssetsEditorColorBlendMode(int BlendMode)
+	static int ClampAssetsEditorColorBlendMode(int BlendMode)
 	{
 		if(BlendMode < 0 || BlendMode >= ASSETS_EDITOR_COLOR_BLEND_COUNT)
 			return ASSETS_EDITOR_COLOR_BLEND_MULTIPLY;
 		return BlendMode;
 	}
 
-	inline static const char *AssetsEditorColorBlendModeName(int BlendMode)
+	static const char *AssetsEditorColorBlendModeName(int BlendMode)
 	{
 		switch(ClampAssetsEditorColorBlendMode(BlendMode))
 		{
@@ -601,34 +601,34 @@ public:
 		}
 	}
 
-	inline static ColorRGBA AssetsEditorSlotColorToRgba(unsigned int PackedColor)
+	static ColorRGBA AssetsEditorSlotColorToRgba(unsigned int PackedColor)
 	{
 		return color_cast<ColorRGBA>(ColorHSLA(PackedColor, true));
 	}
 
-	inline static float AssetsEditorClampColorChannel(float Value)
+	static float AssetsEditorClampColorChannel(float Value)
 	{
 		return minimum(maximum(Value, 0.0f), 1.0f);
 	}
 
-	inline static float AssetsEditorColorLuma(const ColorRGBA &Base)
+	static float AssetsEditorColorLuma(const ColorRGBA &Base)
 	{
 		return AssetsEditorClampColorChannel(Base.r * 0.299f + Base.g * 0.587f + Base.b * 0.114f);
 	}
 
-	inline static float AssetsEditorScreenTone(float Luma)
+	static float AssetsEditorScreenTone(float Luma)
 	{
 		return AssetsEditorClampColorChannel(Luma * (1.0f + (1.0f - Luma) * 0.65f));
 	}
 
-	inline static float AssetsEditorOverlayTone(float Luma)
+	static float AssetsEditorOverlayTone(float Luma)
 	{
 		if(Luma <= 0.5f)
 			return AssetsEditorClampColorChannel(2.0f * Luma * Luma);
 		return AssetsEditorClampColorChannel(1.0f - 2.0f * (1.0f - Luma) * (1.0f - Luma));
 	}
 
-	inline static ColorRGBA AssetsEditorRecolorColor(const ColorRGBA &Base, const ColorRGBA &Tint, float Tone, float DetailPreserve)
+	static ColorRGBA AssetsEditorRecolorColor(const ColorRGBA &Base, const ColorRGBA &Tint, float Tone, float DetailPreserve)
 	{
 		const float BaseLuma = AssetsEditorColorLuma(Base);
 		return ColorRGBA(
@@ -638,12 +638,12 @@ public:
 			Base.a);
 	}
 
-	inline static ColorRGBA AssetsEditorMultiplyColor(const ColorRGBA &Base, const ColorRGBA &Tint)
+	static ColorRGBA AssetsEditorMultiplyColor(const ColorRGBA &Base, const ColorRGBA &Tint)
 	{
 		return ColorRGBA(Base.r * Tint.r, Base.g * Tint.g, Base.b * Tint.b, Base.a * Tint.a);
 	}
 
-	inline static ColorRGBA AssetsEditorBlendColor(const ColorRGBA &Base, const ColorRGBA &Tint, int BlendMode)
+	static ColorRGBA AssetsEditorBlendColor(const ColorRGBA &Base, const ColorRGBA &Tint, int BlendMode)
 	{
 		const int ClampedBlendMode = ClampAssetsEditorColorBlendMode(BlendMode);
 		const float BlendStrength = minimum(maximum(Tint.a, 0.0f), 1.0f);
@@ -672,25 +672,25 @@ public:
 			Base.a);
 	}
 
-	inline static bool AssetsEditorHasColorOverride(const ColorRGBA &Tint)
+	static bool AssetsEditorHasColorOverride(const ColorRGBA &Tint)
 	{
 		constexpr float Epsilon = 0.001f;
 		return absolute(Tint.r - 1.0f) > Epsilon ||
-			absolute(Tint.g - 1.0f) > Epsilon ||
-			absolute(Tint.b - 1.0f) > Epsilon ||
-			absolute(Tint.a - 1.0f) > Epsilon;
+		       absolute(Tint.g - 1.0f) > Epsilon ||
+		       absolute(Tint.b - 1.0f) > Epsilon ||
+		       absolute(Tint.a - 1.0f) > Epsilon;
 	}
 
-	inline static bool AssetsEditorSlotNeedsProcessing(const SAssetsEditorPartSlot &Slot, const char *pMainAssetName)
+	static bool AssetsEditorSlotNeedsProcessing(const SAssetsEditorPartSlot &Slot, const char *pMainAssetName)
 	{
 		const char *pResolvedMainAssetName = pMainAssetName != nullptr ? pMainAssetName : "";
 		const bool UsesMainSourceRect = str_comp(Slot.m_aSourceAsset, pResolvedMainAssetName) == 0 &&
-			Slot.m_SrcX == Slot.m_DstX && Slot.m_SrcY == Slot.m_DstY &&
-			Slot.m_SrcW == Slot.m_DstW && Slot.m_SrcH == Slot.m_DstH;
+						Slot.m_SrcX == Slot.m_DstX && Slot.m_SrcY == Slot.m_DstY &&
+						Slot.m_SrcW == Slot.m_DstW && Slot.m_SrcH == Slot.m_DstH;
 		return !UsesMainSourceRect || AssetsEditorHasColorOverride(AssetsEditorSlotColorToRgba(Slot.m_Color));
 	}
 
-	inline static void AssetsEditorApplyColorOverrideToImageRect(CImageInfo &Image, int X, int Y, int W, int H, const ColorRGBA &Tint, int BlendMode)
+	static void AssetsEditorApplyColorOverrideToImageRect(CImageInfo &Image, int X, int Y, int W, int H, const ColorRGBA &Tint, int BlendMode)
 	{
 		if(Image.m_pData == nullptr || Image.m_Format != CImageInfo::FORMAT_RGBA || W <= 0 || H <= 0)
 			return;
@@ -702,7 +702,7 @@ public:
 		if(X < 0 || Y < 0 || X + W > ImageWidth || Y + H > ImageHeight)
 			return;
 
-		uint8_t *pData = static_cast<uint8_t *>(Image.m_pData);
+		uint8_t *pData = Image.m_pData;
 		for(int PosY = Y; PosY < Y + H; ++PosY)
 		{
 			for(int PosX = X; PosX < X + W; ++PosX)
@@ -867,7 +867,6 @@ private:
 	bool AssetsEditorCopyRectScaledNearest(CImageInfo &Dst, const CImageInfo &Src, int DstX, int DstY, int DstW, int DstH, int SrcX, int SrcY, int SrcW, int SrcH);
 
 protected:
-
 	int m_MenuPage;
 	int m_GamePage;
 	int m_Popup;

@@ -611,7 +611,9 @@ bool CMenusIngameTouchControls::RenderVisibilitySettingBlock(CUIRect Block)
 			EditBox.VSplitMid(&LeftButton, &MiddleButton);
 			MiddleButton.VSplitLeft(ScrollParam.m_ScrollbarWidth / 2.0f, nullptr, &MiddleButton);
 			if(Current < (unsigned)CTouchControls::EButtonVisibility::EXTRA_MENU_1)
+			{
 				Ui()->DoLabel(&LeftButton, ppVisibilities[Current], FONTSIZE, TEXTALIGN_ML);
+			}
 			else
 			{
 				unsigned ExtraMenuNumber = Current - (unsigned)CTouchControls::EButtonVisibility::EXTRA_MENU_1 + 1;
@@ -1280,8 +1282,10 @@ void CMenusIngameTouchControls::CacheAllSettingsFromTarget(CTouchControls::CTouc
 				m_CachedExtraMenuNumber = pExtraMenuBehavior->GetNumber();
 			}
 		}
-		else // Empty
+		else
+		{ // Empty
 			dbg_assert_failed("Detected out of bound value in m_EditBehaviorType");
+		}
 	}
 }
 

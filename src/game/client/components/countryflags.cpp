@@ -139,13 +139,13 @@ void CCountryFlags::StartFlagLoadJob(int Index)
 
 void CCountryFlags::ProcessCompletedJobs()
 {
-	auto it = m_PendingJobs.begin();
-	while(it != m_PendingJobs.end())
+	auto Iter = m_PendingJobs.begin();
+	while(Iter != m_PendingJobs.end())
 	{
-		auto &pJob = *it;
+		auto &pJob = *Iter;
 		if(!pJob->IsCompleted())
 		{
-			++it;
+			++Iter;
 			continue;
 		}
 
@@ -174,7 +174,7 @@ void CCountryFlags::ProcessCompletedJobs()
 			}
 		}
 
-		it = m_PendingJobs.erase(it);
+		Iter = m_PendingJobs.erase(Iter);
 	}
 }
 

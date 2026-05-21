@@ -861,8 +861,8 @@ namespace VoiceUtils
 		double Sum = 0.0;
 		for(int i = 0; i < Count; i++)
 		{
-			const float x = pSamples[i] / 32768.0f;
-			Sum += x * x;
+			const float X = pSamples[i] / 32768.0f;
+			Sum += X * X;
 		}
 		return (float)std::sqrt(Sum / (double)Count);
 	}
@@ -1023,10 +1023,10 @@ namespace VoiceUtils
 
 		for(int i = 0; i < Count; i++)
 		{
-			const float x = pSamples[i] / 32768.0f;
-			const float y = Alpha * (State.m_PrevOut + x - State.m_PrevIn);
-			State.m_PrevIn = x;
-			State.m_PrevOut = SanitizeFloat(y);
+			const float X = pSamples[i] / 32768.0f;
+			const float Y = Alpha * (State.m_PrevOut + X - State.m_PrevIn);
+			State.m_PrevIn = X;
+			State.m_PrevOut = SanitizeFloat(Y);
 
 			const float AbsY = std::fabs(State.m_PrevOut);
 			if(AbsY > State.m_Env)

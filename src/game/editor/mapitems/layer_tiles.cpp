@@ -641,7 +641,9 @@ void CLayerTiles::BrushRotate(float Amount)
 			{
 				*pDst = pTempData[y * m_Width + x];
 				if(!Rotate && !IsRotatableTile(pDst->m_Index))
+				{
 					pDst->m_Flags = 0;
+				}
 				else
 				{
 					if(pDst->m_Flags & TILEFLAG_ROTATE)

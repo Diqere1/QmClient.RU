@@ -120,7 +120,9 @@ void CLayerTune::BrushDraw(CLayer *pBrush, vec2 WorldPos)
 					m_pTuneTile[TgtIndex].m_Number = Editor()->m_TuningNumber;
 				}
 				else if(pTuneLayer->m_pTuneTile[SrcIndex].m_Number)
+				{
 					m_pTuneTile[TgtIndex].m_Number = pTuneLayer->m_pTuneTile[SrcIndex].m_Number;
+				}
 				else
 				{
 					if(!Editor()->m_TuningNumber)
@@ -131,7 +133,9 @@ void CLayerTune::BrushDraw(CLayer *pBrush, vec2 WorldPos)
 						continue;
 					}
 					else
+					{
 						m_pTuneTile[TgtIndex].m_Number = Editor()->m_TuningNumber;
+					}
 				}
 
 				m_pTuneTile[TgtIndex].m_Type = pTuneLayer->m_pTiles[SrcIndex].m_Index;

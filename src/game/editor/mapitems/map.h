@@ -39,6 +39,7 @@ class CDataFileWriterFinishJob : public IJob
 	char m_aTempFilename[IO_MAX_PATH_LENGTH];
 	CDataFileWriter m_Writer;
 
+protected:
 	void Run() override;
 
 public:

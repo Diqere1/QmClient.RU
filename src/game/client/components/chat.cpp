@@ -100,14 +100,15 @@ static void PushUniqueWord(std::vector<std::string> &OutWords, const std::string
 		OutWords.push_back(Word);
 }
 
-namespace {
-struct CBlockWordsCache
+namespace
 {
-	std::string m_List;
-	int m_Mode = -1;
-	std::vector<std::string> m_Words;
-	std::vector<Regex> m_Regexes;
-};
+	struct CBlockWordsCache
+	{
+		std::string m_List;
+		int m_Mode = -1;
+		std::vector<std::string> m_Words;
+		std::vector<Regex> m_Regexes;
+	};
 } // namespace
 
 static void UpdateBlockWordsCache(CBlockWordsCache &Cache)
@@ -767,13 +768,19 @@ void CChat::ConChat(IConsole::IResult *pResult, void *pUserData)
 		pChat->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "console", "expected all or team as mode");
 
 	if(pResult->GetString(1)[0])
+	{
 		pChat->m_Input.Set(pResult->GetString(1));
+	}
 	else if(g_Config.m_ClChatReset)
 	{
 		if(g_Config.m_QmChatSaveDraft && pChat->m_SavedInputPending)
+		{
 			pChat->m_Input.Set(pChat->m_aSavedInputText);
+		}
 		else
+		{
 			pChat->m_Input.Clear();
+		}
 	}
 
 	if(!g_Config.m_QmChatSaveDraft)
@@ -1189,13 +1196,19 @@ bool CChat::OnInput(const IInput::CEvent &Event)
 			CHistoryEntry *pTest = m_History.Prev(m_pHistoryEntry);
 
 			if(pTest)
+			{
 				m_pHistoryEntry = pTest;
+			}
 		}
 		else
+		{
 			m_pHistoryEntry = m_History.Last();
+		}
 
 		if(m_pHistoryEntry)
+		{
 			m_Input.Set(m_pHistoryEntry->m_aText);
+		}
 	}
 	else if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_DOWN)
 	{
@@ -1421,7 +1434,9 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible
 			pEnd = nullptr;
 		}
 		else if(pEnd == nullptr)
+		{
 			pEnd = pStrOld;
+		}
 
 		if(++Length >= MAX_LINE_LENGTH)
 		{
@@ -1943,7 +1958,9 @@ void CChat::OnPrepareLines(float y)
 		ColorRGBA Color;
 		const char *pGradient = nullptr;
 		if(Line.m_CustomColor)
+		{
 			Color = *Line.m_CustomColor;
+		}
 		else if(Line.m_ClientId == SERVER_MSG)
 		{
 			Color = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageSystemColor));

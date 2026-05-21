@@ -51,7 +51,7 @@ private:
 		virtual ~CAbstractCommunityIconJob() = default;
 	};
 
-	class CCommunityIconLoadJob : public IJob, public CAbstractCommunityIconJob
+	class CCommunityIconLoadJob : public IJob, public CAbstractCommunityIconJob // NOLINT(misc-multiple-inheritance): IJob provides queue state; the shared base stores icon metadata.
 	{
 		CImageInfo m_ImageInfo;
 		CImageInfo m_ImageInfoGrayscale;
@@ -67,7 +67,7 @@ private:
 		CImageInfo &ImageInfoGrayscale() { return m_ImageInfoGrayscale; }
 	};
 
-	class CCommunityIconDownloadJob : public CHttpRequest, public CAbstractCommunityIconJob
+	class CCommunityIconDownloadJob : public CHttpRequest, public CAbstractCommunityIconJob // NOLINT(misc-multiple-inheritance): CHttpRequest provides request state; the shared base stores icon metadata.
 	{
 	public:
 		CCommunityIconDownloadJob(CCommunityIcons *pCommunityIcons, const char *pCommunityId, const char *pUrl, const SHA256_DIGEST &Sha256);

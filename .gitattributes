@@ -1,4 +1,73 @@
+# 全局兜底：Git 自动检测文本/二进制，仓库 LF，checkout 跟随 core.autocrlf
+* text=auto
+
+# Merge 策略
 README.md merge=ours
 
+# 语言标记
 other/*/include/* linguist-vendored
 src/engine/external/* linguist-vendored
+
+# C/C++ 源码：仓库 LF，工作区跟随平台（Windows=CRLF）
+*.c text
+*.cc text
+*.cpp text
+*.h text
+*.hpp text
+*.inl text
+
+# Rust 源码：仓库 LF，工作区跟随平台
+*.rs text
+
+# 脚本和配置：仓库 LF
+# Python/JS/配置文件跟随平台，shell 脚本必须 LF
+*.py text
+*.cmake text
+CMakeLists.txt text
+*.toml text
+*.yml text
+*.yaml text
+*.json text
+*.cfg text
+*.conf text
+*.xml text
+*.html text
+*.css text
+*.js text
+*.ts text
+*.md text
+*.txt text
+*.rst text
+
+# Shell 脚本：仓库 LF，工作区也 LF（bash 需要 LF，不能是 CRLF）
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows 批处理：仓库 CRLF（cmd.exe 需要 CRLF）
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制文件（不转换）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.wav binary
+*.ogg binary
+*.opus binary
+*.wv binary
+*.zip binary
+*.gz binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.o binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary

@@ -407,7 +407,9 @@ void CCharacterCore::Tick(bool UseInput, bool DoDeferredTick)
 		{
 			CCharacterCore *pCharCore = m_pWorld->m_apCharacters[m_HookedPlayer];
 			if(pCharCore && m_Id != -1 && m_pTeams->CanKeepHook(m_Id, pCharCore->m_Id))
+			{
 				m_HookPos = pCharCore->m_Pos;
+			}
 			else
 			{
 				// release hook
@@ -556,7 +558,9 @@ void CCharacterCore::Move()
 			m_Colliding = 2;
 	}
 	else
+	{
 		m_LeftWall = true;
+	}
 
 	m_Vel.x = m_Vel.x * (1.0f / RampValue);
 

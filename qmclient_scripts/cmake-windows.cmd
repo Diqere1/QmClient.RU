@@ -30,9 +30,33 @@ if defined VSINSTALLDIR (
 )
 
 set "CMOUT=%TEMP%\cmake-windows-%RANDOM%.log"
-cmake %* > "%CMOUT%" 2>&1
+if /I "%~1"=="--build" (
+	cmake %* > "%CMOUT%" 2>&1
+) else if /I "%~1"=="-E" (
+	cmake %* > "%CMOUT%" 2>&1
+) else if /I "%~1"=="-P" (
+	cmake %* > "%CMOUT%" 2>&1
+) else if /I "%~1"=="--install" (
+	cmake %* > "%CMOUT%" 2>&1
+) else if /I "%~1"=="--open" (
+	cmake %* > "%CMOUT%" 2>&1
+) else if /I "%~1"=="--workflow" (
+	cmake %* > "%CMOUT%" 2>&1
+) else (
+	cmake -Wno-dev %* > "%CMOUT%" 2>&1
+)
 set "CMRC=%errorlevel%"
-findstr /V /C:"注意: 包含文件:" /C:"Note: including file:" "%CMOUT%"
+set "FILTERED="
+py.exe -3 "%~dp0cmake-windows-filter.py" "%CMOUT%"
+if not errorlevel 1 (
+	set "FILTERED=1"
+) else (
+	python "%~dp0cmake-windows-filter.py" "%CMOUT%"
+	if not errorlevel 1 (
+		set "FILTERED=1"
+	)
+)
+if not defined FILTERED type "%CMOUT%"
 del /Q "%CMOUT%" >nul 2>&1
 exit /b %CMRC%
 

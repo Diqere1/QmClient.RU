@@ -72,16 +72,16 @@ namespace
 
 bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLabel, unsigned *pBaseColor, char *pGradient, int GradientSize, ColorRGBA DefaultColor, CButtonContainer *pResetButton, CButtonContainer *pAddButton, CButtonContainer *pRemoveButton, unsigned *pColorValues, bool CheckBoxSpacing, int *pCheckBoxValue)
 {
-	constexpr float TOP_LINE_HEIGHT = 24.0f;
-	constexpr float COLOR_LINE_HEIGHT = 27.0f;
-	constexpr float BOTTOM_MARGIN = 2.0f;
-	constexpr float COLOR_BUTTON_SIZE = 24.0f;
-	constexpr float COLOR_BUTTON_SPACING = 5.0f;
-	constexpr float CHANGE_BUTTON_SIZE = 22.0f;
+	constexpr float TopLineHeight = 24.0f;
+	constexpr float ColorLineHeight = 27.0f;
+	constexpr float BottomMargin = 2.0f;
+	constexpr float ColorButtonSize = 24.0f;
+	constexpr float ColorButtonSpacing = 5.0f;
+	constexpr float ChangeButtonSize = 22.0f;
 
 	bool Changed = false;
 	CUIRect Section, Label, TextLabel, ResetButton;
-	pView->HSplitTop(TOP_LINE_HEIGHT, &Section, pView);
+	pView->HSplitTop(TopLineHeight, &Section, pView);
 
 	Section.VSplitRight(60.0f, &Section, &ResetButton);
 	Section.VSplitRight(8.0f, &Section, nullptr);
@@ -123,19 +123,19 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 	}
 
 	CUIRect ColorLine;
-	pView->HSplitTop(COLOR_LINE_HEIGHT, &ColorLine, pView);
+	pView->HSplitTop(ColorLineHeight, &ColorLine, pView);
 	CUIRect ColorArea = ColorLine;
 	if(CheckBoxSpacing)
 		ColorArea.VSplitLeft(ColorLine.h + 5.0f, nullptr, &ColorArea);
-	ColorArea.VSplitRight(CHANGE_BUTTON_SIZE * 2.0f + COLOR_BUTTON_SPACING, &ColorArea, &ColorLine);
+	ColorArea.VSplitRight(ChangeButtonSize * 2.0f + ColorButtonSpacing, &ColorArea, &ColorLine);
 
 	for(int ColorIndex = 0; ColorIndex < NumColors; ++ColorIndex)
 	{
 		CUIRect ColorButton;
-		ColorArea.VSplitLeft(COLOR_BUTTON_SIZE, &ColorButton, &ColorArea);
-		ColorButton.HMargin((ColorButton.h - COLOR_BUTTON_SIZE) / 2.0f, &ColorButton);
+		ColorArea.VSplitLeft(ColorButtonSize, &ColorButton, &ColorArea);
+		ColorButton.HMargin((ColorButton.h - ColorButtonSize) / 2.0f, &ColorButton);
 		if(ColorIndex < NumColors - 1)
-			ColorArea.VSplitLeft(COLOR_BUTTON_SPACING, nullptr, &ColorArea);
+			ColorArea.VSplitLeft(ColorButtonSpacing, nullptr, &ColorArea);
 		const unsigned OldColor = pColorValues[ColorIndex];
 		const ColorHSLA PickedColor = DoButton_ColorPicker(&ColorButton, &pColorValues[ColorIndex], false);
 		pColorValues[ColorIndex] = PickedColor.Pack(false);
@@ -151,11 +151,11 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 	}
 
 	CUIRect RemoveButton, AddButton;
-	ColorLine.VSplitLeft(CHANGE_BUTTON_SIZE, &RemoveButton, &ColorLine);
-	ColorLine.VSplitLeft(COLOR_BUTTON_SPACING, nullptr, &ColorLine);
-	ColorLine.VSplitLeft(CHANGE_BUTTON_SIZE, &AddButton, nullptr);
-	RemoveButton.HMargin((RemoveButton.h - CHANGE_BUTTON_SIZE) / 2.0f, &RemoveButton);
-	AddButton.HMargin((AddButton.h - CHANGE_BUTTON_SIZE) / 2.0f, &AddButton);
+	ColorLine.VSplitLeft(ChangeButtonSize, &RemoveButton, &ColorLine);
+	ColorLine.VSplitLeft(ColorButtonSpacing, nullptr, &ColorLine);
+	ColorLine.VSplitLeft(ChangeButtonSize, &AddButton, nullptr);
+	RemoveButton.HMargin((RemoveButton.h - ChangeButtonSize) / 2.0f, &RemoveButton);
+	AddButton.HMargin((AddButton.h - ChangeButtonSize) / 2.0f, &AddButton);
 	const bool CanRemoveColor = NumColors > CMessageGradient::MIN_COLORS;
 	const bool CanAddColor = NumColors < CMessageGradient::MAX_COLORS;
 	if(DoButton_Menu(pRemoveButton, "-", CanRemoveColor ? 0 : -1, &RemoveButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 4.0f) && CanRemoveColor)
@@ -176,7 +176,7 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 		Changed = true;
 	}
 
-	pView->HSplitTop(BOTTOM_MARGIN, nullptr, pView);
+	pView->HSplitTop(BottomMargin, nullptr, pView);
 	if(Changed)
 	{
 		Chat.RebuildChat();
@@ -1561,7 +1561,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	int OldSelected = -1;
 	s_vQueueButtonIds.resize(vSkinList.size());
 	s_ListBox.DoStart(50.0f, vSkinList.size(), 4, 2, OldSelected, &MainView);
-	auto DoButton_SkinQueue = [&](const void *pButtonId, const void *pParentId, bool InQueue, bool Disabled, const CUIRect *pRect) {
+	auto DoButtonSkinQueue = [&](const void *pButtonId, const void *pParentId, bool InQueue, bool Disabled, const CUIRect *pRect) {
 		if(InQueue || (pParentId != nullptr && Ui()->HotItem() == pParentId) || Ui()->HotItem() == pButtonId)
 		{
 			TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
@@ -1651,7 +1651,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			IconRow.VSplitRight(20.0f, &IconRow, &QueueIcon);
 			const bool InQueue = GameClient()->m_Skins.IsInSkinQueue(pSkinContainer->Name(), *pUseCustomColor != 0, *pColorBody, *pColorFeet, QueueDummy);
 			const bool QueueFull = !InQueue && (int)SkinQueue.size() >= QueueLength;
-			if(DoButton_SkinQueue(&s_vQueueButtonIds[i], SkinListEntry.ListItemId(), InQueue, QueueFull, &QueueIcon))
+			if(DoButtonSkinQueue(&s_vQueueButtonIds[i], SkinListEntry.ListItemId(), InQueue, QueueFull, &QueueIcon))
 			{
 				if(InQueue)
 				{
@@ -2208,17 +2208,20 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	}
 }
 
-struct SAudioPackEntry
+namespace
 {
-	char m_aName[64];
-	int m_FileCount;
-};
+	struct SAudioPackEntry
+	{
+		char m_aName[64];
+		int m_FileCount;
+	};
 
-struct SAudioPackScanUser
-{
-	IStorage *m_pStorage;
-	std::vector<SAudioPackEntry> *m_pPacks;
-};
+	struct SAudioPackScanUser
+	{
+		IStorage *m_pStorage;
+		std::vector<SAudioPackEntry> *m_pPacks;
+	};
+} // namespace
 
 static int AudioPackFileScan(const char *pName, int IsDir, int DirType, void *pUser)
 {
@@ -5097,7 +5100,7 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 
 		if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesReload, FONT_ICON_ARROW_ROTATE_RIGHT, 0, &ReloadButton, BUTTONFLAG_LEFT))
 		{
-			BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
+			CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
 			g_Config.m_ClBackgroundEntities[0] = '\0';
 			s_BackgroundEntitiesInput.Set("");
 			s_aBackgroundEntitiesSync[0] = '\0';
@@ -5210,7 +5213,7 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 
 			if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesReload, FONT_ICON_ARROW_ROTATE_RIGHT, 0, &ReloadButton, BUTTONFLAG_LEFT))
 			{
-				BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
+				CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
 				g_Config.m_ClBackgroundEntities[0] = '\0';
 				s_BackgroundEntitiesInput.Set("");
 				s_aBackgroundEntitiesSync[0] = '\0';

@@ -114,14 +114,15 @@ private:
 
 public:
 	CDataFileWriter();
-	CDataFileWriter(CDataFileWriter &&Other)
+	// NOLINTNEXTLINE(bugprone-exception-escape)
+	CDataFileWriter(CDataFileWriter &&Other) :
+		m_File(Other.m_File),
+		m_ItemTypes(std::move(Other.m_ItemTypes)),
+		m_vItems(std::move(Other.m_vItems)),
+		m_vDatas(std::move(Other.m_vDatas)),
+		m_vExtendedItemTypes(std::move(Other.m_vExtendedItemTypes))
 	{
-		m_File = Other.m_File;
 		Other.m_File = nullptr;
-		m_ItemTypes = std::move(Other.m_ItemTypes);
-		m_vItems = std::move(Other.m_vItems);
-		m_vDatas = std::move(Other.m_vDatas);
-		m_vExtendedItemTypes = std::move(Other.m_vExtendedItemTypes);
 	}
 	~CDataFileWriter();
 

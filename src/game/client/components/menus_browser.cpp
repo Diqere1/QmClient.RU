@@ -2,9 +2,6 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include "menus.h"
 
-#include <algorithm>
-#include <unordered_map>
-
 #include <base/log.h>
 
 #include <engine/engine.h>
@@ -26,6 +23,9 @@
 #include <game/client/ui_listbox.h>
 #include <game/localization.h>
 #include <game/voting.h>
+
+#include <algorithm>
+#include <unordered_map>
 
 using namespace FontIcons;
 
@@ -138,6 +138,7 @@ static bool TryParseVoteMapDifficulty(const char *pDescription, const char *pMap
 	return true;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SLocalSaveDisplayEntry
 {
 	std::string m_Time;
@@ -345,9 +346,13 @@ static ColorRGBA GetGametypeTextColor(const char *pGametype)
 {
 	ColorHSLA HslaColor;
 	if(str_comp(pGametype, "DM") == 0 || str_comp(pGametype, "TDM") == 0 || str_comp(pGametype, "CTF") == 0 || str_comp(pGametype, "LMS") == 0 || str_comp(pGametype, "LTS") == 0)
+	{
 		HslaColor = ColorHSLA(0.33f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "catch"))
+	{
 		HslaColor = ColorHSLA(0.17f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "dm") || str_find_nocase(pGametype, "tdm") || str_find_nocase(pGametype, "ctf") || str_find_nocase(pGametype, "lms") || str_find_nocase(pGametype, "lts"))
 	{
 		if(pGametype[0] == 'i' || pGametype[0] == 'g')
@@ -356,23 +361,41 @@ static ColorRGBA GetGametypeTextColor(const char *pGametype)
 			HslaColor = ColorHSLA(0.40f, 1.0f, 0.75f);
 	}
 	else if(str_find_nocase(pGametype, "f-ddrace") || str_find_nocase(pGametype, "freeze"))
+	{
 		HslaColor = ColorHSLA(0.0f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "fng"))
+	{
 		HslaColor = ColorHSLA(0.83f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "gores"))
+	{
 		HslaColor = ColorHSLA(0.525f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "BW"))
+	{
 		HslaColor = ColorHSLA(0.05f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "ddracenet") || str_find_nocase(pGametype, "ddnet") || str_find_nocase(pGametype, "0xf"))
+	{
 		HslaColor = ColorHSLA(0.58f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "ddrace") || str_find_nocase(pGametype, "mkrace"))
+	{
 		HslaColor = ColorHSLA(0.75f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "race") || str_find_nocase(pGametype, "fastcap"))
+	{
 		HslaColor = ColorHSLA(0.46f, 1.0f, 0.75f);
+	}
 	else if(str_find_nocase(pGametype, "s-ddr"))
+	{
 		HslaColor = ColorHSLA(1.0f, 1.0f, 0.7f);
+	}
 	else
+	{
 		HslaColor = ColorHSLA(1.0f, 1.0f, 1.0f);
+	}
 	return color_cast<ColorRGBA>(HslaColor);
 }
 
@@ -1008,7 +1031,9 @@ void CMenus::Connect(const char *pAddress)
 		PopupConfirm(Localize("Disconnect"), Localize("Are you sure that you want to disconnect and switch to a different server?"), Localize("Yes"), Localize("No"), &CMenus::PopupConfirmSwitchServer);
 	}
 	else
+	{
 		Client()->Connect(pAddress);
+	}
 }
 
 void CMenus::PopupConfirmSwitchServer()
@@ -1780,7 +1805,9 @@ void CMenus::RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *
 	{
 		const CServerInfo::CClient &SelectedClient = pSelectedServer->m_aClients[NewSelected];
 		if(SelectedClient.m_FriendState == IFriends::FRIEND_PLAYER)
+		{
 			GameClient()->Friends()->RemoveFriend(SelectedClient.m_aName, SelectedClient.m_aClan);
+		}
 		else
 		{
 			const int DefaultCategoryIndex = maximum(0, GameClient()->Friends()->FindCategory(GameClient()->Friends()->DefaultCategory()));
@@ -1850,7 +1877,8 @@ void CMenus::RenderServerbrowserFriends(CUIRect View)
 				auto &vOfflineFriends = vvFriends[OfflineCategoryIndex];
 				vOfflineFriends.erase(std::remove_if(vOfflineFriends.begin(), vOfflineFriends.end(), [&](const CFriendItem &Friend) {
 					return Friend.ServerInfo() == nullptr && Friend.Name()[0] != '\0' && str_comp(Friend.Name(), CurrentClient.m_aName) == 0 && (g_Config.m_ClFriendsIgnoreClan || str_comp(Friend.Clan(), CurrentClient.m_aClan) == 0);
-				}), vOfflineFriends.end());
+				}),
+					vOfflineFriends.end());
 			}
 		}
 	}
@@ -2824,7 +2852,7 @@ void CMenus::FriendlistOnUpdate()
 {
 	const int NumCategories = maximum(1, GameClient()->Friends()->NumCategories());
 	const bool ConfigChanged = m_FriendsCategoryExpandedLoaded &&
-		str_comp(m_FriendsCategoryExpandedStateCache.c_str(), g_Config.m_ClFriendsCategoryExpanded) != 0;
+				   str_comp(m_FriendsCategoryExpandedStateCache.c_str(), g_Config.m_ClFriendsCategoryExpanded) != 0;
 
 	if(!m_FriendsCategoryExpandedLoaded || ConfigChanged)
 	{

@@ -3,10 +3,10 @@
 #include "editor.h"
 #include "editor_actions.h"
 
-#include <engine/keys.h>
-
 #include <base/math.h>
 #include <base/system.h>
+
+#include <engine/keys.h>
 
 #include <game/client/lineinput.h>
 #include <game/editor/mapitems/layer_front.h>
@@ -24,38 +24,38 @@
 
 namespace
 {
-struct SButtonId
-{
-	const void *m_pOwner;
-	int m_Value;
-};
+	struct SButtonId
+	{
+		const void *m_pOwner;
+		int m_Value;
+	};
 
-float StableUnitRandom(int x, int y, int Salt)
-{
-	unsigned Value = (unsigned)x * 73856093u ^ (unsigned)y * 19349663u ^ (unsigned)Salt * 83492791u;
-	Value ^= Value >> 13;
-	Value *= 1274126177u;
-	Value ^= Value >> 16;
-	return (Value & 0x00ffffff) / (float)0x01000000;
-}
+	float StableUnitRandom(int x, int y, int Salt)
+	{
+		unsigned Value = (unsigned)x * 73856093u ^ (unsigned)y * 19349663u ^ (unsigned)Salt * 83492791u;
+		Value ^= Value >> 13;
+		Value *= 1274126177u;
+		Value ^= Value >> 16;
+		return (Value & 0x00ffffff) / (float)0x01000000;
+	}
 
-ivec2 MouseTile(CEditor *pEditor, const std::shared_ptr<CLayerTiles> &pLayer)
-{
-	std::shared_ptr<CLayerGroup> pGroup = pEditor->GetSelectedGroup();
-	if(!pGroup || !pLayer)
-		return ivec2(0, 0);
+	ivec2 MouseTile(CEditor *pEditor, const std::shared_ptr<CLayerTiles> &pLayer)
+	{
+		std::shared_ptr<CLayerGroup> pGroup = pEditor->GetSelectedGroup();
+		if(!pGroup || !pLayer)
+			return ivec2(0, 0);
 
-	float aPoints[4];
-	pGroup->Mapping(aPoints);
+		float aPoints[4];
+		pGroup->Mapping(aPoints);
 
-	const vec2 MousePos = pEditor->Ui()->UpdatedMousePos();
-	const float WorldWidth = aPoints[2] - aPoints[0];
-	const float WorldHeight = aPoints[3] - aPoints[1];
-	const float LayerX = aPoints[0] + WorldWidth * (MousePos.x / pEditor->Graphics()->WindowWidth());
-	const float LayerY = aPoints[1] + WorldHeight * (MousePos.y / pEditor->Graphics()->WindowHeight());
+		const vec2 MousePos = pEditor->Ui()->UpdatedMousePos();
+		const float WorldWidth = aPoints[2] - aPoints[0];
+		const float WorldHeight = aPoints[3] - aPoints[1];
+		const float LayerX = aPoints[0] + WorldWidth * (MousePos.x / pEditor->Graphics()->WindowWidth());
+		const float LayerY = aPoints[1] + WorldHeight * (MousePos.y / pEditor->Graphics()->WindowHeight());
 
-	return ivec2(pLayer->ConvertX(LayerX), pLayer->ConvertY(LayerY));
-}
+		return ivec2(pLayer->ConvertX(LayerX), pLayer->ConvertY(LayerY));
+	}
 
 }
 
@@ -381,56 +381,56 @@ void CEditorDrawingTools::AddThickCell(std::vector<SCell> &vCells, int x, int y,
 	const int MaxOffset = MinOffset + Thickness - 1;
 	const float Radius = Thickness * 0.5f;
 	const float RadiusSquared = Radius * Radius + 0.25f;
-	for(int yy = MinOffset; yy <= MaxOffset; ++yy)
+	for(int OffsetY = MinOffset; OffsetY <= MaxOffset; ++OffsetY)
 	{
-		for(int xx = MinOffset; xx <= MaxOffset; ++xx)
+		for(int OffsetX = MinOffset; OffsetX <= MaxOffset; ++OffsetX)
 		{
-			if(Thickness <= 2 || xx * xx + yy * yy <= RadiusSquared)
-				AddCell(vCells, x + xx, y + yy);
+			if(Thickness <= 2 || OffsetX * OffsetX + OffsetY * OffsetY <= RadiusSquared)
+				AddCell(vCells, x + OffsetX, y + OffsetY);
 		}
 	}
 }
 
 void CEditorDrawingTools::AddLine(std::vector<SCell> &vCells, ivec2 From, ivec2 To, int Thickness) const
 {
-	int x0 = From.x;
-	int y0 = From.y;
-	const int x1 = To.x;
-	const int y1 = To.y;
-	const int dx = absolute(x1 - x0);
-	const int sx = x0 < x1 ? 1 : -1;
-	const int dy = -absolute(y1 - y0);
-	const int sy = y0 < y1 ? 1 : -1;
-	int Error = dx + dy;
+	int X0 = From.x;
+	int Y0 = From.y;
+	const int X1 = To.x;
+	const int Y1 = To.y;
+	const int DeltaX = absolute(X1 - X0);
+	const int StepX = X0 < X1 ? 1 : -1;
+	const int DeltaY = -absolute(Y1 - Y0);
+	const int StepY = Y0 < Y1 ? 1 : -1;
+	int Error = DeltaX + DeltaY;
 
 	while(true)
 	{
-		AddThickCell(vCells, x0, y0, Thickness);
-		if(x0 == x1 && y0 == y1)
+		AddThickCell(vCells, X0, Y0, Thickness);
+		if(X0 == X1 && Y0 == Y1)
 			break;
 
 		const int Error2 = 2 * Error;
-		if(Error2 >= dy)
+		if(Error2 >= DeltaY)
 		{
-			Error += dy;
-			x0 += sx;
+			Error += DeltaY;
+			X0 += StepX;
 		}
-		if(Error2 <= dx)
+		if(Error2 <= DeltaX)
 		{
-			Error += dx;
-			y0 += sy;
+			Error += DeltaX;
+			Y0 += StepY;
 		}
 	}
 }
 
 void CEditorDrawingTools::BuildFillCells(std::vector<SCell> &vCells) const
 {
-	const int x0 = minimum(m_Drag.m_Start.x, m_Drag.m_Current.x);
-	const int x1 = maximum(m_Drag.m_Start.x, m_Drag.m_Current.x);
-	const int y0 = minimum(m_Drag.m_Start.y, m_Drag.m_Current.y);
-	const int y1 = maximum(m_Drag.m_Start.y, m_Drag.m_Current.y);
-	for(int y = y0; y <= y1; ++y)
-		for(int x = x0; x <= x1; ++x)
+	const int MinX = minimum(m_Drag.m_Start.x, m_Drag.m_Current.x);
+	const int MaxX = maximum(m_Drag.m_Start.x, m_Drag.m_Current.x);
+	const int MinY = minimum(m_Drag.m_Start.y, m_Drag.m_Current.y);
+	const int MaxY = maximum(m_Drag.m_Start.y, m_Drag.m_Current.y);
+	for(int y = MinY; y <= MaxY; ++y)
+		for(int x = MinX; x <= MaxX; ++x)
 			AddCell(vCells, x, y);
 }
 
@@ -438,29 +438,29 @@ void CEditorDrawingTools::BuildShapeCells(std::vector<SCell> &vCells) const
 {
 	if(m_Shape == EShape::RECT)
 	{
-		const int x0 = minimum(m_Drag.m_Start.x, m_Drag.m_Current.x);
-		const int x1 = maximum(m_Drag.m_Start.x, m_Drag.m_Current.x);
-		const int y0 = minimum(m_Drag.m_Start.y, m_Drag.m_Current.y);
-		const int y1 = maximum(m_Drag.m_Start.y, m_Drag.m_Current.y);
+		const int MinX = minimum(m_Drag.m_Start.x, m_Drag.m_Current.x);
+		const int MaxX = maximum(m_Drag.m_Start.x, m_Drag.m_Current.x);
+		const int MinY = minimum(m_Drag.m_Start.y, m_Drag.m_Current.y);
+		const int MaxY = maximum(m_Drag.m_Start.y, m_Drag.m_Current.y);
 		if(!m_ShapeOutline)
 		{
-			for(int y = y0; y <= y1; ++y)
-				for(int x = x0; x <= x1; ++x)
+			for(int y = MinY; y <= MaxY; ++y)
+				for(int x = MinX; x <= MaxX; ++x)
 					AddCell(vCells, x, y);
 		}
 		else
 		{
 			for(int Thickness = 0; Thickness < m_ShapeThickness; ++Thickness)
 			{
-				for(int x = x0 + Thickness; x <= x1 - Thickness; ++x)
+				for(int x = MinX + Thickness; x <= MaxX - Thickness; ++x)
 				{
-					AddCell(vCells, x, y0 + Thickness);
-					AddCell(vCells, x, y1 - Thickness);
+					AddCell(vCells, x, MinY + Thickness);
+					AddCell(vCells, x, MaxY - Thickness);
 				}
-				for(int y = y0 + Thickness; y <= y1 - Thickness; ++y)
+				for(int y = MinY + Thickness; y <= MaxY - Thickness; ++y)
 				{
-					AddCell(vCells, x0 + Thickness, y);
-					AddCell(vCells, x1 - Thickness, y);
+					AddCell(vCells, MinX + Thickness, y);
+					AddCell(vCells, MaxX - Thickness, y);
 				}
 			}
 		}
@@ -567,33 +567,33 @@ void CEditorDrawingTools::BuildLineCells(std::vector<SCell> &vCells) const
 
 void CEditorDrawingTools::BuildFadeCells(std::vector<SCell> &vCells) const
 {
-	const int x0 = minimum(m_Drag.m_Start.x, m_Drag.m_Current.x);
-	const int x1 = maximum(m_Drag.m_Start.x, m_Drag.m_Current.x);
-	const int y0 = minimum(m_Drag.m_Start.y, m_Drag.m_Current.y);
-	const int y1 = maximum(m_Drag.m_Start.y, m_Drag.m_Current.y);
+	const int MinX = minimum(m_Drag.m_Start.x, m_Drag.m_Current.x);
+	const int MaxX = maximum(m_Drag.m_Start.x, m_Drag.m_Current.x);
+	const int MinY = minimum(m_Drag.m_Start.y, m_Drag.m_Current.y);
+	const int MaxY = maximum(m_Drag.m_Start.y, m_Drag.m_Current.y);
 	const float Angle = m_FadeAngle * pi / 180.0f;
 	const float DirX = std::cos(Angle);
 	const float DirY = std::sin(Angle);
 	const float aCorners[] = {
-		x0 * DirX + y0 * DirY,
-		x1 * DirX + y0 * DirY,
-		x0 * DirX + y1 * DirY,
-		x1 * DirX + y1 * DirY,
+		MinX * DirX + MinY * DirY,
+		MaxX * DirX + MinY * DirY,
+		MinX * DirX + MaxY * DirY,
+		MaxX * DirX + MaxY * DirY,
 	};
 	const float MinProjection = *std::min_element(std::begin(aCorners), std::end(aCorners));
 	const float MaxProjection = *std::max_element(std::begin(aCorners), std::end(aCorners));
 	const float ProjectionRange = maximum(1.0f, MaxProjection - MinProjection);
 
-	for(int y = y0; y <= y1; ++y)
+	for(int y = MinY; y <= MaxY; ++y)
 	{
-		for(int x = x0; x <= x1; ++x)
+		for(int x = MinX; x <= MaxX; ++x)
 		{
 			float t = (x * DirX + y * DirY - MinProjection) / ProjectionRange;
 			t = std::clamp(t, 0.0f, 1.0f);
 			float Probability = mix((float)m_FadeStart, (float)m_FadeEnd, t) / 100.0f;
 			if(m_FadeSoftness > 0)
 			{
-				const float Edge = minimum(minimum((float)(x - x0 + 1), (float)(x1 - x + 1)), minimum((float)(y - y0 + 1), (float)(y1 - y + 1)));
+				const float Edge = minimum(minimum((float)(x - MinX + 1), (float)(MaxX - x + 1)), minimum((float)(y - MinY + 1), (float)(MaxY - y + 1)));
 				const float SoftRange = 1.0f + m_FadeSoftness / 20.0f;
 				Probability *= std::clamp(Edge / SoftRange, 0.0f, 1.0f);
 			}
@@ -670,9 +670,13 @@ std::shared_ptr<CLayerTiles> CEditorDrawingTools::MakeTileBrush(CEditor *pEditor
 
 	std::shared_ptr<CLayerTiles> pBrush;
 	if(pTargetLayer == pEditor->m_Map.m_pGameLayer)
+	{
 		pBrush = std::make_shared<CLayerGame>(&pEditor->m_Map, 1, 1);
+	}
 	else if(pTargetLayer == pEditor->m_Map.m_pFrontLayer)
+	{
 		pBrush = std::make_shared<CLayerFront>(&pEditor->m_Map, 1, 1);
+	}
 	else if(pTargetLayer == pEditor->m_Map.m_pTeleLayer)
 	{
 		auto pTeleBrush = std::make_shared<CLayerTele>(&pEditor->m_Map, 1, 1);
@@ -702,7 +706,9 @@ std::shared_ptr<CLayerTiles> CEditorDrawingTools::MakeTileBrush(CEditor *pEditor
 		pBrush = pTuneBrush;
 	}
 	else
+	{
 		pBrush = std::make_shared<CLayerTiles>(&pEditor->m_Map, 1, 1);
+	}
 
 	if(!pBrush)
 		return nullptr;
@@ -853,11 +859,11 @@ void CEditorDrawingTools::RenderPreview(CEditor *pEditor)
 	const ETool PreviewTool = m_Drawing ? m_Drag.m_Tool : m_Tool;
 	if(m_Drag.m_PreviewCellsClipped && (PreviewTool == ETool::FILL || PreviewTool == ETool::FADE || (PreviewTool == ETool::SHAPE && m_Shape == EShape::RECT && !m_ShapeOutline)))
 	{
-		const int x0 = minimum(m_Drag.m_Start.x, m_Drag.m_Current.x);
-		const int x1 = maximum(m_Drag.m_Start.x, m_Drag.m_Current.x);
-		const int y0 = minimum(m_Drag.m_Start.y, m_Drag.m_Current.y);
-		const int y1 = maximum(m_Drag.m_Start.y, m_Drag.m_Current.y);
-		IGraphics::CQuadItem Quad(x0 * 32.0f, y0 * 32.0f, (x1 - x0 + 1) * 32.0f, (y1 - y0 + 1) * 32.0f);
+		const int MinX = minimum(m_Drag.m_Start.x, m_Drag.m_Current.x);
+		const int MaxX = maximum(m_Drag.m_Start.x, m_Drag.m_Current.x);
+		const int MinY = minimum(m_Drag.m_Start.y, m_Drag.m_Current.y);
+		const int MaxY = maximum(m_Drag.m_Start.y, m_Drag.m_Current.y);
+		IGraphics::CQuadItem Quad(MinX * 32.0f, MinY * 32.0f, (MaxX - MinX + 1) * 32.0f, (MaxY - MinY + 1) * 32.0f);
 		pEditor->Graphics()->QuadsDrawTL(&Quad, 1);
 	}
 	else

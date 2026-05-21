@@ -10,7 +10,7 @@
 #include <game/mapitems.h>
 
 #include <cinttypes>
-#include <cstdio> // sscanf
+#include <cstdlib>
 
 // Based on triple32inc from https://github.com/skeeto/hash-prospector/tree/79a6074062a84907df6e45b756134b74e2956760
 static uint32_t HashUInt32(uint32_t Num)
@@ -27,6 +27,39 @@ static uint32_t HashUInt32(uint32_t Num)
 }
 
 #define HASH_MAX 65536
+
+static const char *NextWord(const char *pCursor, char *pBuf, int BufSize)
+{
+	return str_next_token(pCursor, " \t\r\n", pBuf, BufSize);
+}
+
+static const char *NextInt(const char *pCursor, int &Value)
+{
+	char aBuf[128] = "";
+	const char *pNext = NextWord(pCursor, aBuf, sizeof(aBuf));
+	if(!pNext || !str_toint(aBuf, &Value))
+		return nullptr;
+	return pNext;
+}
+
+static const char *NextFloat(const char *pCursor, float &Value)
+{
+	char aBuf[128] = "";
+	const char *pNext = NextWord(pCursor, aBuf, sizeof(aBuf));
+	if(!pNext || !str_tofloat(aBuf, &Value))
+		return nullptr;
+	return pNext;
+}
+
+static bool ParseFloatWithPercentSuffix(const char *pWord, float &Value, char &Specifier)
+{
+	char *pEnd = nullptr;
+	Value = std::strtof(pWord, &pEnd);
+	if(pEnd == pWord)
+		return false;
+	Specifier = *pEnd;
+	return *pEnd == '\0' || *pEnd == '%';
+}
 
 static int HashLocation(uint32_t Seed, uint32_t Run, uint32_t Rule, uint32_t X, uint32_t Y)
 {
@@ -112,7 +145,14 @@ void CAutoMapper::Load(const char *pTileName)
 				char aOrientation2[128] = "";
 				char aOrientation3[128] = "";
 
-				sscanf(pLine, "Index %d %127s %127s %127s", &NewIndexRule.m_Id, aOrientation1, aOrientation2, aOrientation3);
+				const char *pIndexCursor = str_trim_words(pLine, 1);
+				pIndexCursor = NextInt(pIndexCursor, NewIndexRule.m_Id);
+				if(pIndexCursor)
+					pIndexCursor = NextWord(pIndexCursor, aOrientation1, sizeof(aOrientation1));
+				if(pIndexCursor)
+					pIndexCursor = NextWord(pIndexCursor, aOrientation2, sizeof(aOrientation2));
+				if(pIndexCursor)
+					NextWord(pIndexCursor, aOrientation3, sizeof(aOrientation3));
 
 				NewIndexRule.m_Flag = 0;
 				NewIndexRule.m_RandomProbability = 1.0f;
@@ -137,11 +177,16 @@ void CAutoMapper::Load(const char *pTileName)
 			else if(str_startswith(pLine, "Pos") && pCurrentIndex)
 			{
 				int x = 0, y = 0;
-				char aValue[128];
+				char aValue[128] = "";
 				int Value = CPosRule::NORULE;
 				std::vector<CIndexInfo> vNewIndexList;
 
-				sscanf(pLine, "Pos %d %d %127s", &x, &y, aValue);
+				const char *pPosCursor = str_trim_words(pLine, 1);
+				pPosCursor = NextInt(pPosCursor, x);
+				if(pPosCursor)
+					pPosCursor = NextInt(pPosCursor, y);
+				if(pPosCursor)
+					NextWord(pPosCursor, aValue, sizeof(aValue));
 
 				if(!str_comp(aValue, "EMPTY"))
 				{
@@ -173,7 +218,16 @@ void CAutoMapper::Load(const char *pTileName)
 						char aOrientation2[128] = "";
 						char aOrientation3[128] = "";
 						char aOrientation4[128] = "";
-						sscanf(str_trim_words(pLine, pWord), "%d %127s %127s %127s %127s", &NewIndexInfo.m_Id, aOrientation1, aOrientation2, aOrientation3, aOrientation4);
+						const char *pIndexInfoCursor = str_trim_words(pLine, pWord);
+						pIndexInfoCursor = NextInt(pIndexInfoCursor, NewIndexInfo.m_Id);
+						if(pIndexInfoCursor)
+							pIndexInfoCursor = NextWord(pIndexInfoCursor, aOrientation1, sizeof(aOrientation1));
+						if(pIndexInfoCursor)
+							pIndexInfoCursor = NextWord(pIndexInfoCursor, aOrientation2, sizeof(aOrientation2));
+						if(pIndexInfoCursor)
+							pIndexInfoCursor = NextWord(pIndexInfoCursor, aOrientation3, sizeof(aOrientation3));
+						if(pIndexInfoCursor)
+							NextWord(pIndexInfoCursor, aOrientation4, sizeof(aOrientation4));
 
 						NewIndexInfo.m_Flag = 0;
 						NewIndexInfo.m_TestFlag = false;
@@ -273,9 +327,11 @@ void CAutoMapper::Load(const char *pTileName)
 			}
 			else if(str_startswith(pLine, "Random") && pCurrentIndex)
 			{
-				float Value;
+				float Value = 0.0f;
 				char Specifier = ' ';
-				sscanf(pLine, "Random %f%c", &Value, &Specifier);
+				char aValue[128] = "";
+				NextWord(str_trim_words(pLine, 1), aValue, sizeof(aValue));
+				ParseFloatWithPercentSuffix(aValue, Value, Specifier);
 				if(Specifier == '%')
 				{
 					pCurrentIndex->m_RandomProbability = Value / 100.0f;
@@ -287,8 +343,15 @@ void CAutoMapper::Load(const char *pTileName)
 			}
 			else if(str_startswith(pLine, "Modulo") && pCurrentIndex)
 			{
-				CModuloRule NewModuloRule;
-				sscanf(pLine, "Modulo %d %d %d %d", &NewModuloRule.m_ModX, &NewModuloRule.m_ModY, &NewModuloRule.m_OffsetX, &NewModuloRule.m_OffsetY);
+				CModuloRule NewModuloRule = {};
+				const char *pModuloCursor = str_trim_words(pLine, 1);
+				pModuloCursor = NextInt(pModuloCursor, NewModuloRule.m_ModX);
+				if(pModuloCursor)
+					pModuloCursor = NextInt(pModuloCursor, NewModuloRule.m_ModY);
+				if(pModuloCursor)
+					pModuloCursor = NextInt(pModuloCursor, NewModuloRule.m_OffsetX);
+				if(pModuloCursor)
+					NextInt(pModuloCursor, NewModuloRule.m_OffsetY);
 				if(NewModuloRule.m_ModX == 0)
 					NewModuloRule.m_ModX = 1;
 				if(NewModuloRule.m_ModY == 0)

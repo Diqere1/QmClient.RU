@@ -715,6 +715,7 @@ void CUi::DoSmoothScrollLogic(float *pScrollOffset, float *pScrollOffsetChange, 
 	}
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SCursorAndBoundingBox
 {
 	vec2 m_TextSize;
@@ -1237,7 +1238,9 @@ SEditResult<int64_t> CUi::DoValueSelectorWithState(const void *pId, const CUIRec
 				m_ActiveValueSelectorState.m_pLastTextId = pId;
 				m_ActiveValueSelectorState.m_NumberInput.SetInteger64(Current, Base, Props.m_HexPrefix);
 				if(Props.m_SelectAllOnActivate)
+				{
 					m_ActiveValueSelectorState.m_NumberInput.SelectAll();
+				}
 				else
 				{
 					m_ActiveValueSelectorState.m_NumberInput.SetCursorOffset(m_ActiveValueSelectorState.m_NumberInput.GetLength());
@@ -1566,7 +1569,9 @@ bool CUi::DoScrollbarOption(const void *pId, int *pOption, const CUIRect *pRect,
 			str_format(aBuf, sizeof(aBuf), "%s: %i%s", pStr, Value, pSuffix);
 	}
 	else
+	{
 		str_format(aBuf, sizeof(aBuf), "%s: ∞", pStr);
+	}
 
 	if(NoClampValue)
 	{

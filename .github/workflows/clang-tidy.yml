@@ -1,0 +1,52 @@
+name: Check clang-tidy
+
+on:
+  push:
+    branches-ignore:
+      - gh-readonly-queue/**
+  pull_request:
+  merge_group:
+
+jobs:
+  check-clang-tidy:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HTTP_MULTIPLEXING: false
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Prepare Linux
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install pkg-config cmake ninja-build libfreetype6-dev libnotify-dev libsdl2-dev libsqlite3-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libx264-dev libglew-dev libgl1-mesa-dev libvulkan-dev glslang-tools spirv-tools -y
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install Clang 22
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg lsb-release
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 22 all
+
+    - name: Build with clang-tidy
+      run: |
+        set -o pipefail
+        python3 qmclient_scripts/gate/check-clang-tidy.py
+
+    - name: Summarize clang-tidy warnings
+      if: always()
+      shell: bash
+      run: |
+        python3 qmclient_scripts/gate/write_ci_summary.py \
+          --kind clang-tidy \
+          --status "${{ job.status }}" \
+          --log build-clang-tidy/clang-tidy.log \
+          --output "$GITHUB_STEP_SUMMARY"

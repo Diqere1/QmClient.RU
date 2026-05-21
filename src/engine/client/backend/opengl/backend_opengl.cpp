@@ -14,6 +14,8 @@
 #include <engine/client/blocklist_driver.h>
 #include <engine/gfx/image_manipulation.h>
 
+#include <limits>
+
 #ifndef BACKEND_AS_OPENGL_ES
 #include <GL/glew.h>
 #else
@@ -566,14 +568,18 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 				dbg_msg("gfx", "Enabled OpenGL debug mode");
 			}
 			else
+			{
 				dbg_msg("gfx", "Requested OpenGL debug mode, but the driver does not support the required extension");
+			}
 		}
 #endif
 
 		return true;
 	}
 	else
+	{
 		return false;
+	}
 }
 
 bool CCommandProcessorFragment_OpenGL::Cmd_Init(const SCommand_Init *pCommand)
@@ -1319,11 +1325,22 @@ bool CCommandProcessorFragment_OpenGL2::DoAnalyzeStep(size_t CheckCount, size_t 
 
 	int w = aViewport[2];
 	int h = aViewport[3];
+	if(w <= 0 || h <= 0 || CheckCount == 0 || SingleImageSize < 3)
+		return false;
+	if(CheckCount > std::numeric_limits<size_t>::max() / SingleImageSize)
+		return false;
 
-	size_t PixelDataSize = (size_t)w * h * 3;
-	if(PixelDataSize == 0)
+	const size_t Width = (size_t)w;
+	const size_t Height = (size_t)h;
+	if(Width > std::numeric_limits<size_t>::max() / Height / 3)
+		return false;
+	const size_t PixelDataSize = Width * Height * 3;
+	const size_t FakeTextureDataSize = SingleImageSize * CheckCount;
+	if(PixelDataSize < 3 || FakeTextureDataSize < 3)
 		return false;
 	uint8_t *pPixelData = (uint8_t *)malloc(PixelDataSize);
+	if(pPixelData == nullptr)
+		return false;
 
 	// fetch the pixels
 	GLint Alignment;
@@ -1338,6 +1355,8 @@ bool CCommandProcessorFragment_OpenGL2::DoAnalyzeStep(size_t CheckCount, size_t 
 	int HeightTile = h / 16;
 	int StartX = WidthTile / 2;
 	int StartY = HeightTile / 2;
+	const size_t MaxPixelOffset = PixelDataSize - 3;
+	const size_t MaxFakeTextureOffset = FakeTextureDataSize - 3;
 	for(size_t d = 0; d < CheckCount; ++d)
 	{
 		int CurX = (int)d % 16;
@@ -1346,10 +1365,8 @@ bool CCommandProcessorFragment_OpenGL2::DoAnalyzeStep(size_t CheckCount, size_t 
 		int CheckX = StartX + CurX * WidthTile;
 		int CheckY = StartY + CurY * HeightTile;
 
-		ptrdiff_t OffsetPixelData = (CheckY * (w * 3)) + (CheckX * 3);
-		ptrdiff_t OffsetFakeTexture = SingleImageSize * d;
-		OffsetPixelData = std::clamp<ptrdiff_t>(OffsetPixelData, 0, (ptrdiff_t)PixelDataSize);
-		OffsetFakeTexture = std::clamp<ptrdiff_t>(OffsetFakeTexture, 0, (ptrdiff_t)(SingleImageSize * CheckCount));
+		const size_t OffsetPixelData = minimum((size_t)CheckY * (size_t)w * 3 + (size_t)CheckX * 3, MaxPixelOffset);
+		const size_t OffsetFakeTexture = minimum(SingleImageSize * d, MaxFakeTextureOffset);
 		uint8_t *pPixel = pPixelData + OffsetPixelData;
 		uint8_t *pPixelTex = aFakeTexture + OffsetFakeTexture;
 		for(size_t i = 0; i < 3; ++i)
@@ -1802,7 +1819,9 @@ void CCommandProcessorFragment_OpenGL2::Cmd_RenderTex3D(const CCommandBuffer::SC
 			pProgram = m_pPrimitive3DProgramTextured;
 		}
 		else
+		{
 			pProgram = m_pPrimitive3DProgram;
+		}
 
 		UseProgram(pProgram);
 
@@ -2062,7 +2081,9 @@ void CCommandProcessorFragment_OpenGL2::Cmd_RenderTileLayer(const CCommandBuffer
 		pProgram = m_pTileProgramTextured;
 	}
 	else
+	{
 		pProgram = m_pTileProgram;
+	}
 
 	UseProgram(pProgram);
 

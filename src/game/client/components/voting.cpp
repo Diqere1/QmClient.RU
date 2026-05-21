@@ -16,71 +16,71 @@
 
 namespace
 {
-bool ExtractMapName(const char *pDescription, char *pMapName, int MaxLen)
-{
-	if(!pDescription)
-		return false;
-	const char *pMapPrefix = str_find_nocase(pDescription, "Map:");
-	if(pMapPrefix)
+	bool ExtractMapName(const char *pDescription, char *pMapName, int MaxLen)
 	{
-		pMapPrefix += 4;
-		while(*pMapPrefix == ' ')
-			pMapPrefix++;
-		str_copy(pMapName, pMapPrefix, MaxLen);
-		return true;
-	}
-	const char *pBy = str_find_nocase(pDescription, " by ");
-	if(pBy && (str_find(pDescription, "★") || str_find(pDescription, "✰")))
-	{
-		int Len = minimum((int)(pBy - pDescription), MaxLen - 1);
-		str_copy(pMapName, pDescription, Len + 1);
-		return true;
-	}
-	return false;
-}
-
-bool HasConfusableSubstring(const char *pText, const char *pNeedle)
-{
-	if(!pText || !pNeedle || pNeedle[0] == '\0')
-		return false;
-
-	int aText[128];
-	int aNeedle[64];
-	const int TextLen = str_utf8_to_skeleton(pText, aText, (int)(sizeof(aText) / sizeof(aText[0])));
-	const int NeedleLen = str_utf8_to_skeleton(pNeedle, aNeedle, (int)(sizeof(aNeedle) / sizeof(aNeedle[0])));
-	if(NeedleLen <= 0 || NeedleLen > TextLen)
-		return false;
-
-	for(int i = 0; i + NeedleLen <= TextLen; ++i)
-	{
-		bool Match = true;
-		for(int j = 0; j < NeedleLen; ++j)
+		if(!pDescription)
+			return false;
+		const char *pMapPrefix = str_find_nocase(pDescription, "Map:");
+		if(pMapPrefix)
 		{
-			if(aText[i + j] != aNeedle[j])
-			{
-				Match = false;
-				break;
-			}
-		}
-		if(Match)
+			pMapPrefix += 4;
+			while(*pMapPrefix == ' ')
+				pMapPrefix++;
+			str_copy(pMapName, pMapPrefix, MaxLen);
 			return true;
-	}
-	return false;
-}
-
-bool HasTypeVoteMatch(const char *pDescription, const char *pNeedle)
-{
-	if(!pDescription || !pNeedle || pNeedle[0] == '\0')
+		}
+		const char *pBy = str_find_nocase(pDescription, " by ");
+		if(pBy && (str_find(pDescription, "★") || str_find(pDescription, "✰")))
+		{
+			int Len = minimum((int)(pBy - pDescription), MaxLen - 1);
+			str_copy(pMapName, pDescription, Len + 1);
+			return true;
+		}
 		return false;
-	if(str_utf8_find_nocase(pDescription, pNeedle))
-		return true;
+	}
 
-	char aDescLower[256];
-	char aNeedleLower[96];
-	str_utf8_tolower(pDescription, aDescLower, sizeof(aDescLower));
-	str_utf8_tolower(pNeedle, aNeedleLower, sizeof(aNeedleLower));
-	return HasConfusableSubstring(aDescLower, aNeedleLower);
-}
+	bool HasConfusableSubstring(const char *pText, const char *pNeedle)
+	{
+		if(!pText || !pNeedle || pNeedle[0] == '\0')
+			return false;
+
+		int aText[128];
+		int aNeedle[64];
+		const int TextLen = str_utf8_to_skeleton(pText, aText, (int)(sizeof(aText) / sizeof(aText[0])));
+		const int NeedleLen = str_utf8_to_skeleton(pNeedle, aNeedle, (int)(sizeof(aNeedle) / sizeof(aNeedle[0])));
+		if(NeedleLen <= 0 || NeedleLen > TextLen)
+			return false;
+
+		for(int i = 0; i + NeedleLen <= TextLen; ++i)
+		{
+			bool Match = true;
+			for(int j = 0; j < NeedleLen; ++j)
+			{
+				if(aText[i + j] != aNeedle[j])
+				{
+					Match = false;
+					break;
+				}
+			}
+			if(Match)
+				return true;
+		}
+		return false;
+	}
+
+	bool HasTypeVoteMatch(const char *pDescription, const char *pNeedle)
+	{
+		if(!pDescription || !pNeedle || pNeedle[0] == '\0')
+			return false;
+		if(str_utf8_find_nocase(pDescription, pNeedle))
+			return true;
+
+		char aDescLower[256];
+		char aNeedleLower[96];
+		str_utf8_tolower(pDescription, aDescLower, sizeof(aDescLower));
+		str_utf8_tolower(pNeedle, aNeedleLower, sizeof(aNeedleLower));
+		return HasConfusableSubstring(aDescLower, aNeedleLower);
+	}
 }
 
 void CVoting::ConCallvote(IConsole::IResult *pResult, void *pUserData)
@@ -168,7 +168,9 @@ void CVoting::CallvoteOption(int OptionId, const char *pReason, bool ForceVote)
 				Client()->Rcon(aBuf);
 			}
 			else
+			{
 				Callvote("option", pOption->m_aDescription, pReason);
+			}
 			break;
 		}
 
@@ -387,7 +389,9 @@ void CVoting::AddOption(const char *pDescription)
 			m_pRecycleLast = nullptr;
 	}
 	else
+	{
 		pOption = m_Heap.Allocate<CVoteOptionClient>();
+	}
 
 	pOption->m_pNext = nullptr;
 	pOption->m_pPrev = m_pLast;
@@ -569,7 +573,9 @@ void CVoting::Render()
 	if(Seconds < 0)
 	{
 		if(HudEditorPreview)
+		{
 			Seconds = 24;
+		}
 		else
 		{
 			OnReset();

@@ -2,48 +2,53 @@
 
 #include <base/system.h>
 
-struct CMapDescription
+namespace
 {
-	const char *m_pName;
-	int m_Size;
-	SHA256_DIGEST m_Sha256;
 
-	bool operator==(const CMapDescription &Other) const
+	struct CMapDescription
 	{
-		return str_comp(m_pName, Other.m_pName) == 0 &&
-		       m_Size == Other.m_Size;
+		const char *m_pName;
+		int m_Size;
+		SHA256_DIGEST m_Sha256;
+
+		bool operator==(const CMapDescription &Other) const
+		{
+			return str_comp(m_pName, Other.m_pName) == 0 &&
+			       m_Size == Other.m_Size;
+		}
+	};
+
+	struct CMapBugsInternal
+	{
+		CMapDescription m_Map;
+		unsigned int m_BugFlags;
+	};
+
+	unsigned int BugToFlag(int Bug) noexcept
+	{
+		unsigned int Result;
+		dbg_assert((unsigned)Bug < 8 * sizeof(Result), "invalid shift");
+		Result = (1 << Bug);
+		return Result;
 	}
-};
 
-struct CMapBugsInternal
-{
-	CMapDescription m_Map;
-	unsigned int m_BugFlags;
-};
-
-static unsigned int BugToFlag(int Bug)
-{
-	unsigned int Result;
-	dbg_assert((unsigned)Bug < 8 * sizeof(Result), "invalid shift");
-	Result = (1 << Bug);
-	return Result;
-}
-
-static unsigned int IsBugFlagSet(int Bug, unsigned int BugFlags)
-{
-	return (BugFlags & BugToFlag(Bug)) != 0;
-}
-
-static SHA256_DIGEST s(const char *pSha256)
-{
-	SHA256_DIGEST Result;
-	dbg_assert(sha256_from_str(&Result, pSha256) == 0, "invalid sha256 in mapbugs");
-	return Result;
-}
-
-static CMapBugsInternal MAP_BUGS[] =
+	unsigned int IsBugFlagSet(int Bug, unsigned int BugFlags)
 	{
-		{{"Binary", 2022597, s("65b410e197fd2298ec270e89a84b762f6739d1d18089529f8ef6cf2104d3d600")}, BugToFlag(BUG_GRENADE_DOUBLEEXPLOSION)}};
+		return (BugFlags & BugToFlag(Bug)) != 0;
+	}
+
+	SHA256_DIGEST s(const char *pSha256) noexcept
+	{
+		SHA256_DIGEST Result;
+		dbg_assert(sha256_from_str(&Result, pSha256) == 0, "invalid sha256 in mapbugs");
+		return Result;
+	}
+
+	CMapBugsInternal MAP_BUGS[] =
+		{
+			{{"Binary", 2022597, s("65b410e197fd2298ec270e89a84b762f6739d1d18089529f8ef6cf2104d3d600")}, BugToFlag(BUG_GRENADE_DOUBLEEXPLOSION)}};
+
+}
 
 CMapBugs CMapBugs::Create(const char *pName, int Size, SHA256_DIGEST Sha256)
 {

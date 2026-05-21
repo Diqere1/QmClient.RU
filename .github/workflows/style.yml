@@ -1,0 +1,82 @@
+name: Check style
+
+on:
+  push:
+    branches-ignore:
+      - gh-readonly-queue/**
+  pull_request:
+  merge_group:
+
+jobs:
+  check-style:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HTTP_MULTIPLEXING: false
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Prepare Linux
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install ddnet-tools shellcheck tidy pkg-config cmake graphviz ninja-build python3-clang wget gnupg ca-certificates -y
+        wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /usr/share/keyrings/apt.llvm.org.gpg >/dev/null
+        echo "deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-noble-22.list >/dev/null
+        sudo apt-get update -y
+        sudo apt-get install clang-format-22 -y
+        pip3 install ruff
+
+    - name: Cache dependencies
+      id: cache-dependencies
+      uses: actions/cache@v5
+      with:
+        path: /home/runner/style-tools
+        key: style-${{ hashFiles('.github/style-tools.sha256') }}
+
+    - name: Install dependencies
+      if: steps.cache-dependencies.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p /home/runner/style-tools
+        cp .github/style-tools.sha256 /home/runner/style-tools
+        cd /home/runner/style-tools
+        wget -O doxygen.tar.gz https://www.doxygen.nl/files/doxygen-1.16.1.linux.bin.tar.gz
+        wget -O shfmt https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64
+        sha256sum -c style-tools.sha256
+        chmod +x shfmt
+        tar xf doxygen.tar.gz
+        mv doxygen-1.16.1/bin/doxygen .
+        rm -f doxygen.tar.gz
+        rm -rf doxygen-1.16.1
+
+    - name: Check code style (ClangFormat)
+      run: |
+        set -o pipefail
+        mkdir -p tmp
+        mkdir -p /home/runner/style-tools
+        ln -sf "$(command -v clang-format-22)" /home/runner/style-tools/clang-format
+        export PATH=/home/runner/style-tools:$PATH
+        clang-format -version
+        bash qmclient_scripts/gate/check-gate.sh \
+          --mode quick \
+          --base-ref origin/${{ github.event.pull_request.base.ref || 'main' }} \
+          --branch-scope-only \
+          --skip-config-checks \
+          --skip-workflow-docs \
+          --skip-header-checks \
+          --enable-clang-format-check \
+          --report-json-path tmp/check-gate-style.json \
+          --scope-report-path tmp/check-gate-style-scope.json 2>&1 | tee tmp/check-gate-style.log
+
+    - name: Summarize style check
+      if: always()
+      run: |
+        python3 qmclient_scripts/gate/write_ci_summary.py \
+          --kind style \
+          --status "${{ job.status }}" \
+          --report tmp/check-gate-style.json \
+          --log tmp/check-gate-style.log \
+          --output "$GITHUB_STEP_SUMMARY"

@@ -51,6 +51,7 @@ SAN.*
 _CPack_Packages/
 build.ninja
 checksummed_*
+!cmake/checksummed_extra.txt
 cmake_install.cmake
 debug
 gmock.pc
@@ -139,6 +140,7 @@ tags
 *.a
 *.cmd
 !scripts/cmake-windows.cmd
+!qmclient_scripts/cmake-windows.cmd
 *.csv
 *.dll
 *.dmg

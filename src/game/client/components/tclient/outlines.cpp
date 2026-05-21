@@ -21,6 +21,7 @@ enum
 	OUTLINE_SOLID,
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class OutlineLayer
 {
 	GAME,
@@ -28,6 +29,7 @@ enum class OutlineLayer
 	TELE
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class COutLineLayer
 {
 private:

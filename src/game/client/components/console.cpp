@@ -42,6 +42,7 @@ static constexpr float LINK_UNDERLINE_HEIGHT = 0.12f;
 static constexpr ColorRGBA LINK_TEXT_COLOR = ColorRGBA(0.2f, 0.65f, 1.0f, 1.0f);
 static constexpr ColorRGBA LINK_UNDERLINE_COLOR = ColorRGBA(0.2f, 0.65f, 1.0f, 0.9f);
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SLinkRange
 {
 	int m_StartChar;
@@ -181,6 +182,7 @@ static void BuildLinkColorSplits(const std::vector<SLinkRange> &vRanges, std::ve
 	vSplits.emplace_back(Cursor, 9999, ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f));
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SChatExportLine
 {
 	std::string m_Raw;
@@ -190,6 +192,7 @@ struct SChatExportLine
 	bool m_Local;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SChatExportLayout
 {
 	SChatExportLine m_Line;
@@ -199,6 +202,7 @@ struct SChatExportLayout
 	int m_RecordHeight;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SChatExportPage
 {
 	int m_Start;
@@ -786,6 +790,7 @@ void CConsoleLogger::OnConsoleDeletion()
 	m_pConsole = nullptr;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class EArgumentCompletionType
 {
 	NONE,
@@ -795,6 +800,7 @@ enum class EArgumentCompletionType
 	KEY,
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CArgumentCompletionEntry
 {
 public:
@@ -1287,7 +1293,9 @@ bool CGameConsole::CInstance::OnInput(const IInput::CEvent &Event)
 						m_pHistoryEntry = pTest;
 				}
 				else
+				{
 					m_pHistoryEntry = m_History.Last();
+				}
 
 				if(m_pHistoryEntry)
 					m_Input.Set(m_pHistoryEntry);
@@ -1476,7 +1484,9 @@ bool CGameConsole::CInstance::OnInput(const IInput::CEvent &Event)
 				m_pCommandParams = pCommand->Params();
 			}
 			else
+			{
 				m_IsCommand = false;
+			}
 		}
 	}
 
@@ -1990,6 +2000,7 @@ static float ConsoleScaleFunc(float t)
 	return std::sin(std::acos(1.0f - t));
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CCompletionOptionRenderInfo
 {
 	CGameConsole *m_pSelf;
@@ -2070,7 +2081,9 @@ void CGameConsole::Prompt(char (&aPrompt)[32])
 				str_format(aPrompt, sizeof(aPrompt), "%s> ", Localize("Enter Password"));
 		}
 		else
+		{
 			str_format(aPrompt, sizeof(aPrompt), "%s> ", Localize("NOT CONNECTED"));
+		}
 	}
 	else
 	{
@@ -2876,9 +2889,13 @@ bool CGameConsole::OnInput(const IInput::CEvent &Event)
 		return false;
 
 	if(Event.m_Key == KEY_ESCAPE && (Event.m_Flags & IInput::FLAG_PRESS) && CurrentConsole()->m_ChatExportMode)
+	{
 		CurrentConsole()->SetChatExportMode(false);
+	}
 	else if(Event.m_Key == KEY_ESCAPE && (Event.m_Flags & IInput::FLAG_PRESS) && !CurrentConsole()->m_Searching)
+	{
 		Toggle(m_ConsoleType);
+	}
 	else if(!CurrentConsole()->OnInput(Event))
 	{
 		if(GameClient()->Input()->ModifierIsPressed() && Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_C)

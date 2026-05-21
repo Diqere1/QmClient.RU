@@ -84,26 +84,26 @@ namespace
 
 		static std::unordered_map<uint64_t, SAnimTargetState> s_aLastTargets;
 		static uint64_t s_UseCounter = 0;
-		constexpr size_t TARGET_CACHE_SOFT_LIMIT = 4096;
-		constexpr uint64_t TARGET_CACHE_PRUNE_INTERVAL = 1024;
-		constexpr uint64_t TARGET_CACHE_STALE_WINDOW = 8192;
+		constexpr size_t TargetCacheSoftLimit = 4096;
+		constexpr uint64_t TargetCachePruneInterval = 1024;
+		constexpr uint64_t TargetCacheStaleWindow = 8192;
 		const uint64_t LastTargetKey = NodeKey ^ (static_cast<uint64_t>(Property) << 61);
 		const float CurrentValue = AnimRuntime.GetValue(NodeKey, Property, Target);
 		const uint64_t CurrentUseCounter = ++s_UseCounter;
 
 		if(s_aLastTargets.empty())
-			s_aLastTargets.reserve(TARGET_CACHE_SOFT_LIMIT);
+			s_aLastTargets.reserve(TargetCacheSoftLimit);
 
-		if((CurrentUseCounter % TARGET_CACHE_PRUNE_INTERVAL) == 0 && s_aLastTargets.size() > TARGET_CACHE_SOFT_LIMIT)
+		if((CurrentUseCounter % TargetCachePruneInterval) == 0 && s_aLastTargets.size() > TargetCacheSoftLimit)
 		{
 			for(auto It = s_aLastTargets.begin(); It != s_aLastTargets.end();)
 			{
-				if(CurrentUseCounter - It->second.m_LastUseCounter > TARGET_CACHE_STALE_WINDOW)
+				if(CurrentUseCounter - It->second.m_LastUseCounter > TargetCacheStaleWindow)
 					It = s_aLastTargets.erase(It);
 				else
 					++It;
 			}
-			if(s_aLastTargets.size() > TARGET_CACHE_SOFT_LIMIT * 2)
+			if(s_aLastTargets.size() > TargetCacheSoftLimit * 2)
 				s_aLastTargets.clear();
 		}
 
@@ -1597,7 +1597,9 @@ void CMenus::OnInit()
 
 void CMenus::PrewarmSettingsPages()
 {
+	// NOLINTNEXTLINE(readability-identifier-naming)
 	extern std::unordered_map<std::string, CBindSlot> g_CommandBindCache;
+	// NOLINTNEXTLINE(readability-identifier-naming)
 	extern bool g_CommandBindCacheInitialized;
 
 	if(g_CommandBindCacheInitialized)
@@ -3107,7 +3109,9 @@ void CMenus::OnStateChange(int NewState, int OldState)
 				Ui()->SetActiveItem(&m_PasswordInput);
 			}
 			else
+			{
 				m_Popup = POPUP_DISCONNECTED;
+			}
 		}
 	}
 	else if(NewState == IClient::STATE_LOADING)

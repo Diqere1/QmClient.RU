@@ -17,6 +17,7 @@ struct SQmFocusModeConfig
 	bool m_HideFreezeEffects = false;
 	bool m_HideHammerEffects = false;
 	bool m_MuteJumpSounds = false;
+	bool m_MuteDeathSounds = false;
 	bool m_MuteHammerSounds = false;
 	bool m_SoundEnabled = true;
 	bool m_HideMapProgress = false;
@@ -42,6 +43,7 @@ struct SQmFocusModeDecisions
 	bool m_HideExplosionEffects = false;
 	bool m_HideFreezeEffects = false;
 	bool m_HideHammerEffects = false;
+	bool m_MuteDeathSounds = false;
 	bool m_MuteHammerSounds = false;
 	bool m_RenderMapProgressBar = false;
 	bool m_HideHud = false;
@@ -78,8 +80,10 @@ bool ShouldHideFocusExplosionEffects(bool FocusActive, bool HideExplosionEffects
 bool ShouldHideFocusFreezeEffects(bool FocusActive, bool HideFreezeEffects);
 bool ShouldHideFocusHammerEffects(bool FocusActive, bool HideHammerEffects);
 bool ShouldMuteFocusJumpSounds(bool FocusActive, bool MuteJumpSounds);
+bool ShouldMuteFocusDeathSounds(bool FocusActive, bool MuteDeathSounds);
 bool ShouldMuteFocusHammerSounds(bool FocusActive, bool MuteHammerSounds);
 bool ShouldPlayFocusJumpSound(bool FocusActive, bool MuteJumpSounds, bool SoundEnabled);
+bool ShouldPlayFocusDeathOrSpawnSound(bool FocusActive, bool MuteDeathSounds, bool SoundEnabled);
 SQmAirJumpEffectDecision GetQmAirJumpEffectDecision(bool FocusActive, bool HideJumpEffects, bool MuteJumpSounds, bool SoundEnabled);
 bool ShouldHideFocusMapProgress(bool FocusActive, bool HideMapProgress);
 bool ShouldRenderMapProgressBar(bool MapProgressEnabled, int MapProgressStyle, bool PlayerStatsHudEnabled, bool GoresMapProgressEnabled);

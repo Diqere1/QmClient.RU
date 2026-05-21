@@ -2,8 +2,6 @@
 
 #include <base/str.h>
 
-#include <algorithm>
-#include <cmath>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 #include <engine/shared/protocol7.h>
@@ -11,16 +9,19 @@
 
 #include <generated/client_data.h>
 
+#include <game/client/QmUi/QmAnim.h>
 #include <game/client/animstate.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
-#include <game/client/QmUi/QmAnim.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <vector>
 //枚举
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class EHookStrongWeakState
 {
 	WEAK,
@@ -28,6 +29,7 @@ enum class EHookStrongWeakState
 	STRONG
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class ENameplateCoreRow
 {
 	NAME,
@@ -51,6 +53,7 @@ static bool FocusModeHidesChat()
 	return g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideChat != 0;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SChatBubbleAnimState
 {
 	bool m_Initialized = false;
@@ -70,6 +73,7 @@ struct SChatBubbleAnimState
 	char m_aLayoutText[256] = "";
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SCoordXAlignState
 {
 	bool m_Active = false;
@@ -77,6 +81,7 @@ struct SCoordXAlignState
 	float m_WindowStartTime = 0.0f;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SCoordXAlignFrameState
 {
 	bool m_LocalAligned = false;
@@ -253,6 +258,7 @@ static vec2 NameplateCoreRowOffset(ENameplateCoreRow Row)
 	return vec2(OffsetX, OffsetY);
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SNameplateCoreRowRect
 {
 	ENameplateCoreRow m_Row = ENameplateCoreRow::NUM_ROWS;
@@ -261,6 +267,7 @@ struct SNameplateCoreRowRect
 	bool m_Visible = false;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlateData
 {
 public:
@@ -303,6 +310,7 @@ public:
 
 static constexpr float DEFAULT_PADDING = 5.0f;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePart
 {
 protected:
@@ -330,6 +338,7 @@ using PartsVector = std::vector<std::unique_ptr<CNamePlatePart>>;
 
 static constexpr ColorRGBA s_OutlineColor = ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f);
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartText : public CNamePlatePart
 {
 protected:
@@ -399,6 +408,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartIcon : public CNamePlatePart
 {
 protected:
@@ -422,6 +432,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartSprite : public CNamePlatePart
 {
 protected:
@@ -449,6 +460,7 @@ public:
 
 // Part Definitions
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartNewLine : public CNamePlatePart
 {
 public:
@@ -459,6 +471,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum Direction
 {
 	DIRECTION_LEFT,
@@ -466,6 +479,7 @@ enum Direction
 	DIRECTION_RIGHT
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartDirection : public CNamePlatePartIcon
 {
 private:
@@ -518,6 +532,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartClientId : public CNamePlatePartText
 {
 private:
@@ -557,6 +572,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartFriendMark : public CNamePlatePartText
 {
 private:
@@ -589,6 +605,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartName : public CNamePlatePartText
 {
 private:
@@ -643,6 +660,7 @@ protected:
 		This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, m_aText);
 	}
 
+public:
 	void Render(CGameClient &This, vec2 Pos) const override
 	{
 		if(!m_TextContainerIndex.Valid())
@@ -671,6 +689,7 @@ public:
 		CNamePlatePartText(This) {}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartClan : public CNamePlatePartText
 {
 private:
@@ -703,9 +722,10 @@ public:
 		CNamePlatePartText(This) {}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartHookStrongWeak : public CNamePlatePartSprite
 {
-protected:
+public:
 	void Update(CGameClient &This, const CNamePlateData &Data) override
 	{
 		m_Texture = g_pData->m_aImages[IMAGE_STRONGWEAK].m_Id;
@@ -740,6 +760,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartHookStrongWeakId : public CNamePlatePartText
 {
 private:
@@ -786,6 +807,7 @@ public:
 
 // ***** TClient Parts *****
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartCountry : public CNamePlatePart
 {
 protected:
@@ -846,6 +868,7 @@ public:
 		CNamePlatePart(This) {}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartPing : public CNamePlatePart
 {
 protected:
@@ -867,10 +890,10 @@ public:
 		m_Radius = Data.m_FontSize / 3.0f;
 		m_Size = vec2(m_Radius, m_Radius) * 1.5f;
 		m_Visible = Data.m_InGame ? (
-					    ((Data.m_ShowName && g_Config.m_TcNameplatePingCircle > 0) ||
-						    (This.m_Scoreboard.IsActive() && pInfo && !pInfo->m_Local))) :
-				    (
-					    (Data.m_ShowName && g_Config.m_TcNameplatePingCircle > 0));
+						    ((Data.m_ShowName && g_Config.m_TcNameplatePingCircle > 0) ||
+							    (This.m_Scoreboard.IsActive() && pInfo && !pInfo->m_Local))) :
+					    (
+						    (Data.m_ShowName && g_Config.m_TcNameplatePingCircle > 0));
 		if(!m_Visible)
 			return;
 		int Ping = Data.m_InGame && pInfo ? pInfo->m_Latency : (1 + Data.m_ClientId) * 25;
@@ -888,6 +911,7 @@ public:
 		CNamePlatePart(This) {}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartSkin : public CNamePlatePartText
 {
 private:
@@ -922,6 +946,7 @@ public:
 		CNamePlatePartText(This) {}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartCoordinates : public CNamePlatePartText
 {
 private:
@@ -968,6 +993,7 @@ public:
 		m_IsX(IsX) {}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartReason : public CNamePlatePartText
 {
 private:
@@ -1003,6 +1029,7 @@ public:
 		CNamePlatePartText(This) {}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartIgnoreMark : public CNamePlatePartText
 {
 private:
@@ -1032,6 +1059,7 @@ public:
 		CNamePlatePartText(This) {}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlatePartQmClientMark : public CNamePlatePartText
 {
 private:
@@ -1061,6 +1089,7 @@ public:
 
 // ***** Name Plates *****
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CNamePlate
 {
 private:
@@ -1421,10 +1450,10 @@ public:
 static bool NameplateCoreRowRectContains(const SNameplateCoreRowRect &Rect, vec2 Position)
 {
 	return Rect.m_Visible &&
-		Position.x >= Rect.m_Min.x &&
-		Position.x <= Rect.m_Max.x &&
-		Position.y >= Rect.m_Min.y &&
-		Position.y <= Rect.m_Max.y;
+	       Position.x >= Rect.m_Min.x &&
+	       Position.x <= Rect.m_Max.x &&
+	       Position.y >= Rect.m_Min.y &&
+	       Position.y <= Rect.m_Max.y;
 }
 
 static int RoundCoordToCentitiles(float Value)
@@ -1663,7 +1692,9 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 				Data.m_HookStrongWeakId = Other.m_ExtendedData.m_StrongWeakId;
 				Data.m_ShowHookStrongWeakId = g_Config.m_Debug || g_Config.m_ClNamePlatesStrong == 2;
 				if(SelectedId == ClientId)
+				{
 					Data.m_ShowHookStrongWeak = Data.m_ShowHookStrongWeakId;
+				}
 				else
 				{
 					Data.m_HookStrongWeakState = SelectedStrongWeakId > Other.m_ExtendedData.m_StrongWeakId ? EHookStrongWeakState::STRONG : EHookStrongWeakState::WEAK;
@@ -2061,15 +2092,15 @@ void CNamePlates::RenderChatBubble(vec2 Position, int ClientId, float Alpha)
 
 	// Keep bubble sizing in screen space so rapid camera zoom does not force
 	// a full text relayout every frame.
-	constexpr float kBubblePadding = 12.0f;
-	constexpr float kBubbleRounding = 10.0f;
-	constexpr float kBubbleMaxWidth = 230.0f;
+	constexpr float BubblePadding = 12.0f;
+	constexpr float BubbleRounding = 10.0f;
+	constexpr float BubbleMaxWidth = 230.0f;
 	const float BaseFontSize = (float)g_Config.m_QmChatBubbleFontSize;
 
 	const float FontSize = BaseFontSize;
-	const float Padding = kBubblePadding;
-	const float Rounding = kBubbleRounding;
-	const float MaxWidth = kBubbleMaxWidth;
+	const float Padding = BubblePadding;
+	const float Rounding = BubbleRounding;
+	const float MaxWidth = BubbleMaxWidth;
 
 	// Anchor bubble to the top of the nameplate plus default nameplate spacing.
 	float NameplateTopWorldY = Position.y - (float)g_Config.m_ClNamePlatesOffset;
@@ -2085,9 +2116,9 @@ void CNamePlates::RenderChatBubble(vec2 Position, int ClientId, float Alpha)
 
 	const bool UseTextContainer = !IsTyping && std::abs(AnimScale - 1.0f) <= 0.001f;
 	const bool LayoutDirty = !AnimState.m_TextContainerIndex.Valid() ||
-		str_comp(AnimState.m_aLayoutText, pDisplayText) != 0 ||
-		AnimState.m_CachedFontSize != FontSize ||
-		AnimState.m_CachedLineWidth != MaxWidth;
+				 str_comp(AnimState.m_aLayoutText, pDisplayText) != 0 ||
+				 AnimState.m_CachedFontSize != FontSize ||
+				 AnimState.m_CachedLineWidth != MaxWidth;
 
 	if(!IsTyping && LayoutDirty)
 	{

@@ -32,8 +32,8 @@ class CChat : public CComponent
 	static constexpr float CHAT_HEIGHT_MIN = 50.0f;
 	static constexpr float CHAT_FONTSIZE_WIDTH_RATIO = 2.5f;
 
-	static constexpr float CHAT_ANIM_SLIDE_OUT_OFFSET = 60.0f;    // 被挤出可见区域时的水平偏移量
-	static constexpr float CHAT_ANIM_CUTOFF_DURATION = 0.3f;      // 被挤出动画平滑时间（秒）
+	static constexpr float CHAT_ANIM_SLIDE_OUT_OFFSET = 60.0f; // 被挤出可见区域时的水平偏移量
+	static constexpr float CHAT_ANIM_CUTOFF_DURATION = 0.3f; // 被挤出动画平滑时间（秒）
 	static constexpr float CHAT_VISIBLE_SECONDS_NO_FOCUS = 16.0f; // 聊天折叠时保留消息时长（秒）
 
 	enum
@@ -257,8 +257,6 @@ class CChat : public CComponent
 	CLanguagePopupContext m_LanguagePopupContext;
 	bool m_LanguageMenuOpen = false;
 
-	bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
-
 public:
 	CChat();
 	int Sizeof() const override { return sizeof(*this); }
@@ -284,6 +282,7 @@ public:
 	void Reset();
 	void OnRelease() override;
 	void OnMessage(int MsgType, void *pRawMsg) override;
+	bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 	bool OnInput(const IInput::CEvent &Event) override;
 	void OnInit() override;
 

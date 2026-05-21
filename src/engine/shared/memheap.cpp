@@ -43,7 +43,7 @@ void *CHeap::AllocateFromChunk(unsigned int Size, unsigned Alignment)
 }
 
 // creates a heap
-CHeap::CHeap()
+CHeap::CHeap() noexcept
 {
 	m_pCurrent = nullptr;
 	Reset();

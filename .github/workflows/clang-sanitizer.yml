@@ -1,0 +1,115 @@
+name: Check ASan & UBSan
+
+on:
+  push:
+    branches-ignore:
+      - gh-readonly-queue/**
+  pull_request:
+  merge_group:
+
+jobs:
+  check-clang-san:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HTTP_MULTIPLEXING: false
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      UBSAN_OPTIONS: suppressions=../ubsan.supp:log_path=SAN:print_stacktrace=1:halt_on_error=0
+      ASAN_OPTIONS: log_path=SAN:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1:detect_leaks=0:halt_on_error=0
+      LSAN_OPTIONS: suppressions=../lsan.supp
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Prepare Linux
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install pkg-config cmake ninja-build libfreetype6-dev libnotify-dev libsdl2-dev libsqlite3-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libx264-dev libglew-dev libgl1-mesa-dev libvulkan-dev glslang-tools spirv-tools -y
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build with ASan and UBSan
+      run: |
+        set -o pipefail
+        rm -f clang-sanitizer-sanitizer.log
+        mkdir clang-sanitizer
+        cd clang-sanitizer
+        export CC=clang
+        export CXX=clang++
+        SAN_FLAGS="-fsanitize=address,undefined,leak -fsanitize-recover=all -fno-omit-frame-pointer -fno-common"
+        export CXXFLAGS="$SAN_FLAGS"
+        export CFLAGS="$SAN_FLAGS"
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DHEADLESS_CLIENT=ON -DVULKAN=OFF -DDOWNLOAD_GTEST=ON -DDEV=ON .. 2>&1 | tee ../clang-sanitizer-configure.log
+        cmake --build . --config Debug --target everything 2>&1 | tee ../clang-sanitizer-build.log
+
+    - name: Run server and headless client with ASan and UBSan
+      run: |
+        set -o pipefail
+        cd clang-sanitizer
+        set +e
+        ./DDNet "cl_download_skins 0;quit" 2>&1 | tee ../clang-sanitizer-client.log
+        client_result=$?
+        ./DDNet-Server shutdown 2>&1 | tee ../clang-sanitizer-server.log
+        server_result=$?
+        set -e
+        if [ $client_result -ne 0 ]; then
+          echo -e "\033[31mFAILED: Client exit code $client_result\033[m"
+          failed=true
+        fi
+        if [ $server_result -ne 0 ]; then
+          echo -e "\033[31mFAILED: Server exit code $server_result\033[m"
+          failed=true
+        fi
+        san_files=$(find . -maxdepth 1 -type f -name 'SAN.*' | sort)
+        if [ -n "$san_files" ]; then
+          echo -e "\033[31mFAILED: Sanitizer errors:\033[m"
+          while IFS= read -r san_file; do
+            [ -n "$san_file" ] || continue
+            echo "===== ${san_file#./} =====" | tee -a ../clang-sanitizer-sanitizer.log
+            cat "$san_file" | tee -a ../clang-sanitizer-sanitizer.log
+          done <<< "$san_files"
+          failed=true
+        fi
+        if [ "$failed" = true ]; then
+          exit 1
+        fi
+
+    - name: Run unit tests with ASan and UBSan
+      run: |
+        set -o pipefail
+        cd clang-sanitizer
+        set +e
+        # Rust tests work locally, but still not in CI, even with the same directory
+        cmake --build . --config Debug --target run_cxx_tests 2>&1 | tee ../clang-sanitizer-tests.log
+        unit_test_result=$?
+        set -e
+        failed=false
+        if [ $unit_test_result -ne 0 ]; then
+          echo -e "\033[31mFAILED: Unit test exit code $unit_test_result\033[m"
+          failed=true
+        fi
+        san_files=$(find . -maxdepth 1 -type f -name 'SAN.*' | sort)
+        if [ -n "$san_files" ]; then
+          echo -e "\033[31mFAILED: Sanitizer errors:\033[m"
+          while IFS= read -r san_file; do
+            [ -n "$san_file" ] || continue
+            echo "===== ${san_file#./} =====" | tee -a ../clang-sanitizer-sanitizer.log
+            cat "$san_file" | tee -a ../clang-sanitizer-sanitizer.log
+          done <<< "$san_files"
+          failed=true
+        fi
+        if [ "$failed" = true ]; then
+          exit 1
+        fi
+
+    - name: Summarize ASan and UBSan
+      if: always()
+      run: |
+        python3 qmclient_scripts/gate/write_ci_summary.py \
+          --kind sanitizer \
+          --status "${{ job.status }}" \
+          --logs clang-sanitizer-configure.log clang-sanitizer-build.log clang-sanitizer-client.log clang-sanitizer-server.log clang-sanitizer-tests.log clang-sanitizer-sanitizer.log \
+          --output "$GITHUB_STEP_SUMMARY"

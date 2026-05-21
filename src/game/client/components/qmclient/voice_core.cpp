@@ -134,7 +134,6 @@ int CVoiceOverlayState::CollectVisible(int64_t Now, int64_t VisibleWindow, bool 
 
 static constexpr int VOICE_CHANNELS = 1;
 static constexpr int VOICE_FRAME_BYTES = VOICE_FRAME_SAMPLES * sizeof(int16_t);
-static constexpr uint32_t VOICE_GROUP_MASK = 0x3fffffff;
 
 static uint8_t VoiceProtocolVersion(const SRClientVoiceConfigSnapshot &Config)
 {
@@ -711,7 +710,9 @@ bool CRClientVoice::EnsureAudio()
 	}
 
 	if(m_CaptureUnavailable.load() || m_OutputUnavailable.load())
+	{
 		m_LastAudioRetryAttempt = time_get();
+	}
 	else
 	{
 		m_LastAudioRetryAttempt = 0;
@@ -787,8 +788,8 @@ void CRClientVoice::MixAudio(int16_t *pOut, int Samples, int OutputChannels)
 				if(OutputChannels > 2)
 				{
 					const int32_t Center = (int32_t)(Pcm * 0.5f * (LeftGain + RightGain));
-					for(int ch = 2; ch < OutputChannels; ch++)
-						m_MixBuffer[Base + ch] += Center;
+					for(int Channel = 2; Channel < OutputChannels; Channel++)
+						m_MixBuffer[Base + Channel] += Center;
 				}
 			}
 
@@ -1908,7 +1909,9 @@ void CRClientVoice::ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS
 		{
 			const int64_t Gap = Now - Peer.m_LastRecvTime;
 			if(Gap > time_freq() * 2)
+			{
 				ResetStream = true;
+			}
 			else if(Peer.m_HasLastRecvSeq)
 			{
 				const int Delta = VoiceUtils::VoiceSeqDelta(Sequence, Peer.m_LastRecvSeq);

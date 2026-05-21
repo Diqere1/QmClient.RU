@@ -42,88 +42,93 @@ static inline int SwapEndianInt(int Number)
 	return Number;
 }
 
-class CItemEx
+namespace
 {
-public:
-	int m_aUuid[sizeof(CUuid) / sizeof(int32_t)];
 
-	static CItemEx FromUuid(CUuid Uuid)
+	class CItemEx
 	{
-		CItemEx Result;
-		for(size_t i = 0; i < std::size(Result.m_aUuid); i++)
+	public:
+		int m_aUuid[sizeof(CUuid) / sizeof(int32_t)];
+
+		static CItemEx FromUuid(CUuid Uuid)
 		{
-			Result.m_aUuid[i] = bytes_be_to_uint(&Uuid.m_aData[i * sizeof(int32_t)]);
+			CItemEx Result;
+			for(size_t i = 0; i < std::size(Result.m_aUuid); i++)
+			{
+				Result.m_aUuid[i] = bytes_be_to_uint(&Uuid.m_aData[i * sizeof(int32_t)]);
+			}
+			return Result;
 		}
-		return Result;
-	}
 
-	CUuid ToUuid() const
-	{
-		CUuid Result;
-		for(size_t i = 0; i < std::size(m_aUuid); i++)
+		CUuid ToUuid() const
 		{
-			uint_to_bytes_be(&Result.m_aData[i * sizeof(int32_t)], m_aUuid[i]);
+			CUuid Result;
+			for(size_t i = 0; i < std::size(m_aUuid); i++)
+			{
+				uint_to_bytes_be(&Result.m_aData[i * sizeof(int32_t)], m_aUuid[i]);
+			}
+			return Result;
 		}
-		return Result;
-	}
-};
+	};
 
-class CDatafileItemType
-{
-public:
-	int m_Type;
-	int m_Start;
-	int m_Num;
-};
-
-class CDatafileItem
-{
-public:
-	unsigned m_TypeAndId;
-	int m_Size;
-
-	int Type() const
+	class CDatafileItemType
 	{
-		return (m_TypeAndId >> 16u) & MAX_ITEM_TYPE;
-	}
+	public:
+		int m_Type;
+		int m_Start;
+		int m_Num;
+	};
 
-	int Id() const
+	class CDatafileItem
 	{
-		return m_TypeAndId & MAX_ITEM_ID;
-	}
-};
+	public:
+		unsigned m_TypeAndId;
+		int m_Size;
 
-class CDatafileHeader
-{
-public:
-	char m_aId[4];
-	int m_Version;
-	int m_Size;
-	int m_Swaplen;
-	int m_NumItemTypes;
-	int m_NumItems;
-	int m_NumRawData;
-	int m_ItemSize;
-	int m_DataSize;
+		int Type() const
+		{
+			return (m_TypeAndId >> 16u) & MAX_ITEM_TYPE;
+		}
 
-	constexpr size_t SizeOffset()
+		int Id() const
+		{
+			return m_TypeAndId & MAX_ITEM_ID;
+		}
+	};
+
+	class CDatafileHeader
 	{
-		// The size of these members is not included in m_Size and m_Swaplen
-		return sizeof(m_aId) + sizeof(m_Version) + sizeof(m_Size) + sizeof(m_Swaplen);
-	}
-};
+	public:
+		char m_aId[4];
+		int m_Version;
+		int m_Size;
+		int m_Swaplen;
+		int m_NumItemTypes;
+		int m_NumItems;
+		int m_NumRawData;
+		int m_ItemSize;
+		int m_DataSize;
 
-class CDatafileInfo
-{
-public:
-	CDatafileItemType *m_pItemTypes;
-	int *m_pItemOffsets;
-	int *m_pDataOffsets;
-	int *m_pDataSizes;
+		constexpr size_t SizeOffset()
+		{
+			// The size of these members is not included in m_Size and m_Swaplen
+			return sizeof(m_aId) + sizeof(m_Version) + sizeof(m_Size) + sizeof(m_Swaplen);
+		}
+	};
 
-	char *m_pItemStart;
-	char *m_pDataStart;
-};
+	class CDatafileInfo
+	{
+	public:
+		CDatafileItemType *m_pItemTypes;
+		int *m_pItemOffsets;
+		int *m_pDataOffsets;
+		int *m_pDataSizes;
+
+		char *m_pItemStart;
+		char *m_pDataStart;
+	};
+
+} // namespace
 
 class CDatafile
 {

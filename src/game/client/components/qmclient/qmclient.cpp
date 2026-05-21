@@ -203,6 +203,7 @@ namespace
 		CLock m_Lock;
 		SResult m_Result;
 
+	protected:
 		void Run() override REQUIRES(!m_Lock)
 		{
 			SResult Result;
@@ -257,6 +258,7 @@ namespace
 		CLock m_Lock;
 		SResult m_Result;
 
+	protected:
 		void Run() override REQUIRES(!m_Lock)
 		{
 			SResult Result;
@@ -376,6 +378,7 @@ namespace
 		IStorage *m_pStorage = nullptr;
 		std::string m_Content;
 
+	protected:
 		void Run() override
 		{
 			if(m_pStorage == nullptr || State() == IJob::STATE_ABORTED)
@@ -463,6 +466,7 @@ namespace
 	}
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SKeywordReplyRule
 {
 	std::string m_Keywords;
@@ -494,6 +498,7 @@ static bool ParseQmClientServiceHostPort(const char *pAddrStr, char *pHost, size
 	return Port > 0 && Port <= 65535;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 const char *GetEffectiveQmVoiceServer()
 {
 	return g_Config.m_QmVoiceServer[0] != '\0' ? g_Config.m_QmVoiceServer : QMCLIENT_DEFAULT_VOICE_SERVER;

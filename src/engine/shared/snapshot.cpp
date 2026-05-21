@@ -179,12 +179,17 @@ enum
 	HASHLIST_BUCKET_SIZE = 64,
 };
 
-struct CItemList
+namespace
 {
-	int m_Num;
-	int m_aKeys[HASHLIST_BUCKET_SIZE];
-	int m_aIndex[HASHLIST_BUCKET_SIZE];
-};
+
+	struct CItemList
+	{
+		int m_Num;
+		int m_aKeys[HASHLIST_BUCKET_SIZE];
+		int m_aIndex[HASHLIST_BUCKET_SIZE];
+	};
+
+}
 
 static inline size_t CalcHashId(int Key)
 {
@@ -250,7 +255,9 @@ void CSnapshotDelta::UndiffItem(const int *pPast, const int *pDiff, int *pOut, i
 		*pOut = (unsigned)*pPast + (unsigned)*pDiff;
 
 		if(*pDiff == 0)
+		{
 			*pDataRate += 1;
+		}
 		else
 		{
 			unsigned char aBuf[CVariableInt::MAX_BYTES_PACKED];
@@ -390,7 +397,7 @@ int CSnapshotDelta::DebugDumpDelta(const void *pSrcData, int DataSize)
 {
 	CData *pDelta = (CData *)pSrcData;
 	int *pData = (int *)pDelta->m_aData;
-	int *pEnd = (int *)(((char *)pSrcData + DataSize));
+	int *pEnd = (int *)((char *)pSrcData + DataSize);
 
 	dbg_msg("delta_dump", "+-----------------------------------------------");
 	if(DataSize < 3 * (int)sizeof(int32_t))
@@ -522,7 +529,7 @@ int CSnapshotDelta::UnpackDelta(const CSnapshot *pFrom, CSnapshot *pTo, const vo
 {
 	CData *pDelta = (CData *)pSrcData;
 	int *pData = (int *)pDelta->m_aData;
-	int *pEnd = (int *)(((char *)pSrcData + DataSize));
+	int *pEnd = (int *)((char *)pSrcData + DataSize);
 
 	CSnapshotBuilder Builder;
 	Builder.Init();
@@ -578,7 +585,9 @@ int CSnapshotDelta::UnpackDelta(const CSnapshot *pFrom, CSnapshot *pTo, const vo
 		int ItemSize;
 		const short *pItemSizes = Sixup ? m_aItemSizes7 : m_aItemSizes;
 		if(Type < MAX_NETOBJSIZES && pItemSizes[Type])
+		{
 			ItemSize = pItemSizes[Type];
+		}
 		else
 		{
 			if(pData + 1 > pEnd)
@@ -893,7 +902,9 @@ void *CSnapshotBuilder::NewItem(int Type, int Id, int Size)
 			return pObj;
 	}
 	else if(Type < 0)
+	{
 		return nullptr;
+	}
 
 	pObj->m_TypeAndId = (Type << 16) | Id;
 	m_aOffsets[m_NumItems] = m_DataSize;

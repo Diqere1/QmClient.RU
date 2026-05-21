@@ -246,8 +246,10 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	bool m_ServerSentCapabilities = false;
 	CServerCapabilities m_ServerCapabilities;
 
+public:
 	bool ServerCapAnyPlayerFlag() const override { return m_ServerCapabilities.m_AnyPlayerFlag; }
 
+private:
 	CServerInfo m_CurrentServerInfo;
 	int64_t m_CurrentServerInfoRequestTime = -1; // >= 0 should request, == -1 got info
 

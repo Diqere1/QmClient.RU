@@ -28,9 +28,9 @@
 #include <game/client/animstate.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/hud_editor.h>
-#include <game/client/components/qmclient/modes.h>
 #include <game/client/components/qmclient/data_version.h>
 #include <game/client/components/qmclient/keyword_reply_rules.h>
+#include <game/client/components/qmclient/modes.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/render.h>
@@ -201,6 +201,7 @@ namespace
 	}
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SKeywordReplyRule
 {
 	std::string m_Keywords;
@@ -436,6 +437,7 @@ static bool IsRewardTileForGoresDistanceField(int TileIndex)
 	return TileIndex == TILE_UNFREEZE || TileIndex == TILE_DUNFREEZE || TileIndex == TILE_LUNFREEZE;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum EGoresCMapValue
 {
 	GORES_CMAP_NORMAL = 0,
@@ -739,6 +741,7 @@ static int AutoReplySeparatorLength(const char *pStr)
 	return 0;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class EAutoReplyTokenMode
 {
 	Literal,
@@ -3250,7 +3253,7 @@ void CTClient::SetForcedAspect()
 
 	if(g_Config.m_QmAspectPreset != 0)
 	{
-		int AspectRatio = g_Config.m_QmAspectRatio;
+		int AspectRatio = 0;
 		switch(g_Config.m_QmAspectPreset)
 		{
 		case 1: AspectRatio = 125; break;
@@ -3657,7 +3660,7 @@ void CTClient::TrackHookDirection(int Dummy)
 	SPlayerStats &Stats = m_aPlayerStats[Dummy];
 
 	// 检测 hook 状态
-	bool IsHooking = Char.m_Cur.m_HookState > 0 && Char.m_Cur.m_HookState != HOOK_RETRACTED;
+	bool IsHooking = Char.m_Cur.m_HookState > 0;
 
 	// 检测开始出钩的瞬间
 	if(IsHooking && !Stats.m_WasHooking)
@@ -4469,7 +4472,7 @@ bool CTClient::IsFavoriteMap(const char *pMapName) const
 {
 	if(!pMapName || pMapName[0] == '\0')
 		return false;
-	return m_FavoriteMaps.find(std::string(pMapName)) != m_FavoriteMaps.end();
+	return m_FavoriteMaps.contains(std::string(pMapName));
 }
 
 void CTClient::AddFavoriteMap(const char *pMapName)
@@ -4857,7 +4860,9 @@ static std::array<std::string, 4> ParseLocalSaveCsvFields(const char *pLine)
 				++CharIndex;
 			}
 			else
+			{
 				InQuotes = !InQuotes;
+			}
 		}
 		else if(pLine[CharIndex] == ',' && !InQuotes)
 		{
@@ -4945,7 +4950,8 @@ bool CTClient::RemoveLocalSaveByCode(const char *pCode)
 	{
 		vEntries.erase(std::remove_if(vEntries.begin(), vEntries.end(), [pCode](const SLocalSaveEntry &Entry) {
 			return str_comp(Entry.m_Code.c_str(), pCode) == 0;
-		}), vEntries.end());
+		}),
+			vEntries.end());
 	}
 	if(vEntries.size() == OriginalSize)
 		return false;

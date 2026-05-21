@@ -60,7 +60,7 @@ void CLayers::Init(IMap *pMap, bool GameOnly)
 				{
 					if(pTilemap->m_Version <= 2)
 					{
-						pTilemap->m_Tele = *((int *)(pTilemap) + 15);
+						pTilemap->m_Tele = *((int *)pTilemap + 15);
 					}
 					m_pTeleLayer = pTilemap;
 					IsEntities = true;
@@ -70,7 +70,7 @@ void CLayers::Init(IMap *pMap, bool GameOnly)
 				{
 					if(pTilemap->m_Version <= 2)
 					{
-						pTilemap->m_Speedup = *((int *)(pTilemap) + 16);
+						pTilemap->m_Speedup = *((int *)pTilemap + 16);
 					}
 					m_pSpeedupLayer = pTilemap;
 					IsEntities = true;
@@ -80,7 +80,7 @@ void CLayers::Init(IMap *pMap, bool GameOnly)
 				{
 					if(pTilemap->m_Version <= 2)
 					{
-						pTilemap->m_Front = *((int *)(pTilemap) + 17);
+						pTilemap->m_Front = *((int *)pTilemap + 17);
 					}
 					m_pFrontLayer = pTilemap;
 					IsEntities = true;
@@ -90,7 +90,7 @@ void CLayers::Init(IMap *pMap, bool GameOnly)
 				{
 					if(pTilemap->m_Version <= 2)
 					{
-						pTilemap->m_Switch = *((int *)(pTilemap) + 18);
+						pTilemap->m_Switch = *((int *)pTilemap + 18);
 					}
 					m_pSwitchLayer = pTilemap;
 					IsEntities = true;
@@ -100,7 +100,7 @@ void CLayers::Init(IMap *pMap, bool GameOnly)
 				{
 					if(pTilemap->m_Version <= 2)
 					{
-						pTilemap->m_Tune = *((int *)(pTilemap) + 19);
+						pTilemap->m_Tune = *((int *)pTilemap + 19);
 					}
 					m_pTuneLayer = pTilemap;
 					IsEntities = true;

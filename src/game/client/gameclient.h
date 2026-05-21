@@ -381,6 +381,8 @@ private:
 	int m_LastDemoPlaybackStateTick = -1;
 
 public:
+	// 将 IInterface 的 protected Kernel() 暴露给客户端组件的既有访问模式。
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	IKernel *Kernel() { return IInterface::Kernel(); }
 	IEngine *Engine() const { return m_pEngine; }
 	class IGraphics *Graphics() const { return m_pGraphics; }

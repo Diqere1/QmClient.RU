@@ -630,6 +630,7 @@ bool ITranslateBackend::CompareTargets(const char *pA, const char *pB) const
 	return false;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class ITranslateBackendHttp : public ITranslateBackend
 {
 protected:
@@ -688,6 +689,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CTranslateBackendLibretranslate : public ITranslateBackendHttp
 {
 private:
@@ -817,6 +819,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CTranslateBackendTencentCloud : public ITranslateBackendHttp
 {
 private:
@@ -987,6 +990,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CTranslateBackendFtapi : public ITranslateBackendHttp
 {
 private:
@@ -1068,6 +1072,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CTranslateBackendLlm : public ITranslateBackendHttp
 {
 private:
@@ -1280,9 +1285,9 @@ public:
 	CTranslateBackendLlm(IHttp &Http, const char *pText, const char *pTarget, const char *pSource)
 	{
 		// 获取当前选择的 Provider（确保值在有效范围内）
-		constexpr int PROVIDER_MIN = static_cast<int>(ELlmProvider::ZHIPU_AI);
-		constexpr int PROVIDER_MAX = static_cast<int>(ELlmProvider::CUSTOM);
-		int ProviderValue = std::clamp(g_Config.m_QmTranslateLlmProvider, PROVIDER_MIN, PROVIDER_MAX);
+		constexpr int ProviderMin = static_cast<int>(ELlmProvider::ZHIPU_AI);
+		constexpr int ProviderMax = static_cast<int>(ELlmProvider::CUSTOM);
+		int ProviderValue = std::clamp(g_Config.m_QmTranslateLlmProvider, ProviderMin, ProviderMax);
 		m_Provider = static_cast<ELlmProvider>(ProviderValue);
 
 		// 获取对应 Provider 的 API Key
@@ -1775,11 +1780,11 @@ bool CTranslate::ContainsChinese(const char *pText)
 	const char *p = pText;
 	while(*p)
 	{
-		const int codepoint = str_utf8_decode(&p);
+		const int Codepoint = str_utf8_decode(&p);
 		// CJK Unified Ideographs: 0x4E00-0x9FFF
 		// CJK Unified Ideographs Extension A: 0x3400-0x4DBF
-		if((codepoint >= 0x4E00 && codepoint <= 0x9FFF) ||
-			(codepoint >= 0x3400 && codepoint <= 0x4DBF))
+		if((Codepoint >= 0x4E00 && Codepoint <= 0x9FFF) ||
+			(Codepoint >= 0x3400 && Codepoint <= 0x4DBF))
 			return true;
 	}
 	return false;
@@ -1874,9 +1879,9 @@ int CTranslate::GetEffectiveConcurrency() const
 	if(str_comp_nocase(g_Config.m_QmTranslateBackend, "llm") == 0)
 	{
 		// LLM 后端：根据 Provider 类型提供不同默认值
-		constexpr int PROVIDER_MIN = static_cast<int>(ELlmProvider::ZHIPU_AI);
-		constexpr int PROVIDER_MAX = static_cast<int>(ELlmProvider::CUSTOM);
-		int ProviderValue = std::clamp(g_Config.m_QmTranslateLlmProvider, PROVIDER_MIN, PROVIDER_MAX);
+		constexpr int ProviderMin = static_cast<int>(ELlmProvider::ZHIPU_AI);
+		constexpr int ProviderMax = static_cast<int>(ELlmProvider::CUSTOM);
+		int ProviderValue = std::clamp(g_Config.m_QmTranslateLlmProvider, ProviderMin, ProviderMax);
 		ELlmProvider Provider = static_cast<ELlmProvider>(ProviderValue);
 
 		switch(Provider)

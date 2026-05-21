@@ -152,9 +152,9 @@ protected:
 	template<class T>
 	void MakeBanInfo(const CBan<T> *pBan, char *pBuf, unsigned BuffSize, int Type) const;
 	template<class T>
-	int Ban(T *pBanPool, const typename T::CDataType *pData, int Seconds, const char *pReason, bool VerbatimReason);
+	int Ban(T *pBanPool, const T::CDataType *pData, int Seconds, const char *pReason, bool VerbatimReason);
 	template<class T>
-	int Unban(T *pBanPool, const typename T::CDataType *pData);
+	int Unban(T *pBanPool, const T::CDataType *pData);
 
 	class IConsole *m_pConsole;
 	class IStorage *m_pStorage;
@@ -202,14 +202,18 @@ void CNetBan::MakeBanInfo(const CBan<T> *pBan, char *pBuf, unsigned BuffSize, in
 	if(pBan == nullptr || pBuf == nullptr)
 	{
 		if(BuffSize > 0)
+		{
 			pBuf[0] = 0;
+		}
 		return;
 	}
 
 	// build type based part
 	char aBuf[256];
 	if(Type == MSGTYPE_PLAYER)
+	{
 		str_copy(aBuf, "You have been banned");
+	}
 	else
 	{
 		char aTemp[256];
@@ -234,12 +238,18 @@ void CNetBan::MakeBanInfo(const CBan<T> *pBan, char *pBuf, unsigned BuffSize, in
 	{
 		int Mins = ((pBan->m_Info.m_Expires - time_timestamp()) + 59) / 60;
 		if(Mins <= 1)
+		{
 			str_format(pBuf, BuffSize, "%s for 1 minute (%s)", aBuf, pBan->m_Info.m_aReason);
+		}
 		else
+		{
 			str_format(pBuf, BuffSize, "%s for %d minutes (%s)", aBuf, Mins, pBan->m_Info.m_aReason);
+		}
 	}
 	else
+	{
 		str_format(pBuf, BuffSize, "%s (%s)", aBuf, pBan->m_Info.m_aReason);
+	}
 }
 
 #endif

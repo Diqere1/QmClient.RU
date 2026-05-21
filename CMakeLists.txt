@@ -165,6 +165,7 @@ option(EXCEPTION_HANDLING "Enable crashdumps (only works with Windows)" ON)
 option(IPO "Enable interprocedural optimizations" ON)
 option(FUSE_LD "Linker to use" OFF)
 option(SECURITY_COMPILER_FLAGS "Whether to set security-relevant compiler flags like -D_FORTIFY_SOURCE=2 and -fstack-protector-strong" ON)
+option(QM_DISABLE_PARALLEL_COMPILE "Disable /MP for compiler warnings-sensitive gates" OFF)
 option(QM_MSVC_ANALYZE "Enable MSVC /analyze static analysis (Windows only)" OFF)
 option(QM_STRICT_WARNINGS "Treat compiler warnings as errors" OFF)
 
@@ -2157,6 +2158,7 @@ set_src(BASE GLOB_RECURSE src/base
   log.h
   logger.h
   math.h
+  perf_timer.h
   rust.h
   str.cpp
   str.h
@@ -2218,9 +2220,9 @@ set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   config_tags.cpp
   config_tags.h
   config_variables.h
-  config_variables_tclient.h
   config_variables_qmclient.h
   config_variables_qmclient_extra.h
+  config_variables_tclient.h
   console.cpp
   console.h
   csv.cpp
@@ -2511,13 +2513,13 @@ if(CLIENT)
     friends.h
     ghost.cpp
     ghost.h
+    gpu_upload_limiter.h
     graph.cpp
     graph.h
     graphics_defines.h
     graphics_threaded.cpp
     graphics_threaded.h
     graphics_threaded_sprites.cpp
-    gpu_upload_limiter.h
     input.cpp
     input.h
     keynames.cpp
@@ -2561,6 +2563,7 @@ if(CLIENT)
     animstate.h
     component.cpp
     component.h
+    components/assets_preview_scale.h
     components/assets_resource_registry.cpp
     components/assets_resource_registry.h
     components/background.cpp
@@ -2621,8 +2624,6 @@ if(CLIENT)
     components/mapsounds.h
     components/menu_background.cpp
     components/menu_background.h
-    components/message_gradient.cpp
-    components/message_gradient.h
     components/menus.cpp
     components/menus.h
     components/menus_assets_editor.cpp
@@ -2638,6 +2639,8 @@ if(CLIENT)
     components/menus_settings_controls.h
     components/menus_start.cpp
     components/menus_start.h
+    components/message_gradient.cpp
+    components/message_gradient.h
     components/motd.cpp
     components/motd.h
     components/nameplates.cpp
@@ -2650,22 +2653,10 @@ if(CLIENT)
     components/player_points.h
     components/players.cpp
     components/players.h
-    components/tclient/bg_draw.cpp
-    components/tclient/bg_draw.h
-    components/tclient/bg_draw_file.cpp
-    components/tclient/bg_draw_file.h
-    components/tclient/bindchat.cpp
-    components/tclient/bindchat.h
-    components/tclient/bindwheel.cpp
-    components/tclient/bindwheel.h
     components/qmclient/collision_hitbox.cpp
     components/qmclient/collision_hitbox.h
     components/qmclient/colored_parts.h
-    components/tclient/custom_communities.cpp
-    components/tclient/custom_communities.h
     components/qmclient/data_version.h
-    components/tclient/fast_practice.cpp
-    components/tclient/fast_practice.h
     components/qmclient/input_overlay.cpp
     components/qmclient/input_overlay.h
     components/qmclient/jelly_tee.cpp
@@ -2673,58 +2664,38 @@ if(CLIENT)
     components/qmclient/keyword_reply_rules.h
     components/qmclient/lyrics_component.cpp
     components/qmclient/lyrics_component.h
+    components/qmclient/menus_qmclient.cpp
     components/qmclient/modes.cpp
     components/qmclient/modes.h
     components/qmclient/monitoring.cpp
     components/qmclient/monitoring.h
-    components/qmclient/menus_qmclient.cpp
     components/qmclient/qmclient.cpp
     components/qmclient/qmclient.h
     components/qmclient/qmclient_utils.cpp
     components/qmclient/qmclient_utils.h
-    components/tclient/mod.cpp
-    components/tclient/mod.h
-    components/tclient/moving_tiles.cpp
-    components/tclient/moving_tiles.h
-    components/tclient/outlines.cpp
-    components/tclient/outlines.h
-    components/tclient/pet.cpp
-    components/tclient/pet.h
-    components/tclient/player_indicator.cpp
-    components/tclient/player_indicator.h
-    components/tclient/menus_tclient.cpp
-    components/tclient/tclient.cpp
-    components/tclient/tclient.h
-    components/tclient/rainbow.cpp
-    components/tclient/rainbow.h
     components/qmclient/scripting.cpp
     components/qmclient/scripting.h
     components/qmclient/scripting/impl.cpp
     components/qmclient/scripting/impl.h
-    components/tclient/skinprofiles.cpp
-    components/tclient/skinprofiles.h
-    components/tclient/statusbar.cpp
-    components/tclient/statusbar.h
-    components/tclient/trails.cpp
-    components/tclient/trails.h
     components/qmclient/translate.cpp
     components/qmclient/translate.h
+    components/qmclient/translate_parse.cpp
+    components/qmclient/translate_parse.h
     components/qmclient/translate_ui_settings.cpp
     components/qmclient/translate_ui_settings.h
-    components/qmclient/voice_component.cpp
-    components/qmclient/voice_component.h
     components/qmclient/voice_capture_pipeline.cpp
     components/qmclient/voice_capture_pipeline.h
+    components/qmclient/voice_component.cpp
+    components/qmclient/voice_component.h
     components/qmclient/voice_core.cpp
     components/qmclient/voice_core.h
     components/qmclient/voice_utils.cpp
     components/qmclient/voice_utils.h
-    components/tclient/warlist.cpp
-    components/tclient/warlist.h
     components/race_demo.cpp
     components/race_demo.h
     components/scoreboard.cpp
     components/scoreboard.h
+    components/settings_warmup.h
     components/skins.cpp
     components/skins.h
     components/skins7.cpp
@@ -2737,6 +2708,42 @@ if(CLIENT)
     components/statboard.h
     components/system_media_controls.cpp
     components/system_media_controls.h
+    components/tclient/bg_draw.cpp
+    components/tclient/bg_draw.h
+    components/tclient/bg_draw_file.cpp
+    components/tclient/bg_draw_file.h
+    components/tclient/bindchat.cpp
+    components/tclient/bindchat.h
+    components/tclient/bindwheel.cpp
+    components/tclient/bindwheel.h
+    components/tclient/custom_communities.cpp
+    components/tclient/custom_communities.h
+    components/tclient/fast_practice.cpp
+    components/tclient/fast_practice.h
+    components/tclient/menus_tclient.cpp
+    components/tclient/mod.cpp
+    components/tclient/mod.h
+    components/tclient/moving_tiles.cpp
+    components/tclient/moving_tiles.h
+    components/tclient/outlines.cpp
+    components/tclient/outlines.h
+    components/tclient/pet.cpp
+    components/tclient/pet.h
+    components/tclient/player_indicator.cpp
+    components/tclient/player_indicator.h
+    components/tclient/rainbow.cpp
+    components/tclient/rainbow.h
+    components/tclient/skinprofiles.cpp
+    components/tclient/skinprofiles.h
+    components/tclient/statusbar.cpp
+    components/tclient/statusbar.h
+    components/tclient/tclient.cpp
+    components/tclient/tclient.h
+    components/tclient/trails.cpp
+    components/tclient/trails.h
+    components/tclient/warlist.cpp
+    components/tclient/warlist.h
+    components/theme_scan.h
     components/tooltips.cpp
     components/tooltips.h
     components/touch_controls.cpp
@@ -2881,6 +2888,8 @@ if(CLIENT)
     envelope_extrema.cpp
     envelope_extrema.h
     envelope_manager.h
+    map_preview_common.cpp
+    map_preview_common.h
     map_renderer.cpp
     map_renderer.h
     render_component.cpp
@@ -3377,11 +3386,11 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     QmAnimTest.cpp
     QmLayoutTest.cpp
     aio_test.cpp
-    audio_pack_editor_test.cpp
     assets_editor_layout_test.cpp
     assets_preview_scale_test.cpp
     assets_resource_migration_test.cpp
     assets_resource_registry_test.cpp
+    audio_pack_editor_test.cpp
     bezier_test.cpp
     blocklist_driver_test.cpp
     bytes_be_test.cpp
@@ -3425,20 +3434,20 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     str_test.cpp
     strip_path_and_extension_test.cpp
     swap_endian_test.cpp
-    theme_scan_test.cpp
     teehistorian_test.cpp
     test.cpp
     test.h
+    theme_scan_test.cpp
     thread_test.cpp
     time_test.cpp
     timestamp_test.cpp
+    translate_boundary_test.cpp
+    translate_integration_test.cpp
     translate_json_format_test.cpp
     translate_llm_parse_test.cpp
     translate_llm_provider_test.cpp
     translate_llm_response_test.cpp
     translate_safety_test.cpp
-    translate_integration_test.cpp
-    translate_boundary_test.cpp
     translate_test.cpp
     unix_test.cpp
     uuid_test.cpp
@@ -4055,7 +4064,9 @@ foreach(target ${TARGETS})
   if(MSVC)
     set_property(TARGET ${target} PROPERTY MSVC_RUNTIME_LIBRARY MultiThreaded$<${DBG}:Debug>) # Use static CRT
     target_compile_options(${target} PRIVATE /Zc:__cplusplus) # Fixes the __cplusplus macro
-    target_compile_options(${target} PRIVATE /MP) # Use multiple cores
+    if(NOT QM_DISABLE_PARALLEL_COMPILE)
+      target_compile_options(${target} PRIVATE /MP) # Use multiple cores
+    endif()
     target_compile_options(${target} PRIVATE /EHsc) # Only catch C++ exceptions with catch.
     target_compile_options(${target} PRIVATE /GS) # Protect the stack pointer.
     target_compile_options(${target} PRIVATE /wd4996) # Use of non-_s functions.
@@ -4149,7 +4160,7 @@ foreach(target ${TARGETS_OWN})
   target_include_directories(${target} PRIVATE src/engine/external/rnnoise/include)
   target_include_directories(${target} PRIVATE src/engine/external/rnnoise/src)
   target_compile_definitions(${target} PRIVATE $<$<CONFIG:Debug>:CONF_DEBUG>)
-  target_compile_definitions(${target} PRIVATE CONF_RNNOISE)
+  target_compile_definitions(${target} PRIVATE CONF_RNNOISE RNN_DISABLE_CPU_WARNING)
   set(COMMON_SYSTEM_INCLUDE_DIRS ${CURL_INCLUDE_DIRS} ${SQLite3_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
   if(TARGET_OS STREQUAL "mac")
     # Do not pass SDK usr/include explicitly on macOS. libc++ expects to

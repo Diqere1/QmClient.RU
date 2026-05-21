@@ -34,27 +34,27 @@ using namespace std::chrono_literals;
 namespace
 {
 
-bool IsScreenshotBrowserFile(const char *pName)
-{
-	return str_endswith_nocase(pName, ".png") != nullptr ||
-		str_endswith_nocase(pName, ".jpg") != nullptr ||
-		str_endswith_nocase(pName, ".jpeg") != nullptr ||
-		str_endswith_nocase(pName, ".webp") != nullptr;
-}
+	bool IsScreenshotBrowserFile(const char *pName)
+	{
+		return str_endswith_nocase(pName, ".png") != nullptr ||
+		       str_endswith_nocase(pName, ".jpg") != nullptr ||
+		       str_endswith_nocase(pName, ".jpeg") != nullptr ||
+		       str_endswith_nocase(pName, ".webp") != nullptr;
+	}
 
-const char *DemoBrowserListColumnLabel(bool BrowsingScreenshots)
-{
-	return BrowsingScreenshots ? Localize("Screenshot") : Localize("Demo");
-}
+	const char *DemoBrowserListColumnLabel(bool BrowsingScreenshots)
+	{
+		return BrowsingScreenshots ? Localize("Screenshot") : Localize("Demo");
+	}
 
-void FormatBrowserFileSize(int64_t SizeBytes, char *pBuf, size_t BufSize)
-{
-	const float SizeKiB = SizeBytes / 1024.0f;
-	if(SizeKiB > 1024.0f)
-		str_format(pBuf, BufSize, Localize("%.2f MiB"), SizeKiB / 1024.0f);
-	else
-		str_format(pBuf, BufSize, Localize("%.2f KiB"), SizeKiB);
-}
+	void FormatBrowserFileSize(int64_t SizeBytes, char *pBuf, size_t BufSize)
+	{
+		const float SizeKiB = SizeBytes / 1024.0f;
+		if(SizeKiB > 1024.0f)
+			str_format(pBuf, BufSize, Localize("%.2f MiB"), SizeKiB / 1024.0f);
+		else
+			str_format(pBuf, BufSize, Localize("%.2f KiB"), SizeKiB);
+	}
 
 }
 
@@ -159,7 +159,8 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 	// threshold value, accounts for slight inaccuracy when setting demo position
 	constexpr int Threshold = 10;
 	const auto &&FindPreviousMarkerPosition = [&]() {
-		for(int i = pInfo->m_NumTimelineMarkers - 1; i >= 0; i--)
+		const int NumTimelineMarkers = std::clamp(pInfo->m_NumTimelineMarkers, 0, (int)std::size(pInfo->m_aTimelineMarkers));
+		for(int i = NumTimelineMarkers - 1; i >= 0; i--)
 		{
 			if((pInfo->m_aTimelineMarkers[i] - pInfo->m_FirstTick) < CurrentTick && absolute(((pInfo->m_aTimelineMarkers[i] - pInfo->m_FirstTick) - CurrentTick)) > Threshold)
 			{
@@ -169,7 +170,8 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		return 0.0f;
 	};
 	const auto &&FindNextMarkerPosition = [&]() {
-		for(int i = 0; i < pInfo->m_NumTimelineMarkers; i++)
+		const int NumTimelineMarkers = std::clamp(pInfo->m_NumTimelineMarkers, 0, (int)std::size(pInfo->m_aTimelineMarkers));
+		for(int i = 0; i < NumTimelineMarkers; i++)
 		{
 			if((pInfo->m_aTimelineMarkers[i] - pInfo->m_FirstTick) > CurrentTick && absolute(((pInfo->m_aTimelineMarkers[i] - pInfo->m_FirstTick) - CurrentTick)) > Threshold)
 			{
@@ -573,7 +575,9 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		if(Ui()->CheckActiveItem(&s_SeekBarId))
 		{
 			if(!Ui()->MouseButton(0))
+			{
 				Ui()->SetActiveItem(nullptr);
+			}
 			else
 			{
 				static float s_PrevAmount = 0.0f;
@@ -821,7 +825,9 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 	if(SliceClearButtonResult == 1)
 	{
 		if(g_Config.m_ClDemoSliceBegin == -1 && g_Config.m_ClDemoSliceEnd == -1)
+		{
 			m_vDemoCutSegments.clear();
+		}
 		else
 		{
 			g_Config.m_ClDemoSliceBegin = -1;
@@ -970,7 +976,9 @@ void CMenus::RenderDemoPlayerSliceSavePopup(CUIRect MainView)
 	str_time(TotalCutTicks / Client()->GameTickSpeed() * 100, TIME_HOURS, aSliceLength, sizeof(aSliceLength));
 	char aBuf[256];
 	if(vExportSegments.size() > 1)
+	{
 		str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("Cut segments"), (int)vExportSegments.size());
+	}
 	else
 	{
 		const int64_t RealSliceBegin = vExportSegments.empty() ? 0 : vExportSegments[0].m_StartTick - pInfo->m_FirstTick;
@@ -1106,7 +1114,9 @@ void CMenus::RenderDemoPlayerSliceSavePopup(CUIRect MainView)
 				Ui()->ShowPopupConfirm(Ui()->MouseX(), OkButton.y + OkButton.h + 5.0f, &s_ConfirmPopupContext);
 			}
 			else
+			{
 				s_ConfirmPopupContext.m_Result = CUi::SConfirmPopupContext::CONFIRMED;
+			}
 		}
 	}
 
@@ -1308,7 +1318,9 @@ void CMenus::DemolistPopulate()
 				FetchAllHeaders();
 		}
 		else if(g_Config.m_BrDemoSort == SORT_DATE)
+		{
 			EnsureAllDemoDates();
+		}
 
 		std::stable_sort(m_vDemos.begin(), m_vDemos.end());
 	}
@@ -1460,8 +1472,8 @@ void CMenus::SyncDemoSelection()
 	};
 
 	m_vDemoSelection.erase(std::remove_if(m_vDemoSelection.begin(), m_vDemoSelection.end(), [&](const SDemoSelectionEntry &SelectionEntry) {
-				      return !SelectionEntryExistsInList(SelectionEntry);
-			      }),
+		return !SelectionEntryExistsInList(SelectionEntry);
+	}),
 		m_vDemoSelection.end());
 
 	if(m_vpFilteredDemos.empty())
@@ -2085,6 +2097,8 @@ void CMenus::RenderDemoBrowserDetails(CUIRect DetailsView)
 		pHeaderLabel = DemoBrowserBrowsingScreenshots() ? Localize("No screenshot selected") : Localize("No demo selected");
 	else if(NumSelected > 1)
 		pHeaderLabel = Localize("Selection");
+	else if(pItem == nullptr)
+		pHeaderLabel = DemoBrowserBrowsingScreenshots() ? Localize("No screenshot selected") : Localize("No demo selected");
 	else if(str_comp(pItem->m_aFilename, "..") == 0)
 		pHeaderLabel = Localize("Parent Folder");
 	else if(pItem->m_IsLink)

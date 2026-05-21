@@ -168,8 +168,7 @@ static bool WriteMiniDumpFile(const char *pFilename)
 		return false;
 	}
 
-	const MINIDUMP_TYPE DumpType = static_cast<MINIDUMP_TYPE>(
-		MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithIndirectlyReferencedMemory);
+	const MINIDUMP_TYPE DumpType = MINIDUMP_TYPE(MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithIndirectlyReferencedMemory); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
 	const BOOL Result = pMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), FileHandle, DumpType, nullptr, nullptr, nullptr);
 
 	CloseHandle(FileHandle);
@@ -213,21 +212,37 @@ static inline bool RepackMsg(const CMsgPacker *pMsg, CPacker &Packer, bool Sixup
 		if(pMsg->m_System)
 		{
 			if(MsgId >= OFFSET_UUID)
+			{
 				;
+			}
 			else if(MsgId == NETMSG_INFO || MsgId == NETMSG_REQUEST_MAP_DATA)
+			{
 				;
+			}
 			else if(MsgId == NETMSG_READY)
+			{
 				MsgId = protocol7::NETMSG_READY;
+			}
 			else if(MsgId == NETMSG_RCON_CMD)
+			{
 				MsgId = protocol7::NETMSG_RCON_CMD;
+			}
 			else if(MsgId == NETMSG_ENTERGAME)
+			{
 				MsgId = protocol7::NETMSG_ENTERGAME;
+			}
 			else if(MsgId == NETMSG_INPUT)
+			{
 				MsgId = protocol7::NETMSG_INPUT;
+			}
 			else if(MsgId == NETMSG_RCON_AUTH)
+			{
 				MsgId = protocol7::NETMSG_RCON_AUTH;
+			}
 			else if(MsgId == NETMSG_PING)
+			{
 				MsgId = protocol7::NETMSG_PING;
+			}
 			else
 			{
 				log_error("net", "0.7 DROP send sys %d", MsgId);
@@ -881,9 +896,13 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 		m_SendPassword = false;
 	}
 	else if(!pPassword)
+	{
 		m_aPassword[0] = 0;
+	}
 	else
+	{
 		str_copy(m_aPassword, pPassword);
+	}
 
 	m_CanReceiveServerCapabilities = true;
 
@@ -893,7 +912,9 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 		m_aNetClient[CONN_MAIN].Connect7(aConnectAddrs, NumConnectAddrs);
 	}
 	else
+	{
 		m_aNetClient[CONN_MAIN].Connect(aConnectAddrs, NumConnectAddrs);
+	}
 
 	m_aNetClient[CONN_MAIN].RefreshStun();
 	SetState(IClient::STATE_CONNECTING);
@@ -1749,6 +1770,9 @@ static CServerCapabilities GetServerCapabilities(int Version, int Flags, bool Si
 
 void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 {
+	if(Conn < 0 || Conn >= NUM_DUMMIES)
+		return;
+
 	CUnpacker Unpacker;
 	Unpacker.Reset(pPacket->m_pData, pPacket->m_DataSize);
 	CMsgPacker Packer(NETMSG_EX, true);
@@ -1802,13 +1826,13 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 				pMapUrl = "";
 			}
 
-			m_MapDetails = std::make_optional<CMapDetails>();
-			CMapDetails &MapDetails = m_MapDetails.value();
+			CMapDetails MapDetails;
 			str_copy(MapDetails.m_aName, pMap);
 			MapDetails.m_Size = MapSize;
 			MapDetails.m_Crc = MapCrc;
 			MapDetails.m_Sha256 = *pMapSha256;
 			str_copy(MapDetails.m_aUrl, pMapUrl);
+			m_MapDetails = MapDetails;
 		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CAPABILITIES)
 		{
@@ -1996,7 +2020,9 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 				g_Config.m_ClDummy = 0;
 			}
 			else
+			{
 				m_DummyDeactivateOnReconnect = false;
+			}
 		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CON_READY)
 		{
@@ -3201,7 +3227,9 @@ void CClient::Update()
 	if(m_pMapdownloadTask)
 	{
 		if(m_pMapdownloadTask->State() == EHttpState::DONE)
+		{
 			FinishMapDownload();
+		}
 		else if(m_pMapdownloadTask->State() == EHttpState::ERROR || m_pMapdownloadTask->State() == EHttpState::ABORTED)
 		{
 			dbg_msg("webdl", "http failed, falling back to gameserver");
@@ -3724,7 +3752,9 @@ void CClient::Run()
 			LastTime = Now + SleepTimeInNanoSeconds;
 		}
 		else
+		{
 			LastTime = Now;
+		}
 
 		// update local and global time
 		m_LocalTime = (time_get() - m_LocalStartTime) / (float)time_freq();
@@ -3851,7 +3881,9 @@ bool CClient::CtrlShiftKey(int Key, bool &Last)
 		return true;
 	}
 	else if(Last && !Input()->KeyIsPressed(Key))
+	{
 		Last = false;
+	}
 
 	return false;
 }
@@ -4200,17 +4232,25 @@ void CClient::Con_SaveReplay(IConsole::IResult *pResult, void *pUserData)
 	{
 		int Length = pResult->GetInteger(0);
 		if(Length <= 0)
+		{
 			pSelf->m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "replay", "ERROR: length must be greater than 0 second.");
+		}
 		else
 		{
 			if(pResult->NumArguments() >= 2)
+			{
 				pSelf->SaveReplay(Length, pResult->GetString(1));
+			}
 			else
+			{
 				pSelf->SaveReplay(Length);
+			}
 		}
 	}
 	else
+	{
 		pSelf->SaveReplay(g_Config.m_ClReplayLength);
+	}
 }
 
 void CClient::SaveReplay(const int Length, const char *pFilename)
@@ -4845,10 +4885,14 @@ void CClient::ConchainWindowScreen(IConsole::IResult *pResult, void *pUserData, 
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxScreen != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SwitchWindowScreen(pResult->GetInteger(0), true);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainFullscreen(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -4857,10 +4901,14 @@ void CClient::ConchainFullscreen(IConsole::IResult *pResult, void *pUserData, IC
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxFullscreen != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SetWindowParams(pResult->GetInteger(0), g_Config.m_GfxBorderless);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainWindowBordered(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -4869,10 +4917,14 @@ void CClient::ConchainWindowBordered(IConsole::IResult *pResult, void *pUserData
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(!g_Config.m_GfxFullscreen && (g_Config.m_GfxBorderless != pResult->GetInteger(0)))
+		{
 			pSelf->Graphics()->SetWindowParams(g_Config.m_GfxFullscreen, !g_Config.m_GfxBorderless);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::Notify(const char *pTitle, const char *pMessage)
@@ -4898,10 +4950,14 @@ void CClient::ConchainWindowVSync(IConsole::IResult *pResult, void *pUserData, I
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxVsync != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SetVSync(pResult->GetInteger(0));
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainWindowResize(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -5945,7 +6001,9 @@ bool CClient::ViewFile(const char *pFilename)
 		str_append(aWorkingDir, "/");
 	}
 	else
+	{
 		aWorkingDir[0] = '\0';
+	}
 
 	char aFileLink[IO_MAX_PATH_LENGTH];
 	str_format(aFileLink, sizeof(aFileLink), "file://%s%s", aWorkingDir, pFilename);

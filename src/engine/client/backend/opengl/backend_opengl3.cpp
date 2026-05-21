@@ -1102,7 +1102,9 @@ void CCommandProcessorFragment_OpenGL3_3::Cmd_RenderTileLayer(const CCommandBuff
 		pProgram = m_pTileProgramTextured;
 	}
 	else
+	{
 		pProgram = m_pTileProgram;
+	}
 
 	UseProgram(pProgram);
 
@@ -1145,7 +1147,9 @@ void CCommandProcessorFragment_OpenGL3_3::Cmd_RenderQuadLayer(const CCommandBuff
 			pProgram = m_pQuadProgramTexturedGrouped;
 		}
 		else
+		{
 			pProgram = m_pQuadProgramGrouped;
+		}
 	}
 	else
 	{
@@ -1154,7 +1158,9 @@ void CCommandProcessorFragment_OpenGL3_3::Cmd_RenderQuadLayer(const CCommandBuff
 			pProgram = m_pQuadProgramTextured;
 		}
 		else
+		{
 			pProgram = m_pQuadProgram;
+		}
 	}
 
 	UseProgram(pProgram);

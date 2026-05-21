@@ -1,2 +1,45 @@
+root = true
+
+# 默认：Windows 开发者使用 CRLF
+[*]
+end_of_line = crlf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# C/C++ 使用 Tab 缩进（跟随 DDNet .clang-format）
+[*.{c,cc,cpp,h,hpp,inl}]
+indent_style = tab
+indent_size = 4
+
+# Rust 使用空格缩进
+[*.rs]
+indent_style = space
+indent_size = 4
+
+# Python 使用空格缩进
+[*.py]
+indent_style = space
+indent_size = 4
+
+# CMake 使用空格缩进
+[{CMakeLists.txt,*.cmake}]
+indent_style = space
+indent_size = 2
+
+# YAML/TOML 使用空格缩进
+[*.{yml,yaml,toml}]
+indent_style = space
+indent_size = 2
+
+# JSON 使用空格缩进
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Shell 脚本必须 LF（bash 需要）
 [*.sh]
+end_of_line = lf
 space_redirects = true
+indent_style = tab
+indent_size = 4

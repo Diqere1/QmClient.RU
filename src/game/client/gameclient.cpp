@@ -33,6 +33,7 @@
 #include "components/particles.h"
 #include "components/players.h"
 #include "components/qmclient/jelly_tee.h"
+#include "components/qmclient/modes.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
 #include "components/skins.h"
@@ -1212,7 +1213,9 @@ void CGameClient::UpdatePositions()
 				// don't use predicted
 			}
 			else
+			{
 				m_LocalCharacterPos = mix(m_PredictedPrevChar.m_Pos, m_PredictedChar.m_Pos, Client()->PredIntraGameTick(g_Config.m_ClDummy));
+			}
 		}
 		else
 		{
@@ -1901,7 +1904,9 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 		{
 			const int Team = pUnpacker->GetInt();
 			if(!pUnpacker->Error() && Team >= TEAM_FLOCK && Team <= TEAM_SUPER)
+			{
 				m_Teams.Team(i, Team);
+			}
 			else
 			{
 				m_Teams.Team(i, 0);
@@ -1918,6 +1923,9 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 	else if(MsgId == NETMSGTYPE_SV_KILLMSG)
 	{
 		CNetMsg_Sv_KillMsg *pMsg = (CNetMsg_Sv_KillMsg *)pRawMsg;
+		if(pMsg->m_Victim < 0 || pMsg->m_Victim >= MAX_CLIENTS)
+			return;
+
 		// reset character prediction
 		if(!(m_GameWorld.m_WorldConfig.m_IsFNG && pMsg->m_Weapon == WEAPON_LASER))
 		{
@@ -1935,7 +1943,9 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 
 			// if everyone of a team killed, we have no ids to spectate anymore, so we disable multi view
 			if(!IsMultiViewIdSet())
+			{
 				ResetMultiView();
+			}
 			else
 			{
 				// the "main" tee killed, search a new one
@@ -2272,6 +2282,12 @@ void CGameClient::ProcessEvents()
 			}
 
 			if(!Config()->m_SndGame)
+				continue;
+
+			const bool FocusMode = g_Config.m_QmFocusMode != 0;
+			if(pEvent->m_SoundId == SOUND_PLAYER_JUMP && !ShouldPlayFocusJumpSound(FocusMode, g_Config.m_QmFocusModeMuteJumpSounds != 0, Config()->m_SndGame))
+				continue;
+			if(pEvent->m_SoundId == SOUND_PLAYER_DIE && !ShouldPlayFocusDeathOrSpawnSound(FocusMode, g_Config.m_QmFocusModeMuteDeathSounds != 0, Config()->m_SndGame))
 				continue;
 
 			if(m_GameInfo.m_RaceSounds && ((pEvent->m_SoundId == SOUND_GUN_FIRE && !g_Config.m_SndGun) || (pEvent->m_SoundId == SOUND_PLAYER_PAIN_LONG && !g_Config.m_SndLongPain)))
@@ -2615,7 +2631,9 @@ void CGameClient::OnNewSnapshot()
 							m_aStats[pInfo->m_ClientId].JoinGame(Client()->GameTick(g_Config.m_ClDummy));
 					}
 					else if(m_aStats[pInfo->m_ClientId].IsActive())
+					{
 						m_aStats[pInfo->m_ClientId].JoinSpec(Client()->GameTick(g_Config.m_ClDummy));
+					}
 				}
 			}
 			else if(Item.m_Type == NETOBJTYPE_DDNETPLAYER)
@@ -2790,14 +2808,18 @@ void CGameClient::OnNewSnapshot()
 						m_aFlagDropTick[TEAM_RED] = Client()->GameTick(g_Config.m_ClDummy);
 				}
 				else
+				{
 					m_aFlagDropTick[TEAM_RED] = 0;
+				}
 				if(m_Snap.m_pGameDataObj->m_FlagCarrierBlue == FLAG_TAKEN)
 				{
 					if(m_aFlagDropTick[TEAM_BLUE] == 0)
 						m_aFlagDropTick[TEAM_BLUE] = Client()->GameTick(g_Config.m_ClDummy);
 				}
 				else
+				{
 					m_aFlagDropTick[TEAM_BLUE] = 0;
+				}
 				if(m_LastFlagCarrierRed == FLAG_ATSTAND && m_Snap.m_pGameDataObj->m_FlagCarrierRed >= 0)
 					OnFlagGrab(TEAM_RED);
 				else if(m_LastFlagCarrierBlue == FLAG_ATSTAND && m_Snap.m_pGameDataObj->m_FlagCarrierBlue >= 0)
@@ -3872,16 +3894,18 @@ void CGameClient::OnPredict()
 			RealPredTick = true;
 			vec2 Pos = pLocalChar->Core()->m_Pos;
 			int Events = pLocalChar->Core()->m_TriggeredEvents;
-			if(Events & COREEVENT_AIR_JUMP)
-				m_aLastPredictedAirJumpTick[Dummy] = Tick;
 
 			if(g_Config.m_ClPredict && m_PredictedWorld.m_WorldConfig.m_PredictEvents && !m_SuppressEvents)
 				if(Events & COREEVENT_AIR_JUMP)
+				{
+					m_aLastPredictedAirJumpTick[Dummy] = Tick;
 					m_Effects.AirJump(Pos, 1.0f, 1.0f);
+				}
 			if(g_Config.m_SndGame && !m_SuppressEvents)
 			{
 				if(Events & COREEVENT_GROUND_JUMP)
-					m_Sounds.PlayAndRecord(CSounds::CHN_WORLD, SOUND_PLAYER_JUMP, 1.0f, Pos);
+					if(ShouldPlayFocusJumpSound(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeMuteJumpSounds != 0, g_Config.m_SndGame))
+						m_Sounds.PlayAndRecord(CSounds::CHN_WORLD, SOUND_PLAYER_JUMP, 1.0f, Pos);
 				if(Events & COREEVENT_HOOK_ATTACH_GROUND)
 					m_Sounds.PlayAndRecord(CSounds::CHN_WORLD, SOUND_HOOK_ATTACH_GROUND, 1.0f, Pos);
 				if(Events & COREEVENT_HOOK_HIT_NOHOOK)
@@ -3895,11 +3919,12 @@ void CGameClient::OnPredict()
 			m_aLastNewPredictedTick[!Dummy] = Tick;
 			vec2 Pos = pDummyChar->Core()->m_Pos;
 			int Events = pDummyChar->Core()->m_TriggeredEvents;
-			if(Events & COREEVENT_AIR_JUMP)
-				m_aLastPredictedAirJumpTick[!Dummy] = Tick;
 			if(g_Config.m_ClPredict && m_PredictedWorld.m_WorldConfig.m_PredictEvents && !m_SuppressEvents)
 				if(Events & COREEVENT_AIR_JUMP)
+				{
+					m_aLastPredictedAirJumpTick[!Dummy] = Tick;
 					m_Effects.AirJump(Pos, 1.0f, 1.0f);
+				}
 		}
 	}
 
@@ -4168,7 +4193,9 @@ void CGameClient::OnPredict()
 			// Detect mispredictions
 			float Confidence = 1.0f;
 			if(PredDir == vec2(0, 0))
+			{
 				Confidence = 1.0f;
+			}
 			else
 			{
 				Confidence = std::max(0.0f, dot(LastDir, PredDir));
@@ -4235,7 +4262,9 @@ void CGameClient::OnPredict()
 			}
 		}
 		else
+		{
 			m_aLastActive[i] = false;
+		}
 	}
 
 	if(g_Config.m_Debug && g_Config.m_ClPredict && FastInputTicks == 0 && m_PredictedTick == Client()->PredGameTick(g_Config.m_ClDummy))
@@ -4566,7 +4595,11 @@ CSkinDescriptor CGameClient::CClientData::ToSkinDescriptor() const
 {
 	CSkinDescriptor SkinDescriptor;
 
-	CTranslationContext::CClientData &TranslatedClient = m_pGameClient->m_pClient->m_TranslationContext.m_aClients[ClientId()];
+	const int ClientId = this->ClientId();
+	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
+		return SkinDescriptor;
+
+	CTranslationContext::CClientData &TranslatedClient = m_pGameClient->m_pClient->m_TranslationContext.m_aClients[ClientId];
 	if(m_Active && !TranslatedClient.m_Active)
 	{
 		SkinDescriptor.m_Flags |= CSkinDescriptor::FLAG_SIX;
@@ -5175,6 +5208,7 @@ void CGameClient::UpdateSpectatorCursor()
 	{
 		// interpolate cursor positions
 		const double Tick = Client()->GameTick(g_Config.m_ClDummy);
+		m_CursorInfo.m_NumSamples = std::clamp(m_CursorInfo.m_NumSamples, 0, CCursorInfo::CURSOR_SAMPLES);
 
 		const bool HasSample = m_CursorInfo.m_NumSamples > 0;
 		const vec2 LastInput = HasSample ? m_CursorInfo.m_aTargetSamplesData[m_CursorInfo.m_NumSamples - 1] : vec2(0.0f, 0.0f);
@@ -5192,9 +5226,11 @@ void CGameClient::UpdateSpectatorCursor()
 		{
 			m_CursorInfo.m_aTargetSamplesTime[0] = Tick - CCursorInfo::INTERP_DELAY;
 			m_CursorInfo.m_aTargetSamplesData[0] = Target;
+			m_CursorInfo.m_NumSamples = 1;
 		}
 
-		if(NewSample)
+		if(NewSample && (m_CursorInfo.m_aTargetSamplesTime[m_CursorInfo.m_NumSamples - 1] != Tick ||
+					m_CursorInfo.m_aTargetSamplesData[m_CursorInfo.m_NumSamples - 1] != Target))
 		{
 			if(m_CursorInfo.m_NumSamples == CCursorInfo::CURSOR_SAMPLES)
 			{
@@ -5301,7 +5337,9 @@ void CGameClient::UpdateRenderedCharacters()
 					Pos = GetFastInputPos(i);
 			}
 			else if(g_Config.m_TcRemoveAnti)
+			{
 				Pos = GetFreezePos(i);
+			}
 			else if(m_TClient.IsFastInputActive() && (i == m_Snap.m_LocalClientId || (PredictDummy() && i == m_aLocalIds[!g_Config.m_ClDummy])))
 			{
 				Pos = GetFastInputPos(i);
@@ -5593,9 +5631,13 @@ bool CGameClient::IsOtherTeam(int ClientId) const
 	bool Local = m_Snap.m_LocalClientId == ClientId;
 
 	if(m_Snap.m_LocalClientId < 0)
+	{
 		return false;
+	}
 	else if((m_Snap.m_SpecInfo.m_Active && m_Snap.m_SpecInfo.m_SpectatorId == SPEC_FREEVIEW) || ClientId < 0)
+	{
 		return false;
+	}
 	else if(m_Snap.m_SpecInfo.m_Active && m_Snap.m_SpecInfo.m_SpectatorId != SPEC_FREEVIEW)
 	{
 		if(m_Teams.Team(ClientId) == TEAM_SUPER || m_Teams.Team(m_Snap.m_SpecInfo.m_SpectatorId) == TEAM_SUPER)
@@ -5603,7 +5645,9 @@ bool CGameClient::IsOtherTeam(int ClientId) const
 		return m_Teams.Team(ClientId) != m_Teams.Team(m_Snap.m_SpecInfo.m_SpectatorId);
 	}
 	else if((m_aClients[m_Snap.m_LocalClientId].m_Solo || m_aClients[ClientId].m_Solo) && !Local)
+	{
 		return true;
+	}
 
 	if(m_Teams.Team(ClientId) == TEAM_SUPER || m_Teams.Team(m_Snap.m_LocalClientId) == TEAM_SUPER)
 		return false;
@@ -6475,7 +6519,9 @@ void CGameClient::ConchainMenuMap(IConsole::IResult *pResult, void *pUserData, I
 		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CGameClient::DummyResetInput()

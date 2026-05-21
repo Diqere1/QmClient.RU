@@ -24,7 +24,7 @@ class CTuneParam
 	int m_Value;
 
 public:
-	void Set(int v) { m_Value = v; }
+	void Set(int v) noexcept { m_Value = v; }
 	int Get() const { return m_Value; }
 	CTuneParam &operator=(int v)
 	{
@@ -44,7 +44,7 @@ class CTuningParams
 	static const char *ms_apNames[];
 
 public:
-	CTuningParams()
+	CTuningParams() noexcept
 	{
 #define MACRO_TUNING_PARAM(Name, ScriptName, Value, Description) m_##Name.Set((int)((Value) * 100.0f));
 #include "tuning.h"

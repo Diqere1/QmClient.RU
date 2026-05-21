@@ -157,6 +157,14 @@ TEST(QmFocusMode, JumpSoundMuteIsIndependentFromJumpVisualEffects)
 	EXPECT_FALSE(ShouldPlayFocusJumpSound(true, false, false));
 }
 
+TEST(QmFocusMode, DeathOrSpawnSoundUsesDeathSoundMuteToggle)
+{
+	EXPECT_TRUE(ShouldPlayFocusDeathOrSpawnSound(true, false, true));
+	EXPECT_FALSE(ShouldPlayFocusDeathOrSpawnSound(true, true, true));
+	EXPECT_TRUE(ShouldPlayFocusDeathOrSpawnSound(false, true, true));
+	EXPECT_FALSE(ShouldPlayFocusDeathOrSpawnSound(true, false, false));
+}
+
 TEST(QmFocusMode, HammerSoundMuteRequiresFocusModeAndHammerSoundToggle)
 {
 	EXPECT_FALSE(ShouldMuteFocusHammerSounds(true, false));

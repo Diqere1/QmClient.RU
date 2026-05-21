@@ -512,7 +512,7 @@ void CMenus::RenderGame(CUIRect MainView)
 
 	bool UseCompactUtilityButtons = false;
 	bool UseSecondaryUtilityButtonBar = false;
-	bool ShowDDRaceButtons = !IsTeamPlay;
+	bool ShowDDRaceButtons;
 	if(g_Config.m_ClTouchControls)
 	{
 		ShowDDRaceButtons = MainView.w > 855.0f;
@@ -1437,7 +1437,9 @@ void CMenus::RenderServerInfo(CUIRect MainView)
 				str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d)", Localize("Teams"), pTeamMode, Localize("maximum", "Team size"), Config()->m_SvMaxTeamSize);
 		}
 		else
+		{
 			str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Teams"), pTeamMode);
+		}
 		GameInfo.HSplitTop(FontSizeBody, &Label, &GameInfo);
 		Ui()->DoLabel(&Label, aBuf, FontSizeBody, TEXTALIGN_ML);
 	}

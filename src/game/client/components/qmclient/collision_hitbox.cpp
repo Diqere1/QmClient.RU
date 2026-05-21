@@ -9,12 +9,14 @@
 #include <game/mapitems.h>
 
 // 地图层类型
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class HitboxLayer
 {
 	GAME,
 	FRONT
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CHitboxLayer
 {
 private:
@@ -348,7 +350,7 @@ void CCollisionHitbox::RenderPickupHitboxes()
 			continue;
 
 		if(Data.m_Pos.x + PickupRadius < ScreenX0 || Data.m_Pos.x - PickupRadius > ScreenX1 ||
-		   Data.m_Pos.y + PickupRadius < ScreenY0 || Data.m_Pos.y - PickupRadius > ScreenY1)
+			Data.m_Pos.y + PickupRadius < ScreenY0 || Data.m_Pos.y - PickupRadius > ScreenY1)
 			continue;
 
 		Graphics()->SetColor(ShieldColor);

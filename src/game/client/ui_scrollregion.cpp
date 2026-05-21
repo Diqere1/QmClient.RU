@@ -50,7 +50,9 @@ void CScrollRegion::Begin(CUIRect *pClipRect, vec2 *pOutOffset, const CScrollReg
 		m_RailRect.VSplitLeft(m_Params.m_ScrollbarMargin, nullptr, &m_RailRect);
 	}
 	else
+	{
 		ScrollBarBg.Margin(m_Params.m_ScrollbarMargin, &m_RailRect);
+	}
 
 	// only show scrollbar if required
 	if(HasScrollBar)

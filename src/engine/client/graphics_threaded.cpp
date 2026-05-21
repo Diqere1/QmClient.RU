@@ -825,39 +825,43 @@ void CGraphics_Threaded::KickCommandBuffer()
 	m_pCommandBuffer->Reset();
 }
 
-class CScreenshotSaveJob : public IJob
+namespace
 {
-	IStorage *m_pStorage;
-	char m_aName[IO_MAX_PATH_LENGTH];
-	CImageInfo m_Image;
-
-	void Run() override
+	class CScreenshotSaveJob : public IJob
 	{
-		static constexpr LOG_COLOR SCREENSHOT_LOG_COLOR = LOG_COLOR{255, 153, 76};
-		char aWholePath[IO_MAX_PATH_LENGTH];
-		if(CImageLoader::SavePng(m_pStorage->OpenFile(m_aName, IOFLAG_WRITE, IStorage::TYPE_SAVE, aWholePath, sizeof(aWholePath)), m_aName, m_Image))
+		IStorage *m_pStorage;
+		char m_aName[IO_MAX_PATH_LENGTH];
+		CImageInfo m_Image;
+
+	protected:
+		void Run() override
 		{
-			log_info_color(SCREENSHOT_LOG_COLOR, "client", "Saved screenshot to '%s'", aWholePath);
+			static constexpr LOG_COLOR SCREENSHOT_LOG_COLOR = LOG_COLOR{255, 153, 76};
+			char aWholePath[IO_MAX_PATH_LENGTH];
+			if(CImageLoader::SavePng(m_pStorage->OpenFile(m_aName, IOFLAG_WRITE, IStorage::TYPE_SAVE, aWholePath, sizeof(aWholePath)), m_aName, m_Image))
+			{
+				log_info_color(SCREENSHOT_LOG_COLOR, "client", "Saved screenshot to '%s'", aWholePath);
+			}
+			else
+			{
+				log_error_color(SCREENSHOT_LOG_COLOR, "client", "Failed to save screenshot to '%s'", aWholePath);
+			}
 		}
-		else
+
+	public:
+		CScreenshotSaveJob(IStorage *pStorage, const char *pName, CImageInfo &&Image) :
+			m_pStorage(pStorage),
+			m_Image(std::move(Image))
 		{
-			log_error_color(SCREENSHOT_LOG_COLOR, "client", "Failed to save screenshot to '%s'", aWholePath);
+			str_copy(m_aName, pName);
 		}
-	}
 
-public:
-	CScreenshotSaveJob(IStorage *pStorage, const char *pName, CImageInfo &&Image) :
-		m_pStorage(pStorage),
-		m_Image(std::move(Image))
-	{
-		str_copy(m_aName, pName);
-	}
-
-	~CScreenshotSaveJob() override
-	{
-		m_Image.Free();
-	}
-};
+		~CScreenshotSaveJob() override
+		{
+			m_Image.Free();
+		}
+	};
+} // namespace
 
 void CGraphics_Threaded::ScreenshotDirect(bool *pSwapped)
 {
