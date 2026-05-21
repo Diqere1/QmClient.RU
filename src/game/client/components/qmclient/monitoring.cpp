@@ -5,6 +5,7 @@
 
 #include <engine/client.h>
 #include <engine/graphics.h>
+#include <engine/shared/config.h>
 #include <engine/textrender.h>
 
 #include <game/client/ui.h>
@@ -12,7 +13,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cinttypes>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <thread>
 
 #if defined(CONF_FAMILY_UNIX)
 #include <sys/resource.h>
@@ -30,11 +35,11 @@
 
 namespace
 {
-	constexpr ColorRGBA PANEL_BG(0.04f, 0.09f, 0.16f, 0.92f);
-	constexpr ColorRGBA GRAPH_BG(0.07f, 0.11f, 0.18f, 0.88f);
-	constexpr ColorRGBA PRIMARY_CARD_BG(1.0f, 1.0f, 1.0f, 0.10f);
-	constexpr ColorRGBA SECONDARY_CARD_BG(1.0f, 1.0f, 1.0f, 0.08f);
-	constexpr ColorRGBA GRID_COLOR(1.0f, 1.0f, 1.0f, 0.10f);
+	constexpr ColorRGBA PANEL_BG(0.04f, 0.09f, 0.16f, 0.88f);
+	constexpr ColorRGBA SURFACE_BG(0.08f, 0.13f, 0.21f, 0.74f);
+	constexpr ColorRGBA CARD_BG(0.12f, 0.17f, 0.25f, 0.68f);
+	constexpr ColorRGBA GRID_COLOR(1.0f, 1.0f, 1.0f, 0.11f);
+	constexpr ColorRGBA DIVIDER_COLOR(1.0f, 1.0f, 1.0f, 0.16f);
 	constexpr ColorRGBA PING_COLOR(0.31f, 0.63f, 1.0f, 0.95f);
 	constexpr ColorRGBA PRED_COLOR(0.96f, 0.64f, 0.23f, 0.95f);
 	constexpr ColorRGBA PRED_MARGIN_COLOR(0.78f, 0.56f, 0.97f, 0.95f);
@@ -71,7 +76,7 @@ namespace
 		return "连接断开";
 	}
 
-	static const char *LocalizeCauseDetail(EQmDiagnosticCause Cause, EQmConnectionGrade Grade)
+	static const char *LocalizeCauseDetail(EQmDiagnosticCause Cause, EQmConnectionGrade Grade, const SQmNetworkMetrics &Net, const SQmPerformanceMetrics &Perf)
 	{
 		if(Grade == EQmConnectionGrade::DISCONNECTED)
 			return "当前未连接到游戏服务器";
@@ -82,7 +87,14 @@ namespace
 		case EQmDiagnosticCause::UPSTREAM: return "预测值抬升，预测链路压力偏高";
 		case EQmDiagnosticCause::JITTER: return "预测波动明显，延迟变化较大";
 		case EQmDiagnosticCause::PACKET_LOSS: return "存在重发迹象，链路质量可疑";
-		case EQmDiagnosticCause::CLIENT_PERFORMANCE: return "客户端帧时间异常";
+		case EQmDiagnosticCause::CLIENT_PERFORMANCE:
+			if(Perf.m_FrameTimeMs > 16.7f)
+				return "客户端帧时间异常";
+			if(Perf.m_CpuUsagePct >= 75.0f)
+				return "客户端 CPU 占用偏高";
+			if(Perf.m_PredictionTimeMs >= Net.m_SnapshotLatencyMs + 12.0f || Perf.m_PredictionStress >= 12.0f)
+				return "客户端预测耗时偏高";
+			return "客户端性能压力偏高";
 		case EQmDiagnosticCause::NONE: return "暂无明显异常";
 		}
 		return "暂无明显异常";
@@ -112,9 +124,20 @@ namespace
 		return ColorRGBA(0.45f, 0.48f, 0.56f, 0.95f);
 	}
 
-	static void DrawCard(CUIRect Rect, ColorRGBA Color, float Radius)
+	static float HudOpacity()
 	{
-		Rect.Draw(Color, IGraphics::CORNER_ALL, Radius);
+		return QmComputeMonitoringPanelOpacity(g_Config.m_QmMonitoringHudOpacity);
+	}
+
+	static ColorRGBA ApplyHudOpacity(ColorRGBA Color)
+	{
+		Color.a *= HudOpacity();
+		return Color;
+	}
+
+	static void DrawSurface(CUIRect Rect, ColorRGBA Color, float Radius)
+	{
+		Rect.Draw(ApplyHudOpacity(Color), IGraphics::CORNER_ALL, Radius);
 	}
 
 	static void DrawGraphGrid(IGraphics *pGraphics, CUIRect Rect, int HorizontalSegments)
@@ -144,9 +167,25 @@ namespace
 		const IGraphics::CLineItem Axis(Rect.x, Rect.y + Rect.h / 2.0f, Rect.x + Rect.w, Rect.y + Rect.h / 2.0f);
 		pGraphics->TextureClear();
 		pGraphics->LinesBegin();
-		pGraphics->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.18f));
+		pGraphics->SetColor(DIVIDER_COLOR);
 		pGraphics->LinesDraw(&Axis, 1);
 		pGraphics->LinesEnd();
+	}
+
+	static void DrawPeakAnchor(IGraphics *pGraphics, float PeakX, float PeakY, CUIRect LabelRect, ColorRGBA Color)
+	{
+		const float LabelCenterX = LabelRect.x + LabelRect.w * 0.5f;
+		const float LabelCenterY = LabelRect.y + LabelRect.h * 0.5f;
+		const float AnchorRadius = 2.0f;
+		const IGraphics::CLineItem Connector(PeakX, PeakY, LabelCenterX, LabelCenterY);
+		CUIRect Anchor(PeakX - AnchorRadius, PeakY - AnchorRadius, AnchorRadius * 2.0f, AnchorRadius * 2.0f);
+
+		pGraphics->TextureClear();
+		pGraphics->LinesBegin();
+		pGraphics->SetColor(Color);
+		pGraphics->LinesDraw(&Connector, 1);
+		pGraphics->LinesEnd();
+		Anchor.Draw(Color, IGraphics::CORNER_ALL, AnchorRadius);
 	}
 
 	static void FormatGraphStats(char *pBuf, int BufSize, const SQmHistoryStats &Stats, const char *pUnit, int Precision = 0)
@@ -163,16 +202,46 @@ namespace
 			str_format(pBuf, BufSize, "均%.*f ↓%.*f ↑%.*f%s", Precision, Stats.m_Average, Precision, Stats.m_Min, Precision, Stats.m_Max, pUnit);
 	}
 
+	static void FormatPercentValue(char *pBuf, int BufSize, float Value)
+	{
+		if(Value < 0.0f)
+		{
+			str_copy(pBuf, "--", BufSize);
+			return;
+		}
+		str_format(pBuf, BufSize, "%.0f%%", Value);
+	}
+
+	static void FormatTickPairValue(char *pBuf, int BufSize, int GameTick, int PredictedTick)
+	{
+		str_format(pBuf, BufSize, "%d/%d", GameTick, PredictedTick);
+	}
+
+	static void FormatMemoryKiBValue(char *pBuf, int BufSize, uint64_t ValueKiB)
+	{
+		str_format(pBuf, BufSize, "%" PRIu64 " KiB", ValueKiB);
+	}
+
+	static void FormatTrafficStatsValue(char *pBuf, int BufSize, const SQmNetworkMetrics::STrafficStats &Stats)
+	{
+		str_format(
+			pBuf,
+			BufSize,
+			"%" PRIu64 "p %" PRIu64 "+%" PRIu64 "=%" PRIu64 " %.0fKib/s 均%" PRIu64 "B",
+			Stats.m_Packets,
+			Stats.m_PayloadBytes,
+			Stats.m_OverheadBytes,
+			Stats.m_TotalBytes,
+			Stats.m_RateKibPerSec,
+			Stats.m_AveragePayloadBytes);
+	}
+
 	static bool RectsOverlap(const CUIRect &A, const CUIRect &B)
 	{
 		return A.x < B.x + B.w && A.x + A.w > B.x && A.y < B.y + B.h && A.y + A.h > B.y;
 	}
 
-	template<size_t N>
 	static CUIRect PlacePeakLabelRect(
-		const std::array<float, N> &aHistory,
-		int HistoryHead,
-		int HistoryCount,
 		CUIRect PlotRect,
 		float PeakX,
 		float PeakY,
@@ -185,12 +254,15 @@ namespace
 		CUIRect LabelRect;
 		LabelRect.w = Width;
 		LabelRect.h = Height;
-		LabelRect.x = std::clamp(PeakX - LabelRect.w * 0.5f, PlotRect.x, PlotRect.x + PlotRect.w - LabelRect.w);
-		LabelRect.y = std::clamp(PeakY - LabelRect.h - 4.0f + VerticalOffset, PlotRect.y, PlotRect.y + PlotRect.h - LabelRect.h);
 
-		const float Step = Height + 4.0f;
-		for(int Attempt = 0; Attempt < 6; ++Attempt)
+		const float XStep = Width * 0.55f;
+		for(int Attempt = 0; Attempt < 7; ++Attempt)
 		{
+			const float Direction = Attempt % 2 == 0 ? 1.0f : -1.0f;
+			const float Multiplier = (float)((Attempt + 1) / 2);
+			LabelRect.x = std::clamp(PeakX - LabelRect.w * 0.5f + Direction * XStep * Multiplier, PlotRect.x, PlotRect.x + PlotRect.w - LabelRect.w);
+			LabelRect.y = std::clamp(PeakY - LabelRect.h * 0.5f + VerticalOffset, PlotRect.y, PlotRect.y + PlotRect.h - LabelRect.h);
+
 			bool Overlaps = false;
 			for(int i = 0; i < UsedCount; ++i)
 			{
@@ -202,16 +274,13 @@ namespace
 			}
 			if(!Overlaps)
 				return LabelRect;
-
-			const float Direction = Attempt % 2 == 0 ? -1.0f : 1.0f;
-			const float Multiplier = (float)(Attempt / 2 + 1);
-			LabelRect.y = std::clamp(LabelRect.y + Direction * Step * Multiplier, PlotRect.y, PlotRect.y + PlotRect.h - LabelRect.h);
 		}
 		return LabelRect;
 	}
 
 	template<size_t N>
 	static void DrawPeakLabel(
+		IGraphics *pGraphics,
 		ITextRender *pTextRender,
 		const std::array<float, N> &aHistory,
 		int HistoryHead,
@@ -238,7 +307,8 @@ namespace
 		FormatMetricValue(aBuf, sizeof(aBuf), pUnit, PeakValue, 0);
 		const float Width = std::max(52.0f, pTextRender->TextWidth(FontSize, aBuf) + 8.0f);
 		const float Height = FontSize + 4.0f;
-		const CUIRect LabelRect = PlacePeakLabelRect(aHistory, HistoryHead, HistoryCount, PlotRect, PeakX, PeakY, Width, Height, VerticalOffset, aUsedRects, UsedCount);
+		const CUIRect LabelRect = PlacePeakLabelRect(PlotRect, PeakX, PeakY, Width, Height, VerticalOffset, aUsedRects, UsedCount);
+		DrawPeakAnchor(pGraphics, PeakX, PeakY, LabelRect, TextColor);
 		pTextRender->TextColor(TextColor);
 		const float TextWidth = pTextRender->TextWidth(FontSize, aBuf);
 		pTextRender->Text(LabelRect.x + (LabelRect.w - TextWidth) * 0.5f, LabelRect.y, FontSize, aBuf);
@@ -249,6 +319,7 @@ namespace
 
 	template<size_t N>
 	static void DrawSignedPeakLabel(
+		IGraphics *pGraphics,
 		ITextRender *pTextRender,
 		const std::array<float, N> &aHistory,
 		int HistoryHead,
@@ -274,7 +345,8 @@ namespace
 		str_format(aBuf, sizeof(aBuf), "%.0f%s", PeakValue, pUnit);
 		const float Width = std::max(52.0f, pTextRender->TextWidth(FontSize, aBuf) + 8.0f);
 		const float Height = FontSize + 4.0f;
-		const CUIRect LabelRect = PlacePeakLabelRect(aHistory, HistoryHead, HistoryCount, PlotRect, PeakX, PeakY, Width, Height, 0.0f, aUsedRects, UsedCount);
+		const CUIRect LabelRect = PlacePeakLabelRect(PlotRect, PeakX, PeakY, Width, Height, 0.0f, aUsedRects, UsedCount);
+		DrawPeakAnchor(pGraphics, PeakX, PeakY, LabelRect, TextColor);
 		pTextRender->TextColor(TextColor);
 		const float TextWidth = pTextRender->TextWidth(FontSize, aBuf);
 		pTextRender->Text(LabelRect.x + (LabelRect.w - TextWidth) * 0.5f, LabelRect.y, FontSize, aBuf);
@@ -310,7 +382,8 @@ namespace
 		s_LastWallNs = WallNs;
 		s_LastCpuNs = CpuNs;
 
-		return std::clamp((double)CpuDeltaNs / (double)WallDeltaNs * 100.0, 0.0, 999.0);
+		const float RawCpuUsagePct = (float)std::max((double)CpuDeltaNs / (double)WallDeltaNs * 100.0, 0.0);
+		return QmNormalizeProcessCpuUsagePct(RawCpuUsagePct, std::thread::hardware_concurrency());
 #elif defined(CONF_FAMILY_WINDOWS)
 		static uint64_t s_LastWall100Ns = 0;
 		static uint64_t s_LastCpu100Ns = 0;
@@ -348,7 +421,85 @@ namespace
 		s_LastWall100Ns = Wall100Ns;
 		s_LastCpu100Ns = Cpu100Ns;
 
-		return std::clamp((double)CpuDelta100Ns / (double)WallDelta100Ns * 100.0, 0.0, 999.0);
+		const float RawCpuUsagePct = (float)std::max((double)CpuDelta100Ns / (double)WallDelta100Ns * 100.0, 0.0);
+		return QmNormalizeProcessCpuUsagePct(RawCpuUsagePct, std::thread::hardware_concurrency());
+#else
+		return -1.0f;
+#endif
+	}
+
+	static float SampleTotalCpuUsagePct()
+	{
+#if defined(CONF_PLATFORM_LINUX)
+		static uint64_t s_LastIdle = 0;
+		static uint64_t s_LastTotal = 0;
+
+		FILE *pFile = std::fopen("/proc/stat", "r");
+		if(pFile == nullptr)
+			return -1.0f;
+
+		char aLabel[8] = {};
+		uint64_t User = 0;
+		uint64_t Nice = 0;
+		uint64_t System = 0;
+		uint64_t Idle = 0;
+		uint64_t Iowait = 0;
+		uint64_t Irq = 0;
+		uint64_t Softirq = 0;
+		uint64_t Steal = 0;
+		const int ReadCount = std::fscanf(pFile, "%7s %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64, aLabel, &User, &Nice, &System, &Idle, &Iowait, &Irq, &Softirq, &Steal);
+		std::fclose(pFile);
+		if(ReadCount < 5 || std::strcmp(aLabel, "cpu") != 0)
+			return -1.0f;
+
+		const uint64_t IdleAll = Idle + Iowait;
+		const uint64_t Total = User + Nice + System + Idle + Iowait + Irq + Softirq + Steal;
+		if(s_LastTotal == 0 || Total <= s_LastTotal || IdleAll < s_LastIdle)
+		{
+			s_LastIdle = IdleAll;
+			s_LastTotal = Total;
+			return -1.0f;
+		}
+
+		const float UsagePct = QmComputeTotalCpuUsagePct(s_LastIdle, s_LastTotal, IdleAll, Total);
+		s_LastIdle = IdleAll;
+		s_LastTotal = Total;
+		return UsagePct;
+#elif defined(CONF_FAMILY_WINDOWS)
+		static uint64_t s_LastIdle100Ns = 0;
+		static uint64_t s_LastKernel100Ns = 0;
+		static uint64_t s_LastUser100Ns = 0;
+
+		FILETIME IdleTime, KernelTime, UserTime;
+		if(!GetSystemTimes(&IdleTime, &KernelTime, &UserTime))
+			return -1.0f;
+
+		ULARGE_INTEGER Idle;
+		Idle.LowPart = IdleTime.dwLowDateTime;
+		Idle.HighPart = IdleTime.dwHighDateTime;
+		ULARGE_INTEGER Kernel;
+		Kernel.LowPart = KernelTime.dwLowDateTime;
+		Kernel.HighPart = KernelTime.dwHighDateTime;
+		ULARGE_INTEGER User;
+		User.LowPart = UserTime.dwLowDateTime;
+		User.HighPart = UserTime.dwHighDateTime;
+
+		if(s_LastKernel100Ns == 0 || Kernel.QuadPart < s_LastKernel100Ns || User.QuadPart < s_LastUser100Ns || Idle.QuadPart < s_LastIdle100Ns)
+		{
+			s_LastIdle100Ns = Idle.QuadPart;
+			s_LastKernel100Ns = Kernel.QuadPart;
+			s_LastUser100Ns = User.QuadPart;
+			return -1.0f;
+		}
+
+		const uint64_t PreviousTotal = s_LastKernel100Ns + s_LastUser100Ns;
+		const uint64_t CurrentTotal = Kernel.QuadPart + User.QuadPart;
+		const float UsagePct = QmComputeTotalCpuUsagePct(s_LastIdle100Ns, PreviousTotal, Idle.QuadPart, CurrentTotal);
+		s_LastIdle100Ns = Idle.QuadPart;
+		s_LastKernel100Ns = Kernel.QuadPart;
+		s_LastUser100Ns = User.QuadPart;
+
+		return UsagePct;
 #else
 		return -1.0f;
 #endif
@@ -446,6 +597,8 @@ void CQmMonitoring::UpdateNetworkMetrics(SQmNetworkMetrics &Net)
 
 	Net.m_DownBytesPerSec = BytesPerSecondDelta((int64_t)Current.recv_bytes, (int64_t)Prev.recv_bytes, DeltaSeconds);
 	Net.m_UpBytesPerSec = BytesPerSecondDelta((int64_t)Current.sent_bytes, (int64_t)Prev.sent_bytes, DeltaSeconds);
+	Net.m_Send = QmComputeTrafficStats(Prev.sent_packets, Prev.sent_bytes, Current.sent_packets, Current.sent_bytes);
+	Net.m_Recv = QmComputeTrafficStats(Prev.recv_packets, Prev.recv_bytes, Current.recv_packets, Current.recv_bytes);
 	Net.m_PacketLossPct = QmComputeDiagnosticPacketLossPct(Prev, Current, PendingResendCount);
 
 	int NegativeSamples = 0;
@@ -461,12 +614,20 @@ void CQmMonitoring::UpdateNetworkMetrics(SQmNetworkMetrics &Net)
 
 void CQmMonitoring::UpdatePerformanceMetrics(SQmPerformanceMetrics &Perf)
 {
-	Perf.m_FrameTimeMs = Client()->RenderFrameTime() * 1000.0f;
+	Perf.m_FrameTimeMs = Client()->FrameTimeAverage() * 1000.0f;
 	Perf.m_FrameTimeSpikeMs = Perf.m_FrameTimeMs;
+	Perf.m_FrameTimeUs = Client()->FrameTimeAverage() * 1000000.0f;
 	Perf.m_Fps = Perf.m_FrameTimeMs > 0.0f ? 1000.0f / Perf.m_FrameTimeMs : 0.0f;
-	Perf.m_PredictionTimeMs = Client()->PredictionLatencyMs();
+	Perf.m_PredictionTimeMs = (float)Client()->GetPredictionTime();
 	Perf.m_CpuUsagePct = SampleProcessCpuUsagePct();
+	Perf.m_TotalCpuUsagePct = SampleTotalCpuUsagePct();
 	Perf.m_MemoryUsageMb = SampleProcessMemoryMb();
+	Perf.m_GameTick = Client()->GameTick(g_Config.m_ClDummy);
+	Perf.m_PredictedTick = Client()->PredGameTick(g_Config.m_ClDummy);
+	Perf.m_GraphicsMemory.m_TextureKiB = Graphics()->TextureMemoryUsage() / 1024;
+	Perf.m_GraphicsMemory.m_BufferKiB = Graphics()->BufferMemoryUsage() / 1024;
+	Perf.m_GraphicsMemory.m_StreamedKiB = Graphics()->StreamedMemoryUsage() / 1024;
+	Perf.m_GraphicsMemory.m_StagingKiB = Graphics()->StagingMemoryUsage() / 1024;
 	const float SnapshotLatencyMs = Client()->SnapshotLatencyMs();
 	Perf.m_PredictionStress =
 		std::max(Perf.m_PredictionTimeMs - SnapshotLatencyMs, 0.0f) +
@@ -478,7 +639,7 @@ void CQmMonitoring::UpdateDiagnosticVerdict(SQmDiagnosticVerdict &Verdict, const
 	Verdict.m_Grade = DetermineConnectionGrade(Net);
 	Verdict.m_PrimaryCause = DeterminePrimaryCause(Net, Perf, Verdict.m_Grade);
 	Verdict.m_pSummary = LocalizeGradeSummary(Verdict.m_Grade);
-	Verdict.m_pDetail = LocalizeCauseDetail(Verdict.m_PrimaryCause, Verdict.m_Grade);
+	Verdict.m_pDetail = LocalizeCauseDetail(Verdict.m_PrimaryCause, Verdict.m_Grade, Net, Perf);
 }
 
 void CQmMonitoring::PushHistorySample(float PingMs, float PredMs, float PredictionMarginMs, float JitterMs, float GameTimeMarginMs, float Fps)
@@ -505,28 +666,18 @@ void CQmMonitoring::UpdateSnapshot()
 void CQmMonitoring::RenderHeader(CUIRect Rect) const
 {
 	const float UiScale = QmComputeMonitoringUiScale(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
-	const float SummaryFontSize = 18.0f * UiScale;
-	const float DetailFontSize = 11.0f * UiScale;
-	const float BadgeFontSize = 11.0f * UiScale;
-	const float SummaryHeight = 28.0f * UiScale;
+	const float SummaryFontSize = 22.0f * UiScale;
+	const float DetailFontSize = 15.0f * UiScale;
+	const float BadgeFontSize = 14.0f * UiScale;
+	const float SummaryHeight = 26.0f * UiScale;
 	const float RightColumnWidth = 118.0f * UiScale;
-	const float DotSize = 18.0f * UiScale;
 	const float BadgeHeight = 24.0f * UiScale;
-	const float Margin = 4.0f * UiScale;
-	const float Gap = 8.0f * UiScale;
 
-	CUIRect Left, Right, SummaryRect, DetailRect, DotRect, BadgeRect;
+	CUIRect Left, Right, SummaryRect, DetailRect, BadgeRect;
 	Rect.VSplitRight(RightColumnWidth, &Left, &Right);
 	Left.HSplitTop(SummaryHeight, &SummaryRect, &DetailRect);
 	Ui()->DoLabel(&SummaryRect, Localize(m_Snapshot.m_Verdict.m_pSummary), SummaryFontSize, TEXTALIGN_ML);
 	Ui()->DoLabel(&DetailRect, Localize(m_Snapshot.m_Verdict.m_pDetail), DetailFontSize, TEXTALIGN_ML);
-
-	Right.VSplitLeft(DotSize + Margin * 2.0f, &DotRect, &Right);
-	DotRect.HSplitTop(DotSize, &DotRect, nullptr);
-	DotRect.Margin(Margin, &DotRect);
-	DotRect.Draw(GradeBadgeColor(m_Snapshot.m_Verdict.m_Grade), IGraphics::CORNER_ALL, DotRect.w / 2.0f);
-
-	Right.VSplitLeft(Gap, nullptr, &Right);
 	Right.HSplitTop(BadgeHeight, &BadgeRect, nullptr);
 	BadgeRect.Draw(GradeBadgeColor(m_Snapshot.m_Verdict.m_Grade), IGraphics::CORNER_ALL, BadgeRect.h / 2.0f);
 	Ui()->DoLabel(&BadgeRect, Localize(GradeBadgeText(m_Snapshot.m_Verdict.m_Grade)), BadgeFontSize, TEXTALIGN_MC);
@@ -535,17 +686,18 @@ void CQmMonitoring::RenderHeader(CUIRect Rect) const
 void CQmMonitoring::RenderMainGraph(CUIRect Rect) const
 {
 	const float UiScale = QmComputeMonitoringUiScale(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
-	const float Margin = 14.0f * UiScale;
-	const float HeaderHeight = 92.0f * UiScale;
+	const float Margin = 12.0f * UiScale;
+	const float HeaderHeight = 82.0f * UiScale;
 	const float ItemGap = 12.0f * UiScale;
 	const float ColorWidth = 14.0f * UiScale;
 	const float ColorRadius = 4.0f * UiScale;
-	const float HeaderFontSize = 12.0f * UiScale;
-	const float HeaderValueFontSize = 13.0f * UiScale;
-	const float FooterFontSize = 10.0f * UiScale;
-	const float PeakFontSize = 11.0f * UiScale;
+	const float HeaderFontSize = 16.0f * UiScale;
+	const float HeaderValueFontSize = 17.0f * UiScale;
+	const float FooterFontSize = 13.0f * UiScale;
+	const float PeakFontSize = 15.0f * UiScale;
+	const float CornerRadius = 8.0f * UiScale;
 
-	DrawCard(Rect, GRAPH_BG, 12.0f * UiScale);
+	DrawSurface(Rect, SURFACE_BG, CornerRadius);
 
 	if(m_HistoryCount < 2)
 		return;
@@ -598,10 +750,10 @@ void CQmMonitoring::RenderMainGraph(CUIRect Rect) const
 	DrawSeries(m_aJitterHistory, JITTER_COLOR);
 	std::array<CUIRect, 8> aPeakRects = {};
 	int PeakRectCount = 0;
-	DrawPeakLabel(TextRender(), m_aPingHistory, m_HistoryHead, m_HistoryCount, PlotRect, MaxValue, PING_COLOR, PeakFontSize, "ms", -12.0f * UiScale, aPeakRects, PeakRectCount);
-	DrawPeakLabel(TextRender(), m_aPredHistory, m_HistoryHead, m_HistoryCount, PlotRect, MaxValue, PRED_COLOR, PeakFontSize, "ms", -28.0f * UiScale, aPeakRects, PeakRectCount);
-	DrawPeakLabel(TextRender(), m_aPredictionMarginHistory, m_HistoryHead, m_HistoryCount, PlotRect, MaxValue, PRED_MARGIN_COLOR, PeakFontSize, "ms", -44.0f * UiScale, aPeakRects, PeakRectCount);
-	DrawPeakLabel(TextRender(), m_aJitterHistory, m_HistoryHead, m_HistoryCount, PlotRect, MaxValue, JITTER_COLOR, PeakFontSize, "ms", -60.0f * UiScale, aPeakRects, PeakRectCount);
+	DrawPeakLabel(Graphics(), TextRender(), m_aPingHistory, m_HistoryHead, m_HistoryCount, PlotRect, MaxValue, PING_COLOR, PeakFontSize, "ms", 0.0f, aPeakRects, PeakRectCount);
+	DrawPeakLabel(Graphics(), TextRender(), m_aPredHistory, m_HistoryHead, m_HistoryCount, PlotRect, MaxValue, PRED_COLOR, PeakFontSize, "ms", 0.0f, aPeakRects, PeakRectCount);
+	DrawPeakLabel(Graphics(), TextRender(), m_aPredictionMarginHistory, m_HistoryHead, m_HistoryCount, PlotRect, MaxValue, PRED_MARGIN_COLOR, PeakFontSize, "ms", 0.0f, aPeakRects, PeakRectCount);
+	DrawPeakLabel(Graphics(), TextRender(), m_aJitterHistory, m_HistoryHead, m_HistoryCount, PlotRect, MaxValue, JITTER_COLOR, PeakFontSize, "ms", 0.0f, aPeakRects, PeakRectCount);
 
 	const struct SLegendItem
 	{
@@ -611,8 +763,8 @@ void CQmMonitoring::RenderMainGraph(CUIRect Rect) const
 		SQmHistoryStats m_Stats;
 	} aLegend[] = {
 		{"延迟", m_Snapshot.m_Network.m_SnapshotLatencyMs, PING_COLOR, QmComputeHistoryStats(m_aPingHistory, m_HistoryHead, m_HistoryCount)},
-		{"预测值（实际预测值）", m_Snapshot.m_Network.m_PredictionLatencyMs, PRED_COLOR, QmComputeHistoryStats(m_aPredHistory, m_HistoryHead, m_HistoryCount)},
-		{"预测边距（预测提前值）", m_Snapshot.m_Network.m_PredictionMarginMs, PRED_MARGIN_COLOR, QmComputeHistoryStats(m_aPredictionMarginHistory, m_HistoryHead, m_HistoryCount)},
+		{"预测值", m_Snapshot.m_Network.m_PredictionLatencyMs, PRED_COLOR, QmComputeHistoryStats(m_aPredHistory, m_HistoryHead, m_HistoryCount)},
+		{"预测边距", m_Snapshot.m_Network.m_PredictionMarginMs, PRED_MARGIN_COLOR, QmComputeHistoryStats(m_aPredictionMarginHistory, m_HistoryHead, m_HistoryCount)},
 		{"抖动", m_Snapshot.m_Network.m_JitterMs, JITTER_COLOR, QmComputeHistoryStats(m_aJitterHistory, m_HistoryHead, m_HistoryCount)},
 	};
 
@@ -634,8 +786,8 @@ void CQmMonitoring::RenderMainGraph(CUIRect Rect) const
 		HeaderCell.VSplitLeft(ColorWidth, &ColorRect, &HeaderCell);
 		HeaderCell.VSplitLeft(5.0f * UiScale, nullptr, &HeaderCell);
 		TextRect = HeaderCell;
-		TextRect.HSplitTop(20.0f * UiScale, &TextRect, &StatsRect);
-		TextRect.VSplitLeft(TextRect.w * 0.68f, &LabelRect, &ValueRect);
+		TextRect.HSplitTop(26.0f * UiScale, &TextRect, &StatsRect);
+		TextRect.VSplitLeft(TextRect.w * 0.64f, &LabelRect, &ValueRect);
 		ColorRect.HMargin(4.0f * UiScale, &ColorRect);
 		ColorRect.Draw(aLegend[i].m_Color, IGraphics::CORNER_ALL, ColorRadius);
 
@@ -655,11 +807,12 @@ void CQmMonitoring::RenderFpsGraph(CUIRect Rect) const
 	const float UiScale = QmComputeMonitoringUiScale(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
 	const float Margin = 14.0f * UiScale;
 	const float HeaderHeight = 44.0f * UiScale;
-	const float HeaderFontSize = 12.0f * UiScale;
-	const float StatsFontSize = 10.0f * UiScale;
-	const float PeakFontSize = 11.0f * UiScale;
+	const float HeaderFontSize = 15.0f * UiScale;
+	const float StatsFontSize = 13.0f * UiScale;
+	const float PeakFontSize = 14.0f * UiScale;
+	const float CornerRadius = 8.0f * UiScale;
 
-	DrawCard(Rect, GRAPH_BG, 12.0f * UiScale);
+	DrawSurface(Rect, SURFACE_BG, CornerRadius);
 
 	if(m_HistoryCount < 2)
 		return;
@@ -708,7 +861,7 @@ void CQmMonitoring::RenderFpsGraph(CUIRect Rect) const
 	Graphics()->LinesEnd();
 	std::array<CUIRect, 8> aPeakRects = {};
 	int PeakRectCount = 0;
-	DrawPeakLabel(TextRender(), m_aFpsHistory, m_HistoryHead, m_HistoryCount, FpsRect, MaxFpsValue, FPS_COLOR, PeakFontSize, "", -8.0f * UiScale, aPeakRects, PeakRectCount);
+	DrawPeakLabel(Graphics(), TextRender(), m_aFpsHistory, m_HistoryHead, m_HistoryCount, FpsRect, MaxFpsValue, FPS_COLOR, PeakFontSize, "", -8.0f * UiScale, aPeakRects, PeakRectCount);
 
 	std::array<IGraphics::CLineItem, QM_MONITORING_HISTORY_CAPACITY - 1> aGameMarginLines = {};
 	int NumGameMarginLines = 0;
@@ -729,7 +882,7 @@ void CQmMonitoring::RenderFpsGraph(CUIRect Rect) const
 	if(NumGameMarginLines > 0)
 		Graphics()->LinesDraw(aGameMarginLines.data(), NumGameMarginLines);
 	Graphics()->LinesEnd();
-	DrawSignedPeakLabel(TextRender(), m_aGameTimeMarginHistory, m_HistoryHead, m_HistoryCount, GameMarginRect, MaxGameMarginAbs, GAME_MARGIN_COLOR, PeakFontSize, "ms", aPeakRects, PeakRectCount);
+	DrawSignedPeakLabel(Graphics(), TextRender(), m_aGameTimeMarginHistory, m_HistoryHead, m_HistoryCount, GameMarginRect, MaxGameMarginAbs, GAME_MARGIN_COLOR, PeakFontSize, "ms", aPeakRects, PeakRectCount);
 
 	const SQmHistoryStats FpsStats = QmComputeHistoryStats(m_aFpsHistory, m_HistoryHead, m_HistoryCount);
 	const SQmHistoryStats GameMarginStats = QmComputeHistoryStats(m_aGameTimeMarginHistory, m_HistoryHead, m_HistoryCount);
@@ -741,7 +894,7 @@ void CQmMonitoring::RenderFpsGraph(CUIRect Rect) const
 	Ui()->DoLabel(&LeftHeader, Localize("帧率"), HeaderFontSize, TEXTALIGN_ML);
 	Ui()->DoLabel(&LeftHeader, aFpsValueBuf, HeaderFontSize, TEXTALIGN_MR);
 	CUIRect LeftStatsRect = LeftHeader;
-	LeftStatsRect.y += 14.0f * UiScale;
+	LeftStatsRect.y += 18.0f * UiScale;
 	char aFpsStatsBuf[64];
 	FormatGraphStats(aFpsStatsBuf, sizeof(aFpsStatsBuf), FpsStats, "", 0);
 	Ui()->DoLabel(&LeftStatsRect, aFpsStatsBuf, StatsFontSize, TEXTALIGN_ML);
@@ -751,7 +904,7 @@ void CQmMonitoring::RenderFpsGraph(CUIRect Rect) const
 	Ui()->DoLabel(&RightHeader, Localize("游戏时间边距"), HeaderFontSize, TEXTALIGN_ML);
 	Ui()->DoLabel(&RightHeader, aGameMarginValueBuf, HeaderFontSize, TEXTALIGN_MR);
 	CUIRect RightStatsRect = RightHeader;
-	RightStatsRect.y += 14.0f * UiScale;
+	RightStatsRect.y += 18.0f * UiScale;
 	char aGameMarginStatsBuf[64];
 	FormatGraphStats(aGameMarginStatsBuf, sizeof(aGameMarginStatsBuf), GameMarginStats, "ms", 0);
 	Ui()->DoLabel(&RightStatsRect, aGameMarginStatsBuf, StatsFontSize, TEXTALIGN_ML);
@@ -761,7 +914,7 @@ void CQmMonitoring::RenderPrimaryCards(CUIRect Rect) const
 {
 	const float UiScale = QmComputeMonitoringUiScale(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
 	const float Gap = 10.0f * UiScale;
-	const float CornerRadius = 12.0f * UiScale;
+	const float CornerRadius = 8.0f * UiScale;
 
 	const struct SCard
 	{
@@ -770,107 +923,134 @@ void CQmMonitoring::RenderPrimaryCards(CUIRect Rect) const
 		const char *m_pUnit;
 		int m_Precision;
 		ColorRGBA m_Color;
+		bool m_IsRate = false;
+		bool m_IsPercent = false;
+		bool m_IsCpu = false;
 	} aCards[] = {
-		{"延迟", m_Snapshot.m_Network.m_SnapshotLatencyMs, "ms", 0, PING_COLOR},
-		{"预测值（实际预测值）", m_Snapshot.m_Network.m_PredictionLatencyMs, "ms", 0, PRED_COLOR},
-		{"预测边距（预测提前值）", m_Snapshot.m_Network.m_PredictionMarginMs, "ms", 0, PRED_MARGIN_COLOR},
 		{"帧率", m_Snapshot.m_Performance.m_Fps, "", 0, FPS_COLOR},
+		{"帧时间", m_Snapshot.m_Performance.m_FrameTimeUs, "us", 0, FPS_COLOR},
+		{"DDNet/总 CPU", m_Snapshot.m_Performance.m_CpuUsagePct, "", 0, GAME_MARGIN_COLOR, false, false, true},
+		{"内存", m_Snapshot.m_Performance.m_MemoryUsageMb, "MB", 0, GAME_MARGIN_COLOR},
+		{"连接下行", m_Snapshot.m_Network.m_DownBytesPerSec, "", 0, PING_COLOR, true},
+		{"连接上行", m_Snapshot.m_Network.m_UpBytesPerSec, "", 0, PRED_COLOR, true},
+		{"时间回拉", m_Snapshot.m_Network.m_ServerRollbackMs, "ms", 0, GAME_MARGIN_COLOR},
+		{"回拉率", m_Snapshot.m_Network.m_ServerRollbackRatePct, "", 0, JITTER_COLOR, false, true},
 	};
 
 	const int CardCount = std::size(aCards);
-	const int Columns = 2;
+	const int Columns = 4;
 	const int Rows = (CardCount + Columns - 1) / Columns;
 	const float CardWidth = std::max((Rect.w - Gap * (Columns - 1)) / (float)Columns, 0.0f);
 	const float CardHeight = std::max((Rect.h - Gap * (Rows - 1)) / (float)Rows, 0.0f);
-	const float Margin = std::clamp(CardHeight * 0.13f, 12.0f, 18.0f);
-	const float LabelFontSize = std::clamp(CardHeight * 0.17f, 12.0f, 16.0f);
-	const float ValueFontSize = std::clamp(CardHeight * 0.26f, 22.0f, 28.0f);
+	const float Margin = std::clamp(CardHeight * 0.09f, 6.0f, 10.0f);
+	const float LabelFontSize = std::clamp(CardHeight * 0.30f, 14.0f, 19.0f);
+	const float ValueFontSize = std::clamp(CardHeight * 0.44f, 21.0f, 28.0f);
 	const float RowHeight = std::max(LabelFontSize, ValueFontSize) + 4.0f;
-	const float AccentHeight = std::clamp(CardHeight * 0.035f, 3.0f, 5.0f);
+	const float AccentWidth = std::clamp(CardHeight * 0.06f, 3.0f, 5.0f);
 	for(int i = 0; i < CardCount; ++i)
 	{
 		const int RowIndex = i / Columns;
 		const int ColumnIndex = i % Columns;
-		const bool SpanLastRow = Columns == 2 && (CardCount % Columns) == 1 && i == CardCount - 1;
 		CUIRect CardRect(
-			SpanLastRow ? Rect.x : Rect.x + (CardWidth + Gap) * ColumnIndex,
+			Rect.x + (CardWidth + Gap) * ColumnIndex,
 			Rect.y + (CardHeight + Gap) * RowIndex,
-			SpanLastRow ? Rect.w : CardWidth,
+			CardWidth,
 			CardHeight);
 
-		DrawCard(CardRect, PRIMARY_CARD_BG, CornerRadius);
+		DrawSurface(CardRect, CARD_BG, CornerRadius);
 		CUIRect Inner, RowRect, LabelRect, ValueRect, AccentRect;
 		CardRect.Margin(Margin, &Inner);
-		Inner.HSplitBottom(AccentHeight, &Inner, &AccentRect);
+		Inner.VSplitLeft(AccentWidth, &AccentRect, &Inner);
+		Inner.VSplitLeft(6.0f * UiScale, nullptr, &Inner);
 		const float TopPadding = std::max((Inner.h - RowHeight) * 0.5f, 0.0f);
 		Inner.HSplitTop(TopPadding, nullptr, &Inner);
 		Inner.HSplitTop(RowHeight, &RowRect, nullptr);
-		RowRect.VSplitLeft(RowRect.w * 0.68f, &LabelRect, &ValueRect);
-
-		char aBuf[32];
-		FormatMetricValue(aBuf, sizeof(aBuf), aCards[i].m_pUnit, aCards[i].m_Value, aCards[i].m_Precision);
-		Ui()->DoLabel(&LabelRect, Localize(aCards[i].m_pLabel), LabelFontSize, TEXTALIGN_ML);
-		Ui()->DoLabel(&ValueRect, aBuf, ValueFontSize, TEXTALIGN_MR);
-		AccentRect.Draw(aCards[i].m_Color, IGraphics::CORNER_ALL, AccentHeight / 2.0f);
-	}
-}
-
-void CQmMonitoring::RenderSecondaryCards(CUIRect Rect) const
-{
-	const float UiScale = QmComputeMonitoringUiScale(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
-	const float Gap = 10.0f * UiScale;
-
-	const struct SCard
-	{
-		const char *m_pLabel;
-		float m_Value;
-		const char *m_pUnit;
-		int m_Precision;
-		bool m_IsRate;
-	} aCards[] = {
-		{"抖动", m_Snapshot.m_Network.m_JitterMs, "ms", 0, false},
-		{"进程下行", m_Snapshot.m_Network.m_DownBytesPerSec, "", 0, true},
-		{"进程上行", m_Snapshot.m_Network.m_UpBytesPerSec, "", 0, true},
-		{"帧时间", m_Snapshot.m_Performance.m_FrameTimeMs, "ms", 1, false},
-		{"时间回拉", m_Snapshot.m_Network.m_ServerRollbackMs, "ms", 0, false},
-	};
-
-	const int CardCount = std::size(aCards);
-	const int Columns = 2;
-	const int Rows = (CardCount + Columns - 1) / Columns;
-	const float CardWidth = std::max((Rect.w - Gap * (Columns - 1)) / (float)Columns, 0.0f);
-	const float CardHeight = std::max((Rect.h - Gap * (Rows - 1)) / (float)Rows, 0.0f);
-	const float Margin = std::clamp(CardHeight * 0.13f, 10.0f, 16.0f);
-	const float LabelFontSize = std::clamp(CardHeight * 0.18f, 11.0f, 15.0f);
-	const float ValueFontSize = std::clamp(CardHeight * 0.24f, 18.0f, 24.0f);
-	const float RowHeight = std::max(LabelFontSize, ValueFontSize) + 4.0f;
-	for(int i = 0; i < CardCount; ++i)
-	{
-		const int RowIndex = i / Columns;
-		const int ColumnIndex = i % Columns;
-		const bool SpanLastRow = Columns == 2 && (CardCount % Columns) == 1 && i == CardCount - 1;
-		CUIRect CardRect(
-			SpanLastRow ? Rect.x : Rect.x + (CardWidth + Gap) * ColumnIndex,
-			Rect.y + (CardHeight + Gap) * RowIndex,
-			SpanLastRow ? Rect.w : CardWidth,
-			CardHeight);
-
-		DrawCard(CardRect, SECONDARY_CARD_BG, 10.0f * UiScale);
-		CUIRect Inner, RowRect, LabelRect, ValueRect;
-		CardRect.Margin(Margin, &Inner);
-		const float TopPadding = std::max((Inner.h - RowHeight) * 0.5f, 0.0f);
-		Inner.HSplitTop(TopPadding, nullptr, &Inner);
-		Inner.HSplitTop(RowHeight, &RowRect, nullptr);
-		RowRect.VSplitLeft(RowRect.w * 0.60f, &LabelRect, &ValueRect);
+		RowRect.VSplitLeft(RowRect.w * 0.36f, &LabelRect, &ValueRect);
 
 		char aBuf[32];
 		if(aCards[i].m_IsRate)
 			FormatRateValue(aBuf, sizeof(aBuf), aCards[i].m_Value);
+		else if(aCards[i].m_IsCpu)
+			FormatCpuRatioValue(aBuf, sizeof(aBuf), aCards[i].m_Value, m_Snapshot.m_Performance.m_TotalCpuUsagePct);
+		else if(aCards[i].m_IsPercent)
+			FormatPercentValue(aBuf, sizeof(aBuf), aCards[i].m_Value);
 		else
 			FormatMetricValue(aBuf, sizeof(aBuf), aCards[i].m_pUnit, aCards[i].m_Value, aCards[i].m_Precision);
 		Ui()->DoLabel(&LabelRect, Localize(aCards[i].m_pLabel), LabelFontSize, TEXTALIGN_ML);
 		Ui()->DoLabel(&ValueRect, aBuf, ValueFontSize, TEXTALIGN_MR);
+		AccentRect.Draw(aCards[i].m_Color, IGraphics::CORNER_ALL, AccentWidth / 2.0f);
 	}
+}
+
+void CQmMonitoring::RenderDebugDetails(CUIRect Rect) const
+{
+	const float UiScale = QmComputeMonitoringUiScale(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
+	const float Margin = 10.0f * UiScale;
+	const float Gap = 14.0f * UiScale;
+	const float RowGap = 6.0f * UiScale;
+	const float LabelFontSize = 13.0f * UiScale;
+	const float ValueFontSize = 13.0f * UiScale;
+	const float CornerRadius = 8.0f * UiScale;
+	const float RowHeight = 18.0f * UiScale;
+
+	DrawSurface(Rect, SURFACE_BG, CornerRadius);
+
+	CUIRect Inner, Left, Right;
+	Rect.Margin(Margin, &Inner);
+	Inner.VSplitMid(&Left, &Right, Gap);
+
+	const struct SDetailRow
+	{
+		const char *m_pLabel;
+		const char *m_pValue;
+	};
+
+	char aTickBuf[32];
+	char aPredictionBuf[32];
+	char aSendBuf[96];
+	char aRecvBuf[96];
+	char aTextureBuf[32];
+	char aBufferBuf[32];
+	char aStreamedBuf[32];
+	char aStagingBuf[32];
+
+	FormatTickPairValue(aTickBuf, sizeof(aTickBuf), m_Snapshot.m_Performance.m_GameTick, m_Snapshot.m_Performance.m_PredictedTick);
+	FormatMetricValue(aPredictionBuf, sizeof(aPredictionBuf), "ms", m_Snapshot.m_Performance.m_PredictionTimeMs, 0);
+	FormatTrafficStatsValue(aSendBuf, sizeof(aSendBuf), m_Snapshot.m_Network.m_Send);
+	FormatTrafficStatsValue(aRecvBuf, sizeof(aRecvBuf), m_Snapshot.m_Network.m_Recv);
+	FormatMemoryKiBValue(aTextureBuf, sizeof(aTextureBuf), m_Snapshot.m_Performance.m_GraphicsMemory.m_TextureKiB);
+	FormatMemoryKiBValue(aBufferBuf, sizeof(aBufferBuf), m_Snapshot.m_Performance.m_GraphicsMemory.m_BufferKiB);
+	FormatMemoryKiBValue(aStreamedBuf, sizeof(aStreamedBuf), m_Snapshot.m_Performance.m_GraphicsMemory.m_StreamedKiB);
+	FormatMemoryKiBValue(aStagingBuf, sizeof(aStagingBuf), m_Snapshot.m_Performance.m_GraphicsMemory.m_StagingKiB);
+
+	const SDetailRow aLeftRows[] = {
+		{"游戏/预测 Tick", aTickBuf},
+		{"预测耗时", aPredictionBuf},
+		{"发送", aSendBuf},
+		{"接收", aRecvBuf},
+	};
+	const SDetailRow aRightRows[] = {
+		{"纹理内存", aTextureBuf},
+		{"缓冲内存", aBufferBuf},
+		{"流式内存", aStreamedBuf},
+		{"暂存内存", aStagingBuf},
+	};
+
+	const auto RenderColumn = [&](CUIRect ColumnRect, const SDetailRow *pRows, int RowCount) {
+		for(int i = 0; i < RowCount; ++i)
+		{
+			CUIRect RowRect, LabelRect, ValueRect;
+			ColumnRect.HSplitTop(RowHeight, &RowRect, &ColumnRect);
+			RowRect.VSplitLeft(RowRect.w * 0.31f, &LabelRect, &ValueRect);
+			Ui()->DoLabel(&LabelRect, Localize(pRows[i].m_pLabel), LabelFontSize, TEXTALIGN_ML);
+			Ui()->DoLabel(&ValueRect, pRows[i].m_pValue, ValueFontSize, TEXTALIGN_MR);
+			if(i + 1 < RowCount)
+				ColumnRect.HSplitTop(RowGap, nullptr, &ColumnRect);
+		}
+	};
+
+	RenderColumn(Left, aLeftRows, std::size(aLeftRows));
+	RenderColumn(Right, aRightRows, std::size(aRightRows));
 }
 
 void CQmMonitoring::RenderHud(CUIRect View) const
@@ -880,11 +1060,11 @@ void CQmMonitoring::RenderHud(CUIRect View) const
 	const float HeaderHeight = QM_MONITORING_HEADER_HEIGHT * UiScale;
 	const float SectionGap = QM_MONITORING_SECTION_GAP * UiScale;
 
-	View.Draw(PANEL_BG, IGraphics::CORNER_ALL, 16.0f * UiScale);
+	View.Draw(ApplyHudOpacity(PANEL_BG), IGraphics::CORNER_ALL, 8.0f * UiScale);
 	CUIRect Content;
 	View.Margin(Padding, &Content);
 
-	CUIRect Header, MainGraph, FpsGraph, PrimaryCards, SecondaryCards;
+	CUIRect Header, MainGraph, FpsGraph, MetricsGrid, DebugDetails;
 	const SQmMonitoringBodyLayout BodyLayout = QmComputeMonitoringBodyLayout(Content.h, UiScale);
 	Content.HSplitTop(HeaderHeight, &Header, &Content);
 	Content.HSplitTop(SectionGap, nullptr, &Content);
@@ -892,13 +1072,14 @@ void CQmMonitoring::RenderHud(CUIRect View) const
 	Content.HSplitTop(SectionGap, nullptr, &Content);
 	Content.HSplitTop(BodyLayout.m_FpsGraphHeight, &FpsGraph, &Content);
 	Content.HSplitTop(SectionGap, nullptr, &Content);
-	Content.HSplitTop(BodyLayout.m_PrimaryCardsHeight, &PrimaryCards, &Content);
+	Content.HSplitTop(BodyLayout.m_PrimaryCardsHeight, &MetricsGrid, &Content);
 	Content.HSplitTop(SectionGap, nullptr, &Content);
-	SecondaryCards = Content;
+	Content.HSplitTop(BodyLayout.m_MetricsExtraHeight, &DebugDetails, &Content);
 
 	RenderHeader(Header);
 	RenderMainGraph(MainGraph);
 	RenderFpsGraph(FpsGraph);
-	RenderPrimaryCards(PrimaryCards);
-	RenderSecondaryCards(SecondaryCards);
+	RenderPrimaryCards(MetricsGrid);
+	if(DebugDetails.h > 0.0f)
+		RenderDebugDetails(DebugDetails);
 }

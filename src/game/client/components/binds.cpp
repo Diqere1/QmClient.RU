@@ -187,6 +187,16 @@ static bool ShouldAppendGoresPrevWeapon(const CGameClient *pGameClient)
 	return pGameClient != nullptr && pGameClient->m_TClient.ShouldAppendGoresPrevWeapon();
 }
 
+static bool IsExactDebugGraphToggleCommand(const char *pCommand)
+{
+	if(!pCommand || pCommand[0] == '\0')
+		return false;
+
+	char aNormalized[1024];
+	NormalizeBindCommand(pCommand, aNormalized, sizeof(aNormalized));
+	return str_comp_nocase(aNormalized, "toggle dbg_graphs 0 1") == 0;
+}
+
 static void ExecuteBindCommand(IConsole *pConsole, const char *pBind, const CGameClient *pGameClient, int Stroke)
 {
 	if(!pBind)
@@ -211,6 +221,19 @@ bool CBinds::CBindsSpecial::OnInput(const IInput::CEvent &Event)
 	// do not handle F5 bind while menu is active
 	if(((Event.m_Key >= KEY_F1 && Event.m_Key <= KEY_F12) || (Event.m_Key >= KEY_F13 && Event.m_Key <= KEY_F24)) &&
 		(Event.m_Key != KEY_F5 || !GameClient()->m_Menus.IsActive()))
+	{
+		return m_pBinds->OnInput(Event);
+	}
+
+	const int KeyModifierMask = GetModifierMaskOfKey(Event.m_Key);
+	const int ModifierMask = GetModifierMask(Input()) & ~KeyModifierMask;
+	const auto HasGlobalDebugGraphBind = [&](int Mask) {
+		return IsExactDebugGraphToggleCommand(m_pBinds->Get(Event.m_Key, Mask));
+	};
+	if(HasGlobalDebugGraphBind(ModifierMask) ||
+		(ModifierMask != ((1 << KeyModifier::CTRL) | (1 << KeyModifier::SHIFT)) &&
+			ModifierMask != ((1 << KeyModifier::GUI) | (1 << KeyModifier::SHIFT)) &&
+			HasGlobalDebugGraphBind(KeyModifier::NONE)))
 	{
 		return m_pBinds->OnInput(Event);
 	}
@@ -535,6 +558,8 @@ void CBinds::SetDefaults()
 
 	Bind(KEY_F3, "vote yes");
 	Bind(KEY_F4, "vote no");
+	Bind(KEY_G, "toggle dbg_graphs 0 1", false, (1 << KeyModifier::CTRL) | (1 << KeyModifier::SHIFT));
+	Bind(KEY_G, "toggle dbg_graphs 0 1", false, (1 << KeyModifier::GUI) | (1 << KeyModifier::SHIFT));
 
 	Bind(KEY_K, "kill");
 	Bind(KEY_Q, "say /spec");

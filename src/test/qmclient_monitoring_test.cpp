@@ -97,35 +97,81 @@ TEST(QmMonitoringHelpers, UiScaleGrowsOnHighResolutionScreens)
 	EXPECT_FLOAT_EQ(QmComputeMonitoringUiScale(3840.0f, 2160.0f), 1.8f);
 }
 
+TEST(QmMonitoringHelpers, PanelOpacityClampsPercentToUnitRange)
+{
+	EXPECT_FLOAT_EQ(QmComputeMonitoringPanelOpacity(-20), 0.0f);
+	EXPECT_FLOAT_EQ(QmComputeMonitoringPanelOpacity(35), 0.35f);
+	EXPECT_FLOAT_EQ(QmComputeMonitoringPanelOpacity(140), 1.0f);
+}
+
+TEST(QmMonitoringHelpers, ProcessCpuUsageNormalizesAcrossLogicalCpus)
+{
+	EXPECT_FLOAT_EQ(QmNormalizeProcessCpuUsagePct(-1.0f, 8), -1.0f);
+	EXPECT_FLOAT_EQ(QmNormalizeProcessCpuUsagePct(114.0f, 8), 14.25f);
+	EXPECT_FLOAT_EQ(QmNormalizeProcessCpuUsagePct(1600.0f, 16), 100.0f);
+	EXPECT_FLOAT_EQ(QmNormalizeProcessCpuUsagePct(114.0f, 0), 100.0f);
+}
+
+TEST(QmMonitoringHelpers, TotalCpuUsageComputesBusyDelta)
+{
+	EXPECT_FLOAT_EQ(QmComputeTotalCpuUsagePct(100, 1000, 125, 1100), 75.0f);
+	EXPECT_FLOAT_EQ(QmComputeTotalCpuUsagePct(100, 1000, 200, 1100), 0.0f);
+	EXPECT_FLOAT_EQ(QmComputeTotalCpuUsagePct(100, 1000, 100, 1100), 100.0f);
+	EXPECT_FLOAT_EQ(QmComputeTotalCpuUsagePct(100, 0, 125, 1100), -1.0f);
+	EXPECT_FLOAT_EQ(QmComputeTotalCpuUsagePct(100, 1000, 90, 1100), -1.0f);
+	EXPECT_FLOAT_EQ(QmComputeTotalCpuUsagePct(100, 1000, 125, 990), -1.0f);
+}
+
+TEST(QmMonitoringHelpers, CpuRatioValueShowsProcessAndTotalCpu)
+{
+	char aBuf[32];
+	FormatCpuRatioValue(aBuf, sizeof(aBuf), -1.0f, 35.0f);
+	EXPECT_STREQ(aBuf, "--");
+	FormatCpuRatioValue(aBuf, sizeof(aBuf), 12.4f, -1.0f);
+	EXPECT_STREQ(aBuf, "12%");
+	FormatCpuRatioValue(aBuf, sizeof(aBuf), 12.4f, 35.6f);
+	EXPECT_STREQ(aBuf, "12%/36%");
+}
+
+TEST(QmMonitoringHelpers, TrafficStatsMatchOfficialDebugMath)
+{
+	const auto Stats = QmComputeTrafficStats(10, 1000, 14, 1320);
+	EXPECT_EQ(Stats.m_Packets, 4u);
+	EXPECT_EQ(Stats.m_PayloadBytes, 320u);
+	EXPECT_EQ(Stats.m_OverheadBytes, 168u);
+	EXPECT_EQ(Stats.m_TotalBytes, 488u);
+	EXPECT_EQ(Stats.m_AveragePayloadBytes, 80u);
+	EXPECT_FLOAT_EQ(Stats.m_RateKibPerSec, 3.8125f);
+}
+
 TEST(QmMonitoringHelpers, HudLayoutPlacesPanelLeftOfGraphColumn)
 {
 	const SQmMonitoringHudLayout Layout = QmComputeMonitoringHudLayout(1600.0f, 900.0f, 1184.0f, 16.0f);
 	EXPECT_FLOAT_EQ(Layout.m_PanelRect.w, 768.0f);
-	EXPECT_FLOAT_EQ(Layout.m_PanelRect.h, 702.0f);
+	EXPECT_FLOAT_EQ(Layout.m_PanelRect.h, 594.0f);
 	EXPECT_FLOAT_EQ(Layout.m_PanelRect.x, 400.0f);
 	EXPECT_FLOAT_EQ(Layout.m_PanelRect.y, 32.0f);
-	EXPECT_FLOAT_EQ(Layout.m_ContentRect.x, 412.0f);
-	EXPECT_FLOAT_EQ(Layout.m_ContentRect.y, 44.0f);
+	EXPECT_FLOAT_EQ(Layout.m_ContentRect.x, 410.0f);
+	EXPECT_FLOAT_EQ(Layout.m_ContentRect.y, 42.0f);
 }
 
 TEST(QmMonitoringHelpers, BodyLayoutPreservesMetricsBudgetOnCompactPanels)
 {
 	const SQmMonitoringBodyLayout Layout = QmComputeMonitoringBodyLayout(260.0f, 1.0f);
-	EXPECT_NEAR(Layout.m_MainGraphHeight, 55.7f, 0.1f);
-	EXPECT_NEAR(Layout.m_FpsGraphHeight, 35.6f, 0.1f);
-	EXPECT_NEAR(Layout.m_PrimaryCardsHeight, 35.6f, 0.1f);
-	EXPECT_NEAR(Layout.m_SecondaryCardsHeight, 33.2f, 0.1f);
+	EXPECT_NEAR(Layout.m_MainGraphHeight, 63.1f, 0.1f);
+	EXPECT_NEAR(Layout.m_FpsGraphHeight, 39.8f, 0.1f);
+	EXPECT_NEAR(Layout.m_PrimaryCardsHeight, 37.2f, 0.1f);
+	EXPECT_NEAR(Layout.m_MetricsExtraHeight, 31.9f, 0.1f);
 	EXPECT_GT(Layout.m_PrimaryCardsHeight, 30.0f);
-	EXPECT_GT(Layout.m_SecondaryCardsHeight, 30.0f);
 }
 
 TEST(QmMonitoringHelpers, HudLayoutUsesLargerPanelOn4kScreens)
 {
 	const SQmMonitoringHudLayout Layout = QmComputeMonitoringHudLayout(3840.0f, 2160.0f, 2842.0f, 38.0f);
 	EXPECT_FLOAT_EQ(Layout.m_PanelRect.w, 1843.0f);
-	EXPECT_FLOAT_EQ(Layout.m_PanelRect.h, 1685.0f);
-	EXPECT_FLOAT_EQ(Layout.m_ContentRect.x, 986.0f);
-	EXPECT_FLOAT_EQ(Layout.m_ContentRect.y, 101.0f);
+	EXPECT_FLOAT_EQ(Layout.m_PanelRect.h, 1405.0f);
+	EXPECT_FLOAT_EQ(Layout.m_ContentRect.x, 983.0f);
+	EXPECT_FLOAT_EQ(Layout.m_ContentRect.y, 98.0f);
 }
 
 TEST(QmMonitoringHelpers, HudLayoutClampsPanelInsideScreenBounds)

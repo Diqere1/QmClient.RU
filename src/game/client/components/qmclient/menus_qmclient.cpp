@@ -1251,6 +1251,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		FavoriteMaps,
 		HJAssist,
 		SpeedrunTimer,
+		DebugGraph,
 		InputOverlay,
 		Voice,
 		DynamicIsland,
@@ -1291,6 +1292,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::FavoriteMaps: return "favorite_maps";
 		case EQmModuleId::HJAssist: return "hj_assist";
 		case EQmModuleId::SpeedrunTimer: return "speedrun_timer";
+		case EQmModuleId::DebugGraph: return "debug_graph";
 		case EQmModuleId::InputOverlay: return "input_overlay";
 		case EQmModuleId::Voice: return "voice";
 		case EQmModuleId::DynamicIsland: return "dynamic_island";
@@ -1319,7 +1321,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const char *m_pKey;
 	};
 
-	constexpr size_t QmModuleCount = 28;
+	constexpr size_t QmModuleCount = 29;
 
 	// Layout string format: key:column:order; entries separated by ';'.
 	static const std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
@@ -1345,11 +1347,12 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::FavoriteMaps, EQmModuleColumn::Right, 5, "favorite_maps"},
 		{EQmModuleId::HJAssist, EQmModuleColumn::Right, 6, "hj_assist"},
 		{EQmModuleId::SpeedrunTimer, EQmModuleColumn::Right, 7, "speedrun_timer"},
-		{EQmModuleId::InputOverlay, EQmModuleColumn::Right, 8, "input_overlay"},
-		{EQmModuleId::Voice, EQmModuleColumn::Right, 9, "voice"},
-		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 10, "dummy_miniview"},
-		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 11, "dynamic_island"},
-		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 12, "system_media_controls"}}};
+		{EQmModuleId::DebugGraph, EQmModuleColumn::Right, 8, "debug_graph"},
+		{EQmModuleId::InputOverlay, EQmModuleColumn::Right, 9, "input_overlay"},
+		{EQmModuleId::Voice, EQmModuleColumn::Right, 10, "voice"},
+		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 11, "dummy_miniview"},
+		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 12, "dynamic_island"},
+		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 13, "system_media_controls"}}};
 
 	static std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleLayout = s_aQmModuleDefaults;
 	static char s_aQmModuleLayoutConfigCache[sizeof(g_Config.m_QmSidebarCardOrder)] = {};
@@ -1497,7 +1500,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 		AppendBalancedGroup({EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi});
 		AppendBalancedGroup({EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::FocusMode, EQmModuleId::KeyBinds, EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist});
-		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls});
+		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls});
 
 		for(size_t i = 0; i < s_aQmModuleLayout.size(); ++i)
 		{
@@ -2115,6 +2118,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::FavoriteMaps: return "收藏地图 shoucang ditu favorite maps 地图管理 ditu guanli 收藏 shoucang 取消收藏 quxiao shoucang";
 		case EQmModuleId::HJAssist: return "hj辅助 hj fuzhu 解冻辅助 jiedong fuzhu 自动取消旁观 quxiao pangguan 自动切换 qiehuan tee 自动关闭聊天 guanbi liaotian";
 		case EQmModuleId::SpeedrunTimer: return "速通计时器 sutong jishiqi speedrun timer 倒计时 daojishi 倒数 daoshu 小时 xiaoshi 分钟 fenzhong 秒 miao 毫秒 haomiao 自动关闭 zidong guanbi";
+		case EQmModuleId::DebugGraph: return "调试图表 tiaoshi tubiao debug graph monitoring hud 不透明度 touming 透明度 面板 mianban 快捷键 kuaijiejian 按键 anjian";
 		case EQmModuleId::InputOverlay: return "按键显示 anjian xianshi input overlay 按键叠加 anjian diejia 大小 daxiao 不透明度 butouming 水平位置 shuiping weizhi 垂直位置 chuizhi weizhi";
 		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo";
 		case EQmModuleId::DynamicIsland: return "灵动岛 lld lingdongdao dynamic island hud 顶部 dingbu 背景 beijing 颜色 yanse 透明度 touming 黑底 heidi 原版 yuanban 默认 moren classic old style";
@@ -2160,6 +2164,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			       Id == EQmModuleId::Coords ||
 			       Id == EQmModuleId::PlayerStats ||
 			       Id == EQmModuleId::SpeedrunTimer ||
+			       Id == EQmModuleId::DebugGraph ||
 			       Id == EQmModuleId::InputOverlay ||
 			       Id == EQmModuleId::Voice ||
 			       Id == EQmModuleId::DynamicIsland ||
@@ -2485,6 +2490,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			return {11, Localize("HJ辅助"), Localize("事已至此,多说无益")};
 		case EQmModuleId::SpeedrunTimer:
 			return {11, Localize("速通计时器"), Localize("你想跑出怎样的Gores?")};
+		case EQmModuleId::DebugGraph:
+			return {11, Localize("调试图表"), Localize("调试性能图表面板")};
 		case EQmModuleId::InputOverlay:
 			return {11, Localize("按键显示"), Localize("谁把OBS塞进来了")};
 		case EQmModuleId::Voice:
@@ -2835,7 +2842,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		}
 		else if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_HUD)
 		{
-			for(EQmModuleId Id : {EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls})
+			for(EQmModuleId Id : {EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls})
 				AppendModuleIfVisible(Id);
 		}
 		else
@@ -5513,6 +5520,38 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmSpeedrunTimerAutoDisable, Localize("Auto disable when time expires"), &g_Config.m_QmSpeedrunTimerAutoDisable, &Row, LgLineHeight);
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				}
+
+				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
+				Column.y = CardContent.y;
+				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
+				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
+				HandleModuleDragState(pModule, s_GlassCards.back());
+			}
+			break;
+			case EQmModuleId::DebugGraph:
+			{
+				Column.HSplitTop(LgCardSpacing, nullptr, &Column);
+				CUIRect CardDebugGraphStart = Column;
+				s_GlassCards.push_back(CardDebugGraphStart);
+
+				Column.HSplitTop(LgCardPadding, nullptr, &Column);
+				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
+				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
+				DoModuleHeadline(CardContent, 11, Localize("调试图表"), Localize("调试性能图表面板"));
+
+				static CButtonContainer s_ReaderButtonDebugGraphToggle, s_ClearButtonDebugGraphToggle;
+				DoKeyBindRow(CardContent, s_ReaderButtonDebugGraphToggle, s_ClearButtonDebugGraphToggle,
+					Localize("全局开关键"), "toggle dbg_graphs 0 1");
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				{
+					CUIRect LabelColValue, ControlColValue;
+					Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+					Ui()->DoLabel(&LabelColValue, Localize("面板不透明度"), LgBodySize, TEXTALIGN_ML);
+					static int s_QmMonitoringHudOpacityInputId;
+					RenderSliderWithValueInput(&s_QmMonitoringHudOpacityInputId, ControlColValue, &g_Config.m_QmMonitoringHudOpacity, 0, 100, "%");
+				}
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;

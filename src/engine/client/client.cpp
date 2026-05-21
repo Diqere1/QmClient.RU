@@ -3514,7 +3514,6 @@ void CClient::Run()
 
 	bool LastD = false;
 	bool LastE = false;
-	bool LastG = false;
 
 	auto LastTime = time_get_nanoseconds();
 	int64_t LastRenderTime = time_get();
@@ -3597,9 +3596,6 @@ void CClient::Run()
 
 		if(CtrlShiftKey(KEY_D, LastD))
 			g_Config.m_Debug ^= 1;
-
-		if(CtrlShiftKey(KEY_G, LastG))
-			g_Config.m_DbgGraphs ^= 1;
 
 		if(CtrlShiftKey(KEY_E, LastE))
 		{

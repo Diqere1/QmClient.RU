@@ -335,13 +335,14 @@ void CStatusBar::ConnectionGradeRender()
 
 float CStatusBar::CpuWidth()
 {
-	return TextRender()->TextWidth(m_FontSize, "100%");
+	return TextRender()->TextWidth(m_FontSize, "100%/100%");
 }
 
 void CStatusBar::CpuRender()
 {
 	char aBuf[32];
-	FormatMetricValue(aBuf, sizeof(aBuf), "%", GameClient()->m_QmMonitoring.Snapshot().m_Performance.m_CpuUsagePct);
+	const SQmPerformanceMetrics &Perf = GameClient()->m_QmMonitoring.Snapshot().m_Performance;
+	FormatCpuRatioValue(aBuf, sizeof(aBuf), Perf.m_CpuUsagePct, Perf.m_TotalCpuUsagePct);
 	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
 }
 
