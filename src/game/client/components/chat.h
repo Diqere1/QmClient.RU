@@ -191,6 +191,7 @@ class CChat : public CComponent
 	bool BuildCommandUsagePreview(const char *pInput, char *pBuf, size_t BufSize) const;
 	void SendChatQueued(int Team, const char *pLine, bool AllowOutgoingTranslation);
 	int CountInitializedLines() const;
+	int CountVisibleLinesFrom(int BacklogLine) const;
 
 	static float EaseInQuad(float t);
 	static float CalculateCutOffAlpha(float CutOffT);

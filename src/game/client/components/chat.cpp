@@ -40,6 +40,9 @@ enum
 	BLOCK_WORDS_MODE_BOTH
 };
 
+static constexpr float CHAT_SCROLLBAR_WIDTH = 5.0f;
+static constexpr float CHAT_SCROLLBAR_MARGIN = 2.0f;
+
 static int BlockWordsSeparatorLength(const char *pStr)
 {
 	const unsigned char C0 = (unsigned char)pStr[0];
@@ -709,6 +712,27 @@ int CChat::CountInitializedLines() const
 	for(const CLine &Line : m_aLines)
 	{
 		if(Line.m_Initialized)
+			++Count;
+	}
+	return Count;
+}
+
+int CChat::CountVisibleLinesFrom(int BacklogLine) const
+{
+	const bool FocusModeActive = g_Config.m_QmFocusMode != 0;
+	const bool FocusHideChat = FocusModeActive && g_Config.m_QmFocusModeHideChat;
+	const bool FocusHideSystemInfoMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemInfoMessages;
+	const bool FocusHideSystemPromptMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
+	const bool FocusHideEcho = FocusModeActive && g_Config.m_QmFocusModeHideEcho;
+
+	int Count = 0;
+	for(int i = BacklogLine; i < MAX_LINES; ++i)
+	{
+		const CLine &Line = m_aLines[((m_CurrentLine - i) + MAX_LINES) % MAX_LINES];
+		if(!Line.m_Initialized)
+			break;
+		const bool ServerMessageIsBasicInfo = Line.m_ServerMessageClass == QmHudNotifications::EServerMessageClass::BasicInfo;
+		if(ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideSystemInfoMessages, FocusHideSystemPromptMessages, FocusHideEcho, Line.m_ClientId, Line.m_ForceVisible, ServerMessageIsBasicInfo))
 			++Count;
 	}
 	return Count;
@@ -2324,18 +2348,7 @@ void CChat::OnRender()
 
 	y -= ScaledFontSize;
 
-	OnPrepareLines(y);
-
 	const bool IsScoreBoardOpen = GameClient()->m_Scoreboard.IsActive();
-
-	int64_t Now = time();
-	if(m_LastAnimUpdateTime == 0 || Now < m_LastAnimUpdateTime)
-		m_LastAnimUpdateTime = Now;
-	const float DeltaSeconds = std::clamp((Now - m_LastAnimUpdateTime) / (float)time_freq(), 0.0f, 0.25f);
-	m_LastAnimUpdateTime = Now;
-	const float CutOffStep = CHAT_ANIM_CUTOFF_DURATION > 0.0f ? std::clamp(DeltaSeconds / CHAT_ANIM_CUTOFF_DURATION, 0.0f, 1.0f) : 1.0f;
-	const int64_t VisibleTimeNoFocusTicks = static_cast<int64_t>(CHAT_VISIBLE_SECONDS_NO_FOCUS * time_freq());
-
 	float HeightLimit = IsScoreBoardOpen ? 180.0f : (m_PrevShowChat ? 50.0f : 200.0f);
 	int OffsetType = IsScoreBoardOpen ? 1 : 0;
 	const ColorRGBA BackgroundBaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClChatBackgroundColor, true));
@@ -2353,6 +2366,70 @@ void CChat::OnRender()
 		RealMsgPaddingX = 0;
 		RealMsgPaddingY = 0;
 	}
+
+	const float HistoryBottom = y;
+	const float HistoryHeight = maximum(0.0f, HistoryBottom - HeightLimit);
+	const int TotalVisibleLines = CountVisibleLinesFrom(0);
+	const int VisibleLineCapacity = maximum(1, (int)std::floor(HistoryHeight / maximum(RowHeight, 1.0f)));
+	const int MaxScroll = maximum(0, TotalVisibleLines - VisibleLineCapacity);
+	m_BacklogCurLine = ClampBacklogLine(m_BacklogCurLine, TotalVisibleLines, VisibleLineCapacity);
+
+	const bool ShowChatScrollbar = g_Config.m_QmChatHistoryScrollbar != 0 && MaxScroll > 0 && HistoryHeight > 0.0f;
+	CUIRect ScrollbarRect = {ChatRect.w - CHAT_SCROLLBAR_WIDTH - CHAT_SCROLLBAR_MARGIN, HeightLimit, CHAT_SCROLLBAR_WIDTH, HistoryHeight};
+	float ScrollbarHandleY = ScrollbarRect.y;
+	float ScrollbarHandleH = ScrollbarRect.h;
+	if(ShowChatScrollbar)
+	{
+		const float VisibleRatio = std::clamp(VisibleLineCapacity / (float)maximum(TotalVisibleLines, 1), 0.08f, 1.0f);
+		ScrollbarHandleH = std::clamp(ScrollbarRect.h * VisibleRatio, 12.0f, ScrollbarRect.h);
+		const float TrackRange = maximum(1.0f, ScrollbarRect.h - ScrollbarHandleH);
+		ScrollbarHandleY = ScrollbarRect.y + TrackRange * (m_BacklogCurLine / (float)maximum(MaxScroll, 1));
+		const vec2 MousePos = GetChatMousePos();
+		const bool InsideRail =
+			MousePos.x >= ScrollbarRect.x &&
+			MousePos.x <= ScrollbarRect.x + ScrollbarRect.w &&
+			MousePos.y >= ScrollbarRect.y &&
+			MousePos.y <= ScrollbarRect.y + ScrollbarRect.h;
+		const bool InsideHandle =
+			MousePos.x >= ScrollbarRect.x &&
+			MousePos.x <= ScrollbarRect.x + ScrollbarRect.w &&
+			MousePos.y >= ScrollbarHandleY &&
+			MousePos.y <= ScrollbarHandleY + ScrollbarHandleH;
+
+		if(Input()->KeyPress(KEY_MOUSE_1) && InsideRail)
+		{
+			m_ScrollbarDragging = true;
+			m_ScrollbarDragOffset = InsideHandle ? std::clamp(MousePos.y - ScrollbarHandleY, 0.0f, ScrollbarHandleH) : ScrollbarHandleH * 0.5f;
+		}
+		if(!Input()->KeyIsPressed(KEY_MOUSE_1))
+			m_ScrollbarDragging = false;
+		if(m_ScrollbarDragging)
+		{
+			const float HandleTop = std::clamp(MousePos.y - m_ScrollbarDragOffset, ScrollbarRect.y, ScrollbarRect.y + TrackRange);
+			const float RelativeTop = (HandleTop - ScrollbarRect.y) / TrackRange;
+			const int NewBacklogCurLine = ScrollbarValueToBacklogLine(1.0f - RelativeTop, MaxScroll);
+			if(NewBacklogCurLine != m_BacklogCurLine)
+			{
+				m_BacklogCurLine = NewBacklogCurLine;
+				RebuildChat();
+			}
+			ScrollbarHandleY = ScrollbarRect.y + TrackRange * (m_BacklogCurLine / (float)maximum(MaxScroll, 1));
+		}
+	}
+	else
+	{
+		m_ScrollbarDragging = false;
+	}
+
+	OnPrepareLines(y);
+
+	int64_t Now = time();
+	if(m_LastAnimUpdateTime == 0 || Now < m_LastAnimUpdateTime)
+		m_LastAnimUpdateTime = Now;
+	const float DeltaSeconds = std::clamp((Now - m_LastAnimUpdateTime) / (float)time_freq(), 0.0f, 0.25f);
+	m_LastAnimUpdateTime = Now;
+	const float CutOffStep = CHAT_ANIM_CUTOFF_DURATION > 0.0f ? std::clamp(DeltaSeconds / CHAT_ANIM_CUTOFF_DURATION, 0.0f, 1.0f) : 1.0f;
+	const int64_t VisibleTimeNoFocusTicks = static_cast<int64_t>(CHAT_VISIBLE_SECONDS_NO_FOCUS * time_freq());
 
 	bool RenderedAnyLines = false;
 
@@ -2431,6 +2508,15 @@ void CChat::OnRender()
 			const ColorRGBA TextOutlineColor = DefaultTextOutlineColor.WithMultipliedAlpha(AnimAlpha);
 			TextRender()->RenderTextContainer(Line.m_TextContainerIndex, TextColor, TextOutlineColor, AnimOffsetX, (y + RealMsgPaddingY / 2.0f) - Line.m_TextYOffset);
 		}
+	}
+
+	if(ShowChatScrollbar)
+	{
+		Graphics()->TextureClear();
+		Graphics()->DrawRect(ScrollbarRect.x, ScrollbarRect.y, ScrollbarRect.w, ScrollbarRect.h, ColorRGBA(1.0f, 1.0f, 1.0f, 0.18f), IGraphics::CORNER_ALL, ScrollbarRect.w * 0.5f);
+		const ColorRGBA HandleColor = m_ScrollbarDragging ? ColorRGBA(0.85f, 0.85f, 0.85f, 0.95f) : ColorRGBA(0.62f, 0.62f, 0.62f, 0.82f);
+		Graphics()->DrawRect(ScrollbarRect.x, ScrollbarHandleY, ScrollbarRect.w, ScrollbarHandleH, HandleColor, IGraphics::CORNER_ALL, ScrollbarRect.w * 0.5f);
+		ExtendBounds(ScrollbarRect.x, ScrollbarRect.y, ScrollbarRect.w, ScrollbarRect.h);
 	}
 
 	if(HudEditorPreview && !RenderedAnyLines)
