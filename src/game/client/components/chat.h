@@ -90,6 +90,10 @@ class CChat : public CComponent
 
 	CLine m_aLines[MAX_LINES];
 	int m_CurrentLine;
+	int m_BacklogCurLine;
+	bool m_ScrollbarDragging;
+	float m_ScrollbarDragOffset;
+	std::optional<vec2> m_LastMousePos;
 
 	enum
 	{
@@ -186,6 +190,7 @@ class CChat : public CComponent
 	const char *LocalizeCommandPreviewText(const char *pText) const;
 	bool BuildCommandUsagePreview(const char *pInput, char *pBuf, size_t BufSize) const;
 	void SendChatQueued(int Team, const char *pLine, bool AllowOutgoingTranslation);
+	int CountInitializedLines() const;
 
 	static float EaseInQuad(float t);
 	static float CalculateCutOffAlpha(float CutOffT);

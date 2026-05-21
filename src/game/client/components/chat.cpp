@@ -671,6 +671,10 @@ void CChat::ClearLines()
 {
 	for(auto &Line : m_aLines)
 		Line.Reset(*this);
+	m_BacklogCurLine = 0;
+	m_ScrollbarDragging = false;
+	m_ScrollbarDragOffset = 0.0f;
+	m_LastMousePos.reset();
 	m_PrevScoreBoardShowed = false;
 	m_PrevShowChat = false;
 	m_LastAnimUpdateTime = 0;
@@ -697,6 +701,17 @@ CChat::CLine *CChat::GetLineByIndex(int Index)
 		return nullptr;
 
 	return &m_aLines[Index];
+}
+
+int CChat::CountInitializedLines() const
+{
+	int Count = 0;
+	for(const CLine &Line : m_aLines)
+	{
+		if(Line.m_Initialized)
+			++Count;
+	}
+	return Count;
 }
 
 void CChat::InvalidateLineTranslation(CLine &Line)
@@ -900,6 +915,15 @@ bool CChat::OnInput(const IInput::CEvent &Event)
 		return false;
 
 	const bool LanguageMenuOpen = m_LanguageMenuOpen || Ui()->IsPopupOpen(&m_LanguagePopupContext);
+	const bool IsWheelEvent = Event.m_Key == KEY_MOUSE_WHEEL_UP || Event.m_Key == KEY_MOUSE_WHEEL_DOWN;
+	if(g_Config.m_QmChatHistoryScroll && !LanguageMenuOpen && (Event.m_Flags & IInput::FLAG_PRESS) && IsWheelEvent)
+	{
+		const int TotalLines = CountInitializedLines();
+		const int Direction = Event.m_Key == KEY_MOUSE_WHEEL_UP ? 1 : -1;
+		m_BacklogCurLine = ClampBacklogLine(m_BacklogCurLine + Direction, TotalLines, 1);
+		RebuildChat();
+		return true;
+	}
 
 	// ===== 翻译按钮处理（优先级高于输入框）=====
 	if(!LanguageMenuOpen && m_TranslateButton.m_RectValid)
@@ -1573,6 +1597,8 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible
 	}
 
 	m_CurrentLine = (m_CurrentLine + 1) % MAX_LINES;
+	if(m_BacklogCurLine > 0)
+		m_BacklogCurLine = ClampBacklogLine(m_BacklogCurLine + 1, CountInitializedLines() + 1, 1);
 
 	CLine &CurrentLine = m_aLines[m_CurrentLine];
 	CurrentLine.Reset(*this);
@@ -1782,7 +1808,7 @@ void CChat::OnPrepareLines(float y)
 	float TextBegin = Begin + RealMsgPaddingX / 2.0f;
 	int OffsetType = IsScoreBoardOpen ? 1 : 0;
 
-	for(int i = 0; i < MAX_LINES; i++)
+	for(int i = m_BacklogCurLine; i < MAX_LINES; i++)
 	{
 		CLine &Line = m_aLines[((m_CurrentLine - i) + MAX_LINES) % MAX_LINES];
 		if(!Line.m_Initialized)
@@ -2331,7 +2357,7 @@ void CChat::OnRender()
 	bool RenderedAnyLines = false;
 
 	// Keep chat rendering static and only smooth the overflow cut-off.
-	for(int i = 0; i < MAX_LINES; i++)
+	for(int i = m_BacklogCurLine; i < MAX_LINES; i++)
 	{
 		CLine &Line = m_aLines[((m_CurrentLine - i) + MAX_LINES) % MAX_LINES];
 		if(!Line.m_Initialized)
