@@ -7,6 +7,8 @@ data/
 dyl/
 docs/dyl
 !docs/dyl/QmClient_docs
+docs/html
+.ruff
 
 # Agent workspace files
 AGENTS.md
@@ -134,6 +136,7 @@ cscope.files
 cscope.out
 out
 tags
+
 # don't ignore this, it's used for the vscode workspace that ddnet provides
 !ddnet-cmake-tools-kits.json
 

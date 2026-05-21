@@ -1,14 +1,4 @@
 {
   "version": 1,
-  "entries": [
-    {
-      "title": "配置变量使用检查（Qm/Tc/栖梦）",
-      "detail_hash": "e114ee0e0b814b3cd4f6d7787d86b4fb1c11fb2a1df38fa37c7837fc9c868f2a",
-      "reason": "known_baseline_debt",
-      "base_ref": "main",
-      "added_at": "2026-05-17T11:53:51Z",
-      "source_report": "tmp/check-gate-report.json",
-      "source_generated_at": "2026-05-17T11:50:28Z"
-    }
-  ]
+  "entries": []
 }

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-根据 check-gate JSON 报告刷新 baseline debt allowlist。
-"""
+"""根据 check-gate JSON 报告刷新 baseline debt allowlist。"""
 
 from __future__ import annotations
 
@@ -33,10 +31,18 @@ def resolve_repo_path(path: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="刷新 baseline debt allowlist")
-    parser.add_argument("--report", required=True, type=Path, help="check-gate JSON 报告路径")
-    parser.add_argument("--output", required=True, type=Path, help="baseline debt allowlist 输出路径")
-    parser.add_argument("--rewrite", action="store_true", help="按当前报告全量重写 allowlist")
-    parser.add_argument("--dry-run", action="store_true", help="只打印 diff，不写回文件")
+    parser.add_argument(
+        "--report", required=True, type=Path, help="check-gate JSON 报告路径"
+    )
+    parser.add_argument(
+        "--output", required=True, type=Path, help="baseline debt allowlist 输出路径"
+    )
+    parser.add_argument(
+        "--rewrite", action="store_true", help="按当前报告全量重写 allowlist"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="只打印 diff，不写回文件"
+    )
     args = parser.parse_args()
 
     report_path = resolve_repo_path(args.report)
@@ -64,7 +70,10 @@ def main() -> int:
                 "detail_hash": detail_hash,
                 "reason": "known_baseline_debt",
                 "base_ref": report_base_ref,
-                "added_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                "added_at": datetime.now(timezone.utc)
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z"),
                 "source_report": report_path.as_posix(),
                 "source_generated_at": report_generated_at,
             }
@@ -72,7 +81,11 @@ def main() -> int:
 
     existing_allowlist = load_allowlist(output_path)
     existing_entries = list(existing_allowlist.get("entries", []))
-    existing_by_key = {build_entry_key(entry): entry for entry in existing_entries if entry.get("title") and entry.get("detail_hash")}
+    existing_by_key = {
+        build_entry_key(entry): entry
+        for entry in existing_entries
+        if entry.get("title") and entry.get("detail_hash")
+    }
     report_by_key = {build_entry_key(entry): entry for entry in report_entries}
 
     added_keys = sorted(set(report_by_key) - set(existing_by_key))
@@ -109,7 +122,9 @@ def main() -> int:
         return 0
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(allowlist, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    output_path.write_text(
+        json.dumps(allowlist, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     mode = "全量重写" if args.rewrite else "增量合并"
     print(f"已写入 baseline debt allowlist（{mode}）：{output_path}")
     return 0

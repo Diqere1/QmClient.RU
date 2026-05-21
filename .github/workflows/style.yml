@@ -30,53 +30,35 @@ jobs:
         sudo apt-get install clang-format-22 -y
         pip3 install ruff
 
-    - name: Cache dependencies
-      id: cache-dependencies
-      uses: actions/cache@v5
-      with:
-        path: /home/runner/style-tools
-        key: style-${{ hashFiles('.github/style-tools.sha256') }}
-
-    - name: Install dependencies
-      if: steps.cache-dependencies.outputs.cache-hit != 'true'
+    - name: Run gate check (quick)
       run: |
-        mkdir -p /home/runner/style-tools
-        cp .github/style-tools.sha256 /home/runner/style-tools
-        cd /home/runner/style-tools
-        wget -O doxygen.tar.gz https://www.doxygen.nl/files/doxygen-1.16.1.linux.bin.tar.gz
-        wget -O shfmt https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64
-        sha256sum -c style-tools.sha256
-        chmod +x shfmt
-        tar xf doxygen.tar.gz
-        mv doxygen-1.16.1/bin/doxygen .
-        rm -f doxygen.tar.gz
-        rm -rf doxygen-1.16.1
+        python3 qmclient_scripts/gate/check_gate.py --mode quick --ci-mode --report-json-path tmp/check-gate-report.json
 
-    - name: Check code style (ClangFormat)
+    - name: Build dilate tool
       run: |
-        set -o pipefail
-        mkdir -p tmp
-        mkdir -p /home/runner/style-tools
-        ln -sf "$(command -v clang-format-22)" /home/runner/style-tools/clang-format
-        export PATH=/home/runner/style-tools:$PATH
-        clang-format -version
-        bash qmclient_scripts/gate/check-gate.sh \
-          --mode quick \
-          --base-ref origin/${{ github.event.pull_request.base.ref || 'main' }} \
-          --branch-scope-only \
-          --skip-config-checks \
-          --skip-workflow-docs \
-          --skip-header-checks \
-          --enable-clang-format-check \
-          --report-json-path tmp/check-gate-style.json \
-          --scope-report-path tmp/check-gate-style-scope.json 2>&1 | tee tmp/check-gate-style.log
+        mkdir -p release
+        cd release
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCLIENT=OFF -DDOWNLOAD_GTEST=OFF ..
+        cmake --build . --config Release --target dilate
 
-    - name: Summarize style check
+    - name: Write CI summary
       if: always()
       run: |
-        python3 qmclient_scripts/gate/write_ci_summary.py \
+        python3 qmclient_scripts/gate/tools/ci_summary.py \
           --kind style \
           --status "${{ job.status }}" \
-          --report tmp/check-gate-style.json \
-          --log tmp/check-gate-style.log \
+          --report tmp/check-gate-report.json \
           --output "$GITHUB_STEP_SUMMARY"
+      shell: bash
+    - name: Check dilated images
+      run: scripts/check_dilate.py release data
+
+    - name: Upload gate report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: gate-report-style
+        path: tmp/check-gate-report.json
+        retention-days: 7
+        overwrite: true
+        if-no-files-found: ignore

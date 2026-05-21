@@ -17,36 +17,36 @@
 
 namespace
 {
-constexpr float EPSILON = 0.001f;
-constexpr float HUD_EDITOR_SNAP_DISTANCE = 6.0f;
+	constexpr float EPSILON = 0.001f;
+	constexpr float HUD_EDITOR_SNAP_DISTANCE = 6.0f;
 
-float Clamp01(float Value)
-{
-	return std::clamp(Value, 0.0f, 1.0f);
-}
+	float Clamp01(float Value)
+	{
+		return std::clamp(Value, 0.0f, 1.0f);
+	}
 
-float SnapHudEditorAxis(float Position, float Size, float ScreenStart, float ScreenSize)
-{
-	const float ScreenEnd = ScreenStart + ScreenSize;
-	const float ScreenCenter = ScreenStart + ScreenSize * 0.5f;
-	const float MinPosition = ScreenStart;
-	const float MaxPosition = Size >= ScreenSize ? ScreenStart : ScreenEnd - Size;
-	float SnappedPosition = std::clamp(Position, MinPosition, MaxPosition);
-	float BestDistance = HUD_EDITOR_SNAP_DISTANCE + EPSILON;
+	float SnapHudEditorAxis(float Position, float Size, float ScreenStart, float ScreenSize)
+	{
+		const float ScreenEnd = ScreenStart + ScreenSize;
+		const float ScreenCenter = ScreenStart + ScreenSize * 0.5f;
+		const float MinPosition = ScreenStart;
+		const float MaxPosition = Size >= ScreenSize ? ScreenStart : ScreenEnd - Size;
+		float SnappedPosition = std::clamp(Position, MinPosition, MaxPosition);
+		float BestDistance = HUD_EDITOR_SNAP_DISTANCE + EPSILON;
 
-	const auto TrySnap = [&](float Candidate, float Distance) {
-		if(Distance <= HUD_EDITOR_SNAP_DISTANCE && Distance < BestDistance)
-		{
-			SnappedPosition = std::clamp(Candidate, MinPosition, MaxPosition);
-			BestDistance = Distance;
-		}
-	};
+		const auto TrySnap = [&](float Candidate, float Distance) {
+			if(Distance <= HUD_EDITOR_SNAP_DISTANCE && Distance < BestDistance)
+			{
+				SnappedPosition = std::clamp(Candidate, MinPosition, MaxPosition);
+				BestDistance = Distance;
+			}
+		};
 
-	TrySnap(ScreenStart, std::fabs(Position - ScreenStart));
-	TrySnap(ScreenEnd - Size, std::fabs(Position + Size - ScreenEnd));
-	TrySnap(ScreenCenter - Size * 0.5f, std::fabs(Position + Size * 0.5f - ScreenCenter));
-	return SnappedPosition;
-}
+		TrySnap(ScreenStart, std::fabs(Position - ScreenStart));
+		TrySnap(ScreenEnd - Size, std::fabs(Position + Size - ScreenEnd));
+		TrySnap(ScreenCenter - Size * 0.5f, std::fabs(Position + Size * 0.5f - ScreenCenter));
+		return SnappedPosition;
+	}
 }
 
 CHudEditor::CHudEditor()
@@ -386,10 +386,10 @@ CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element
 	SVisibleElement Visible;
 	Visible.m_Element = Element;
 	Visible.m_Rect = {
-			pUiScreen->x + (AnchorX - ScreenX0) * pUiScreen->w / ScreenW,
-			pUiScreen->y + (AnchorY - ScreenY0) * pUiScreen->h / ScreenH,
-			BaseUiWidth * Scale,
-			BaseUiHeight * Scale};
+		pUiScreen->x + (AnchorX - ScreenX0) * pUiScreen->w / ScreenW,
+		pUiScreen->y + (AnchorY - ScreenY0) * pUiScreen->h / ScreenH,
+		BaseUiWidth * Scale,
+		BaseUiHeight * Scale};
 	Visible.m_BaseWidth = BaseUiWidth;
 	Visible.m_BaseHeight = BaseUiHeight;
 	Visible.m_Scalable = Scalable;

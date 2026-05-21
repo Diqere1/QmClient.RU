@@ -104,7 +104,9 @@ def normalize_status(status: str) -> str:
     return STATUS_ALIASES.get(normalized, normalized)
 
 
-def collect_artifacts(root: Path, suffix: str, included_statuses: set[str]) -> tuple[list[ArtifactItem], list[ArtifactItem]]:
+def collect_artifacts(
+    root: Path, suffix: str, included_statuses: set[str]
+) -> tuple[list[ArtifactItem], list[ArtifactItem]]:
     items: list[ArtifactItem] = []
     skipped_items: list[ArtifactItem] = []
     if not root.exists():
@@ -162,7 +164,9 @@ def render_markdown(
     if features:
         lines.append(f"- Feature：已沉淀 {len(features)} 项功能产物，见下方条目。")
     else:
-        lines.append("- Feature：本次没有自动扫描到 feature acceptance 产物，请人工补充。")
+        lines.append(
+            "- Feature：本次没有自动扫描到 feature acceptance 产物，请人工补充。"
+        )
     if fixes:
         lines.append(f"- Fix：已沉淀 {len(fixes)} 项问题修复产物，见下方条目。")
     else:
@@ -171,14 +175,18 @@ def render_markdown(
     lines.append("## 新增")
     if features:
         for item in features:
-            lines.append(f"- `{item.slug}` ({item.normalized_status}) - {item.summary} 产物：`{item.path.as_posix()}`")
+            lines.append(
+                f"- `{item.slug}` ({item.normalized_status}) - {item.summary} 产物：`{item.path.as_posix()}`"
+            )
     else:
         lines.append("- [补充用户可感知的新能力]")
     lines.append("")
     lines.append("## 修复")
     if fixes:
         for item in fixes:
-            lines.append(f"- `{item.slug}` ({item.normalized_status}) - {item.summary} 产物：`{item.path.as_posix()}`")
+            lines.append(
+                f"- `{item.slug}` ({item.normalized_status}) - {item.summary} 产物：`{item.path.as_posix()}`"
+            )
     else:
         lines.append("- [补充用户可感知的问题修复]")
     lines.append("")
@@ -195,9 +203,13 @@ def render_markdown(
         lines.append("## 待人工确认的非正式产物")
         lines.append(f"- 当前状态白名单：`{', '.join(sorted(included_statuses))}`")
         for item in skipped_features:
-            lines.append(f"- 跳过 Feature：`{item.slug}` ({item.normalized_status}) 原始状态：`{item.status}` 产物：`{item.path.as_posix()}`")
+            lines.append(
+                f"- 跳过 Feature：`{item.slug}` ({item.normalized_status}) 原始状态：`{item.status}` 产物：`{item.path.as_posix()}`"
+            )
         for item in skipped_fixes:
-            lines.append(f"- 跳过 Fix：`{item.slug}` ({item.normalized_status}) 原始状态：`{item.status}` 产物：`{item.path.as_posix()}`")
+            lines.append(
+                f"- 跳过 Fix：`{item.slug}` ({item.normalized_status}) 原始状态：`{item.status}` 产物：`{item.path.as_posix()}`"
+            )
         lines.append("")
     lines.append("---")
     lines.append("")
@@ -206,13 +218,17 @@ def render_markdown(
     lines.append("## 变更范围")
     lines.append(f"- Feature artifacts: {len(features)}")
     lines.append(f"- Fix artifacts: {len(fixes)}")
-    lines.append("- Workflow artifacts: release notes 初稿由 `qmclient_scripts/generate_release_notes.py` 生成")
+    lines.append(
+        "- Workflow artifacts: release notes 初稿由 `qmclient_scripts/generate_release_notes.py` 生成"
+    )
     lines.append("")
     lines.append("## 验证摘要")
     if gate_summary is not None:
         summary = gate_summary.get("Summary", {})
         lines.append(f"- Gate 模式：`{gate_summary.get('Mode', 'unknown')}`")
-        lines.append(f"- Gate 结果：PASS={summary.get('Pass', 'n/a')} WARN={summary.get('Warn', 'n/a')} FAIL={summary.get('Fail', 'n/a')}")
+        lines.append(
+            f"- Gate 结果：PASS={summary.get('Pass', 'n/a')} WARN={summary.get('Warn', 'n/a')} FAIL={summary.get('Fail', 'n/a')}"
+        )
     else:
         lines.append("- Gate：未提供 `--gate-report`，请人工补充最新总入口结果。")
     lines.append("- 构建 / 测试： [补充本次实际执行的验证命令]")
@@ -221,7 +237,7 @@ def render_markdown(
     lines.append("## 素材来源")
     lines.append("- `.ai/features/*/*-acceptance.md`")
     lines.append("- `.ai/issues/*/*-fix-note.md`")
-    lines.append("- `qmclient_scripts/gate/check-gate.sh` JSON 报告（如果提供）")
+    lines.append("- `qmclient_scripts/gate/check_gate.py` JSON 报告（如果提供）")
     lines.append("")
     return "\n".join(lines)
 
@@ -229,8 +245,18 @@ def render_markdown(
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成 QmClient 发布说明初稿")
     parser.add_argument("--version", default="UNRELEASED", help="版本号，如 v2.3.0")
-    parser.add_argument("--gate-report", type=Path, default=None, help="check-gate.sh 生成的 JSON 报告路径")
-    parser.add_argument("--output", type=Path, default=None, help="输出 Markdown 文件路径；不传则打印到 stdout")
+    parser.add_argument(
+        "--gate-report",
+        type=Path,
+        default=None,
+        help="check_gate.py 生成的 JSON 报告路径",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="输出 Markdown 文件路径；不传则打印到 stdout",
+    )
     parser.add_argument(
         "--include-status",
         action="append",
@@ -240,11 +266,17 @@ def main() -> int:
     args = parser.parse_args()
 
     included_statuses = set(DEFAULT_INCLUDED_STATUSES)
-    included_statuses.update(normalize_status(status) for status in args.include_status if status.strip())
+    included_statuses.update(
+        normalize_status(status) for status in args.include_status if status.strip()
+    )
     gate_report_path = resolve_repo_path(args.gate_report)
     output_path = resolve_repo_path(args.output)
-    features, skipped_features = collect_artifacts(REPO_ROOT / ".ai" / "features", "-acceptance.md", included_statuses)
-    fixes, skipped_fixes = collect_artifacts(REPO_ROOT / ".ai" / "issues", "-fix-note.md", included_statuses)
+    features, skipped_features = collect_artifacts(
+        REPO_ROOT / ".ai" / "features", "-acceptance.md", included_statuses
+    )
+    fixes, skipped_fixes = collect_artifacts(
+        REPO_ROOT / ".ai" / "issues", "-fix-note.md", included_statuses
+    )
     gate_summary = load_gate_summary(gate_report_path)
     markdown = render_markdown(
         args.version,

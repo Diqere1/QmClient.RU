@@ -36,17 +36,35 @@ jobs:
         chmod +x llvm.sh
         sudo ./llvm.sh 22 all
 
-    - name: Build with clang-tidy
-      run: |
-        set -o pipefail
-        python3 qmclient_scripts/gate/check-clang-tidy.py
+    - name: Run clang-tidy
+      run: python3 qmclient_scripts/gate/tools/clang_tidy_build.py
 
-    - name: Summarize clang-tidy warnings
+    - name: Upload clang-tidy log
       if: always()
-      shell: bash
+      uses: actions/upload-artifact@v4
+      with:
+        name: clang-tidy-log
+        path: build-clang-tidy/clang-tidy.log
+        retention-days: 7
+        overwrite: true
+        if-no-files-found: ignore
+
+    - name: Write CI summary
+      if: always()
       run: |
-        python3 qmclient_scripts/gate/write_ci_summary.py \
+        python3 qmclient_scripts/gate/tools/ci_summary.py \
           --kind clang-tidy \
           --status "${{ job.status }}" \
           --log build-clang-tidy/clang-tidy.log \
           --output "$GITHUB_STEP_SUMMARY"
+      shell: bash
+
+    - name: Upload CI summary
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-summary-clang-tidy
+        path: tmp/ci-summary-clang-tidy.md
+        retention-days: 7
+        overwrite: true
+        if-no-files-found: ignore

@@ -21,19 +21,21 @@ import sys
 os.chdir(os.path.dirname(__file__) + "/..")
 
 CONFIG_FILES = {
-    'ddnet': 'src/engine/shared/config_variables.h',
-    'tclient': 'src/engine/shared/config_variables_tclient.h',
-    'qmclient': 'src/engine/shared/config_variables_qmclient.h',
-    'qmclient_extra': 'src/engine/shared/config_variables_qmclient_extra.h',
-    'qimeng': 'src/engine/shared/config_variables_qimeng.h',
+    "ddnet": "src/engine/shared/config_variables.h",
+    "tclient": "src/engine/shared/config_variables_tclient.h",
+    "qmclient": "src/engine/shared/config_variables_qmclient.h",
+    "qmclient_extra": "src/engine/shared/config_variables_qmclient_extra.h",
+    "qimeng": "src/engine/shared/config_variables_qimeng.h",
 }
 
+
 def read_all_lines(filename):
-    with open(filename, 'r', encoding='utf-8') as file:
+    with open(filename, "r", encoding="utf-8") as file:
         return file.readlines()
 
+
 def parse_config_variables(lines):
-    pattern = r'^MACRO_CONFIG_[A-Z]+\((.*?), (.*?),.*'
+    pattern = r"^MACRO_CONFIG_[A-Z]+\((.*?), (.*?),.*"
     matches = {}
     for line in lines:
         match = re.match(pattern, line)
@@ -41,28 +43,31 @@ def parse_config_variables(lines):
             matches[match.group(1)] = match.group(2)
     return matches
 
+
 def generate_regex(variable_code):
-    return fr'(g_Config\.m_{variable_code}\b|Config\(\)->m_{variable_code}\b|m_pConfig->m_{variable_code}\b)'
+    return rf"(g_Config\.m_{variable_code}\b|Config\(\)->m_{variable_code}\b|m_pConfig->m_{variable_code}\b)"
+
 
 def find_config_variables(config_variables):
     variables_not_found = set(config_variables)
     regex_cache = {}
     for variable_code in variables_not_found.copy():
         regex_cache[variable_code] = re.compile(generate_regex(variable_code))
-    for root, _, files in os.walk('src'):
+    for root, _, files in os.walk("src"):
         if not variables_not_found:
             break
         for file in files:
             if not variables_not_found:
                 break
-            if file.endswith(('.cpp', '.h')) and 'external' not in root:
+            if file.endswith((".cpp", ".h")) and "external" not in root:
                 filepath = os.path.join(root, file)
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()
                     for variable_code in variables_not_found.copy():
                         if regex_cache[variable_code].search(content):
                             variables_not_found.remove(variable_code)
     return variables_not_found
+
 
 def check_config_file(name, filepath):
     if not os.path.exists(filepath):
@@ -75,29 +80,37 @@ def check_config_file(name, filepath):
         return 0
     config_variables_not_found = find_config_variables(config_variables)
     for variable_code in config_variables_not_found:
-        print(f"  [{name}] 未使用配置项：'{config_variables[variable_code]}' (m_{variable_code})")
+        print(
+            f"  [{name}] 未使用配置项：'{config_variables[variable_code]}' (m_{variable_code})"
+        )
     if config_variables_not_found:
         return len(config_variables_not_found)
     print(f"  [{name}] 通过：未发现未使用配置项（共 {len(config_variables)} 个）")
     return 0
 
+
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="检查 QmClient 配置变量是否被实际使用")
-    parser.add_argument('--ddnet', action='store_true', help='只检查 DDNet 上游配置文件')
-    parser.add_argument('--qm', action='store_true', help='只检查 QmClient / TClient / 栖梦自有配置文件')
+    parser.add_argument(
+        "--ddnet", action="store_true", help="只检查 DDNet 上游配置文件"
+    )
+    parser.add_argument(
+        "--qm", action="store_true", help="只检查 QmClient / TClient / 栖梦自有配置文件"
+    )
     args = parser.parse_args()
 
     total_unused = 0
 
     if args.ddnet:
-        files_to_check = {'ddnet': CONFIG_FILES['ddnet']}
+        files_to_check = {"ddnet": CONFIG_FILES["ddnet"]}
     elif args.qm:
         files_to_check = {
-            'tclient': CONFIG_FILES['tclient'],
-            'qmclient': CONFIG_FILES['qmclient'],
-            'qmclient_extra': CONFIG_FILES['qmclient_extra'],
-            'qimeng': CONFIG_FILES['qimeng'],
+            "tclient": CONFIG_FILES["tclient"],
+            "qmclient": CONFIG_FILES["qmclient"],
+            "qmclient_extra": CONFIG_FILES["qmclient_extra"],
+            "qimeng": CONFIG_FILES["qimeng"],
         }
     else:
         files_to_check = CONFIG_FILES
@@ -112,5 +125,6 @@ def main():
     print("\n通过：所有配置项均已被使用。")
     return 0
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     sys.exit(main())

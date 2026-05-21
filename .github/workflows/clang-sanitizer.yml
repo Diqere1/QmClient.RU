@@ -108,7 +108,7 @@ jobs:
     - name: Summarize ASan and UBSan
       if: always()
       run: |
-        python3 qmclient_scripts/gate/write_ci_summary.py \
+        python3 qmclient_scripts/gate/tools/ci_summary.py \
           --kind sanitizer \
           --status "${{ job.status }}" \
           --logs clang-sanitizer-configure.log clang-sanitizer-build.log clang-sanitizer-client.log clang-sanitizer-server.log clang-sanitizer-tests.log clang-sanitizer-sanitizer.log \
