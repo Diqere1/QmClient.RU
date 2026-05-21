@@ -154,6 +154,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode", choices=["quick", "default", "full", "build"], default="default"
     )
+    parser.add_argument("--skip-ci-build", action="store_true")
     parser.add_argument("--analyze-all", action="store_true")
     parser.add_argument("--skip-preflight", action="store_true")
     parser.add_argument("--skip-config-checks", action="store_true")
@@ -203,6 +204,7 @@ def _should_run_check(name: str, mode_spec: dict, args: argparse.Namespace) -> b
         "shell": args.skip_shell_check,
         "strict_build": args.skip_strict_debug,
         "dilate": args.skip_dilate_check,
+        "ci_build": args.skip_ci_build,
     }
     if skip_map.get(name, False):
         return False

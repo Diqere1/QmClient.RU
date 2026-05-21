@@ -30,6 +30,7 @@ def _run_command(
     cmd: list[str],
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
+    timeout: int | None = 1800,
 ) -> tuple[int, str]:
     runner.print_section(title)
     print(f"命令: {' '.join(cmd)}")
@@ -46,7 +47,15 @@ def _run_command(
     for line in proc.stdout:
         print(line, end="")
         lines.append(line)
-    proc.wait()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        return (
+            -1,
+            f"{title} 超时（>{timeout}s），已强制终止\n" + "".join(lines[-30:]),
+        )
     return proc.returncode, "".join(lines)
 
 
@@ -138,10 +147,11 @@ def _run_sanitizer_build(results: ResultCollector, dry_run: bool) -> None:
         results.add("INFO", title, "DryRun，仅展示命令")
         return
 
-    build_dir = REPO_ROOT / "build-sanitizer"
+    build_dir = REPO_ROOT / "build-sanitizer-gate"
     if build_dir.exists():
         shutil.rmtree(build_dir)
     build_dir.mkdir(parents=True, exist_ok=True)
+    (build_dir / ".gate-marker").touch()
 
     san_flags = (
         "-fsanitize=address,undefined,leak "

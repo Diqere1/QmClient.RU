@@ -19,7 +19,6 @@ def run(results: ResultCollector, included: list[str], dry_run: bool = False) ->
         str(REPO_ROOT / "qmclient_scripts" / "check_config_variables.py"),
         "--qm",
         title="配置变量使用检查（Qm/Tc/栖梦）",
-        fail_level="FAIL",
         check=False,
     )
     if code != 0:
