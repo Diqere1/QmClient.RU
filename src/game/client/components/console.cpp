@@ -39,6 +39,8 @@ static constexpr float FONT_SIZE = 10.0f;
 static constexpr float LINE_SPACING = 1.0f;
 static constexpr float LINK_CLICK_DRAG_THRESHOLD = 3.0f;
 static constexpr float LINK_UNDERLINE_HEIGHT = 0.12f;
+static constexpr float CONSOLE_SCROLLBAR_WIDTH = 18.0f;
+static constexpr float CONSOLE_SCROLLBAR_MARGIN = 5.0f;
 static constexpr ColorRGBA LINK_TEXT_COLOR = ColorRGBA(0.2f, 0.65f, 1.0f, 1.0f);
 static constexpr ColorRGBA LINK_UNDERLINE_COLOR = ColorRGBA(0.2f, 0.65f, 1.0f, 0.9f);
 
@@ -995,6 +997,9 @@ void CGameConsole::CInstance::ClearBacklog()
 
 	m_Backlog.Init();
 	m_BacklogCurLine = 0;
+	m_BacklogLastActiveLine = -1;
+	m_ScrollbarDragging = false;
+	m_ScrollbarDragOffset = 0.0f;
 	m_ChatExportAnchorId = -1;
 	m_ChatExportMode = false;
 	ClearSearch();
@@ -1053,6 +1058,8 @@ void CGameConsole::CInstance::Reset()
 	m_pCommandParams = "";
 	m_CompletionArgumentPosition = 0;
 	m_CompletionDirty = true;
+	m_ScrollbarDragging = false;
+	m_ScrollbarDragOffset = 0.0f;
 }
 
 void CGameConsole::ForceUpdateRemoteCompletionSuggestions()
@@ -1556,8 +1563,21 @@ void CGameConsole::CInstance::SetLogFilter(ELogFilter Filter)
 	m_CurSelStart = 0;
 	m_CurSelEnd = 0;
 	m_MouseIsPress = false;
+	m_ScrollbarDragging = false;
+	m_ScrollbarDragOffset = 0.0f;
 	if(m_Searching)
 		UpdateSearch();
+}
+
+int CGameConsole::CInstance::TotalBacklogLines()
+{
+	int TotalLines = 0;
+	for(CBacklogEntry *pEntry = m_Backlog.First(); pEntry; pEntry = m_Backlog.Next(pEntry))
+	{
+		if(pEntry->m_LineCount > 0 && MatchesLogFilter(pEntry))
+			TotalLines += pEntry->m_LineCount;
+	}
+	return TotalLines;
 }
 
 bool CGameConsole::CInstance::IsChatExportableEntry(const CBacklogEntry *pEntry) const
@@ -2427,6 +2447,73 @@ void CGameConsole::OnRender()
 				pConsole->m_NewLineCounter = 0;
 		}
 
+		const float LogTop = RowHeight;
+		const float LogBottom = y;
+		const float LogHeight = maximum(0.0f, LogBottom - LogTop);
+		const int VisibleBacklogLines = maximum(1, (int)std::floor(LogHeight / LineHeight));
+		const int TotalBacklogLines = pConsole->TotalBacklogLines();
+		const int MaxScroll = maximum(0, TotalBacklogLines - VisibleBacklogLines);
+		pConsole->m_BacklogCurLine = std::clamp(pConsole->m_BacklogCurLine, 0, MaxScroll);
+		if(pConsole->m_BacklogLastActiveLine >= 0)
+			pConsole->m_BacklogLastActiveLine = std::clamp(pConsole->m_BacklogLastActiveLine, 0, MaxScroll);
+		const bool ShowConsoleScrollbar = g_Config.m_QmConsoleScrollbar != 0 && MaxScroll > 0 && LogHeight > 0.0f;
+		const float LogTextRightInset = ShowConsoleScrollbar ? CONSOLE_SCROLLBAR_WIDTH + CONSOLE_SCROLLBAR_MARGIN : 0.0f;
+		if(ShowConsoleScrollbar)
+		{
+			CUIRect ScrollbarRect = {Screen.w - CONSOLE_SCROLLBAR_WIDTH - CONSOLE_SCROLLBAR_MARGIN, LogTop, CONSOLE_SCROLLBAR_WIDTH, LogHeight};
+			const float RailMargin = 5.0f;
+			CUIRect Rail;
+			ScrollbarRect.Margin(RailMargin, &Rail);
+			if(Rail.w > 0.0f && Rail.h > Rail.w)
+			{
+				const float HandleHeight = std::clamp(Rail.h * (VisibleBacklogLines / (float)maximum(TotalBacklogLines, 1)), maximum(Rail.w, 14.0f), Rail.h);
+				const float TrackRange = maximum(1.0f, Rail.h - HandleHeight);
+				const float Current = pConsole->m_BacklogCurLine / (float)maximum(MaxScroll, 1);
+				CUIRect Handle = {Rail.x, Rail.y + TrackRange * Current, Rail.w, HandleHeight};
+				const vec2 MousePos = GetMousePosition();
+				const bool MouseDown = m_TouchState.m_PrimaryPressed || Input()->NativeMousePressed(1);
+				const auto InsideRect = [&](const CUIRect &Rect) {
+					return MousePos.x >= Rect.x && MousePos.x <= Rect.x + Rect.w && MousePos.y >= Rect.y && MousePos.y <= Rect.y + Rect.h;
+				};
+
+				if(!MouseDown)
+				{
+					pConsole->m_ScrollbarDragging = false;
+				}
+				else if(!pConsole->m_ScrollbarDragging && InsideRect(Rail))
+				{
+					pConsole->m_ScrollbarDragOffset = InsideRect(Handle) ? std::clamp(MousePos.y - Handle.y, 0.0f, Handle.h) : Handle.h * 0.5f;
+					pConsole->m_ScrollbarDragging = true;
+					pConsole->m_MouseIsPress = false;
+					pConsole->m_HasSelection = false;
+					pConsole->m_CurSelStart = 0;
+					pConsole->m_CurSelEnd = 0;
+				}
+
+				if(pConsole->m_ScrollbarDragging)
+				{
+					const float HandleTop = std::clamp(MousePos.y - pConsole->m_ScrollbarDragOffset, Rail.y, Rail.y + TrackRange);
+					const int NewLine = std::clamp((int)std::round(((HandleTop - Rail.y) / TrackRange) * MaxScroll), 0, MaxScroll);
+					if(NewLine != pConsole->m_BacklogCurLine)
+					{
+						pConsole->m_BacklogCurLine = NewLine;
+						pConsole->m_BacklogLastActiveLine = NewLine;
+					}
+					pConsole->m_MouseIsPress = false;
+					pConsole->m_HasSelection = false;
+					Handle.y = Rail.y + TrackRange * (pConsole->m_BacklogCurLine / (float)maximum(MaxScroll, 1));
+				}
+
+				Rail.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.22f), IGraphics::CORNER_ALL, Rail.w * 0.5f);
+				const ColorRGBA HandleColor = pConsole->m_ScrollbarDragging ? ColorRGBA(0.85f, 0.85f, 0.85f, 0.95f) : ColorRGBA(0.62f, 0.62f, 0.62f, 0.82f);
+				Handle.Draw(HandleColor, IGraphics::CORNER_ALL, Handle.w * 0.5f);
+			}
+		}
+		else
+		{
+			pConsole->m_ScrollbarDragging = false;
+		}
+
 		// render console log (current entry, status, wrap lines)
 		CInstance::CBacklogEntry *pEntry = pConsole->m_Backlog.Last();
 		float OffsetY = 0.0f;
@@ -2520,7 +2607,7 @@ void CGameConsole::OnRender()
 			}
 
 			const float EntryTextX = pConsole->m_ChatExportMode ? 22.0f : 0.0f;
-			const float EntryLineWidth = Screen.w - 10.0f - EntryTextX;
+			const float EntryLineWidth = maximum(1.0f, Screen.w - 10.0f - EntryTextX - LogTextRightInset);
 			CTextCursor EntryCursor;
 			EntryCursor.SetPosition(vec2(EntryTextX, y - OffsetY));
 			EntryCursor.m_FontSize = FONT_SIZE;

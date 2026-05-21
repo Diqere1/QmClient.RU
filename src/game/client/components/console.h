@@ -80,6 +80,8 @@ class CGameConsole : public CComponent
 		int m_CurSelEnd = 0;
 		bool m_HasSelection = false;
 		int m_NewLineCounter = 0;
+		bool m_ScrollbarDragging = false;
+		float m_ScrollbarDragOffset = 0.0f;
 
 		CGameConsole *m_pGameConsole;
 
@@ -176,6 +178,7 @@ class CGameConsole : public CComponent
 		void SetSearching(bool Searching);
 		void ClearSearch();
 		void UpdateSearch();
+		int TotalBacklogLines();
 
 		friend class CGameConsole;
 	};
