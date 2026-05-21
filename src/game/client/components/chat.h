@@ -10,6 +10,7 @@
 #include <generated/protocol7.h>
 
 #include <game/client/component.h>
+#include <game/client/components/qmclient/hud_notifications.h>
 #include <game/client/lineinput.h>
 #include <game/client/render.h>
 #include <game/client/ui.h>
@@ -62,6 +63,7 @@ class CChat : public CComponent
 		bool m_Friend;
 		bool m_Highlighted;
 		bool m_ForceVisible;
+		QmHudNotifications::EServerMessageClass m_ServerMessageClass;
 		std::optional<ColorRGBA> m_CustomColor;
 
 		STextContainerIndex m_TextContainerIndex;

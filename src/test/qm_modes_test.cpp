@@ -206,37 +206,45 @@ TEST(QmFocusMode, UncheckedDirectionAndGuideIndicatorsStayVisibleInFocusMode)
 
 TEST(QmFocusMode, ForceVisibleClientLinesRemainVisibleWhenChatIsHidden)
 {
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, true, true, -2, true));
-	EXPECT_FALSE(ShouldRenderAnyFocusFilteredChat(true, true, true, false));
-	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, true, true));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, true, true, true, -2, true, false));
+	EXPECT_FALSE(ShouldRenderAnyFocusFilteredChat(true, true, true, true, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, true, true, true));
 }
 
 TEST(QmFocusMode, ChatFiltersSeparatePlayerSystemAndEchoMessages)
 {
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(true, false, false, 3, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, -1, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, -2, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(true, false, false, false, 3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, false, -1, false, true));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, false, -1, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, false, -2, false, false));
 
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, true, false, -1, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, 3, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, -2, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, true, false, false, -1, false, true));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, false, -1, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, false, 3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, false, -2, false, false));
 
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, false, true, -2, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, 3, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, -1, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, false, true, false, -1, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, false, -1, false, true));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, false, 3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, false, -2, false, false));
+
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, false, false, true, -2, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, false, true, 3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, false, true, -1, false, false));
 }
 
 TEST(QmFocusMode, UnknownChatLinesFollowSystemMessageVisibility)
 {
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, true, false, -3, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, true, -3, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, false, true, false, -3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, true, false, true, -3, false, false));
 }
 
 TEST(QmFocusMode, ChatAreaRendersWhenAnyMessageClassIsVisible)
 {
-	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(false, true, true, false));
-	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, false, true, false));
-	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, false, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(false, true, true, true, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, false, true, true, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, false, true, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, true, false, false));
 }
 
 TEST(QmFocusMode, ConfigSnapshotIgnoresLegacyVisualParentForChildEffects)
@@ -259,7 +267,8 @@ TEST(QmFocusMode, ConfigSnapshotSeparatesChatMessageClasses)
 	SQmFocusModeConfig Config;
 	Config.m_FocusActive = true;
 	Config.m_HidePlayerMessages = true;
-	Config.m_HideSystemMessages = false;
+	Config.m_HideSystemInfoMessages = false;
+	Config.m_HideSystemPromptMessages = true;
 	Config.m_HideEchoMessages = true;
 	Config.m_HideHud = true;
 	Config.m_HideScoreboard = true;
@@ -269,9 +278,10 @@ TEST(QmFocusMode, ConfigSnapshotSeparatesChatMessageClasses)
 	EXPECT_TRUE(Decisions.m_HideHud);
 	EXPECT_TRUE(Decisions.m_HideScoreboard);
 	EXPECT_TRUE(Decisions.m_HideNames);
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemMessages, Decisions.m_HideEchoMessages, 0, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemMessages, Decisions.m_HideEchoMessages, -1, false));
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemMessages, Decisions.m_HideEchoMessages, -2, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemInfoMessages, Decisions.m_HideSystemPromptMessages, Decisions.m_HideEchoMessages, 0, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemInfoMessages, Decisions.m_HideSystemPromptMessages, Decisions.m_HideEchoMessages, -1, false, true));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemInfoMessages, Decisions.m_HideSystemPromptMessages, Decisions.m_HideEchoMessages, -1, false, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemInfoMessages, Decisions.m_HideSystemPromptMessages, Decisions.m_HideEchoMessages, -2, false, false));
 }
 
 TEST(QmFocusMode, ConfigSnapshotMapProgressRequiresStyleAndGoresProgressAndChildToggle)

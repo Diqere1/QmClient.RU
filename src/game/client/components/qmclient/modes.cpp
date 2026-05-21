@@ -158,24 +158,24 @@ bool ShouldHideFocusGuideLines(bool FocusActive, bool HideGuideLines)
 	return FocusActive && HideGuideLines;
 }
 
-bool ShouldRenderFocusFilteredChatLine(bool FocusHidePlayerMessages, bool FocusHideSystemMessages, bool FocusHideEcho, int ClientId, bool ForceVisible)
+bool ShouldRenderFocusFilteredChatLine(bool FocusHidePlayerMessages, bool FocusHideSystemInfoMessages, bool FocusHideSystemPromptMessages, bool FocusHideEcho, int ClientId, bool ForceVisible, bool ServerMessageIsBasicInfo)
 {
 	if(ForceVisible)
 		return true;
 	if(ClientId == -2)
 		return !FocusHideEcho;
 	if(ClientId == -1)
-		return !FocusHideSystemMessages;
+		return ServerMessageIsBasicInfo ? !FocusHideSystemInfoMessages : !FocusHideSystemPromptMessages;
 	if(ClientId >= 0)
 		return !FocusHidePlayerMessages;
-	if(FocusHideSystemMessages)
+	if(FocusHideSystemPromptMessages)
 		return false;
 	return true;
 }
 
-bool ShouldRenderAnyFocusFilteredChat(bool FocusHidePlayerMessages, bool FocusHideSystemMessages, bool FocusHideEcho, bool HasForceVisibleLine)
+bool ShouldRenderAnyFocusFilteredChat(bool FocusHidePlayerMessages, bool FocusHideSystemInfoMessages, bool FocusHideSystemPromptMessages, bool FocusHideEcho, bool HasForceVisibleLine)
 {
-	return !(FocusHidePlayerMessages && FocusHideSystemMessages && FocusHideEcho) || HasForceVisibleLine;
+	return !(FocusHidePlayerMessages && FocusHideSystemInfoMessages && FocusHideSystemPromptMessages && FocusHideEcho) || HasForceVisibleLine;
 }
 
 SQmFocusModeDecisions GetQmFocusModeDecisions(const SQmFocusModeConfig &Config)
@@ -196,7 +196,8 @@ SQmFocusModeDecisions GetQmFocusModeDecisions(const SQmFocusModeConfig &Config)
 	Decisions.m_HideDirectionIndicators = ShouldHideFocusDirectionIndicators(Config.m_FocusActive, Config.m_HideDirectionIndicators);
 	Decisions.m_HideGuideLines = ShouldHideFocusGuideLines(Config.m_FocusActive, Config.m_HideGuideLines);
 	Decisions.m_HidePlayerMessages = Config.m_FocusActive && Config.m_HidePlayerMessages;
-	Decisions.m_HideSystemMessages = Config.m_FocusActive && Config.m_HideSystemMessages;
+	Decisions.m_HideSystemInfoMessages = Config.m_FocusActive && Config.m_HideSystemInfoMessages;
+	Decisions.m_HideSystemPromptMessages = Config.m_FocusActive && Config.m_HideSystemPromptMessages;
 	Decisions.m_HideEchoMessages = Config.m_FocusActive && Config.m_HideEchoMessages;
 	return Decisions;
 }

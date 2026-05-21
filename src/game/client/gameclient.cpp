@@ -285,6 +285,7 @@ void CGameClient::OnConsoleInit()
 					      &m_StatusBar,
 					      &m_InfoMessages,
 					      &m_Chat,
+					      &m_QmHudNotifications,
 					      &m_Broadcast,
 					      &m_ImportantAlert,
 					      &m_DebugHud,

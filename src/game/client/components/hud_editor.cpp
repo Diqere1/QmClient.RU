@@ -184,6 +184,7 @@ const char *CHudEditor::ElementToken(EHudEditorElement Element)
 	case EHudEditorElement::Chat: return "chat";
 	case EHudEditorElement::VoiceOverlay: return "voice_overlay";
 	case EHudEditorElement::InputOverlay: return "input_overlay";
+	case EHudEditorElement::HudNotifications: return "hud_notifications";
 	case EHudEditorElement::Count: break;
 	}
 	return "";

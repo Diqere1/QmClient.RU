@@ -2657,6 +2657,8 @@ if(CLIENT)
     components/qmclient/collision_hitbox.h
     components/qmclient/colored_parts.h
     components/qmclient/data_version.h
+    components/qmclient/hud_notifications.cpp
+    components/qmclient/hud_notifications.h
     components/qmclient/input_overlay.cpp
     components/qmclient/input_overlay.h
     components/qmclient/jelly_tee.cpp
@@ -3421,6 +3423,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     os_test.cpp
     packer_test.cpp
     prng_test.cpp
+    qm_hud_notifications_test.cpp
     qm_modes_test.cpp
     qmclient_monitoring_test.cpp
     score_test.cpp

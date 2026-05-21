@@ -66,6 +66,7 @@
 #include "components/players.h"
 #include "components/qmclient/collision_hitbox.h"
 #include "components/qmclient/data_version.h"
+#include "components/qmclient/hud_notifications.h"
 #include "components/qmclient/input_overlay.h"
 #include "components/qmclient/lyrics_component.h"
 #include "components/qmclient/monitoring.h"
@@ -260,6 +261,7 @@ public:
 	CBgDraw m_BgDraw;
 	CQmClient m_QmClient;
 	CQmMonitoring m_QmMonitoring;
+	CQmHudNotifications m_QmHudNotifications;
 	CTClient m_TClient;
 	CFastPractice m_FastPractice;
 	CVoiceComponent m_Voice;

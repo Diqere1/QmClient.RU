@@ -32,7 +32,8 @@ struct SQmFocusModeConfig
 	bool m_HideDirectionIndicators = false;
 	bool m_HideGuideLines = false;
 	bool m_HidePlayerMessages = false;
-	bool m_HideSystemMessages = false;
+	bool m_HideSystemInfoMessages = false;
+	bool m_HideSystemPromptMessages = false;
 	bool m_HideEchoMessages = false;
 };
 
@@ -53,7 +54,8 @@ struct SQmFocusModeDecisions
 	bool m_HideDirectionIndicators = false;
 	bool m_HideGuideLines = false;
 	bool m_HidePlayerMessages = false;
-	bool m_HideSystemMessages = false;
+	bool m_HideSystemInfoMessages = false;
+	bool m_HideSystemPromptMessages = false;
 	bool m_HideEchoMessages = false;
 };
 
@@ -90,8 +92,8 @@ bool ShouldRenderMapProgressBar(bool MapProgressEnabled, int MapProgressStyle, b
 bool ShouldHideFocusInfoMessages(bool FocusActive, bool HideInfoMessages);
 bool ShouldHideFocusDirectionIndicators(bool FocusActive, bool HideDirectionIndicators);
 bool ShouldHideFocusGuideLines(bool FocusActive, bool HideGuideLines);
-bool ShouldRenderFocusFilteredChatLine(bool FocusHidePlayerMessages, bool FocusHideSystemMessages, bool FocusHideEcho, int ClientId, bool ForceVisible);
-bool ShouldRenderAnyFocusFilteredChat(bool FocusHidePlayerMessages, bool FocusHideSystemMessages, bool FocusHideEcho, bool HasForceVisibleLine);
+bool ShouldRenderFocusFilteredChatLine(bool FocusHidePlayerMessages, bool FocusHideSystemInfoMessages, bool FocusHideSystemPromptMessages, bool FocusHideEcho, int ClientId, bool ForceVisible, bool ServerMessageIsBasicInfo);
+bool ShouldRenderAnyFocusFilteredChat(bool FocusHidePlayerMessages, bool FocusHideSystemInfoMessages, bool FocusHideSystemPromptMessages, bool FocusHideEcho, bool HasForceVisibleLine);
 SQmFocusModeDecisions GetQmFocusModeDecisions(const SQmFocusModeConfig &Config);
 
 #endif

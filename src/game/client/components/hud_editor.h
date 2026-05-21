@@ -31,6 +31,7 @@ enum class EHudEditorElement
 	Chat,
 	VoiceOverlay,
 	InputOverlay,
+	HudNotifications,
 
 	Count,
 };

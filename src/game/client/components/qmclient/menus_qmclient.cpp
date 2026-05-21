@@ -1253,6 +1253,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		SpeedrunTimer,
 		DebugGraph,
 		InputOverlay,
+		HudNotifications,
 		Voice,
 		DynamicIsland,
 		SystemMediaControls,
@@ -1294,6 +1295,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::SpeedrunTimer: return "speedrun_timer";
 		case EQmModuleId::DebugGraph: return "debug_graph";
 		case EQmModuleId::InputOverlay: return "input_overlay";
+		case EQmModuleId::HudNotifications: return "hud_notifications";
 		case EQmModuleId::Voice: return "voice";
 		case EQmModuleId::DynamicIsland: return "dynamic_island";
 		case EQmModuleId::SystemMediaControls: return "system_media_controls";
@@ -1321,7 +1323,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const char *m_pKey;
 	};
 
-	constexpr size_t QmModuleCount = 29;
+	constexpr size_t QmModuleCount = 30;
 
 	// Layout string format: key:column:order; entries separated by ';'.
 	static const std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
@@ -1349,10 +1351,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::SpeedrunTimer, EQmModuleColumn::Right, 7, "speedrun_timer"},
 		{EQmModuleId::DebugGraph, EQmModuleColumn::Right, 8, "debug_graph"},
 		{EQmModuleId::InputOverlay, EQmModuleColumn::Right, 9, "input_overlay"},
-		{EQmModuleId::Voice, EQmModuleColumn::Right, 10, "voice"},
-		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 11, "dummy_miniview"},
-		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 12, "dynamic_island"},
-		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 13, "system_media_controls"}}};
+		{EQmModuleId::HudNotifications, EQmModuleColumn::Right, 10, "hud_notifications"},
+		{EQmModuleId::Voice, EQmModuleColumn::Right, 11, "voice"},
+		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 12, "dummy_miniview"},
+		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 13, "dynamic_island"},
+		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 14, "system_media_controls"}}};
 
 	static std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleLayout = s_aQmModuleDefaults;
 	static char s_aQmModuleLayoutConfigCache[sizeof(g_Config.m_QmSidebarCardOrder)] = {};
@@ -1500,7 +1503,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 		AppendBalancedGroup({EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi});
 		AppendBalancedGroup({EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::FocusMode, EQmModuleId::KeyBinds, EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist});
-		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls});
+		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::HudNotifications, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls});
 
 		for(size_t i = 0; i < s_aQmModuleLayout.size(); ++i)
 		{
@@ -2120,6 +2123,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::SpeedrunTimer: return "速通计时器 sutong jishiqi speedrun timer 倒计时 daojishi 倒数 daoshu 小时 xiaoshi 分钟 fenzhong 秒 miao 毫秒 haomiao 自动关闭 zidong guanbi";
 		case EQmModuleId::DebugGraph: return "调试图表 tiaoshi tubiao debug graph monitoring hud 不透明度 touming 透明度 面板 mianban 快捷键 kuaijiejian 按键 anjian";
 		case EQmModuleId::InputOverlay: return "按键显示 anjian xianshi input overlay 按键叠加 anjian diejia 大小 daxiao 不透明度 butouming 水平位置 shuiping weizhi 垂直位置 chuizhi weizhi";
+		case EQmModuleId::HudNotifications: return "通知栏 tongzhi lan notification toast solo echo 系统消息 xitong xiaoxi 右侧 youce 动画 donghua 背景 beijing 文字 wenzi";
 		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo";
 		case EQmModuleId::DynamicIsland: return "灵动岛 lld lingdongdao dynamic island hud 顶部 dingbu 背景 beijing 颜色 yanse 透明度 touming 黑底 heidi 原版 yuanban 默认 moren classic old style";
 		case EQmModuleId::SystemMediaControls: return "系统媒体控制 xitong meiti kongzhi smtc media controls 启用系统媒体 qiyong 显示歌曲信息 gequ xinxi 上一个 shangyige 播放暂停 bofang zanting 下一个 xiayige";
@@ -2166,6 +2170,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			       Id == EQmModuleId::SpeedrunTimer ||
 			       Id == EQmModuleId::DebugGraph ||
 			       Id == EQmModuleId::InputOverlay ||
+			       Id == EQmModuleId::HudNotifications ||
 			       Id == EQmModuleId::Voice ||
 			       Id == EQmModuleId::DynamicIsland ||
 			       Id == EQmModuleId::SystemMediaControls;
@@ -2842,7 +2847,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		}
 		else if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_HUD)
 		{
-			for(EQmModuleId Id : {EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls})
+			for(EQmModuleId Id : {EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::HudNotifications, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls})
 				AppendModuleIfVisible(Id);
 		}
 		else
@@ -3284,7 +3289,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				DoFocusSectionLabel(RightColumn, "聊天");
 				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeHideChat, "隐藏玩家消息");
-				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeHideSystemMessages, "隐藏系统消息");
+				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeHideSystemInfoMessages, "隐藏入场/版本提示");
+				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeHideSystemMessages, "隐藏服务器提示通知");
 				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeHideEcho, "隐藏 Echo 消息");
 				CardContent.y = std::max(LeftColumn.y, RightColumn.y);
 				CardContent.HSplitTop(LgLineSpacing * 0.7f, nullptr, &CardContent);
@@ -5628,6 +5634,95 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					TextRender()->TextColor(TextRender()->DefaultTextColor());
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				}
+
+				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
+				Column.y = CardContent.y;
+				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
+				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
+				HandleModuleDragState(pModule, s_GlassCards.back());
+			}
+			break;
+			case EQmModuleId::HudNotifications:
+			{
+				Column.HSplitTop(LgCardSpacing, nullptr, &Column);
+				CUIRect CardHudNotificationsStart = Column;
+				s_GlassCards.push_back(CardHudNotificationsStart);
+
+				Column.HSplitTop(LgCardPadding, nullptr, &Column);
+				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
+				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
+				DoModuleHeadline(CardContent, 11, Localize("通知栏"), Localize("把重要提示移到右侧弹出显示"));
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsSystem, Localize("大多数服务器系统提示移到通知栏"), &g_Config.m_QmHudNotificationsSystem, &Row, LgLineHeight);
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsEcho, Localize("Echo 消息移到通知栏"), &g_Config.m_QmHudNotificationsEcho, &Row, LgLineHeight);
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsCompatSolo, Localize("自定义服务器 solo 提示也尝试接管"), &g_Config.m_QmHudNotificationsCompatSolo, &Row, LgLineHeight);
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+				static CButtonContainer s_QmHudNotificationBgColorId;
+				DoLine_ColorPicker(&s_QmHudNotificationBgColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("通知栏背景颜色"), &g_Config.m_QmHudNotificationsBgColor, ColorRGBA(0.0f, 0.0f, 0.0f, 0.6f), false, nullptr, true);
+				static CButtonContainer s_QmHudNotificationTextColorId;
+				DoLine_ColorPicker(&s_QmHudNotificationTextColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("系统提示文字颜色"), &g_Config.m_QmHudNotificationsTextColor, ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), false, nullptr, true);
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsEchoInheritColor, Localize("Echo 使用聊天里的 Echo 颜色"), &g_Config.m_QmHudNotificationsEchoInheritColor, &Row, LgLineHeight);
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				static CButtonContainer s_QmHudNotificationEchoTextColorId;
+				DoLine_ColorPicker(&s_QmHudNotificationEchoTextColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("Echo 不继承时的文字颜色"), &g_Config.m_QmHudNotificationsEchoTextColor, ColorRGBA(0.5f, 0.78f, 1.0f, 1.0f), false, nullptr, true);
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				{
+					CUIRect LabelColValue, ControlColValue;
+					Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+					Ui()->DoLabel(&LabelColValue, Localize("通知文字大小"), LgBodySize, TEXTALIGN_ML);
+					static int s_QmHudNotificationTextSizeInputId;
+					RenderSliderWithValueInput(&s_QmHudNotificationTextSizeInputId, ControlColValue, &g_Config.m_QmHudNotificationsTextSize, 1, 24);
+				}
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				{
+					CUIRect LabelColValue, ControlColValue;
+					Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+					Ui()->DoLabel(&LabelColValue, Localize("每条显示多久"), LgBodySize, TEXTALIGN_ML);
+					static int s_QmHudNotificationHoldInputId;
+					RenderSliderWithValueInput(&s_QmHudNotificationHoldInputId, ControlColValue, &g_Config.m_QmHudNotificationsHoldMs, 500, 10000, "ms");
+				}
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				{
+					CUIRect LabelColValue, ControlColValue;
+					Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+					Ui()->DoLabel(&LabelColValue, Localize("弹出动画"), LgBodySize, TEXTALIGN_ML);
+					const char *apHudNotificationAnimDropDownNames[] = {Localize("淡入滑入"), Localize("仅淡入"), Localize("无动画")};
+					static CUi::SDropDownState s_HudNotificationAnimDropDownState;
+					static CScrollRegion s_HudNotificationAnimDropDownScrollRegion;
+					s_HudNotificationAnimDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_HudNotificationAnimDropDownScrollRegion;
+					const int AnimSelectedNew = Ui()->DoDropDown(&ControlColValue, g_Config.m_QmHudNotificationsAnimType, apHudNotificationAnimDropDownNames, std::size(apHudNotificationAnimDropDownNames), s_HudNotificationAnimDropDownState);
+					if(g_Config.m_QmHudNotificationsAnimType != AnimSelectedNew)
+						g_Config.m_QmHudNotificationsAnimType = AnimSelectedNew;
+				}
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				{
+					CUIRect LabelColValue, ControlColValue;
+					Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+					Ui()->DoLabel(&LabelColValue, Localize("动画持续多久"), LgBodySize, TEXTALIGN_ML);
+					static int s_QmHudNotificationAnimInputId;
+					RenderSliderWithValueInput(&s_QmHudNotificationAnimInputId, ControlColValue, &g_Config.m_QmHudNotificationsAnimMs, 0, 2000, "ms");
+				}
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				{
+					CUIRect LabelColValue, ControlColValue;
+					Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+					Ui()->DoLabel(&LabelColValue, Localize("最多同时显示几条"), LgBodySize, TEXTALIGN_ML);
+					static int s_QmHudNotificationMaxVisibleInputId;
+					RenderSliderWithValueInput(&s_QmHudNotificationMaxVisibleInputId, ControlColValue, &g_Config.m_QmHudNotificationsMaxVisible, 1, 8);
+				}
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;

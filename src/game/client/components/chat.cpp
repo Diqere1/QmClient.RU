@@ -343,6 +343,7 @@ CChat::CLine::CLine()
 	m_TextYOffset = 0.0f;
 	m_CutOffProgress = 0.0f;
 	m_ForceVisible = false;
+	m_ServerMessageClass = QmHudNotifications::EServerMessageClass::None;
 }
 
 void CChat::CLine::Reset(CChat &This)
@@ -360,6 +361,7 @@ void CChat::CLine::Reset(CChat &This)
 	m_CutOffProgress = 0.0f;
 	m_Friend = false;
 	m_ForceVisible = false;
+	m_ServerMessageClass = QmHudNotifications::EServerMessageClass::None;
 	m_TimesRepeated = 0;
 	m_pManagedTeeRenderInfo = nullptr;
 	m_pTranslateResponse = nullptr;
@@ -850,11 +852,27 @@ void CChat::ConchainChatWidth(IConsole::IResult *pResult, void *pUserData, ICons
 
 void CChat::Echo(const char *pString)
 {
+	const bool FocusHideEcho = g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideEcho;
+	if(!FocusHideEcho && GameClient()->m_QmHudNotifications.QueueEcho(pString))
+	{
+		char aBuf[1024];
+		str_format(aBuf, sizeof(aBuf), "— %s", pString);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "chat/client", aBuf, color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor)));
+		return;
+	}
 	AddLine(CLIENT_MSG, 0, pString);
 }
 
 void CChat::Echo(const char *pString, bool ForceVisible)
 {
+	const bool FocusHideEcho = g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideEcho && !ForceVisible;
+	if(!FocusHideEcho && GameClient()->m_QmHudNotifications.QueueEcho(pString))
+	{
+		char aBuf[1024];
+		str_format(aBuf, sizeof(aBuf), "— %s", pString);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "chat/client", aBuf, color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor)));
+		return;
+	}
 	AddLine(CLIENT_MSG, 0, pString, ForceVisible);
 }
 
@@ -1272,6 +1290,30 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 		if(Re.error().empty() && Re.test(pMsg->m_pMessage))
 			return;
 
+		if(pMsg->m_ClientId == SERVER_MSG && g_Config.m_ClShowChatSystem)
+		{
+			const auto PrintSuppressedServerMessage = [this, pMsg]() {
+				if(Client()->State() != IClient::STATE_DEMOPLAYBACK)
+					StoreSave(pMsg->m_pMessage);
+				char aBuf[1024];
+				str_format(aBuf, sizeof(aBuf), "*** %s", pMsg->m_pMessage);
+				Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "chat/server", aBuf, color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageSystemColor)));
+			};
+			const bool FocusModeActive = g_Config.m_QmFocusMode != 0;
+			const bool FocusHideSystemInfoMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemInfoMessages;
+			const bool FocusHideSystemPromptMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
+			if(GameClient()->m_QmHudNotifications.ShouldConsumeHiddenServerChat(pMsg->m_pMessage, FocusHideSystemInfoMessages, FocusHideSystemPromptMessages))
+			{
+				PrintSuppressedServerMessage();
+				return;
+			}
+			if(GameClient()->m_QmHudNotifications.ShouldSuppressServerChat(pMsg->m_pMessage))
+			{
+				PrintSuppressedServerMessage();
+				return;
+			}
+		}
+
 		/*
 		if(g_Config.m_ClCensorChat)
 		{
@@ -1566,6 +1608,7 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible
 	CurrentLine.m_Highlighted = Highlighted;
 
 	str_copy(CurrentLine.m_aText, pLine);
+	CurrentLine.m_ServerMessageClass = ClientId == SERVER_MSG ? QmHudNotifications::ServerMessageClass(CurrentLine.m_aText, QmHudNotifications::ESoloPrompt::None) : QmHudNotifications::EServerMessageClass::None;
 
 	if(CurrentLine.m_ClientId == SERVER_MSG)
 	{
@@ -1708,7 +1751,8 @@ void CChat::OnPrepareLines(float y)
 	float FontSize = this->FontSize();
 	const bool FocusModeActive = g_Config.m_QmFocusMode != 0;
 	const bool FocusHideChat = FocusModeActive && g_Config.m_QmFocusModeHideChat;
-	const bool FocusHideSystemMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
+	const bool FocusHideSystemInfoMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemInfoMessages;
+	const bool FocusHideSystemPromptMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
 	const bool FocusHideEcho = FocusModeActive && g_Config.m_QmFocusModeHideEcho;
 
 	const bool IsScoreBoardOpen = GameClient()->m_Scoreboard.IsActive();
@@ -1743,7 +1787,8 @@ void CChat::OnPrepareLines(float y)
 		CLine &Line = m_aLines[((m_CurrentLine - i) + MAX_LINES) % MAX_LINES];
 		if(!Line.m_Initialized)
 			break;
-		if(!ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideSystemMessages, FocusHideEcho, Line.m_ClientId, Line.m_ForceVisible))
+		const bool ServerMessageIsBasicInfo = Line.m_ServerMessageClass == QmHudNotifications::EServerMessageClass::BasicInfo;
+		if(!ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideSystemInfoMessages, FocusHideSystemPromptMessages, FocusHideEcho, Line.m_ClientId, Line.m_ForceVisible, ServerMessageIsBasicInfo))
 			continue;
 		if(Now > Line.m_Time + VisibleTimeNoFocusTicks && !m_PrevShowChat)
 			break;
@@ -2085,10 +2130,11 @@ void CChat::OnRender()
 
 	const bool FocusModeActive = g_Config.m_QmFocusMode != 0;
 	const bool FocusHideChat = FocusModeActive && g_Config.m_QmFocusModeHideChat;
-	const bool FocusHideSystemMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
+	const bool FocusHideSystemInfoMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemInfoMessages;
+	const bool FocusHideSystemPromptMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
 	const bool FocusHideEcho = FocusModeActive && g_Config.m_QmFocusModeHideEcho;
 	const bool HasForceVisibleLine = std::any_of(std::begin(m_aLines), std::end(m_aLines), [](const CLine &Line) { return Line.m_Initialized && Line.m_ForceVisible; });
-	if(!ShouldRenderAnyFocusFilteredChat(FocusHideChat, FocusHideSystemMessages, FocusHideEcho, HasForceVisibleLine))
+	if(!ShouldRenderAnyFocusFilteredChat(FocusHideChat, FocusHideSystemInfoMessages, FocusHideSystemPromptMessages, FocusHideEcho, HasForceVisibleLine))
 		return;
 
 	const bool HudEditorPreview = GameClient()->m_HudEditor.IsActive();
@@ -2290,7 +2336,8 @@ void CChat::OnRender()
 		CLine &Line = m_aLines[((m_CurrentLine - i) + MAX_LINES) % MAX_LINES];
 		if(!Line.m_Initialized)
 			break;
-		if(!ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideSystemMessages, FocusHideEcho, Line.m_ClientId, Line.m_ForceVisible))
+		const bool ServerMessageIsBasicInfo = Line.m_ServerMessageClass == QmHudNotifications::EServerMessageClass::BasicInfo;
+		if(!ShouldRenderFocusFilteredChatLine(FocusHideChat, FocusHideSystemInfoMessages, FocusHideSystemPromptMessages, FocusHideEcho, Line.m_ClientId, Line.m_ForceVisible, ServerMessageIsBasicInfo))
 			continue;
 		if(Now > Line.m_Time + VisibleTimeNoFocusTicks && !m_PrevShowChat)
 			break;
