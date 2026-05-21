@@ -15,6 +15,8 @@
 #include <game/client/render.h>
 #include <game/client/ui.h>
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 class CTranslateResponse
@@ -264,6 +266,21 @@ public:
 	int Sizeof() const override { return sizeof(*this); }
 
 	static constexpr float MESSAGE_TEE_PADDING_RIGHT = 0.5f;
+
+	static int ClampBacklogLine(int Line, int TotalLines, int VisibleLines)
+	{
+		const int MaxScroll = std::max(0, TotalLines - VisibleLines);
+		return std::clamp(Line, 0, MaxScroll);
+	}
+	static int ScrollbarValueToBacklogLine(float Value, int MaxScroll)
+	{
+		const float ClampedValue = std::clamp(Value, 0.0f, 1.0f);
+		return std::clamp((int)std::round((1.0f - ClampedValue) * MaxScroll), 0, MaxScroll);
+	}
+	static bool IsCopyClickDrag(vec2 Press, vec2 Release)
+	{
+		return length(Release - Press) <= 5.0f;
+	}
 
 	bool IsActive() const { return m_Mode != MODE_NONE; }
 	const char *GetInputText() const { return m_Input.GetString(); }

@@ -3423,6 +3423,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     os_test.cpp
     packer_test.cpp
     prng_test.cpp
+    qm_chat_interactions_test.cpp
     qm_hud_notifications_test.cpp
     qm_modes_test.cpp
     qmclient_monitoring_test.cpp

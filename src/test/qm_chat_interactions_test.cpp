@@ -1,0 +1,25 @@
+#include <game/client/components/chat.h>
+
+#include <gtest/gtest.h>
+
+TEST(QmChatInteractions, ClampBacklogLine)
+{
+	EXPECT_EQ(CChat::ClampBacklogLine(-3, 10, 4), 0);
+	EXPECT_EQ(CChat::ClampBacklogLine(0, 10, 4), 0);
+	EXPECT_EQ(CChat::ClampBacklogLine(6, 10, 4), 6);
+	EXPECT_EQ(CChat::ClampBacklogLine(7, 10, 4), 6);
+	EXPECT_EQ(CChat::ClampBacklogLine(20, 10, 4), 6);
+}
+
+TEST(QmChatInteractions, ScrollbarValueToBacklogLine)
+{
+	EXPECT_EQ(CChat::ScrollbarValueToBacklogLine(1.0f, 12), 0);
+	EXPECT_EQ(CChat::ScrollbarValueToBacklogLine(0.0f, 12), 12);
+	EXPECT_EQ(CChat::ScrollbarValueToBacklogLine(0.5f, 12), 6);
+}
+
+TEST(QmChatInteractions, ClickDragThreshold)
+{
+	EXPECT_TRUE(CChat::IsCopyClickDrag(vec2(10.0f, 10.0f), vec2(12.0f, 12.0f)));
+	EXPECT_FALSE(CChat::IsCopyClickDrag(vec2(10.0f, 10.0f), vec2(30.0f, 10.0f)));
+}
