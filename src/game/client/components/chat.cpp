@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string>
 
 char CChat::ms_aDisplayText[MAX_LINE_LENGTH] = "";
 
@@ -341,6 +342,10 @@ CChat::CLine::CLine()
 {
 	m_TextContainerIndex.Reset();
 	m_QuadContainerIndex = -1;
+	m_SelectionStart = -1;
+	m_SelectionEnd = -1;
+	m_aSelectedText[0] = '\0';
+	m_RenderedTextRect = {};
 	m_aYOffset[0] = -1.0f;
 	m_aYOffset[1] = -1.0f;
 	m_TextYOffset = 0.0f;
@@ -360,6 +365,10 @@ void CChat::CLine::Reset(CChat &This)
 	m_aName[0] = '\0';
 	m_aYOffset[0] = -1.0f;
 	m_aYOffset[1] = -1.0f;
+	m_SelectionStart = -1;
+	m_SelectionEnd = -1;
+	m_aSelectedText[0] = '\0';
+	m_RenderedTextRect = {};
 	m_TextYOffset = 0.0f;
 	m_CutOffProgress = 0.0f;
 	m_Friend = false;
@@ -678,6 +687,11 @@ void CChat::ClearLines()
 	m_ScrollbarDragging = false;
 	m_ScrollbarDragOffset = 0.0f;
 	m_LastMousePos.reset();
+	m_MouseIsPress = false;
+	m_MousePress = vec2(0.0f, 0.0f);
+	m_MouseRelease = vec2(0.0f, 0.0f);
+	m_HasSelection = false;
+	m_WantsSelectionCopy = false;
 	m_PrevScoreBoardShowed = false;
 	m_PrevShowChat = false;
 	m_LastAnimUpdateTime = 0;
@@ -939,6 +953,13 @@ bool CChat::OnInput(const IInput::CEvent &Event)
 		return false;
 
 	const bool LanguageMenuOpen = m_LanguageMenuOpen || Ui()->IsPopupOpen(&m_LanguagePopupContext);
+	if(g_Config.m_QmChatClickCopy && !LanguageMenuOpen && (Event.m_Flags & IInput::FLAG_PRESS) && Input()->ModifierIsPressed() && Event.m_Key == KEY_C && !m_Input.HasSelection() && m_HasSelection)
+	{
+		m_WantsSelectionCopy = true;
+		RebuildChat();
+		return true;
+	}
+
 	const bool IsWheelEvent = Event.m_Key == KEY_MOUSE_WHEEL_UP || Event.m_Key == KEY_MOUSE_WHEEL_DOWN;
 	if(g_Config.m_QmChatHistoryScroll && !LanguageMenuOpen && (Event.m_Flags & IInput::FLAG_PRESS) && IsWheelEvent)
 	{
@@ -1807,7 +1828,8 @@ void CChat::OnPrepareLines(float y)
 
 	const bool IsScoreBoardOpen = GameClient()->m_Scoreboard.IsActive();
 	const bool ShowLargeArea = m_Show || (m_Mode != MODE_NONE && g_Config.m_ClShowChat == 1) || g_Config.m_ClShowChat == 2;
-	const bool ForceRecreate = IsScoreBoardOpen != m_PrevScoreBoardShowed || ShowLargeArea != m_PrevShowChat;
+	const bool ChatSelectionActive = g_Config.m_QmChatClickCopy != 0 && (m_MouseIsPress || m_HasSelection || m_WantsSelectionCopy);
+	const bool ForceRecreate = IsScoreBoardOpen != m_PrevScoreBoardShowed || ShowLargeArea != m_PrevShowChat || ChatSelectionActive;
 	m_PrevScoreBoardShowed = IsScoreBoardOpen;
 	m_PrevShowChat = ShowLargeArea;
 	const int64_t VisibleTimeNoFocusTicks = static_cast<int64_t>(CHAT_VISIBLE_SECONDS_NO_FOCUS * time_freq());
@@ -1857,6 +1879,9 @@ void CChat::OnPrepareLines(float y)
 
 		TextRender()->DeleteTextContainer(Line.m_TextContainerIndex);
 		Graphics()->DeleteQuadContainer(Line.m_QuadContainerIndex);
+		Line.m_SelectionStart = -1;
+		Line.m_SelectionEnd = -1;
+		Line.m_aSelectedText[0] = '\0';
 
 		char aClientId[16] = "";
 		if(g_Config.m_ClShowIds && Line.m_ClientId >= 0 && Line.m_aName[0] != '\0' && !GameClient()->ShouldHideStreamerIdentity(Line.m_ClientId))
@@ -2095,6 +2120,12 @@ void CChat::OnPrepareLines(float y)
 			AppendCursor.m_StartX = LineCursor.m_X;
 			AppendCursor.m_LineWidth -= LineCursor.m_LongestLineWidth;
 		}
+		if(ChatSelectionActive && !m_Input.HasSelection())
+		{
+			AppendCursor.m_CalculateSelectionMode = TEXT_CURSOR_SELECTION_MODE_CALCULATE;
+			AppendCursor.m_PressMouse = m_MousePress;
+			AppendCursor.m_ReleaseMouse = m_MouseRelease;
+		}
 
 		if(pTranslatedText)
 		{
@@ -2148,6 +2179,22 @@ void CChat::OnPrepareLines(float y)
 			ColoredParts.AddSplitsToCursor(AppendCursor);
 			TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &AppendCursor, pText);
 			AppendCursor.m_vColorSplits.clear();
+		}
+
+		if(ChatSelectionActive && AppendCursor.m_SelectionStart >= 0 && AppendCursor.m_SelectionEnd >= 0 && AppendCursor.m_SelectionStart != AppendCursor.m_SelectionEnd)
+		{
+			Line.m_SelectionStart = AppendCursor.m_SelectionStart;
+			Line.m_SelectionEnd = AppendCursor.m_SelectionEnd;
+			const int SelectionMin = minimum(Line.m_SelectionStart, Line.m_SelectionEnd);
+			const int SelectionMax = maximum(Line.m_SelectionStart, Line.m_SelectionEnd);
+			const size_t OffUTF8Start = str_utf8_offset_chars_to_bytes(pText, SelectionMin);
+			const size_t OffUTF8End = str_utf8_offset_chars_to_bytes(pText, SelectionMax);
+			if(OffUTF8End > OffUTF8Start)
+			{
+				const size_t CopyLength = minimum(OffUTF8End - OffUTF8Start, sizeof(Line.m_aSelectedText) - 1);
+				mem_copy(Line.m_aSelectedText, pText + OffUTF8Start, CopyLength);
+				Line.m_aSelectedText[CopyLength] = '\0';
+			}
 		}
 
 		if(!g_Config.m_ClChatOld && (Line.m_aText[0] != '\0' || Line.m_aName[0] != '\0'))
@@ -2243,6 +2290,8 @@ void CChat::OnRender()
 	const float CommandPreviewMaxWidth = maximum(1.0f, InputLineWidth - InputPrefixWidth - TranslateButtonSize - TranslateButtonGap);
 	char aCommandPreview[MAX_LINE_LENGTH];
 	const bool HasCommandPreview = m_Mode != MODE_NONE && BuildCommandUsagePreview(m_Input.GetString(), aCommandPreview, sizeof(aCommandPreview));
+	CUIRect InputBlockRect = {};
+	bool InputBlockRectValid = false;
 	if(HasCommandPreview)
 	{
 		const STextBoundingBox PreviewBoundingBox = TextRender()->TextBoundingBox(CommandPreviewFontSize, aCommandPreview, -1, CommandPreviewMaxWidth);
@@ -2267,6 +2316,8 @@ void CChat::OnRender()
 		// 计算翻译按钮大小并调整输入框宽度
 		const float MessageMaxWidth = InputCursor.m_LineWidth - (InputCursor.m_X - InputCursor.m_StartX) - TranslateButtonSize - TranslateButtonGap;
 		const CUIRect ClippingRect = {InputCursor.m_X, InputCursor.m_Y, MessageMaxWidth, 2.25f * InputCursor.m_FontSize};
+		InputBlockRect = {x, ClippingRect.y, ChatRect.w - x, ClippingRect.h};
+		InputBlockRectValid = true;
 		ExtendBounds(x, InputCursor.m_Y, ChatRect.w - x, ClippingRect.h);
 		const float XScale = Graphics()->ScreenWidth() / Width;
 		const float YScale = Graphics()->ScreenHeight() / Height;
@@ -2421,6 +2472,56 @@ void CChat::OnRender()
 		m_ScrollbarDragging = false;
 	}
 
+	const bool LanguageMenuOpen = m_LanguageMenuOpen || Ui()->IsPopupOpen(&m_LanguagePopupContext);
+	const vec2 MousePos = GetChatMousePos();
+	const bool MouseDown = Input()->KeyIsPressed(KEY_MOUSE_1);
+	const bool InsideInputBlock =
+		InputBlockRectValid &&
+		MousePos.x >= InputBlockRect.x &&
+		MousePos.x <= InputBlockRect.x + InputBlockRect.w &&
+		MousePos.y >= InputBlockRect.y &&
+		MousePos.y <= InputBlockRect.y + InputBlockRect.h;
+	const bool InsideTranslateButton =
+		m_TranslateButton.m_RectValid &&
+		MousePos.x >= m_TranslateButton.m_X &&
+		MousePos.x <= m_TranslateButton.m_X + m_TranslateButton.m_W &&
+		MousePos.y >= m_TranslateButton.m_Y &&
+		MousePos.y <= m_TranslateButton.m_Y + m_TranslateButton.m_H;
+	const bool InsideScrollbar =
+		ShowChatScrollbar &&
+		MousePos.x >= ScrollbarRect.x &&
+		MousePos.x <= ScrollbarRect.x + ScrollbarRect.w &&
+		MousePos.y >= ScrollbarRect.y &&
+		MousePos.y <= ScrollbarRect.y + ScrollbarRect.h;
+	const bool ChatCopyActive = g_Config.m_QmChatClickCopy != 0 && m_Mode != MODE_NONE && !LanguageMenuOpen && !InsideInputBlock && !InsideTranslateButton && !InsideScrollbar && !m_ScrollbarDragging;
+	const bool CopyClickReleased = m_MouseIsPress && !MouseDown && IsCopyClickDrag(m_MousePress, MousePos);
+	if(ChatCopyActive)
+	{
+		if(!m_MouseIsPress && MouseDown)
+		{
+			m_MouseIsPress = true;
+			m_MousePress = MousePos;
+			m_MouseRelease = MousePos;
+			m_HasSelection = false;
+			RebuildChat();
+		}
+		else if(m_MouseIsPress && MouseDown)
+		{
+			m_MouseRelease = MousePos;
+			RebuildChat();
+		}
+		else if(m_MouseIsPress)
+		{
+			m_MouseIsPress = false;
+			m_MouseRelease = MousePos;
+			RebuildChat();
+		}
+	}
+	else if(!MouseDown)
+	{
+		m_MouseIsPress = false;
+	}
+
 	OnPrepareLines(y);
 
 	int64_t Now = time();
@@ -2432,6 +2533,9 @@ void CChat::OnRender()
 	const int64_t VisibleTimeNoFocusTicks = static_cast<int64_t>(CHAT_VISIBLE_SECONDS_NO_FOCUS * time_freq());
 
 	bool RenderedAnyLines = false;
+	bool HasChatSelection = false;
+	std::string SelectionString;
+	const CLine *pClickedLine = nullptr;
 
 	// Keep chat rendering static and only smooth the overflow cut-off.
 	for(int i = m_BacklogCurLine; i < MAX_LINES; i++)
@@ -2449,6 +2553,9 @@ void CChat::OnRender()
 		const float LineHeight = LineHeightValid ? Line.m_aYOffset[OffsetType] : FontSize() + RealMsgPaddingY;
 
 		y -= LineHeight;
+		Line.m_RenderedTextRect = {x, y, ChatRect.w - x, LineHeight};
+		if(CopyClickReleased && MousePos.x >= Line.m_RenderedTextRect.x && MousePos.x <= Line.m_RenderedTextRect.x + Line.m_RenderedTextRect.w && MousePos.y >= Line.m_RenderedTextRect.y && MousePos.y <= Line.m_RenderedTextRect.y + Line.m_RenderedTextRect.h)
+			pClickedLine = &Line;
 
 		// Don't abort the full render pass on a single malformed line.
 		if(!LineHeightValid)
@@ -2508,6 +2615,28 @@ void CChat::OnRender()
 			const ColorRGBA TextOutlineColor = DefaultTextOutlineColor.WithMultipliedAlpha(AnimAlpha);
 			TextRender()->RenderTextContainer(Line.m_TextContainerIndex, TextColor, TextOutlineColor, AnimOffsetX, (y + RealMsgPaddingY / 2.0f) - Line.m_TextYOffset);
 		}
+
+		if(Line.m_SelectionStart >= 0 && Line.m_SelectionEnd >= 0 && Line.m_SelectionStart != Line.m_SelectionEnd && Line.m_aSelectedText[0] != '\0')
+		{
+			HasChatSelection = true;
+			if(m_WantsSelectionCopy)
+			{
+				const bool HasNewLine = !SelectionString.empty();
+				SelectionString.insert(0, std::string(Line.m_aSelectedText) + (HasNewLine ? "\n" : ""));
+			}
+		}
+	}
+
+	m_HasSelection = HasChatSelection && !m_Input.HasSelection();
+	if(m_WantsSelectionCopy)
+	{
+		if(!SelectionString.empty())
+			Input()->SetClipboardText(SelectionString.c_str());
+		m_WantsSelectionCopy = false;
+	}
+	else if(CopyClickReleased && !m_HasSelection && pClickedLine != nullptr && pClickedLine->m_aText[0] != '\0')
+	{
+		Input()->SetClipboardText(pClickedLine->m_aText);
 	}
 
 	if(ShowChatScrollbar)

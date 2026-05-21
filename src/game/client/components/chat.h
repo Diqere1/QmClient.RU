@@ -70,6 +70,10 @@ class CChat : public CComponent
 
 		STextContainerIndex m_TextContainerIndex;
 		int m_QuadContainerIndex;
+		int m_SelectionStart;
+		int m_SelectionEnd;
+		char m_aSelectedText[MAX_LINE_LENGTH];
+		CUIRect m_RenderedTextRect;
 
 		std::shared_ptr<CManagedTeeRenderInfo> m_pManagedTeeRenderInfo;
 
@@ -94,6 +98,11 @@ class CChat : public CComponent
 	bool m_ScrollbarDragging;
 	float m_ScrollbarDragOffset;
 	std::optional<vec2> m_LastMousePos;
+	bool m_MouseIsPress;
+	vec2 m_MousePress;
+	vec2 m_MouseRelease;
+	bool m_HasSelection;
+	bool m_WantsSelectionCopy;
 
 	enum
 	{
