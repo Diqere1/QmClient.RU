@@ -2456,7 +2456,7 @@ void CGameConsole::OnRender()
 		pConsole->m_BacklogCurLine = std::clamp(pConsole->m_BacklogCurLine, 0, MaxScroll);
 		if(pConsole->m_BacklogLastActiveLine >= 0)
 			pConsole->m_BacklogLastActiveLine = std::clamp(pConsole->m_BacklogLastActiveLine, 0, MaxScroll);
-		const bool ShowConsoleScrollbar = g_Config.m_QmConsoleScrollbar != 0 && MaxScroll > 0 && LogHeight > 0.0f;
+		const bool ShowConsoleScrollbar = MaxScroll > 0 && LogHeight > 0.0f;
 		const float LogTextRightInset = ShowConsoleScrollbar ? CONSOLE_SCROLLBAR_WIDTH + CONSOLE_SCROLLBAR_MARGIN : 0.0f;
 		if(ShowConsoleScrollbar)
 		{

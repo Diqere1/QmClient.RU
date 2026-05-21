@@ -953,7 +953,7 @@ bool CChat::OnInput(const IInput::CEvent &Event)
 		return false;
 
 	const bool LanguageMenuOpen = m_LanguageMenuOpen || Ui()->IsPopupOpen(&m_LanguagePopupContext);
-	if(g_Config.m_QmChatClickCopy && !LanguageMenuOpen && (Event.m_Flags & IInput::FLAG_PRESS) && Input()->ModifierIsPressed() && Event.m_Key == KEY_C && !m_Input.HasSelection() && m_HasSelection)
+	if(!LanguageMenuOpen && (Event.m_Flags & IInput::FLAG_PRESS) && Input()->ModifierIsPressed() && Event.m_Key == KEY_C && !m_Input.HasSelection() && m_HasSelection)
 	{
 		m_WantsSelectionCopy = true;
 		RebuildChat();
@@ -961,7 +961,7 @@ bool CChat::OnInput(const IInput::CEvent &Event)
 	}
 
 	const bool IsWheelEvent = Event.m_Key == KEY_MOUSE_WHEEL_UP || Event.m_Key == KEY_MOUSE_WHEEL_DOWN;
-	if(g_Config.m_QmChatHistoryScroll && !LanguageMenuOpen && (Event.m_Flags & IInput::FLAG_PRESS) && IsWheelEvent)
+	if(!LanguageMenuOpen && (Event.m_Flags & IInput::FLAG_PRESS) && IsWheelEvent)
 	{
 		const int TotalLines = CountInitializedLines();
 		const int Direction = Event.m_Key == KEY_MOUSE_WHEEL_UP ? 1 : -1;
@@ -1828,7 +1828,7 @@ void CChat::OnPrepareLines(float y)
 
 	const bool IsScoreBoardOpen = GameClient()->m_Scoreboard.IsActive();
 	const bool ShowLargeArea = m_Show || (m_Mode != MODE_NONE && g_Config.m_ClShowChat == 1) || g_Config.m_ClShowChat == 2;
-	const bool ChatSelectionActive = g_Config.m_QmChatClickCopy != 0 && (m_MouseIsPress || m_HasSelection || m_WantsSelectionCopy);
+	const bool ChatSelectionActive = m_MouseIsPress || m_HasSelection || m_WantsSelectionCopy;
 	const bool ForceRecreate = IsScoreBoardOpen != m_PrevScoreBoardShowed || ShowLargeArea != m_PrevShowChat || ChatSelectionActive;
 	m_PrevScoreBoardShowed = IsScoreBoardOpen;
 	m_PrevShowChat = ShowLargeArea;
@@ -2425,7 +2425,7 @@ void CChat::OnRender()
 	const int MaxScroll = maximum(0, TotalVisibleLines - VisibleLineCapacity);
 	m_BacklogCurLine = ClampBacklogLine(m_BacklogCurLine, TotalVisibleLines, VisibleLineCapacity);
 
-	const bool ShowChatScrollbar = g_Config.m_QmChatHistoryScrollbar != 0 && MaxScroll > 0 && HistoryHeight > 0.0f;
+	const bool ShowChatScrollbar = MaxScroll > 0 && HistoryHeight > 0.0f;
 	CUIRect ScrollbarRect = {ChatRect.w - CHAT_SCROLLBAR_WIDTH - CHAT_SCROLLBAR_MARGIN, HeightLimit, CHAT_SCROLLBAR_WIDTH, HistoryHeight};
 	float ScrollbarHandleY = ScrollbarRect.y;
 	float ScrollbarHandleH = ScrollbarRect.h;
@@ -2493,7 +2493,7 @@ void CChat::OnRender()
 		MousePos.x <= ScrollbarRect.x + ScrollbarRect.w &&
 		MousePos.y >= ScrollbarRect.y &&
 		MousePos.y <= ScrollbarRect.y + ScrollbarRect.h;
-	const bool ChatCopyActive = g_Config.m_QmChatClickCopy != 0 && m_Mode != MODE_NONE && !LanguageMenuOpen && !InsideInputBlock && !InsideTranslateButton && !InsideScrollbar && !m_ScrollbarDragging;
+	const bool ChatCopyActive = m_Mode != MODE_NONE && !LanguageMenuOpen && !InsideInputBlock && !InsideTranslateButton && !InsideScrollbar && !m_ScrollbarDragging;
 	const bool CopyClickReleased = m_MouseIsPress && !MouseDown && IsCopyClickDrag(m_MousePress, MousePos);
 	if(ChatCopyActive)
 	{

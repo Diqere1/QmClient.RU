@@ -3404,22 +3404,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmChatHistoryScroll, Localize("鼠标滚轮浏览聊天历史"), &g_Config.m_QmChatHistoryScroll, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmChatHistoryScrollbar, Localize("聊天历史显示右侧滚动条"), &g_Config.m_QmChatHistoryScrollbar, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmChatClickCopy, Localize("点击聊天复制，拖选后 Ctrl+C 复制"), &g_Config.m_QmChatClickCopy, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmConsoleScrollbar, Localize("F1 控制台显示右侧滚动条"), &g_Config.m_QmConsoleScrollbar, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHammerSwapSkin, Localize("锤中偷皮"), &g_Config.m_QmHammerSwapSkin, &Row, LgLineHeight);
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 

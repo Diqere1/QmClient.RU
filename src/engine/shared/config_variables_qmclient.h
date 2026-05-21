@@ -135,12 +135,6 @@ MACRO_CONFIG_INT(QmHudNotificationsHoldMs, qm_hud_notifications_hold_ms, 2500, 5
 MACRO_CONFIG_INT(QmHudNotificationsAnimType, qm_hud_notifications_anim_type, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "通知栏动画类型（0=淡入滑入 1=仅淡入 2=无动画）")
 MACRO_CONFIG_INT(QmHudNotificationsAnimMs, qm_hud_notifications_anim_ms, 220, 0, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "通知栏动画时间（毫秒）")
 MACRO_CONFIG_INT(QmHudNotificationsMaxVisible, qm_hud_notifications_max_visible, 3, 1, 8, CFGFLAG_CLIENT | CFGFLAG_SAVE, "通知栏最大显示数量")
-
-// Chat and console interactions / 聊天与控制台交互
-MACRO_CONFIG_INT(QmChatHistoryScroll, qm_chat_history_scroll, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用聊天历史滚动")
-MACRO_CONFIG_INT(QmChatHistoryScrollbar, qm_chat_history_scrollbar, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示聊天历史滚动条")
-MACRO_CONFIG_INT(QmChatClickCopy, qm_chat_click_copy, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "点击或选择复制聊天消息")
-MACRO_CONFIG_INT(QmConsoleScrollbar, qm_console_scrollbar, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示 F1 控制台滚动条")
 MACRO_CONFIG_INT(QmMonitoringHudOpacity, qm_monitoring_hud_opacity, 66, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "调试图表面板不透明度（百分比）")
 
 // Voice / 语音
