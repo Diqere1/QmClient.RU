@@ -963,6 +963,7 @@ CGameConsole::CInstance::CInstance(int Type)
 		if(pEntry->m_LineCount != -1 && MatchesLogFilter(pEntry))
 		{
 			m_NewLineCounter -= pEntry->m_LineCount;
+			InvalidateTotalBacklogLines();
 			for(auto &SearchMatch : m_vSearchMatches)
 			{
 				SearchMatch.m_StartLine += pEntry->m_LineCount;
@@ -1000,6 +1001,7 @@ void CGameConsole::CInstance::ClearBacklog()
 	m_BacklogLastActiveLine = -1;
 	m_ScrollbarDragging = false;
 	m_ScrollbarDragOffset = 0.0f;
+	InvalidateTotalBacklogLines();
 	m_ChatExportAnchorId = -1;
 	m_ChatExportMode = false;
 	ClearSearch();
@@ -1012,6 +1014,7 @@ void CGameConsole::CInstance::UpdateBacklogTextAttributes()
 	{
 		UpdateEntryTextAttributes(pEntry);
 	}
+	InvalidateTotalBacklogLines();
 }
 
 void CGameConsole::CInstance::PumpBacklogPending()
@@ -1038,7 +1041,10 @@ void CGameConsole::CInstance::PumpBacklogPending()
 		{
 			UpdateEntryTextAttributes(pEntry);
 			if(MatchesLogFilter(pEntry))
+			{
 				m_NewLineCounter += pEntry->m_LineCount;
+				InvalidateTotalBacklogLines();
+			}
 		}
 	}
 }
@@ -1559,6 +1565,7 @@ void CGameConsole::CInstance::SetLogFilter(ELogFilter Filter)
 	m_BacklogCurLine = 0;
 	m_BacklogLastActiveLine = -1;
 	m_NewLineCounter = 0;
+	InvalidateTotalBacklogLines();
 	m_HasSelection = false;
 	m_CurSelStart = 0;
 	m_CurSelEnd = 0;
@@ -1571,13 +1578,24 @@ void CGameConsole::CInstance::SetLogFilter(ELogFilter Filter)
 
 int CGameConsole::CInstance::TotalBacklogLines()
 {
+	if(m_TotalBacklogLinesValid)
+		return m_TotalBacklogLines;
+
 	int TotalLines = 0;
 	for(CBacklogEntry *pEntry = m_Backlog.First(); pEntry; pEntry = m_Backlog.Next(pEntry))
 	{
 		if(pEntry->m_LineCount > 0 && MatchesLogFilter(pEntry))
 			TotalLines += pEntry->m_LineCount;
 	}
-	return TotalLines;
+	m_TotalBacklogLines = TotalLines;
+	m_TotalBacklogLinesValid = true;
+	return m_TotalBacklogLines;
+}
+
+void CGameConsole::CInstance::InvalidateTotalBacklogLines()
+{
+	m_TotalBacklogLines = 0;
+	m_TotalBacklogLinesValid = false;
 }
 
 bool CGameConsole::CInstance::IsChatExportableEntry(const CBacklogEntry *pEntry) const
