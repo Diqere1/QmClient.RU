@@ -2657,6 +2657,9 @@ if(CLIENT)
     components/qmclient/collision_hitbox.h
     components/qmclient/colored_parts.h
     components/qmclient/data_version.h
+    components/qmclient/hud_notification_rules.cpp
+    components/qmclient/hud_notification_rules.h
+    components/qmclient/hud_notification_static_rules.h
     components/qmclient/hud_notifications.cpp
     components/qmclient/hud_notifications.h
     components/qmclient/input_overlay.cpp
@@ -3462,6 +3465,9 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
+    src/generated/client_data.h
+    src/generated/client_data7.h
+    src/game/client/components/qmclient/hud_notification_rules.cpp
     src/game/client/components/qmclient/modes.cpp
     src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp

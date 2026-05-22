@@ -1,5 +1,4 @@
 #include "hud_notifications.h"
-
 #include <base/color.h>
 #include <base/system.h>
 
@@ -106,36 +105,24 @@ void CQmHudNotifications::OnRender()
 	Graphics()->MapScreen(SavedScreenX0, SavedScreenY0, SavedScreenX1, SavedScreenY1);
 }
 
-bool CQmHudNotifications::QueueEcho(const char *pMessage)
+bool CQmHudNotifications::QueueEcho(const char *pMessage, unsigned EchoColor)
 {
 	if(!g_Config.m_QmHudNotificationsEcho)
 		return false;
 	if(pMessage == nullptr || pMessage[0] == '\0')
 		return false;
-	Queue(EKind::Echo, pMessage);
+
+	// 队列里只保存已经解析好的文本和颜色，渲染阶段不再依赖后续配置状态。
+	const QmHudNotifications::SEchoNotificationPayload Payload = QmHudNotifications::BuildEchoNotificationPayload(pMessage, EchoColor);
+	if(Payload.m_aText[0] == '\0')
+		return false;
+	Queue(EKind::Echo, Payload.m_aText, Payload.m_Color, true);
 	return true;
 }
 
 bool CQmHudNotifications::ShouldSuppressServerChat(const char *pMessage)
 {
-	if(g_Config.m_QmHudNotificationsCompatSolo && m_PendingCompatPrompt != QmHudNotifications::ESoloPrompt::None && time_get() > m_PendingCompatUntil)
-	{
-		m_PendingCompatPrompt = QmHudNotifications::ESoloPrompt::None;
-	}
-
-	const QmHudNotifications::EServerMessageRoute Route = QmHudNotifications::ServerMessageRoute(pMessage, m_PendingCompatPrompt, g_Config.m_QmHudNotificationsSystem != 0);
-	if(Route == QmHudNotifications::EServerMessageRoute::Solo)
-	{
-		m_PendingCompatPrompt = QmHudNotifications::ESoloPrompt::None;
-		QueueSolo(QmHudNotifications::MatchKnownSoloPrompt(pMessage));
-		return true;
-	}
-	if(Route == QmHudNotifications::EServerMessageRoute::System)
-	{
-		Queue(EKind::System, pMessage);
-		return true;
-	}
-	return false;
+	return HandleServerChat(pMessage, g_Config.m_QmHudNotificationsSystem != 0, false, false);
 }
 
 bool CQmHudNotifications::ShouldConsumeHiddenServerChat(const char *pMessage, bool HideBasicInfo, bool HidePrompt)
@@ -143,42 +130,13 @@ bool CQmHudNotifications::ShouldConsumeHiddenServerChat(const char *pMessage, bo
 	if(!HideBasicInfo && !HidePrompt)
 		return false;
 	if(g_Config.m_QmHudNotificationsCompatSolo && m_PendingCompatPrompt != QmHudNotifications::ESoloPrompt::None && time_get() > m_PendingCompatUntil)
-	{
 		m_PendingCompatPrompt = QmHudNotifications::ESoloPrompt::None;
-	}
 
-	const QmHudNotifications::EServerMessageClass MessageClass = QmHudNotifications::ServerMessageClass(pMessage, m_PendingCompatPrompt);
-	if(MessageClass == QmHudNotifications::EServerMessageClass::BasicInfo)
-		return HideBasicInfo;
-	if(MessageClass == QmHudNotifications::EServerMessageClass::Prompt && HidePrompt)
-	{
-		if(QmHudNotifications::ShouldSuppressSoloChatMessage(pMessage, m_PendingCompatPrompt))
-			m_PendingCompatPrompt = QmHudNotifications::ESoloPrompt::None;
-		return true;
-	}
-	return false;
-}
-
-void CQmHudNotifications::Queue(EKind Kind, const char *pText)
-{
-	if(pText == nullptr || pText[0] == '\0')
-		return;
-
-	SNotification Notification;
-	Notification.m_Kind = Kind;
-	str_copy(Notification.m_aText, pText);
-	Notification.m_StartTime = time_get();
-	m_vNotifications.push_back(Notification);
-	while((int)m_vNotifications.size() > QmHudNotifications::ClampVisibleCount(g_Config.m_QmHudNotificationsMaxVisible))
-		m_vNotifications.pop_front();
-}
-
-void CQmHudNotifications::QueueSolo(QmHudNotifications::ESoloPrompt Prompt)
-{
-	if(Prompt == QmHudNotifications::ESoloPrompt::Enter)
-		Queue(EKind::SoloEnter, Localize("你现在处于单人区域"));
-	else if(Prompt == QmHudNotifications::ESoloPrompt::Leave)
-		Queue(EKind::SoloLeave, Localize("你现在已离开单人区域"));
+	const QmHudNotifications::SServerMessageAnalysis Analysis = QmHudNotifications::AnalyzeServerMessage(pMessage, m_PendingCompatPrompt);
+	const QmHudNotifications::SServerMessageEntryDecision Decision = QmHudNotifications::DecideServerMessageEntry(Analysis, g_Config.m_QmHudNotificationsSystem != 0, HideBasicInfo, HidePrompt);
+	if(Decision.m_ClearPendingCompatPrompt)
+		m_PendingCompatPrompt = QmHudNotifications::ESoloPrompt::None;
+	return Decision.m_ConsumeHiddenMessage;
 }
 
 bool CQmHudNotifications::LocalSoloState(bool &Solo) const
@@ -253,7 +211,8 @@ void CQmHudNotifications::RenderNotifications(const CUIRect &BaseRect, bool Prev
 		Box.Draw(ApplyAlpha(BgColor, Alpha), IGraphics::CORNER_ALL, CornerRadius);
 
 		const QmHudNotifications::ETextSource TextSource = Notification.m_Kind == EKind::Echo ? QmHudNotifications::ETextSource::Echo : QmHudNotifications::ETextSource::System;
-		const QmHudNotifications::STextColorConfig TextColorConfig = QmHudNotifications::TextColorConfig(TextSource, g_Config.m_QmHudNotificationsEchoInheritColor, g_Config.m_QmHudNotificationsTextColor, g_Config.m_QmHudNotificationsEchoTextColor, g_Config.m_ClMessageClientColor);
+		const unsigned EchoColor = Notification.m_HasEchoColor ? Notification.m_EchoColor : g_Config.m_ClMessageClientColor;
+		const QmHudNotifications::STextColorConfig TextColorConfig = QmHudNotifications::TextColorConfig(TextSource, g_Config.m_QmHudNotificationsEchoInheritColor, g_Config.m_QmHudNotificationsTextColor, g_Config.m_QmHudNotificationsEchoTextColor, EchoColor);
 		const ColorRGBA TextColor = color_cast<ColorRGBA>(ColorHSLA(TextColorConfig.m_Color, TextColorConfig.m_HasAlpha));
 		TextRender()->TextColor(ApplyAlpha(TextColor, Alpha));
 		TextRender()->Text(Box.x + PaddingX, Box.y + PaddingY, FontSize, Notification.m_aText, TextMaxWidth);

@@ -280,6 +280,51 @@ Hide Visual Effects
 HUD
 == HUD
 
+HUD notifications
+== HUD 通知
+
+System message toasts
+== 系统消息提示
+
+Show solo prompts as HUD notifications
+== 将 solo 提示显示为 HUD 通知
+
+Show echo messages as HUD notifications
+== 将 echo 消息显示为 HUD 通知
+
+Compat custom server solo prompts
+== 兼容自定义服务器 solo 提示
+
+Notification background
+== 通知背景
+
+Notification text
+== 通知文字
+
+Text size
+== 文字大小
+
+Hold time
+== 停留时间
+
+Animation
+== 动画
+
+Fade and slide
+== 淡入并滑入
+
+Fade only
+== 仅淡入
+
+No animation
+== 无动画
+
+Animation time
+== 动画时间
+
+Max visible
+== 最大显示数量
+
 Player country:
 == 玩家国家 / 地区：
 
@@ -3020,6 +3065,9 @@ Puts you into freeze
 Puts you into solo part
 == 使你进入 solo 状态
 
+You are now in a solo part
+== 你现在处于单人区域
+
 Puts you out of deep freeze
 == 让你摆脱深度冰冻
 
@@ -3031,6 +3079,9 @@ Puts you out of live freeze
 
 Puts you out of solo part
 == 使你退出 solo 状态
+
+You are now out of the solo part
+== 你现在已离开单人区域
 
 Quit the client
 == 退出客户端

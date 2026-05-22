@@ -23,3 +23,21 @@ TEST(QmChatInteractions, ClickDragThreshold)
 	EXPECT_TRUE(CChat::IsCopyClickDrag(vec2(10.0f, 10.0f), vec2(12.0f, 12.0f)));
 	EXPECT_FALSE(CChat::IsCopyClickDrag(vec2(10.0f, 10.0f), vec2(30.0f, 10.0f)));
 }
+
+TEST(QmChatInteractions, ReusesKnownServerMessageClassWithoutReanalysis)
+{
+	const auto Class = CChat::ResolveLineServerMessageClass(-1, "DDraceNetwork Version: 18.9", QmHudNotifications::EServerMessageClass::Prompt);
+	EXPECT_EQ(Class, QmHudNotifications::EServerMessageClass::Prompt);
+}
+
+TEST(QmChatInteractions, FallsBackToLegacyServerMessageClassificationWhenUnknown)
+{
+	const auto Class = CChat::ResolveLineServerMessageClass(-1, "DDraceNetwork Version: 18.9");
+	EXPECT_EQ(Class, QmHudNotifications::EServerMessageClass::BasicInfo);
+}
+
+TEST(QmChatInteractions, IgnoresKnownServerClassForNonServerMessages)
+{
+	const auto Class = CChat::ResolveLineServerMessageClass(3, "DDraceNetwork Version: 18.9", QmHudNotifications::EServerMessageClass::Prompt);
+	EXPECT_EQ(Class, QmHudNotifications::EServerMessageClass::None);
+}

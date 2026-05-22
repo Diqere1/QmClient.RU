@@ -896,11 +896,12 @@ void CChat::ConchainChatWidth(IConsole::IResult *pResult, void *pUserData, ICons
 void CChat::Echo(const char *pString)
 {
 	const bool FocusHideEcho = g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideEcho;
-	if(!FocusHideEcho && GameClient()->m_QmHudNotifications.QueueEcho(pString))
+	const unsigned EchoColor = g_Config.m_ClMessageClientColor;
+	if(!FocusHideEcho && GameClient()->m_QmHudNotifications.QueueEcho(pString, EchoColor))
 	{
 		char aBuf[1024];
 		str_format(aBuf, sizeof(aBuf), "— %s", pString);
-		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "chat/client", aBuf, color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor)));
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "chat/client", aBuf, color_cast<ColorRGBA>(ColorHSLA(EchoColor)));
 		return;
 	}
 	AddLine(CLIENT_MSG, 0, pString);
@@ -909,11 +910,12 @@ void CChat::Echo(const char *pString)
 void CChat::Echo(const char *pString, bool ForceVisible)
 {
 	const bool FocusHideEcho = g_Config.m_QmFocusMode != 0 && g_Config.m_QmFocusModeHideEcho && !ForceVisible;
-	if(!FocusHideEcho && GameClient()->m_QmHudNotifications.QueueEcho(pString))
+	const unsigned EchoColor = g_Config.m_ClMessageClientColor;
+	if(!FocusHideEcho && GameClient()->m_QmHudNotifications.QueueEcho(pString, EchoColor))
 	{
 		char aBuf[1024];
 		str_format(aBuf, sizeof(aBuf), "— %s", pString);
-		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "chat/client", aBuf, color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor)));
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "chat/client", aBuf, color_cast<ColorRGBA>(ColorHSLA(EchoColor)));
 		return;
 	}
 	AddLine(CLIENT_MSG, 0, pString, ForceVisible);
@@ -1372,31 +1374,18 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 			const bool FocusModeActive = g_Config.m_QmFocusMode != 0;
 			const bool FocusHideSystemInfoMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemInfoMessages;
 			const bool FocusHideSystemPromptMessages = FocusModeActive && g_Config.m_QmFocusModeHideSystemMessages;
-			if(GameClient()->m_QmHudNotifications.ShouldConsumeHiddenServerChat(pMsg->m_pMessage, FocusHideSystemInfoMessages, FocusHideSystemPromptMessages))
+			QmHudNotifications::SServerMessageAnalysis ServerMessageAnalysis;
+			if(GameClient()->m_QmHudNotifications.HandleServerChat(pMsg->m_pMessage, g_Config.m_QmHudNotificationsSystem != 0, FocusHideSystemInfoMessages, FocusHideSystemPromptMessages, &ServerMessageAnalysis))
 			{
 				PrintSuppressedServerMessage();
 				return;
 			}
-			if(GameClient()->m_QmHudNotifications.ShouldSuppressServerChat(pMsg->m_pMessage))
-			{
-				PrintSuppressedServerMessage();
-				return;
-			}
-		}
-
-		/*
-		if(g_Config.m_ClCensorChat)
-		{
-			char aMessage[MAX_LINE_LENGTH];
-			str_copy(aMessage, pMsg->m_pMessage);
-			GameClient()->m_Censor.CensorMessage(aMessage);
-			AddLine(pMsg->m_ClientId, pMsg->m_Team, aMessage);
+			AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage, false, ServerMessageAnalysis.m_Class);
 		}
 		else
+		{
 			AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
-		*/
-
-		AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
+		}
 
 		if(Client()->State() != IClient::STATE_DEMOPLAYBACK &&
 			pMsg->m_ClientId == SERVER_MSG)
@@ -1488,6 +1477,11 @@ void CChat::StoreSave(const char *pText)
 }
 
 void CChat::AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible)
+{
+	AddLine(ClientId, Team, pLine, ForceVisible, std::nullopt);
+}
+
+void CChat::AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible, std::optional<QmHudNotifications::EServerMessageClass> KnownServerMessageClass)
 {
 	if(*pLine == 0 ||
 		(ClientId == SERVER_MSG && !g_Config.m_ClShowChatSystem) ||
@@ -1680,7 +1674,7 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible
 	CurrentLine.m_Highlighted = Highlighted;
 
 	str_copy(CurrentLine.m_aText, pLine);
-	CurrentLine.m_ServerMessageClass = ClientId == SERVER_MSG ? QmHudNotifications::ServerMessageClass(CurrentLine.m_aText, QmHudNotifications::ESoloPrompt::None) : QmHudNotifications::EServerMessageClass::None;
+	CurrentLine.m_ServerMessageClass = ResolveLineServerMessageClass(ClientId, CurrentLine.m_aText, KnownServerMessageClass);
 
 	if(CurrentLine.m_ClientId == SERVER_MSG)
 	{

@@ -2123,7 +2123,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::SpeedrunTimer: return "速通计时器 sutong jishiqi speedrun timer 倒计时 daojishi 倒数 daoshu 小时 xiaoshi 分钟 fenzhong 秒 miao 毫秒 haomiao 自动关闭 zidong guanbi";
 		case EQmModuleId::DebugGraph: return "调试图表 tiaoshi tubiao debug graph monitoring hud 不透明度 touming 透明度 面板 mianban 快捷键 kuaijiejian 按键 anjian";
 		case EQmModuleId::InputOverlay: return "按键显示 anjian xianshi input overlay 按键叠加 anjian diejia 大小 daxiao 不透明度 butouming 水平位置 shuiping weizhi 垂直位置 chuizhi weizhi";
-		case EQmModuleId::HudNotifications: return "通知栏 tongzhi lan notification toast solo echo 系统消息 xitong xiaoxi 右侧 youce 动画 donghua 背景 beijing 文字 wenzi";
+		case EQmModuleId::HudNotifications: return "通知栏 tongzhi lan notification toast echo 系统提示 xitong tishi 黑名单 heimingdan 右侧 youce 动画 donghua 背景 beijing 文字 wenzi";
 		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo";
 		case EQmModuleId::DynamicIsland: return "灵动岛 lld lingdongdao dynamic island hud 顶部 dingbu 背景 beijing 颜色 yanse 透明度 touming 黑底 heidi 原版 yuanban 默认 moren classic old style";
 		case EQmModuleId::SystemMediaControls: return "系统媒体控制 xitong meiti kongzhi smtc media controls 启用系统媒体 qiyong 显示歌曲信息 gequ xinxi 上一个 shangyige 播放暂停 bofang zanting 下一个 xiayige";
@@ -5651,16 +5651,16 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Column.HSplitTop(LgCardPadding, nullptr, &Column);
 				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
 				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
-				DoModuleHeadline(CardContent, 11, Localize("通知栏"), Localize("把重要提示移到右侧弹出显示"));
+				DoModuleHeadline(CardContent, 11, Localize("通知栏"), Localize("把 Echo 和需要关注的系统提示移到右侧弹出显示"));
 
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsSystem, Localize("大多数服务器系统提示移到通知栏"), &g_Config.m_QmHudNotificationsSystem, &Row, LgLineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsSystem, Localize("服务器系统提示改走通知栏（黑名单除外）"), &g_Config.m_QmHudNotificationsSystem, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsEcho, Localize("Echo 消息移到通知栏"), &g_Config.m_QmHudNotificationsEcho, &Row, LgLineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsEcho, Localize("Echo 消息改走通知栏"), &g_Config.m_QmHudNotificationsEcho, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsCompatSolo, Localize("自定义服务器 solo 提示也尝试接管"), &g_Config.m_QmHudNotificationsCompatSolo, &Row, LgLineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsCompatSolo, Localize("其他服务器的类似提示也尝试改走通知栏（例如自定义单人区域提示，按黑名单排除）"), &g_Config.m_QmHudNotificationsCompatSolo, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 				static CButtonContainer s_QmHudNotificationBgColorId;
@@ -5668,10 +5668,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				static CButtonContainer s_QmHudNotificationTextColorId;
 				DoLine_ColorPicker(&s_QmHudNotificationTextColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("系统提示文字颜色"), &g_Config.m_QmHudNotificationsTextColor, ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), false, nullptr, true);
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsEchoInheritColor, Localize("Echo 使用聊天里的 Echo 颜色"), &g_Config.m_QmHudNotificationsEchoInheritColor, &Row, LgLineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudNotificationsEchoInheritColor, Localize("Echo 跟随聊天里当时的实际颜色"), &g_Config.m_QmHudNotificationsEchoInheritColor, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				static CButtonContainer s_QmHudNotificationEchoTextColorId;
-				DoLine_ColorPicker(&s_QmHudNotificationEchoTextColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("Echo 不继承时的文字颜色"), &g_Config.m_QmHudNotificationsEchoTextColor, ColorRGBA(0.5f, 0.78f, 1.0f, 1.0f), false, nullptr, true);
+				DoLine_ColorPicker(&s_QmHudNotificationEchoTextColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("Echo 不跟随聊天颜色时的文字颜色"), &g_Config.m_QmHudNotificationsEchoTextColor, ColorRGBA(0.5f, 0.78f, 1.0f, 1.0f), false, nullptr, true);
 
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 				{

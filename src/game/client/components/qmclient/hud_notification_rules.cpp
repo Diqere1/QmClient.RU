@@ -1,0 +1,845 @@
+#include "hud_notification_rules.h"
+
+#include <game/localization.h>
+
+namespace
+{
+	void SetLocalizedAnalysis(QmHudNotifications::SServerMessageAnalysis &Analysis, QmHudNotifications::EServerMessageRoute Route, QmHudNotifications::EServerMessageClass Class, QmHudNotifications::EServerMessageDomain Domain, const char *pLocalizedText, QmHudNotifications::ESoloPrompt SoloPrompt = QmHudNotifications::ESoloPrompt::None)
+	{
+		Analysis.m_Route = Route;
+		Analysis.m_Class = Class;
+		Analysis.m_Domain = Domain;
+		Analysis.m_SoloPrompt = SoloPrompt;
+		Analysis.m_UseFallbackLocalization = false;
+		if(pLocalizedText != Analysis.m_aLocalizedText)
+			str_copy(Analysis.m_aLocalizedText, pLocalizedText, sizeof(Analysis.m_aLocalizedText));
+	}
+
+	void SetFallbackAnalysis(QmHudNotifications::SServerMessageAnalysis &Analysis)
+	{
+		Analysis.m_Route = QmHudNotifications::EServerMessageRoute::System;
+		Analysis.m_Class = QmHudNotifications::EServerMessageClass::Prompt;
+		Analysis.m_Domain = QmHudNotifications::EServerMessageDomain::Unknown;
+		Analysis.m_SoloPrompt = QmHudNotifications::ESoloPrompt::None;
+		Analysis.m_UseFallbackLocalization = true;
+		Analysis.m_aLocalizedText[0] = '\0';
+	}
+
+	bool ExtractWrappedValue(const char *pMessage, const char *pPrefix, const char *pSuffix, char *pValue, size_t ValueSize)
+	{
+		const int PrefixLen = str_length(pPrefix);
+		const int SuffixLen = str_length(pSuffix);
+		const int MessageLen = str_length(pMessage);
+		if(MessageLen < PrefixLen + SuffixLen)
+			return false;
+		if(str_comp_num(pMessage, pPrefix, PrefixLen) != 0)
+			return false;
+		if(str_comp(pMessage + MessageLen - SuffixLen, pSuffix) != 0)
+			return false;
+		str_truncate(pValue, (int)ValueSize, pMessage + PrefixLen, MessageLen - PrefixLen - SuffixLen);
+		return true;
+	}
+
+	bool ExtractTwoWrappedValues(const char *pMessage, const char *pPrefix, const char *pMiddle, const char *pSuffix, char *pValueA, size_t ValueASize, char *pValueB, size_t ValueBSize)
+	{
+		const int PrefixLen = str_length(pPrefix);
+		const int SuffixLen = str_length(pSuffix);
+		if(str_comp_num(pMessage, pPrefix, PrefixLen) != 0)
+			return false;
+		const char *pMiddlePos = str_find(pMessage + PrefixLen, pMiddle);
+		if(pMiddlePos == nullptr)
+			return false;
+		if(str_comp(pMiddlePos + str_length(pMiddle), pSuffix) == 0)
+			return false;
+		if(!str_endswith(pMessage, pSuffix))
+			return false;
+		str_truncate(pValueA, (int)ValueASize, pMessage + PrefixLen, pMiddlePos - (pMessage + PrefixLen));
+		const char *pValueBStart = pMiddlePos + str_length(pMiddle);
+		str_truncate(pValueB, (int)ValueBSize, pValueBStart, pMessage + str_length(pMessage) - SuffixLen - pValueBStart);
+		return true;
+	}
+
+	bool TryCopyStaticLocalizedNotification(const char *pMessage, char *pBuf, size_t BufSize, QmHudNotifications::EServerMessageDomain &Domain, QmHudNotifications::ESoloPrompt &SoloPrompt)
+	{
+		if(BufSize > 0)
+			pBuf[0] = '\0';
+
+		SoloPrompt = QmHudNotifications::MatchKnownSoloPrompt(pMessage);
+		if(SoloPrompt == QmHudNotifications::ESoloPrompt::Enter)
+		{
+			Domain = QmHudNotifications::EServerMessageDomain::Solo;
+			str_copy(pBuf, Localize("你现在处于单人区域"), BufSize);
+			return true;
+		}
+		if(SoloPrompt == QmHudNotifications::ESoloPrompt::Leave)
+		{
+			Domain = QmHudNotifications::EServerMessageDomain::Solo;
+			str_copy(pBuf, Localize("你现在已离开单人区域"), BufSize);
+			return true;
+		}
+
+#define QM_TRY_FORMAT_STATIC_NOTIFICATION(pDomain, pOriginal, pLocalized) \
+		if(str_comp(pMessage, pOriginal) == 0) \
+		{ \
+			Domain = pDomain; \
+			str_copy(pBuf, Localize(pLocalized), BufSize); \
+			return true; \
+		}
+#define QM_TRY_FORMAT_STATIC_TEAM_NOTIFICATION(pOriginal, pLocalized) \
+		QM_TRY_FORMAT_STATIC_NOTIFICATION(QmHudNotifications::EServerMessageDomain::Team, pOriginal, pLocalized)
+#define QM_TRY_FORMAT_STATIC_SWAP_RESCUE_NOTIFICATION(pOriginal, pLocalized) \
+		QM_TRY_FORMAT_STATIC_NOTIFICATION(QmHudNotifications::EServerMessageDomain::SwapRescue, pOriginal, pLocalized)
+#define QM_TRY_FORMAT_STATIC_VOTE_MODERATION_NOTIFICATION(pOriginal, pLocalized) \
+		QM_TRY_FORMAT_STATIC_NOTIFICATION(QmHudNotifications::EServerMessageDomain::VoteModeration, pOriginal, pLocalized)
+#define QM_TRY_FORMAT_STATIC_STATUS_NOTIFICATION(pOriginal, pLocalized) \
+		QM_TRY_FORMAT_STATIC_NOTIFICATION(QmHudNotifications::EServerMessageDomain::Status, pOriginal, pLocalized)
+		QM_HUD_NOTIFICATION_STATIC_TEAM_RULES(QM_TRY_FORMAT_STATIC_TEAM_NOTIFICATION)
+		QM_HUD_NOTIFICATION_STATIC_SWAP_RESCUE_RULES(QM_TRY_FORMAT_STATIC_SWAP_RESCUE_NOTIFICATION)
+		QM_HUD_NOTIFICATION_STATIC_VOTE_MODERATION_RULES(QM_TRY_FORMAT_STATIC_VOTE_MODERATION_NOTIFICATION)
+		QM_HUD_NOTIFICATION_STATIC_STATUS_RULES(QM_TRY_FORMAT_STATIC_STATUS_NOTIFICATION)
+#undef QM_TRY_FORMAT_STATIC_STATUS_NOTIFICATION
+#undef QM_TRY_FORMAT_STATIC_VOTE_MODERATION_NOTIFICATION
+#undef QM_TRY_FORMAT_STATIC_SWAP_RESCUE_NOTIFICATION
+#undef QM_TRY_FORMAT_STATIC_TEAM_NOTIFICATION
+#undef QM_TRY_FORMAT_STATIC_NOTIFICATION
+
+		return false;
+	}
+
+	bool AnalyzeTeamMessage(const char *pMessage, QmHudNotifications::SServerMessageAnalysis &Analysis)
+	{
+		char aValueA[128];
+		char aValueB[128];
+		char aValueC[128];
+
+		if(ExtractWrappedValue(pMessage, "'", "' joined team 0", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 加入了 0 队"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "Team save in progress. You'll be able to load with '/load ", "'", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("队伍存档进行中，之后可以用 '/load %s' 载入"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractTwoWrappedValues(pMessage, "Team save in progress. You'll be able to load with '/load ", "' if save is successful or with '/load ", "' if it fails", aValueA, sizeof(aValueA), aValueB, sizeof(aValueB)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("队伍存档进行中，成功后可用 '/load %s' 载入，失败时可用 '/load %s' 载入"), aValueA, aValueB);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractTwoWrappedValues(pMessage, "Team successfully saved by ", ". The database connection failed, using generated save code instead to avoid collisions. Use '/load ", "' to continue", aValueA, sizeof(aValueA), aValueB, sizeof(aValueB)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("队伍已由 %s 成功存档。数据库连接失败，因此改用生成的存档码避免冲突。用 '/load %s' 继续"), aValueA, aValueB);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_startswith(pMessage, "Team successfully saved by "))
+		{
+			const char *pPrefix = "Team successfully saved by ";
+			const char *pMiddle = ". The database connection failed, using generated save code instead to avoid collisions. Use '/load ";
+			const char *pMiddle2 = "' on ";
+			const char *pSuffix = " to continue";
+			const char *pNameStart = pMessage + str_length(pPrefix);
+			const char *pMiddlePos = str_find(pNameStart, pMiddle);
+			if(pMiddlePos != nullptr)
+			{
+				const char *pCodeStart = pMiddlePos + str_length(pMiddle);
+				const char *pMiddle2Pos = str_find(pCodeStart, pMiddle2);
+				if(pMiddle2Pos != nullptr && str_endswith(pMessage, pSuffix))
+				{
+					str_truncate(aValueA, sizeof(aValueA), pNameStart, pMiddlePos - pNameStart);
+					str_truncate(aValueB, sizeof(aValueB), pCodeStart, pMiddle2Pos - pCodeStart);
+					const char *pServerStart = pMiddle2Pos + str_length(pMiddle2);
+					str_truncate(aValueC, sizeof(aValueC), pServerStart, pMessage + str_length(pMessage) - str_length(pSuffix) - pServerStart);
+					str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("队伍已由 %s 成功存档。数据库连接失败，因此改用生成的存档码避免冲突。请在 %s 上用 '/load %s' 继续"), aValueA, aValueC, aValueB);
+					SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+					return true;
+				}
+			}
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' disabled practice mode for your team", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 关闭了你们队伍的练习模式"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' locked your team.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 锁定了你们的队伍"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' locked your team. After the race starts, killing will kill everyone in your team.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 锁定了你们的队伍。比赛开始后，任何人 kill 都会导致整队死亡"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' unlocked your team.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 解锁了你们的队伍"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "This team already has the maximum allowed size of ", " players", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("这个队伍已经达到最大人数上限 %s"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "Can't disable team 0 mode. This team exceeds the maximum allowed size of ", " players for regular team", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("无法关闭 team 0 模式。该队伍人数已超过普通队伍允许上限 %s"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' disabled team 0 mode.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 关闭了 team 0 模式"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' enabled team 0 mode. This will make your team behave like team 0.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 开启了 team 0 模式。你们的队伍现在会按 team 0 规则运作"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_startswith(pMessage, "You are in team ") && str_find(pMessage, " having ") != nullptr)
+		{
+			const char *pTeamStart = pMessage + str_length("You are in team ");
+			const char *pHaving = str_find(pTeamStart, " having ");
+			const char *pPlayers = pHaving == nullptr ? nullptr : str_find(pHaving + str_length(" having "), " ");
+			if(pHaving != nullptr && pPlayers != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pTeamStart, pHaving - pTeamStart);
+				str_truncate(aValueB, sizeof(aValueB), pHaving + str_length(" having "), pPlayers - (pHaving + str_length(" having ")));
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你当前在 %s 队，队伍里有 %s 人"), aValueA, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(pMessage[0] == '\'' && str_find(pMessage + 1, "' joined team ") != nullptr)
+		{
+			const char *pTeamPos = str_find(pMessage, "' joined team ");
+			if(pTeamPos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pTeamPos - (pMessage + 1));
+				const char *pTeamStart = pTeamPos + str_length("' joined team ");
+				str_truncate(aValueB, sizeof(aValueB), pTeamStart, str_length(pTeamStart));
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 加入了 %s 队"), aValueA, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(pMessage[0] == '\'' && str_find(pMessage + 1, "' invited you to team ") != nullptr)
+		{
+			const char *pTeamPos = str_find(pMessage, "' invited you to team ");
+			const char *pUsePos = pTeamPos == nullptr ? nullptr : str_find(pTeamPos + str_length("' invited you to team "), ". Use /team ");
+			if(pTeamPos != nullptr && pUsePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pTeamPos - (pMessage + 1));
+				str_truncate(aValueB, sizeof(aValueB), pTeamPos + str_length("' invited you to team "), pUsePos - (pTeamPos + str_length("' invited you to team ")));
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 邀请你加入 %s 队。输入 /team %s 即可加入"), aValueA, aValueB, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(str_startswith(pMessage, "'") && str_find(pMessage, "' invited '") != nullptr && str_endswith(pMessage, "' to your team."))
+		{
+			const char *pMiddle = "' invited '";
+			const char *pMiddlePos = str_find(pMessage, pMiddle);
+			if(pMiddlePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pMiddlePos - (pMessage + 1));
+				const char *pTargetStart = pMiddlePos + str_length(pMiddle);
+				str_truncate(aValueB, sizeof(aValueB), pTargetStart, pMessage + str_length(pMessage) - str_length("' to your team.") - pTargetStart);
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 邀请了 '%s' 加入你们的队伍"), aValueA, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(ExtractWrappedValue(pMessage, "This team cannot finish anymore because '", "' left the team before hitting the start", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("这个队伍已无法完赛，因为 '%s' 在碰到起点前离开了队伍"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Team, Analysis.m_aLocalizedText);
+			return true;
+		}
+		return false;
+	}
+
+	bool AnalyzeSwapRescueMessage(const char *pMessage, QmHudNotifications::SServerMessageAnalysis &Analysis)
+	{
+		char aValueA[128];
+		char aValueB[128];
+		char aValueC[128];
+
+		if(ExtractWrappedValue(pMessage, "You have already requested to swap with ", ".", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你已经向 %s 发过交换请求了"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You have requested to swap with ", ". Use /cancelswap to cancel the request.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你已向 %s 发出交换请求。输入 /cancelswap 可取消"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_endswith(pMessage, ".") && str_find(pMessage, " has requested to swap with you. To complete the swap process please wait ") != nullptr)
+		{
+			const char *pMiddle = " has requested to swap with you. To complete the swap process please wait ";
+			const char *pMiddlePos = str_find(pMessage, pMiddle);
+			const char *pSecondsStart = pMiddlePos == nullptr ? nullptr : pMiddlePos + str_length(pMiddle);
+			const char *pMiddle2 = " seconds and then type /swap ";
+			const char *pMiddle2Pos = pSecondsStart == nullptr ? nullptr : str_find(pSecondsStart, pMiddle2);
+			if(pMiddlePos != nullptr && pMiddle2Pos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage, pMiddlePos - pMessage);
+				str_truncate(aValueB, sizeof(aValueB), pSecondsStart, pMiddle2Pos - pSecondsStart);
+				const char *pNameStart = pMiddle2Pos + str_length(pMiddle2);
+				str_truncate(aValueC, sizeof(aValueC), pNameStart, pMessage + str_length(pMessage) - 1 - pNameStart);
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("%s 请求与你交换。请等待 %s 秒后输入 /swap %s 完成"), aValueA, aValueB, aValueC);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(ExtractTwoWrappedValues(pMessage, "", " has requested to swap with ", ".", aValueA, sizeof(aValueA), aValueB, sizeof(aValueB)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("%s 请求与 %s 交换位置"), aValueA, aValueB);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You have to wait ", " seconds until you can swap.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你还需要等待 %s 秒才能交换"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You can jump ", " time", aValueA, sizeof(aValueA)) ||
+			ExtractWrappedValue(pMessage, "You can jump ", " times", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你现在可以跳跃 %s 次"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "Rescue mode changed to ", ".", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("救援模式已切换为 %s"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "Current rescue mode: ", ".", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("当前救援模式：%s"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "Your swap request timed out ", " seconds ago. Use /swap again to re-initiate it.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你的交换请求已在 %s 秒前超时，请重新输入 /swap 发起"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractTwoWrappedValues(pMessage, "", " has swapped with ", ".", aValueA, sizeof(aValueA), aValueB, sizeof(aValueB)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("%s 与 %s 已完成交换"), aValueA, aValueB);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You have canceled swap with ", ".", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你已取消与 %s 的交换"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "", " has canceled swap with you.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("%s 已取消与你的交换"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractTwoWrappedValues(pMessage, "", " has canceled swap with ", ".", aValueA, sizeof(aValueA), aValueB, sizeof(aValueB)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("%s 已取消与 %s 的交换"), aValueA, aValueB);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_startswith(pMessage, "Everyone in your locked team was killed because '") && str_endswith(pMessage, "."))
+		{
+			const char *pPrefix = "Everyone in your locked team was killed because '";
+			const char *pMiddle = "' ";
+			const char *pNameStart = pMessage + str_length(pPrefix);
+			const char *pMiddlePos = str_find(pNameStart, pMiddle);
+			if(pMiddlePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pNameStart, pMiddlePos - pNameStart);
+				const char *pActionStart = pMiddlePos + str_length(pMiddle);
+				str_truncate(aValueB, sizeof(aValueB), pActionStart, pMessage + str_length(pMessage) - 1 - pActionStart);
+				const char *pAction = str_comp(aValueB, "killed") == 0 ? Localize("自杀") : Localize("死亡");
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你的锁队全员被处死，因为 '%s' %s 了"), aValueA, pAction);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::SwapRescue, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool AnalyzeVoteModerationMessage(const char *pMessage, QmHudNotifications::SServerMessageAnalysis &Analysis)
+	{
+		char aValueA[128];
+		char aValueB[128];
+		char aValueC[128];
+		char aValueD[64];
+
+		if(str_find(pMessage, "' voted to ") != nullptr && str_endswith(pMessage, " required votes)"))
+		{
+			const char *pMiddle = "' voted to ";
+			const char *pMiddlePos = str_find(pMessage, pMiddle);
+			if(pMiddlePos != nullptr && pMessage[0] == '\'')
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pMiddlePos - (pMessage + 1));
+				const char *pModeStart = pMiddlePos + str_length(pMiddle);
+				const char *pModeEnd = str_find(pModeStart, " /practice mode for your team, which means you can use practice commands, but you can't earn a rank. Type /practice to vote (");
+				if(pModeEnd != nullptr)
+				{
+					str_truncate(aValueB, sizeof(aValueB), pModeStart, pModeEnd - pModeStart);
+					const char *pVoteStart = pModeEnd + str_length(" /practice mode for your team, which means you can use practice commands, but you can't earn a rank. Type /practice to vote (");
+					const char *pSlashPos = str_find(pVoteStart, "/");
+					const char *pSuffixPos = str_find(pVoteStart, " required votes)");
+					if(pSlashPos != nullptr && pSuffixPos != nullptr)
+					{
+						str_truncate(aValueC, sizeof(aValueC), pVoteStart, pSlashPos - pVoteStart);
+						str_truncate(aValueD, sizeof(aValueD), pSlashPos + 1, pSuffixPos - (pSlashPos + 1));
+						str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了%s队伍练习模式投票。当前票数 %s/%s"), aValueA, str_comp(aValueB, "enable") == 0 ? Localize("开启") : Localize("关闭"), aValueC, aValueD);
+						SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+						return true;
+					}
+				}
+			}
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' isn't an option on this server", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 不是本服务器可用的投票选项"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_startswith(pMessage, "'") && str_find(pMessage, "' called vote to change server option '") != nullptr)
+		{
+			const char *pMiddle = "' called vote to change server option '";
+			const char *pMiddlePos = str_find(pMessage, pMiddle);
+			if(pMiddlePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pMiddlePos - (pMessage + 1));
+				const char *pOptionStart = pMiddlePos + str_length(pMiddle);
+				const char *pOptionEnd = str_find(pOptionStart, "'");
+				if(pOptionEnd != nullptr)
+				{
+					str_truncate(aValueB, sizeof(aValueB), pOptionStart, pOptionEnd - pOptionStart);
+					if(str_comp(pOptionEnd, "'") == 0)
+					{
+						str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了服务器选项投票：%s"), aValueA, aValueB);
+						SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+						return true;
+					}
+					if(str_startswith(pOptionEnd, "' (") && str_endswith(pMessage, ")"))
+					{
+						str_truncate(aValueC, sizeof(aValueC), pOptionEnd + 3, pMessage + str_length(pMessage) - 1 - (pOptionEnd + 3));
+						str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了服务器选项投票：%s（原因：%s）"), aValueA, aValueB, aValueC);
+						SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+						return true;
+					}
+				}
+			}
+		}
+		if(str_startswith(pMessage, "'") && str_find(pMessage, "' called vote to kick '") != nullptr && str_endswith(pMessage, ")"))
+		{
+			const char *pMiddle = "' called vote to kick '";
+			const char *pMiddlePos = str_find(pMessage, pMiddle);
+			if(pMiddlePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pMiddlePos - (pMessage + 1));
+				const char *pTargetStart = pMiddlePos + str_length(pMiddle);
+				const char *pTargetEnd = str_find(pTargetStart, "' (");
+				if(pTargetEnd != nullptr)
+				{
+					str_truncate(aValueB, sizeof(aValueB), pTargetStart, pTargetEnd - pTargetStart);
+					str_truncate(aValueC, sizeof(aValueC), pTargetEnd + 3, pMessage + str_length(pMessage) - 1 - (pTargetEnd + 3));
+					str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了踢出 '%s' 的投票（原因：%s）"), aValueA, aValueB, aValueC);
+					SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+					return true;
+				}
+			}
+		}
+		if(str_startswith(pMessage, "'") && str_find(pMessage, "' called for vote to mute '") != nullptr && str_endswith(pMessage, ")"))
+		{
+			const char *pMiddle = "' called for vote to mute '";
+			const char *pMiddlePos = str_find(pMessage, pMiddle);
+			if(pMiddlePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pMiddlePos - (pMessage + 1));
+				const char *pTargetStart = pMiddlePos + str_length(pMiddle);
+				const char *pTargetEnd = str_find(pTargetStart, "' (");
+				if(pTargetEnd != nullptr)
+				{
+					str_truncate(aValueB, sizeof(aValueB), pTargetStart, pTargetEnd - pTargetStart);
+					str_truncate(aValueC, sizeof(aValueC), pTargetEnd + 3, pMessage + str_length(pMessage) - 1 - (pTargetEnd + 3));
+					str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了禁言 '%s' 的投票（原因：%s）"), aValueA, aValueB, aValueC);
+					SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+					return true;
+				}
+			}
+		}
+		if(str_startswith(pMessage, "'") && str_find(pMessage, "' called for vote to pause '") != nullptr && str_endswith(pMessage, ")"))
+		{
+			const char *pMiddle = "' called for vote to pause '";
+			const char *pMiddlePos = str_find(pMessage, pMiddle);
+			if(pMiddlePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pMiddlePos - (pMessage + 1));
+				const char *pTargetStart = pMiddlePos + str_length(pMiddle);
+				const char *pForPos = str_find(pTargetStart, "' for ");
+				const char *pReasonPos = pForPos == nullptr ? nullptr : str_find(pForPos + str_length("' for "), " seconds (");
+				if(pForPos != nullptr && pReasonPos != nullptr)
+				{
+					str_truncate(aValueB, sizeof(aValueB), pTargetStart, pForPos - pTargetStart);
+					str_truncate(aValueC, sizeof(aValueC), pForPos + str_length("' for "), pReasonPos - (pForPos + str_length("' for ")));
+					str_truncate(aValueD, sizeof(aValueD), pReasonPos + str_length(" seconds ("), pMessage + str_length(pMessage) - 1 - (pReasonPos + str_length(" seconds (")));
+					str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了暂停 '%s' %s 秒的投票（原因：%s）"), aValueA, aValueB, aValueC, aValueD);
+					SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+					return true;
+				}
+			}
+		}
+		if(str_startswith(pMessage, "'") && str_find(pMessage, "' called for vote to move '") != nullptr && str_find(pMessage, "' to spectators (") != nullptr && str_endswith(pMessage, ")"))
+		{
+			const char *pMiddle = "' called for vote to move '";
+			const char *pMiddlePos = str_find(pMessage, pMiddle);
+			if(pMiddlePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pMiddlePos - (pMessage + 1));
+				const char *pTargetStart = pMiddlePos + str_length(pMiddle);
+				const char *pTargetEnd = str_find(pTargetStart, "' to spectators (");
+				if(pTargetEnd != nullptr)
+				{
+					str_truncate(aValueB, sizeof(aValueB), pTargetStart, pTargetEnd - pTargetStart);
+					str_truncate(aValueC, sizeof(aValueC), pTargetEnd + str_length("' to spectators ("), pMessage + str_length(pMessage) - 1 - (pTargetEnd + str_length("' to spectators (")));
+					str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了将 '%s' 移到旁观的投票（原因：%s）"), aValueA, aValueB, aValueC);
+					SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+					return true;
+				}
+			}
+		}
+		if(str_startswith(pMessage, "There's a ") && str_find(pMessage, " second wait time between kick votes for each player please wait ") != nullptr && str_endswith(pMessage, " second(s)"))
+		{
+			const char *pPrefixEnd = pMessage + str_length("There's a ");
+			const char *pMiddlePos = str_find(pPrefixEnd, " second wait time between kick votes for each player please wait ");
+			const char *pWaitStart = str_find(pMessage, "please wait ");
+			const char *pWaitPos = str_find(pMessage, " second(s)");
+			if(pMiddlePos != nullptr && pWaitStart != nullptr && pWaitPos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pPrefixEnd, pMiddlePos - pPrefixEnd);
+				str_truncate(aValueB, sizeof(aValueB), pWaitStart + str_length("please wait "), pWaitPos - (pWaitStart + str_length("please wait ")));
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("每名玩家两次踢人投票之间需要间隔 %s 秒，请再等待 %s 秒"), aValueA, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(ExtractWrappedValue(pMessage, "Kick voting requires ", " players", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("踢人投票至少需要 %s 名玩家"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "Authorized player forced vote '", "'", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("授权玩家强制将当前投票设为 '%s'"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_startswith(pMessage, "There's a ") && str_find(pMessage, " second delay between map-votes, please wait ") != nullptr && str_endswith(pMessage, " seconds."))
+		{
+			const char *pPrefixEnd = pMessage + str_length("There's a ");
+			const char *pMiddlePos = str_find(pPrefixEnd, " second delay between map-votes, please wait ");
+			const char *pWaitStart = str_find(pMessage, "please wait ");
+			const char *pWaitPos = str_find(pMessage, " seconds.");
+			if(pMiddlePos != nullptr && pWaitStart != nullptr && pWaitPos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pPrefixEnd, pMiddlePos - pPrefixEnd);
+				str_truncate(aValueB, sizeof(aValueB), pWaitStart + str_length("please wait "), pWaitPos - (pWaitStart + str_length("please wait ")));
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("两次换图投票之间需要间隔 %s 秒，请再等待 %s 秒"), aValueA, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' called for vote to kick you", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了针对你的踢人投票"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' called for vote to move you to spectators", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 发起了针对你的旁观投票"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You must wait ", " seconds before making your first vote.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("首次发起投票前还需要等待 %s 秒"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You must wait ", " seconds before making another vote.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("再次发起投票前还需要等待 %s 秒"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You are not permitted to vote for the next ", " seconds.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你接下来 %s 秒内不能发起投票"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::VoteModeration, Analysis.m_aLocalizedText);
+			return true;
+		}
+		return false;
+	}
+
+	bool AnalyzeStatusMessage(const char *pMessage, QmHudNotifications::SServerMessageAnalysis &Analysis)
+	{
+		char aValueA[128];
+		char aValueB[128];
+
+		if(ExtractWrappedValue(pMessage, "This server has an initial chat delay, you will be able to talk in ", " seconds.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("本服务器启用了初始发言延迟，你还需要等待 %s 秒才能说话"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You are not permitted to talk for the next ", " seconds.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你接下来 %s 秒内不能发言"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_startswith(pMessage, "Timer is displayed in "))
+		{
+			str_copy(aValueA, pMessage + str_length("Timer is displayed in "), sizeof(aValueA));
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("计时器当前显示在 %s"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_startswith(pMessage, "Time to wait before changing team: "))
+		{
+			str_copy(aValueA, pMessage + str_length("Time to wait before changing team: "), sizeof(aValueA));
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("距离下次切换队伍还需等待：%s"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(ExtractWrappedValue(pMessage, "You are force-paused for ", " seconds.", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你正处于强制暂停状态，还需等待 %s 秒"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(str_find(pMessage, " current race time is ") != nullptr)
+		{
+			const char *pMiddle = str_find(pMessage, " current race time is ");
+			if(pMiddle != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage, pMiddle - pMessage);
+				str_copy(aValueB, pMiddle + str_length(" current race time is "), sizeof(aValueB));
+				if(str_comp(aValueA, "Your") == 0)
+					str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("你当前的比赛用时是 %s"), aValueB);
+				else
+					str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("%s 当前的比赛用时是 %s"), aValueA, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(str_startswith(pMessage, "Showing the checkpoint times for '") && str_find(pMessage, "' with a race time of ") != nullptr)
+		{
+			const char *pNameStart = pMessage + str_length("Showing the checkpoint times for '");
+			const char *pTimePos = str_find(pNameStart, "' with a race time of ");
+			if(pTimePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pNameStart, pTimePos - pNameStart);
+				str_truncate(aValueB, sizeof(aValueB), pTimePos + str_length("' with a race time of "), str_length(pTimePos + str_length("' with a race time of ")));
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("正在显示 '%s' 的 checkpoint 时间，当前成绩为 %s"), aValueA, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		if(ExtractWrappedValue(pMessage, "'", "' would have timed out, but can use timeout protection now", aValueA, sizeof(aValueA)))
+		{
+			str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 原本会超时掉线，但现在可以使用超时保护"), aValueA);
+			SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+			return true;
+		}
+		if(pMessage[0] == '\'' && str_find(pMessage + 1, "' was force-paused for ") != nullptr && str_endswith(pMessage, "s"))
+		{
+			const char *pMiddlePos = str_find(pMessage + 1, "' was force-paused for ");
+			if(pMiddlePos != nullptr)
+			{
+				str_truncate(aValueA, sizeof(aValueA), pMessage + 1, pMiddlePos - (pMessage + 1));
+				const char *pSecondsStart = pMiddlePos + str_length("' was force-paused for ");
+				const char *pSuffixPos = pMessage + str_length(pMessage) - 1;
+				str_truncate(aValueB, sizeof(aValueB), pSecondsStart, pSuffixPos - pSecondsStart);
+				str_format(Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), Localize("'%s' 被强制暂停了 %s 秒"), aValueA, aValueB);
+				SetLocalizedAnalysis(Analysis, QmHudNotifications::EServerMessageRoute::System, QmHudNotifications::EServerMessageClass::Prompt, QmHudNotifications::EServerMessageDomain::Status, Analysis.m_aLocalizedText);
+				return true;
+			}
+		}
+		return false;
+	}
+} // namespace
+
+namespace QmHudNotifications
+{
+	ESoloPrompt MatchKnownSoloPrompt(const char *pMessage)
+	{
+		if(pMessage == nullptr)
+			return ESoloPrompt::None;
+		if(str_comp(pMessage, "You are now in a solo part") == 0 || str_comp(pMessage, "你现在处于单人区域") == 0)
+			return ESoloPrompt::Enter;
+		if(str_comp(pMessage, "You are now out of the solo part") == 0 || str_comp(pMessage, "你现在已离开单人区域") == 0)
+			return ESoloPrompt::Leave;
+		return ESoloPrompt::None;
+	}
+
+	bool ShouldSuppressSoloChatMessage(const char *pMessage, ESoloPrompt PendingCompatPrompt)
+	{
+		const ESoloPrompt Known = MatchKnownSoloPrompt(pMessage);
+		if(Known == ESoloPrompt::None)
+			return false;
+		return PendingCompatPrompt == ESoloPrompt::None || Known == PendingCompatPrompt;
+	}
+
+	bool ShouldExcludeSystemNotification(const char *pMessage)
+	{
+		if(pMessage == nullptr || pMessage[0] == '\0')
+			return true;
+		if(str_startswith(pMessage, "Usage:") ||
+			str_startswith(pMessage, "用法：") ||
+			str_startswith(pMessage, "Example:") ||
+			str_startswith(pMessage, "Bad:") ||
+			str_startswith(pMessage, "Available practice commands:") ||
+			str_startswith(pMessage, "Available rescue modes:") ||
+			str_startswith(pMessage, "Emote commands are:"))
+			return true;
+		if(str_startswith(pMessage, "DDraceNetwork 版本:") ||
+			str_startswith(pMessage, "DDraceNetwork Version:") ||
+			str_startswith(pMessage, "Git 提交哈希:") ||
+			str_startswith(pMessage, "Git revision hash:") ||
+			str_startswith(pMessage, "官方网站:") ||
+			str_startswith(pMessage, "Official site:") ||
+			str_startswith(pMessage, "更多命令请查看:") ||
+			str_startswith(pMessage, "For more info:") ||
+			str_startswith(pMessage, "或访问 DDNet.org") ||
+			str_startswith(pMessage, "请访问 DDNet.org") ||
+			str_startswith(pMessage, "Please visit DDNet.org") ||
+			str_comp(pMessage, "请友善交流。") == 0 ||
+			str_comp(pMessage, "未设置服务器规则，请联系管理员。") == 0 ||
+			str_comp(pMessage, "Be nice.") == 0 ||
+			str_comp(pMessage, "No Rules Defined, Kill em all!!") == 0 ||
+			str_endswith(pMessage, " entered and joined the game") ||
+			str_endswith(pMessage, " joined the game") ||
+			str_comp(pMessage, "See /practicecmdlist for a list of all available practice commands. Most commonly used ones are /telecursor, /lasttp and /rescue") == 0 ||
+			str_comp(pMessage, "Example: /map adr3 to call vote for Adrenaline 3. This means that the map name must start with 'a' and contain the characters 'd', 'r' and '3' in that order") == 0)
+			return true;
+		return false;
+	}
+
+	SServerMessageAnalysis AnalyzeServerMessage(const char *pMessage, ESoloPrompt PendingCompatPrompt)
+	{
+		SServerMessageAnalysis Analysis;
+		if(pMessage == nullptr || pMessage[0] == '\0')
+			return Analysis;
+
+		if(ShouldSuppressSoloChatMessage(pMessage, PendingCompatPrompt))
+		{
+			const ESoloPrompt SoloPrompt = MatchKnownSoloPrompt(pMessage);
+			SetLocalizedAnalysis(Analysis, EServerMessageRoute::Solo, EServerMessageClass::Prompt, EServerMessageDomain::Solo, SoloPrompt == ESoloPrompt::Enter ? Localize("你现在处于单人区域") : Localize("你现在已离开单人区域"), SoloPrompt);
+			return Analysis;
+		}
+
+		if(ShouldExcludeSystemNotification(pMessage))
+		{
+			Analysis.m_Class = EServerMessageClass::BasicInfo;
+			Analysis.m_Domain = EServerMessageDomain::Status;
+			return Analysis;
+		}
+
+		// 单次分析既决定是否进通知栏，也决定如何本地化，避免黑名单和格式化规则继续分叉漂移。
+		EServerMessageDomain StaticDomain = EServerMessageDomain::None;
+		ESoloPrompt StaticSoloPrompt = ESoloPrompt::None;
+		if(TryCopyStaticLocalizedNotification(pMessage, Analysis.m_aLocalizedText, sizeof(Analysis.m_aLocalizedText), StaticDomain, StaticSoloPrompt))
+		{
+			SetLocalizedAnalysis(Analysis, EServerMessageRoute::System, EServerMessageClass::Prompt, StaticDomain, Analysis.m_aLocalizedText, StaticSoloPrompt);
+			return Analysis;
+		}
+		if(AnalyzeTeamMessage(pMessage, Analysis) || AnalyzeSwapRescueMessage(pMessage, Analysis) || AnalyzeVoteModerationMessage(pMessage, Analysis) || AnalyzeStatusMessage(pMessage, Analysis))
+			return Analysis;
+
+		SetFallbackAnalysis(Analysis);
+		return Analysis;
+	}
+
+	SServerMessageEntryDecision DecideServerMessageEntry(const SServerMessageAnalysis &Analysis, bool RouteSystemMessages, bool HideBasicInfo, bool HidePrompt)
+	{
+		SServerMessageEntryDecision Decision;
+		if(Analysis.m_Class == EServerMessageClass::BasicInfo && HideBasicInfo)
+		{
+			Decision.m_ConsumeHiddenMessage = true;
+			return Decision;
+		}
+		if(Analysis.m_Class == EServerMessageClass::Prompt && HidePrompt)
+		{
+			Decision.m_ConsumeHiddenMessage = true;
+			Decision.m_ClearPendingCompatPrompt = Analysis.m_Route == EServerMessageRoute::Solo;
+			return Decision;
+		}
+		if(!RouteSystemMessages)
+			return Decision;
+		if(Analysis.m_Route == EServerMessageRoute::Solo)
+		{
+			Decision.m_QueueNotification = true;
+			Decision.m_ClearPendingCompatPrompt = true;
+			return Decision;
+		}
+		if(Analysis.m_Route == EServerMessageRoute::System)
+		{
+			Decision.m_QueueNotification = true;
+			Decision.m_UseFallbackNotification = Analysis.m_UseFallbackLocalization;
+		}
+		return Decision;
+	}
+
+	EServerMessageRoute ServerMessageRoute(const char *pMessage, ESoloPrompt PendingCompatPrompt, bool RouteSystemMessages)
+	{
+		if(pMessage == nullptr || pMessage[0] == '\0')
+			return EServerMessageRoute::None;
+		if(!RouteSystemMessages)
+			return EServerMessageRoute::None;
+		return AnalyzeServerMessage(pMessage, PendingCompatPrompt).m_Route;
+	}
+
+	EServerMessageClass ServerMessageClass(const char *pMessage, ESoloPrompt PendingCompatPrompt)
+	{
+		return AnalyzeServerMessage(pMessage, PendingCompatPrompt).m_Class;
+	}
+
+	bool TryFormatLocalizedNotificationMessage(const char *pMessage, char *pBuf, size_t BufSize)
+	{
+		if(BufSize > 0)
+			pBuf[0] = '\0';
+		const SServerMessageAnalysis Analysis = AnalyzeServerMessage(pMessage, ESoloPrompt::None);
+		if(Analysis.m_aLocalizedText[0] == '\0')
+			return false;
+		str_copy(pBuf, Analysis.m_aLocalizedText, BufSize);
+		return true;
+	}
+} // namespace QmHudNotifications

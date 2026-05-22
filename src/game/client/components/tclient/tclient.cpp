@@ -4077,8 +4077,8 @@ void CTClient::ApplyFocusModeEffects()
 		char aFocusMsg[128];
 		str_format(aFocusMsg, sizeof(aFocusMsg), "%s%s: %s",
 			FocusActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
-			Localize("Focus Mode"),
-			Localize(FocusActive ? "On" : "Off"));
+			Localize("禅模式"),
+			Localize(FocusActive ? "开启" : "关闭"));
 		GameClient()->Echo(aFocusMsg, true);
 	}
 

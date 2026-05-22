@@ -125,7 +125,7 @@ MACRO_CONFIG_INT(QmInputOverlayPosY, qm_input_overlay_pos_y, 80, 0, 100, CFGFLAG
 // Notification Bar / 通知栏
 MACRO_CONFIG_INT(QmHudNotificationsSystem, qm_hud_notifications_system, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "通知栏接管服务器系统提示（入场版本信息除外）")
 MACRO_CONFIG_INT(QmHudNotificationsEcho, qm_hud_notifications_echo, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "通知栏接管 echo 消息")
-MACRO_CONFIG_INT(QmHudNotificationsCompatSolo, qm_hud_notifications_compat_solo, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "兼容自定义服务器 solo 提示")
+MACRO_CONFIG_INT(QmHudNotificationsCompatSolo, qm_hud_notifications_compat_solo, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "兼容其他服务器的类似提示接管（例如自定义单人区域提示，按黑名单排除）")
 MACRO_CONFIG_COL(QmHudNotificationsBgColor, qm_hud_notifications_bg_color, 0x99000000, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_COLALPHA, "通知栏背景颜色")
 MACRO_CONFIG_COL(QmHudNotificationsTextColor, qm_hud_notifications_text_color, 0xFFFFFFFF, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_COLALPHA, "通知栏系统提示文字颜色")
 MACRO_CONFIG_INT(QmHudNotificationsEchoInheritColor, qm_hud_notifications_echo_inherit_color, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "通知栏 echo 继承聊天 echo 颜色")

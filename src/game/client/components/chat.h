@@ -290,10 +290,19 @@ public:
 	{
 		return length(Release - Press) <= 5.0f;
 	}
+	static QmHudNotifications::EServerMessageClass ResolveLineServerMessageClass(int ClientId, const char *pLine, std::optional<QmHudNotifications::EServerMessageClass> KnownServerMessageClass = std::nullopt)
+	{
+		if(ClientId != SERVER_MSG)
+			return QmHudNotifications::EServerMessageClass::None;
+		if(KnownServerMessageClass.has_value())
+			return *KnownServerMessageClass;
+		return QmHudNotifications::ServerMessageClass(pLine, QmHudNotifications::ESoloPrompt::None);
+	}
 
 	bool IsActive() const { return m_Mode != MODE_NONE; }
 	const char *GetInputText() const { return m_Input.GetString(); }
 	void AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible = false);
+	void AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible, std::optional<QmHudNotifications::EServerMessageClass> KnownServerMessageClass);
 	void EnableMode(int Team);
 	void DisableMode();
 	void SaveDraft();
