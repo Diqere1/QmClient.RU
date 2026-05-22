@@ -71,6 +71,8 @@ bool CSectionLoader::Process()
 		m_CurrentIndex = 0;
 	}
 
+	m_RunningColumn = m_MainView;
+
 	CPerfTimer FrameTimer;
 	int UnlockedThisFrame = 0;
 	const int MaxUnlockPerFrame = 2;
@@ -87,49 +89,47 @@ bool CSectionLoader::Process()
 		case ESettingsSectionState::UNINITIALIZED:
 		{
 			if(Section.m_MeasureFn)
-			{
-				CUIRect MeasureRect = m_MainView;
-				Section.m_CachedHeight = Section.m_MeasureFn(MeasureRect);
-			}
+				Section.m_CachedHeight = Section.m_MeasureFn(m_RunningColumn);
 			else
-			{
 				Section.m_CachedHeight = 0.0f;
-			}
 			Section.m_State = ESettingsSectionState::MEASURING;
 			++m_CurrentIndex;
 			break;
 		}
 		case ESettingsSectionState::MEASURING:
 		{
-			const CUIRect SectionRect{m_MainView.x, m_MainView.y, m_MainView.w, Section.m_CachedHeight};
+			const CUIRect SectionRect{m_MainView.x, m_RunningColumn.y, m_MainView.w, Section.m_CachedHeight};
 			const int Priority = ComputeViewportPriority(SectionRect);
 			if(Priority <= 1)
 			{
 				Section.m_State = ESettingsSectionState::COMPACT;
 				if(Section.m_RenderCompactFn)
-					Section.m_RenderCompactFn(m_MainView);
+					Section.m_RenderCompactFn(m_RunningColumn);
+			}
+			else
+			{
+				m_RunningColumn.y += Section.m_CachedHeight;
 			}
 			++m_CurrentIndex;
 			break;
 		}
 		case ESettingsSectionState::COMPACT:
 		{
-			const CUIRect SectionRect{m_MainView.x, m_MainView.y, m_MainView.w, Section.m_CachedHeight};
+			const CUIRect SectionRect{m_MainView.x, m_RunningColumn.y, m_MainView.w, Section.m_CachedHeight};
 			const int Priority = ComputeViewportPriority(SectionRect);
 			if(UnlockedThisFrame < MaxUnlockPerFrame && Priority <= 1)
 			{
 				Section.m_State = ESettingsSectionState::FULL;
 				if(Section.m_RenderFullFn)
-					Section.m_RenderFullFn(m_MainView);
+					Section.m_RenderFullFn(m_RunningColumn);
 				Section.m_LastConfigHash = ComputeConfigHash(Section);
 				Section.m_bDirty = false;
 				++UnlockedThisFrame;
 				++m_CurrentIndex;
 				break;
 			}
-			// Still not promoted; re-render compact
 			if(Section.m_RenderCompactFn)
-				Section.m_RenderCompactFn(m_MainView);
+				Section.m_RenderCompactFn(m_RunningColumn);
 			++m_CurrentIndex;
 			break;
 		}
@@ -137,11 +137,12 @@ bool CSectionLoader::Process()
 		{
 			if(!Section.m_bDirty)
 			{
+				m_RunningColumn.y += Section.m_CachedHeight;
 				++m_CurrentIndex;
 				break;
 			}
 			if(Section.m_RenderFullFn)
-				Section.m_RenderFullFn(m_MainView);
+				Section.m_RenderFullFn(m_RunningColumn);
 			Section.m_LastConfigHash = ComputeConfigHash(Section);
 			Section.m_bDirty = false;
 			++m_CurrentIndex;

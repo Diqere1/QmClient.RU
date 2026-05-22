@@ -149,6 +149,7 @@ public:
 private:
 	std::vector<SSettingsSection> m_vSections;
 	CUIRect m_MainView;
+	CUIRect m_RunningColumn;
 	double m_BudgetPerFrameMs = 5.0;
 
 	int m_CurrentIndex = 0;
