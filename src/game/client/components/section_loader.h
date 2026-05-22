@@ -162,6 +162,7 @@ private:
 	bool m_bWarmupActive = false;
 	int m_WarmupIndex = 0;
 	float m_WarmupBudgetMs = 0.0f;
+	const SSessionUiCache *m_pWarmupCache = nullptr;
 
 	// Profiling
 	double m_TotalFrameTimeMs = 0.0;

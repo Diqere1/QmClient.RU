@@ -208,6 +208,7 @@ bool CSectionLoader::Warmup(const SSessionUiCache *pCache, float TimeBudgetMs)
 		m_bWarmupActive = true;
 		m_WarmupIndex = 0;
 		m_WarmupBudgetMs = TimeBudgetMs;
+		m_pWarmupCache = pCache;
 		for(auto &Section : m_vSections)
 		{
 			Section.m_State = ESettingsSectionState::UNINITIALIZED;
