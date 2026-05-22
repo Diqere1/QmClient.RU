@@ -130,15 +130,8 @@ namespace
 	}
 
 static CSectionLoader s_SettingsLoader;
-	int gs_TClientSettingsDeferredFrames = 0;
 	int gs_TClientTabDeferredFrames = 0;
 	int gs_TClientDeferredTab = -1;
-	int gs_QmVisualDeferredFrames = 0;
-
-	void BeginDeferredTClientSettings()
-	{
-		gs_TClientSettingsDeferredFrames = 6;
-	}
 
 	void BeginDeferredTClientTab(const int Tab)
 	{
@@ -169,26 +162,11 @@ static CSectionLoader s_SettingsLoader;
 		}
 	}
 
-	bool ShouldDeferTClientVisualStage(const float ScrollY, const int MinRemainingFrames)
-	{
-		return gs_TClientSettingsDeferredFrames >= MinRemainingFrames && absolute(ScrollY) <= 1.0f;
-	}
-
-	[[maybe_unused]] bool ShouldDeferTClientTabContent(const int Tab)
-	{
-		return gs_TClientDeferredTab == Tab && gs_TClientTabDeferredFrames > 0;
-	}
-
 	int GetDeferredTClientTabFrames(const int Tab)
 	{
 		return gs_TClientDeferredTab == Tab ? gs_TClientTabDeferredFrames : 0;
 	}
 
-	void FinishDeferredTClientSettingsFrame()
-	{
-		if(gs_TClientSettingsDeferredFrames > 0)
-			--gs_TClientSettingsDeferredFrames;
-	}
 
 	void FinishDeferredTClientTabFrame(const int Tab)
 	{
@@ -199,21 +177,6 @@ static CSectionLoader s_SettingsLoader;
 			gs_TClientDeferredTab = -1;
 	}
 
-	[[maybe_unused]] void BeginDeferredQmVisualTab()
-	{
-		gs_QmVisualDeferredFrames = 1;
-	}
-
-	[[maybe_unused]] bool ShouldDeferQmVisualHeavyStage(const int ActiveTab, const float ScrollY)
-	{
-		return ActiveTab == 0 && gs_QmVisualDeferredFrames > 0 && absolute(ScrollY) <= 1.0f;
-	}
-
-	[[maybe_unused]] void FinishDeferredQmVisualFrame(const int ActiveTab)
-	{
-		if(ActiveTab == 0 && gs_QmVisualDeferredFrames > 0)
-			--gs_QmVisualDeferredFrames;
-	}
 
 	struct SSectionCullContext
 	{
@@ -1018,10 +981,10 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 	[[maybe_unused]] static float s_BackgroundDrawSectionCachedHeight = 0.0f;
 	[[maybe_unused]] static float s_FinishNameSectionCachedHeight = 0.0f;
 	const int SettingsDeferredFrames = s_SettingsLoader.GetFramesRemaining();
-	const bool DeferVisualFontHeavyControls = ShouldDeferTClientVisualStage(ScrollOffset.y, 3);
-	const bool DeferVisualNameplateHeavyControls = ShouldDeferTClientVisualStage(ScrollOffset.y, 2);
-	const bool DeferVisualEffectsHeavyControls = ShouldDeferTClientVisualStage(ScrollOffset.y, 2);
-	const bool DeferRightHeavySections = ShouldDeferTClientVisualStage(ScrollOffset.y, 2);
+	const bool DeferVisualFontHeavyControls = SettingsDeferredFrames >= 3 && absolute(ScrollOffset.y) <= 1.0f;
+	const bool DeferVisualNameplateHeavyControls = SettingsDeferredFrames >= 2 && absolute(ScrollOffset.y) <= 1.0f;
+	const bool DeferVisualEffectsHeavyControls = SettingsDeferredFrames >= 2 && absolute(ScrollOffset.y) <= 1.0f;
+	const bool DeferRightHeavySections = SettingsDeferredFrames >= 2 && absolute(ScrollOffset.y) <= 1.0f;
 	const bool CompactVisualFontSection = SettingsDeferredFrames >= 6 && absolute(ScrollOffset.y) <= 1.0f;
 	const bool CompactVisualNameplateSection = SettingsDeferredFrames >= 5 && absolute(ScrollOffset.y) <= 1.0f;
 	const bool CompactVisualEffectsSection = SettingsDeferredFrames >= 3 && absolute(ScrollOffset.y) <= 1.0f;
