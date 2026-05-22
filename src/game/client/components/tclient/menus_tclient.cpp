@@ -1196,43 +1196,6 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			return BoxRect;
 		};
 
-		// ---- CSectionLoader trial: register VisualFontSection ----
-		static bool s_TClientSettingsRegistered = false;
-		if(!s_TClientSettingsRegistered)
-		{
-			SSettingsSection VisualFontSection;
-			VisualFontSection.m_pName = "Visual: Font & Cursor";
-
-			// Measure: call with Render=false, return consumed height
-			VisualFontSection.m_MeasureFn = [&LayoutVisualFontSection, &Column](CUIRect &Col) -> float {
-				float SavedY = Col.y;
-				LayoutVisualFontSection(Col, false);
-				return Col.y - SavedY;
-			};
-
-			// Compact: render section box + deferred summary
-			VisualFontSection.m_RenderCompactFn = [&LayoutVisualFontSection, &Column, &DrawSectionBox, &DrawCompactDeferredSection](CUIRect &Col) -> float {
-				CUIRect BoxRect = LayoutVisualFontSection(Col, false);
-				DrawSectionBox(BoxRect);
-				char aBuf[128];
-				const char *pFont = g_Config.m_TcCustomFont[0] ? g_Config.m_TcCustomFont : Localize("Default");
-				str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", pFont, Localize("Cursor"), g_Config.m_TcCursorScale);
-				DrawCompactDeferredSection(BoxRect, Localize("Visual: Font & Cursor"), aBuf);
-				return BoxRect.h;
-			};
-
-			// Full: render full interactive section
-			VisualFontSection.m_RenderFullFn = [&LayoutVisualFontSection, &Column](CUIRect &Col) -> float {
-				CUIRect BoxRect = LayoutVisualFontSection(Col, true);
-				return BoxRect.h;
-			};
-
-			// Dependencies: config values that affect this section
-			VisualFontSection.m_DependencyConfigInts = {&g_Config.m_TcCustomFont, &g_Config.m_TcCursorScale, &g_Config.m_TcAnimateWheelTime, &g_Config.m_TcHammerRotatesWithCursor};
-
-			s_VisualFontLoader.Register({VisualFontSection});
-			s_TClientSettingsRegistered = true;
-		}
 
 		auto LayoutVisualNameplateSection = [&](CUIRect &CurrentColumn, bool Render) {
 			CUIRect BoxRect = CurrentColumn;
@@ -1826,6 +1789,86 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			return BoxRect;
 		};
 
+		// ---- CSectionLoader: register LeftView sections ----
+		static bool s_TClientSettingsRegistered = false;
+		if(!s_TClientSettingsRegistered)
+		{
+			SSettingsSection S;
+
+			// -- Visual: Font & Cursor --
+			S.m_pName = "Visual: Font & Cursor";
+			S.m_MeasureFn = [&LayoutVisualFontSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutVisualFontSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutVisualFontSection, &DrawSectionBox, &DrawCompactDeferredSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVisualFontSection(Col, false);
+				DrawSectionBox(BoxRect);
+				char aBuf[128];
+				const char *pFont = g_Config.m_TcCustomFont[0] ? g_Config.m_TcCustomFont : Localize("Default");
+				str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", pFont, Localize("Cursor"), g_Config.m_TcCursorScale);
+				DrawCompactDeferredSection(BoxRect, Localize("Visual: Font & Cursor"), aBuf);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutVisualFontSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVisualFontSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcCustomFont, &g_Config.m_TcCursorScale, &g_Config.m_TcAnimateWheelTime, &g_Config.m_TcHammerRotatesWithCursor};
+			s_VisualFontLoader.Register({S});
+
+			// -- Visual: Nameplates --
+			S = SSettingsSection{};
+			S.m_pName = "Visual: Nameplates";
+			S.m_MeasureFn = [&LayoutVisualNameplateSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutVisualNameplateSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutVisualNameplateSection, &DrawSectionBox, &DrawCompactDeferredSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVisualNameplateSection(Col, false);
+				DrawSectionBox(BoxRect);
+				char aBuf[160];
+				str_format(aBuf, sizeof(aBuf), "%s/%s/%s", g_Config.m_TcNameplatePingCircle ? Localize("Ping") : "-",
+					g_Config.m_TcNameplateCountry ? Localize("Country") : "-", g_Config.m_TcWhiteFeet ? Localize("White feet") : "-");
+				DrawCompactDeferredSection(BoxRect, Localize("Visual: Nameplates"), aBuf);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutVisualNameplateSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVisualNameplateSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcNameplatePingCircle, &g_Config.m_TcNameplateCountry, &g_Config.m_TcNameplateSkins, &g_Config.m_TcWhiteFeet};
+			s_VisualFontLoader.Register({S});
+
+			// -- Visual: Effects --
+			S = SSettingsSection{};
+			S.m_pName = "Visual: Effects";
+			S.m_MeasureFn = [&LayoutVisualEffectsSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutVisualEffectsSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutVisualEffectsSection, &DrawSectionBox, &DrawCompactDeferredSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVisualEffectsSection(Col, false);
+				DrawSectionBox(BoxRect);
+				char aBuf[160];
+				const char *pTinyTeeMode = !g_Config.m_TcTinyTees ? Localize("None") : (g_Config.m_TcTinyTeesOthers ? Localize("All") : Localize("Self"));
+				str_format(aBuf, sizeof(aBuf), "%s | Jelly %s", pTinyTeeMode, g_Config.m_QmJellyTee ? Localize("On") : Localize("Off"));
+				DrawCompactDeferredSection(BoxRect, Localize("Visual: Effects"), aBuf);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutVisualEffectsSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVisualEffectsSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcTinyTees, &g_Config.m_TcTinyTeesOthers, &g_Config.m_QmJellyTee};
+			s_VisualFontLoader.Register({S});
+
+			s_TClientSettingsRegistered = true;
+		}
+
 		// ***** Visual: Font & Cursor — CSectionLoader trial ***** //
 		{
 			if(s_TClientSettingsRegistered)
@@ -1866,6 +1909,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 
 		// ***** Visual: Nameplates ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutVisualNameplateSection(MeasuredColumn, false);
@@ -1897,7 +1941,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			}
 		}
 
+
 		// ***** Visual: Effects ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutVisualEffectsSection(MeasuredColumn, false);
