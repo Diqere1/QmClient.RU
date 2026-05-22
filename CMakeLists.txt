@@ -2700,6 +2700,8 @@ if(CLIENT)
     components/race_demo.h
     components/scoreboard.cpp
     components/scoreboard.h
+    components/section_loader.cpp
+    components/section_loader.h
     components/settings_warmup.h
     components/skins.cpp
     components/skins.h
@@ -3431,6 +3433,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     qm_modes_test.cpp
     qmclient_monitoring_test.cpp
     score_test.cpp
+    section_loader_test.cpp
     secure_random_test.cpp
     server_test.cpp
     serverbrowser_test.cpp
@@ -3463,6 +3466,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
   )
   set(TESTS_EXTRA
     src/game/client/QmUi/QmAnim.cpp
+    src/game/client/components/section_loader.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
     src/generated/client_data.h
