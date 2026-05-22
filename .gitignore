@@ -8,7 +8,7 @@ dyl/
 docs/dyl
 !docs/dyl/QmClient_docs
 docs/html
-.ruff
+.ruff_cache
 
 # Agent workspace files
 AGENTS.md

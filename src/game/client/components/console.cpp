@@ -2486,7 +2486,7 @@ void CGameConsole::OnRender()
 			{
 				const float HandleHeight = std::clamp(Rail.h * (VisibleBacklogLines / (float)maximum(TotalBacklogLines, 1)), maximum(Rail.w, 14.0f), Rail.h);
 				const float TrackRange = maximum(1.0f, Rail.h - HandleHeight);
-				const float Current = pConsole->m_BacklogCurLine / (float)maximum(MaxScroll, 1);
+				const float Current = 1.0f - (pConsole->m_BacklogCurLine / (float)maximum(MaxScroll, 1));
 				CUIRect Handle = {Rail.x, Rail.y + TrackRange * Current, Rail.w, HandleHeight};
 				const vec2 MousePos = GetMousePosition();
 				const bool MouseDown = m_TouchState.m_PrimaryPressed || Input()->NativeMousePressed(1);
@@ -2511,7 +2511,8 @@ void CGameConsole::OnRender()
 				if(pConsole->m_ScrollbarDragging)
 				{
 					const float HandleTop = std::clamp(MousePos.y - pConsole->m_ScrollbarDragOffset, Rail.y, Rail.y + TrackRange);
-					const int NewLine = std::clamp((int)std::round(((HandleTop - Rail.y) / TrackRange) * MaxScroll), 0, MaxScroll);
+					const float Relative = (HandleTop - Rail.y) / TrackRange;
+					const int NewLine = std::clamp((int)std::round((1.0f - Relative) * MaxScroll), 0, MaxScroll);
 					if(NewLine != pConsole->m_BacklogCurLine)
 					{
 						pConsole->m_BacklogCurLine = NewLine;
@@ -2519,7 +2520,7 @@ void CGameConsole::OnRender()
 					}
 					pConsole->m_MouseIsPress = false;
 					pConsole->m_HasSelection = false;
-					Handle.y = Rail.y + TrackRange * (pConsole->m_BacklogCurLine / (float)maximum(MaxScroll, 1));
+					Handle.y = Rail.y + TrackRange * (1.0f - (pConsole->m_BacklogCurLine / (float)maximum(MaxScroll, 1)));
 				}
 
 				Rail.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.22f), IGraphics::CORNER_ALL, Rail.w * 0.5f);
