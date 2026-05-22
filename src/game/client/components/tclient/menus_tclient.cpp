@@ -131,6 +131,8 @@ namespace
 
 static CSectionLoader s_SettingsLoader;
 static CSectionLoader s_VisualFontLoader;
+static CSectionLoader s_RightSectionLoader;
+
 	int gs_TClientTabDeferredFrames = 0;
 	int gs_TClientDeferredTab = -1;
 
@@ -859,6 +861,7 @@ void CMenus::RenderSettingsTClient(CUIRect MainView)
 		{
 			RenderSettingsTClientSettings(ContentView);
 			s_SettingsLoader.Process();
+			s_RightSectionLoader.Process();
 		}
 		if(s_CurCustomTab == TCLIENT_TAB_BINDCHAT)
 			RenderSettingsTClientChatBinds(ContentView);
@@ -893,6 +896,8 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 {
 	CPerfTimer RenderTimer;
 	CUIRect Column, LeftView, RightView, Button, Label;
+	static bool s_TClientSettingsRegistered = false;
+	static bool s_RightSettingsRegistered = false;
 	const CUIRect Viewport = MainView;
 
 	static CScrollRegion s_ScrollRegion;
@@ -1790,7 +1795,6 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		};
 
 		// ---- CSectionLoader: register LeftView sections ----
-		static bool s_TClientSettingsRegistered = false;
 		if(!s_TClientSettingsRegistered)
 		{
 			SSettingsSection S;
@@ -1815,7 +1819,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutVisualFontSection(Col, true);
 				return BoxRect.h;
 			};
-			S.m_DependencyConfigInts = {&g_Config.m_TcCustomFont, &g_Config.m_TcCursorScale, &g_Config.m_TcAnimateWheelTime, &g_Config.m_TcHammerRotatesWithCursor};
+			S.m_DependencyConfigInts = {&g_Config.m_TcCursorScale, &g_Config.m_TcAnimateWheelTime, &g_Config.m_TcHammerRotatesWithCursor};
 			s_VisualFontLoader.Register({S});
 
 			// -- Visual: Nameplates --
@@ -1864,6 +1868,149 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				return BoxRect.h;
 			};
 			S.m_DependencyConfigInts = {&g_Config.m_TcTinyTees, &g_Config.m_TcTinyTeesOthers, &g_Config.m_QmJellyTee};
+			s_VisualFontLoader.Register({S});
+			// -- Input --
+			S = SSettingsSection{};
+			S.m_pName = "Input";
+			S.m_MeasureFn = [&LayoutInputSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutInputSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutInputSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutInputSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutInputSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutInputSection(Col, true);
+				return BoxRect.h;
+			};
+			s_VisualFontLoader.Register({S});
+
+			// -- Anti Latency Tools --
+			S = SSettingsSection{};
+			S.m_pName = "Anti Latency Tools";
+			S.m_MeasureFn = [&LayoutAntiLatencyToolsSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutAntiLatencyToolsSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutAntiLatencyToolsSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutAntiLatencyToolsSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutAntiLatencyToolsSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutAntiLatencyToolsSection(Col, true);
+				return BoxRect.h;
+			};
+			s_VisualFontLoader.Register({S});
+
+			// -- Improved Anti Ping --
+			S = SSettingsSection{};
+			S.m_pName = "Improved Anti Ping";
+			S.m_MeasureFn = [&LayoutAntiPingSmoothingSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutAntiPingSmoothingSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutAntiPingSmoothingSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutAntiPingSmoothingSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutAntiPingSmoothingSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutAntiPingSmoothingSection(Col, true);
+				return BoxRect.h;
+			};
+			s_VisualFontLoader.Register({S});
+
+			// -- Execute on join --
+			S = SSettingsSection{};
+			S.m_pName = "Execute on join";
+			S.m_MeasureFn = [&LayoutAutoExecuteSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutAutoExecuteSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutAutoExecuteSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutAutoExecuteSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutAutoExecuteSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutAutoExecuteSection(Col, true);
+				return BoxRect.h;
+			};
+			s_VisualFontLoader.Register({S});
+
+			// -- Voting --
+			S = SSettingsSection{};
+			S.m_pName = "Voting";
+			S.m_MeasureFn = [&LayoutVotingSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutVotingSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutVotingSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVotingSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutVotingSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVotingSection(Col, true);
+				return BoxRect.h;
+			};
+			s_VisualFontLoader.Register({S});
+
+			// -- 自动回复 --
+			S = SSettingsSection{};
+			S.m_pName = "自动回复";
+			S.m_MeasureFn = [&LayoutAutoReplySection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutAutoReplySection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutAutoReplySection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutAutoReplySection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutAutoReplySection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutAutoReplySection(Col, true);
+				return BoxRect.h;
+			};
+			s_VisualFontLoader.Register({S});
+
+			// -- Player Indicator --
+			S = SSettingsSection{};
+			S.m_pName = "Player Indicator";
+			S.m_MeasureFn = [&LayoutPlayerIndicatorSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutPlayerIndicatorSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutPlayerIndicatorSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutPlayerIndicatorSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutPlayerIndicatorSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutPlayerIndicatorSection(Col, true);
+				return BoxRect.h;
+			};
+			s_VisualFontLoader.Register({S});
+
+			// -- 宠物 --
+			S = SSettingsSection{};
+			S.m_pName = "宠物";
+			S.m_MeasureFn = [&LayoutPetSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutPetSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutPetSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutPetSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutPetSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutPetSection(Col, true);
+				return BoxRect.h;
+			};
 			s_VisualFontLoader.Register({S});
 
 			s_TClientSettingsRegistered = true;
@@ -1977,6 +2124,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		LogSettingsStage("tclient_settings_left_visual_total", VisualSectionsTotalTimer);
 
 		// ***** Input ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutInputSection(MeasuredColumn, false);
@@ -1994,6 +2142,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 
 		// ***** Anti Latency Tools ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutAntiLatencyToolsSection(MeasuredColumn, false);
@@ -2011,6 +2160,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 
 		// ***** Improved Anti Ping ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutAntiPingSmoothingSection(MeasuredColumn, false);
@@ -2028,6 +2178,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 
 		// ***** Execute on join ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutAutoExecuteSection(MeasuredColumn, false);
@@ -2047,6 +2198,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 
 		// ***** Voting ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutVotingSection(MeasuredColumn, false);
@@ -2066,6 +2218,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 
 		// ***** 自动回复 ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutAutoReplySection(MeasuredColumn, false);
@@ -2085,6 +2238,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 
 		// ***** Player Indicator ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutPlayerIndicatorSection(MeasuredColumn, false);
@@ -2104,6 +2258,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 
 		// ***** 宠物 ***** //
+		if(!s_TClientSettingsRegistered)
 		{
 			CUIRect MeasuredColumn = Column;
 			CUIRect BoxRect = LayoutPetSection(MeasuredColumn, false);
@@ -2128,6 +2283,9 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 	{
 		CPerfTimer RightColumnTimer;
 		Column = RightView;
+		if(s_RightSettingsRegistered)
+			s_RightSectionLoader.Begin(RightView, 5.0f);
+
 		auto LayoutHudSection = [&](CUIRect &CurrentColumn, bool Render) {
 			CUIRect BoxRect;
 			CUIRect TmpRect;
@@ -2861,6 +3019,187 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			return BoxRect;
 		};
 
+		// ---- CSectionLoader: register RightView sections ----
+		if(!s_RightSettingsRegistered)
+		{
+			SSettingsSection S;
+
+			// -- HUD --
+			S.m_pName = "HUD";
+			S.m_MeasureFn = [&LayoutHudSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutHudSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutHudSection, &DrawSectionBox, &DrawCompactDeferredSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutHudSection(Col, false);
+				DrawSectionBox(BoxRect);
+				char aBuf[160];
+				str_format(aBuf, sizeof(aBuf), "Vote HUD %s | Mini debug %s", g_Config.m_TcMiniVoteHud ? Localize("On") : Localize("Off"),
+					g_Config.m_TcMiniDebug ? Localize("On") : Localize("Off"));
+				DrawCompactDeferredSection(BoxRect, Localize("HUD"), aBuf);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutHudSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutHudSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcMiniVoteHud, &g_Config.m_TcMiniDebug, &g_Config.m_TcRenderCursorSpec};
+			s_RightSectionLoader.Register({S});
+
+			// -- Tee status bar --
+			S = SSettingsSection{};
+			S.m_pName = "Tee status bar";
+			S.m_MeasureFn = [&LayoutTeeStatusBarSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutTeeStatusBarSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutTeeStatusBarSection, &DrawSectionBox, &DrawCompactDeferredSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutTeeStatusBarSection(Col, false);
+				DrawSectionBox(BoxRect);
+				char aBuf[160];
+				str_format(aBuf, sizeof(aBuf), "%s | %s %d", g_Config.m_TcShowFrozenHud ? Localize("Enabled") : Localize("Disabled"),
+					Localize("Rows"), g_Config.m_TcFrozenMaxRows);
+				DrawCompactDeferredSection(BoxRect, Localize("Tee status bar"), aBuf);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutTeeStatusBarSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutTeeStatusBarSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcShowFrozenHud, &g_Config.m_TcFrozenMaxRows, &g_Config.m_TcShowFrozenHudSkins};
+			s_RightSectionLoader.Register({S});
+
+			// -- Tile outlines --
+			S = SSettingsSection{};
+			S.m_pName = "Tile outlines";
+			S.m_MeasureFn = [&LayoutTileOutlinesSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutTileOutlinesSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutTileOutlinesSection, &DrawSectionBox, &DrawCompactDeferredSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutTileOutlinesSection(Col, false);
+				DrawSectionBox(BoxRect);
+				char aBuf[160];
+				str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", g_Config.m_TcOutline ? Localize("Enabled") : Localize("Disabled"),
+					Localize("Opacity"), g_Config.m_TcOutlineAlpha);
+				DrawCompactDeferredSection(BoxRect, Localize("Tile outlines"), aBuf);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutTileOutlinesSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutTileOutlinesSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcOutline, &g_Config.m_TcOutlineAlpha, &g_Config.m_TcOutlineEntities};
+			s_RightSectionLoader.Register({S});
+
+			// -- Ghost tools --
+			S = SSettingsSection{};
+			S.m_pName = "Ghost tools";
+			S.m_MeasureFn = [&LayoutGhostToolsSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutGhostToolsSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutGhostToolsSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutGhostToolsSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutGhostToolsSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutGhostToolsSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcShowOthersGhosts, &g_Config.m_TcSwapGhosts};
+			s_RightSectionLoader.Register({S});
+
+			// -- Rainbow --
+			S = SSettingsSection{};
+			S.m_pName = "Rainbow";
+			S.m_MeasureFn = [&LayoutRainbowSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutRainbowSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutRainbowSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutRainbowSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutRainbowSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutRainbowSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcRainbowTees, &g_Config.m_TcRainbowWeapon, &g_Config.m_TcRainbowHook};
+			s_RightSectionLoader.Register({S});
+
+			// -- Tee Trails --
+			S = SSettingsSection{};
+			S.m_pName = "Tee Trails";
+			S.m_MeasureFn = [&LayoutTeeTrailsSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutTeeTrailsSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutTeeTrailsSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutTeeTrailsSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutTeeTrailsSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutTeeTrailsSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcTeeTrail, &g_Config.m_TcTeeTrailOthers, &g_Config.m_TcTeeTrailWidth, &g_Config.m_TcTeeTrailLength, &g_Config.m_TcTeeTrailAlpha};
+			s_RightSectionLoader.Register({S});
+
+			// -- Background Draw --
+			S = SSettingsSection{};
+			S.m_pName = "Background Draw";
+			S.m_MeasureFn = [&LayoutBackgroundDrawSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutBackgroundDrawSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutBackgroundDrawSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutBackgroundDrawSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutBackgroundDrawSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutBackgroundDrawSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcBgDrawWidth, &g_Config.m_TcBgDrawFadeTime};
+			s_RightSectionLoader.Register({S});
+
+			// -- Finish Name --
+			S = SSettingsSection{};
+			S.m_pName = "Finish Name";
+			S.m_MeasureFn = [&LayoutFinishNameSection](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutFinishNameSection(Col, false);
+				return Col.y - SavedY;
+			};
+			S.m_RenderCompactFn = [&LayoutFinishNameSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutFinishNameSection(Col, true);
+				return BoxRect.h;
+			};
+			S.m_RenderFullFn = [&LayoutFinishNameSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutFinishNameSection(Col, true);
+				return BoxRect.h;
+			};
+			s_RightSectionLoader.Register({S});
+
+			s_RightSettingsRegistered = true;
+		}
+
+		if(s_RightSettingsRegistered)
+		{
+			s_RightSectionLoader.Process();
+			Column = s_RightSectionLoader.GetRunningColumn();
+		}
+		if(!s_RightSettingsRegistered)
+		{
+
 		// ***** HUD ***** //
 		{
 			CUIRect MeasuredColumn = Column;
@@ -3034,6 +3373,8 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			{
 				Column = MeasuredColumn;
 			}
+		}
+
 		}
 
 		// ***** END OF PAGE 1 SETTINGS ***** //
