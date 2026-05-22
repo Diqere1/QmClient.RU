@@ -24,13 +24,13 @@
 #include <game/client/components/menu_background.h>
 #include <game/client/components/menus.h>
 #include <game/client/components/qmclient/translate_ui_settings.h>
+#include <game/client/components/section_loader.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/tclient/bindchat.h>
 #include <game/client/components/tclient/bindwheel.h>
 #include <game/client/components/tclient/trails.h>
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
-#include <game/client/components/section_loader.h>
 #include <game/client/skin.h>
 #include <game/client/ui.h>
 #include <game/client/ui_listbox.h>
@@ -129,9 +129,9 @@ namespace
 		}
 	}
 
-static CSectionLoader s_SettingsLoader;
-static CSectionLoader s_VisualFontLoader;
-static CSectionLoader s_RightSectionLoader;
+	static CSectionLoader s_SettingsLoader;
+	static CSectionLoader s_VisualFontLoader;
+	static CSectionLoader s_RightSectionLoader;
 
 	int gs_TClientTabDeferredFrames = 0;
 	int gs_TClientDeferredTab = -1;
@@ -170,7 +170,6 @@ static CSectionLoader s_RightSectionLoader;
 		return gs_TClientDeferredTab == Tab ? gs_TClientTabDeferredFrames : 0;
 	}
 
-
 	void FinishDeferredTClientTabFrame(const int Tab)
 	{
 		if(gs_TClientDeferredTab != Tab || gs_TClientTabDeferredFrames <= 0)
@@ -179,7 +178,6 @@ static CSectionLoader s_RightSectionLoader;
 		if(gs_TClientTabDeferredFrames <= 0)
 			gs_TClientDeferredTab = -1;
 	}
-
 
 	struct SSectionCullContext
 	{
@@ -1201,7 +1199,6 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			return BoxRect;
 		};
 
-
 		auto LayoutVisualNameplateSection = [&](CUIRect &CurrentColumn, bool Render) {
 			CUIRect BoxRect = CurrentColumn;
 			CUIRect TmpLabel;
@@ -1885,6 +1882,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutInputSection(Col, true);
 				return BoxRect.h;
 			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcFastInput, &g_Config.m_TcFastInputAmount, &g_Config.m_TcFastInputOthers, &g_Config.m_ClSubTickAiming};
 			s_VisualFontLoader.Register({S});
 
 			// -- Anti Latency Tools --
@@ -1903,6 +1901,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutAntiLatencyToolsSection(Col, true);
 				return BoxRect.h;
 			};
+			S.m_DependencyConfigInts = {&g_Config.m_ClPredictionMargin, &g_Config.m_TcRemoveAnti, &g_Config.m_TcUnfreezeLagTicks, &g_Config.m_TcUnfreezeLagDelayTicks, &g_Config.m_TcUnpredOthersInFreeze, &g_Config.m_TcPredMarginInFreeze, &g_Config.m_TcPredMarginInFreezeAmount};
 			s_VisualFontLoader.Register({S});
 
 			// -- Improved Anti Ping --
@@ -1921,6 +1920,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutAntiPingSmoothingSection(Col, true);
 				return BoxRect.h;
 			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcAntiPingImproved, &g_Config.m_TcAntiPingStableDirection, &g_Config.m_TcAntiPingNegativeBuffer, &g_Config.m_TcAntiPingUncertaintyScale};
 			s_VisualFontLoader.Register({S});
 
 			// -- Execute on join --
@@ -1939,6 +1939,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutAutoExecuteSection(Col, true);
 				return BoxRect.h;
 			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcExecuteOnJoinDelay};
 			s_VisualFontLoader.Register({S});
 
 			// -- Voting --
@@ -1957,6 +1958,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutVotingSection(Col, true);
 				return BoxRect.h;
 			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcAutoVoteWhenFar, &g_Config.m_TcAutoVoteWhenFarTime};
 			s_VisualFontLoader.Register({S});
 
 			// -- 自动回复 --
@@ -1975,6 +1977,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutAutoReplySection(Col, true);
 				return BoxRect.h;
 			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcAutoReplyMuted, &g_Config.m_TcAutoReplyMinimized};
 			s_VisualFontLoader.Register({S});
 
 			// -- Player Indicator --
@@ -1993,6 +1996,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutPlayerIndicatorSection(Col, true);
 				return BoxRect.h;
 			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcPlayerIndicator, &g_Config.m_TcIndicatorHideVisible, &g_Config.m_TcPlayerIndicatorFreeze, &g_Config.m_TcIndicatorTeamOnly, &g_Config.m_TcIndicatorTees, &g_Config.m_TcWarListIndicator, &g_Config.m_TcIndicatorRadius, &g_Config.m_TcIndicatorOpacity, &g_Config.m_TcIndicatorVariableDistance, &g_Config.m_TcIndicatorOffset, &g_Config.m_TcIndicatorOffsetMax, &g_Config.m_TcIndicatorMaxDistance};
 			s_VisualFontLoader.Register({S});
 
 			// -- 宠物 --
@@ -2011,6 +2015,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutPetSection(Col, true);
 				return BoxRect.h;
 			};
+			S.m_DependencyConfigInts = {&g_Config.m_TcPetShow, &g_Config.m_TcPetSize, &g_Config.m_TcPetAlpha};
 			s_VisualFontLoader.Register({S});
 
 			s_TClientSettingsRegistered = true;
@@ -2087,7 +2092,6 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				Column = MeasuredColumn;
 			}
 		}
-
 
 		// ***** Visual: Effects ***** //
 		if(!s_TClientSettingsRegistered)
@@ -3092,7 +3096,8 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				CUIRect BoxRect = LayoutTileOutlinesSection(Col, true);
 				return BoxRect.h;
 			};
-			S.m_DependencyConfigInts = {&g_Config.m_TcOutline, &g_Config.m_TcOutlineAlpha, &g_Config.m_TcOutlineEntities};
+			S.m_DependencyConfigInts = {&g_Config.m_TcOutline, &g_Config.m_TcOutlineAlpha, &g_Config.m_TcOutlineEntities, &g_Config.m_TcOutlineSolidAlpha, &g_Config.m_TcOutlineSolid, &g_Config.m_TcOutlineWidthSolid, &g_Config.m_TcOutlineFreeze, &g_Config.m_TcOutlineWidthFreeze, &g_Config.m_TcOutlineUnfreeze, &g_Config.m_TcOutlineWidthUnfreeze, &g_Config.m_TcOutlineKill, &g_Config.m_TcOutlineWidthKill, &g_Config.m_TcOutlineTele, &g_Config.m_TcOutlineWidthTele};
+			S.m_DependencyConfigCols = {&g_Config.m_TcOutlineColorSolid, &g_Config.m_TcOutlineColorFreeze, &g_Config.m_TcOutlineColorDeepFreeze, &g_Config.m_TcOutlineColorDeepUnfreeze, &g_Config.m_TcOutlineColorUnfreeze, &g_Config.m_TcOutlineColorKill, &g_Config.m_TcOutlineColorTele};
 			s_RightSectionLoader.Register({S});
 
 			// -- Ghost tools --
@@ -3199,182 +3204,180 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 		}
 		if(!s_RightSettingsRegistered)
 		{
-
-		// ***** HUD ***** //
-		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutHudSection(MeasuredColumn, false);
-			s_HudSectionCachedHeight = BoxRect.h;
-			if(IsSectionVisible(BoxRect, CullContext))
+			// ***** HUD ***** //
 			{
-				CPerfTimer HudSectionTimer;
-				DrawSectionBox(BoxRect);
-				if(CompactHudSection)
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutHudSection(MeasuredColumn, false);
+				s_HudSectionCachedHeight = BoxRect.h;
+				if(IsSectionVisible(BoxRect, CullContext))
 				{
-					char aBuf[160];
-					str_format(aBuf, sizeof(aBuf), "Vote HUD %s | Mini debug %s", g_Config.m_TcMiniVoteHud ? Localize("On") : Localize("Off"),
-						g_Config.m_TcMiniDebug ? Localize("On") : Localize("Off"));
-					DrawCompactDeferredSection(BoxRect, Localize("HUD"), aBuf);
-					s_HudSectionCachedHeight = BoxRect.h;
-					Column = MeasuredColumn;
+					CPerfTimer HudSectionTimer;
+					DrawSectionBox(BoxRect);
+					if(CompactHudSection)
+					{
+						char aBuf[160];
+						str_format(aBuf, sizeof(aBuf), "Vote HUD %s | Mini debug %s", g_Config.m_TcMiniVoteHud ? Localize("On") : Localize("Off"),
+							g_Config.m_TcMiniDebug ? Localize("On") : Localize("Off"));
+						DrawCompactDeferredSection(BoxRect, Localize("HUD"), aBuf);
+						s_HudSectionCachedHeight = BoxRect.h;
+						Column = MeasuredColumn;
+					}
+					else
+					{
+						BoxRect = LayoutHudSection(Column, true);
+						s_HudSectionCachedHeight = BoxRect.h;
+					}
+					LogSettingsStage("tclient_settings_right_hud_total", HudSectionTimer);
 				}
 				else
 				{
-					BoxRect = LayoutHudSection(Column, true);
-					s_HudSectionCachedHeight = BoxRect.h;
-				}
-				LogSettingsStage("tclient_settings_right_hud_total", HudSectionTimer);
-			}
-			else
-			{
-				Column = MeasuredColumn;
-			}
-		}
-
-		// ***** Frozen Tee Display ***** //
-		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutTeeStatusBarSection(MeasuredColumn, false);
-			s_TeeStatusBarSectionCachedHeight = BoxRect.h;
-			if(IsSectionVisible(BoxRect, CullContext))
-			{
-				DrawSectionBox(BoxRect);
-				if(CompactTeeStatusBarSection)
-				{
-					char aBuf[160];
-					str_format(aBuf, sizeof(aBuf), "%s | %s %d", g_Config.m_TcShowFrozenHud ? Localize("Enabled") : Localize("Disabled"),
-						Localize("Rows"), g_Config.m_TcFrozenMaxRows);
-					DrawCompactDeferredSection(BoxRect, Localize("Tee status bar"), aBuf);
-					s_TeeStatusBarSectionCachedHeight = BoxRect.h;
 					Column = MeasuredColumn;
+				}
+			}
+
+			// ***** Frozen Tee Display ***** //
+			{
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutTeeStatusBarSection(MeasuredColumn, false);
+				s_TeeStatusBarSectionCachedHeight = BoxRect.h;
+				if(IsSectionVisible(BoxRect, CullContext))
+				{
+					DrawSectionBox(BoxRect);
+					if(CompactTeeStatusBarSection)
+					{
+						char aBuf[160];
+						str_format(aBuf, sizeof(aBuf), "%s | %s %d", g_Config.m_TcShowFrozenHud ? Localize("Enabled") : Localize("Disabled"),
+							Localize("Rows"), g_Config.m_TcFrozenMaxRows);
+						DrawCompactDeferredSection(BoxRect, Localize("Tee status bar"), aBuf);
+						s_TeeStatusBarSectionCachedHeight = BoxRect.h;
+						Column = MeasuredColumn;
+					}
+					else
+					{
+						BoxRect = LayoutTeeStatusBarSection(Column, true);
+						s_TeeStatusBarSectionCachedHeight = BoxRect.h;
+					}
 				}
 				else
 				{
-					BoxRect = LayoutTeeStatusBarSection(Column, true);
-					s_TeeStatusBarSectionCachedHeight = BoxRect.h;
+					Column = MeasuredColumn;
 				}
 			}
-			else
-			{
-				Column = MeasuredColumn;
-			}
-		}
 
-		// ***** Tile Outlines ***** //
-		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutTileOutlinesSection(MeasuredColumn, false);
-			if(IsSectionVisible(BoxRect, CullContext))
+			// ***** Tile Outlines ***** //
 			{
-				CPerfTimer TileOutlinesTimer;
-				DrawSectionBox(BoxRect);
-				if(CompactTileOutlinesSection)
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutTileOutlinesSection(MeasuredColumn, false);
+				if(IsSectionVisible(BoxRect, CullContext))
 				{
-					char aBuf[160];
-					str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", g_Config.m_TcOutline ? Localize("Enabled") : Localize("Disabled"),
-						Localize("Opacity"), g_Config.m_TcOutlineAlpha);
-					DrawCompactDeferredSection(BoxRect, Localize("Tile outlines"), aBuf);
-					Column = MeasuredColumn;
+					CPerfTimer TileOutlinesTimer;
+					DrawSectionBox(BoxRect);
+					if(CompactTileOutlinesSection)
+					{
+						char aBuf[160];
+						str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", g_Config.m_TcOutline ? Localize("Enabled") : Localize("Disabled"),
+							Localize("Opacity"), g_Config.m_TcOutlineAlpha);
+						DrawCompactDeferredSection(BoxRect, Localize("Tile outlines"), aBuf);
+						Column = MeasuredColumn;
+					}
+					else
+					{
+						BoxRect = LayoutTileOutlinesSection(Column, true);
+					}
+					LogSettingsStage("tclient_settings_tile_outlines_section", TileOutlinesTimer);
 				}
 				else
 				{
-					BoxRect = LayoutTileOutlinesSection(Column, true);
+					Column = MeasuredColumn;
 				}
-				LogSettingsStage("tclient_settings_tile_outlines_section", TileOutlinesTimer);
 			}
-			else
-			{
-				Column = MeasuredColumn;
-			}
-		}
 
-		// ***** Ghost Tools ***** //
-		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutGhostToolsSection(MeasuredColumn, false);
-			s_GhostToolsSectionCachedHeight = BoxRect.h;
-			if(IsSectionVisible(BoxRect, CullContext))
+			// ***** Ghost Tools ***** //
 			{
-				DrawSectionBox(BoxRect);
-				BoxRect = LayoutGhostToolsSection(Column, true);
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutGhostToolsSection(MeasuredColumn, false);
 				s_GhostToolsSectionCachedHeight = BoxRect.h;
+				if(IsSectionVisible(BoxRect, CullContext))
+				{
+					DrawSectionBox(BoxRect);
+					BoxRect = LayoutGhostToolsSection(Column, true);
+					s_GhostToolsSectionCachedHeight = BoxRect.h;
+				}
+				else
+				{
+					Column = MeasuredColumn;
+				}
 			}
-			else
-			{
-				Column = MeasuredColumn;
-			}
-		}
 
-		// ***** 彩虹! ***** //
-		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutRainbowSection(MeasuredColumn, false);
-			s_RainbowSectionCachedHeight = BoxRect.h;
-			if(IsSectionVisible(BoxRect, CullContext))
+			// ***** 彩虹! ***** //
 			{
-				DrawSectionBox(BoxRect);
-				BoxRect = LayoutRainbowSection(Column, true);
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutRainbowSection(MeasuredColumn, false);
 				s_RainbowSectionCachedHeight = BoxRect.h;
+				if(IsSectionVisible(BoxRect, CullContext))
+				{
+					DrawSectionBox(BoxRect);
+					BoxRect = LayoutRainbowSection(Column, true);
+					s_RainbowSectionCachedHeight = BoxRect.h;
+				}
+				else
+				{
+					Column = MeasuredColumn;
+				}
 			}
-			else
-			{
-				Column = MeasuredColumn;
-			}
-		}
 
-		// ***** Tee Trails ***** //
-		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutTeeTrailsSection(MeasuredColumn, false);
-			s_TeeTrailsSectionCachedHeight = BoxRect.h;
-			if(IsSectionVisible(BoxRect, CullContext))
+			// ***** Tee Trails ***** //
 			{
-				CPerfTimer TeeTrailsTimer;
-				DrawSectionBox(BoxRect);
-				BoxRect = LayoutTeeTrailsSection(Column, true);
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutTeeTrailsSection(MeasuredColumn, false);
 				s_TeeTrailsSectionCachedHeight = BoxRect.h;
-				LogSettingsStage("tclient_settings_right_tee_trails_total", TeeTrailsTimer);
+				if(IsSectionVisible(BoxRect, CullContext))
+				{
+					CPerfTimer TeeTrailsTimer;
+					DrawSectionBox(BoxRect);
+					BoxRect = LayoutTeeTrailsSection(Column, true);
+					s_TeeTrailsSectionCachedHeight = BoxRect.h;
+					LogSettingsStage("tclient_settings_right_tee_trails_total", TeeTrailsTimer);
+				}
+				else
+				{
+					Column = MeasuredColumn;
+				}
 			}
-			else
-			{
-				Column = MeasuredColumn;
-			}
-		}
 
-		// ***** 背景绘画 ***** //
-		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutBackgroundDrawSection(MeasuredColumn, false);
-			s_BackgroundDrawSectionCachedHeight = BoxRect.h;
-			if(IsSectionVisible(BoxRect, CullContext))
+			// ***** 背景绘画 ***** //
 			{
-				DrawSectionBox(BoxRect);
-				BoxRect = LayoutBackgroundDrawSection(Column, true);
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutBackgroundDrawSection(MeasuredColumn, false);
 				s_BackgroundDrawSectionCachedHeight = BoxRect.h;
+				if(IsSectionVisible(BoxRect, CullContext))
+				{
+					DrawSectionBox(BoxRect);
+					BoxRect = LayoutBackgroundDrawSection(Column, true);
+					s_BackgroundDrawSectionCachedHeight = BoxRect.h;
+				}
+				else
+				{
+					Column = MeasuredColumn;
+				}
 			}
-			else
-			{
-				Column = MeasuredColumn;
-			}
-		}
 
-		// ***** 终点恰分改名 ***** //
-		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutFinishNameSection(MeasuredColumn, false);
-			s_FinishNameSectionCachedHeight = BoxRect.h;
-			if(IsSectionVisible(BoxRect, CullContext))
+			// ***** 终点恰分改名 ***** //
 			{
-				DrawSectionBox(BoxRect);
-				BoxRect = LayoutFinishNameSection(Column, true);
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutFinishNameSection(MeasuredColumn, false);
 				s_FinishNameSectionCachedHeight = BoxRect.h;
+				if(IsSectionVisible(BoxRect, CullContext))
+				{
+					DrawSectionBox(BoxRect);
+					BoxRect = LayoutFinishNameSection(Column, true);
+					s_FinishNameSectionCachedHeight = BoxRect.h;
+				}
+				else
+				{
+					Column = MeasuredColumn;
+				}
 			}
-			else
-			{
-				Column = MeasuredColumn;
-			}
-		}
-
 		}
 
 		// ***** END OF PAGE 1 SETTINGS ***** //

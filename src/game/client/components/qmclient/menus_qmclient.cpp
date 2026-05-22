@@ -26,6 +26,7 @@
 #include <game/client/components/menus.h>
 #include <game/client/components/qmclient/keyword_reply_rules.h>
 #include <game/client/components/qmclient/translate_ui_settings.h>
+#include <game/client/components/section_loader.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/tclient/bindchat.h>
 #include <game/client/components/tclient/bindwheel.h>
@@ -133,7 +134,7 @@ namespace
 	int gs_TClientSettingsDeferredFrames = 0;
 	int gs_TClientTabDeferredFrames = 0;
 	int gs_TClientDeferredTab = -1;
-	int gs_QmVisualDeferredFrames = 0;
+	static CSectionLoader s_QmLoader;
 
 	[[maybe_unused]] void BeginDeferredTClientSettings()
 	{
@@ -197,22 +198,6 @@ namespace
 		--gs_TClientTabDeferredFrames;
 		if(gs_TClientTabDeferredFrames <= 0)
 			gs_TClientDeferredTab = -1;
-	}
-
-	void BeginDeferredQmVisualTab()
-	{
-		gs_QmVisualDeferredFrames = 1;
-	}
-
-	bool ShouldDeferQmVisualHeavyStage(const int ActiveTab, const float ScrollY)
-	{
-		return ActiveTab == 0 && gs_QmVisualDeferredFrames > 0 && absolute(ScrollY) <= 1.0f;
-	}
-
-	void FinishDeferredQmVisualFrame(const int ActiveTab)
-	{
-		if(ActiveTab == 0 && gs_QmVisualDeferredFrames > 0)
-			--gs_QmVisualDeferredFrames;
 	}
 
 	struct SSectionCullContext
@@ -741,7 +726,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			s_PrevQmTab = m_QmClientSettingsTab;
 			s_QmTabTransitionInitialized = true;
 			if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_VISUAL)
-				BeginDeferredQmVisualTab();
+				s_QmLoader.BeginLightweight(1, 5.0f);
 		}
 		else if(m_QmClientSettingsTab != s_PrevQmTab)
 		{
@@ -750,9 +735,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			s_QmTabTransitionDirection = m_QmClientSettingsTab > s_PrevQmTab ? 1.0f : -1.0f;
 			TriggerUiSwitchAnimation(QmClientTabSwitchNode, 0.18f);
 			if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_VISUAL)
-				BeginDeferredQmVisualTab();
-			else
-				gs_QmVisualDeferredFrames = 0;
+				s_QmLoader.BeginLightweight(1, 5.0f);
 			s_PrevQmTab = m_QmClientSettingsTab;
 		}
 
@@ -826,7 +809,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
 	ScrollParams.m_ScrollbarMargin = std::clamp(8.0f * UiScale, 6.0f, 8.0f);
 	s_ScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
-	const bool DeferQmVisualHeavyModules = ShouldDeferQmVisualHeavyStage(m_QmClientSettingsTab, ScrollOffset.y);
+	const bool DeferQmVisualHeavyModules = s_QmLoader.GetFramesRemaining() > 0 && m_QmClientSettingsTab == 0 && absolute(ScrollOffset.y) <= 1.0f;
 
 	static std::vector<CUIRect> s_GlassCards;
 	static vec2 s_PrevScrollOffset(0.0f, 0.0f);
@@ -6741,7 +6724,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		TabContentClip.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, TabTransitionAlpha), IGraphics::CORNER_NONE, 0.0f);
 	if(TabTransitionActive)
 		Ui()->ClipDisable();
-	FinishDeferredQmVisualFrame(m_QmClientSettingsTab);
+	s_QmLoader.Process();
 	{
 		char aTotalExtra[96];
 		str_format(aTotalExtra, sizeof(aTotalExtra), "tab=%s transition=%d", QmSettingsTabName(m_QmClientSettingsTab), TabTransitionActive ? 1 : 0);
