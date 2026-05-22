@@ -29,6 +29,18 @@ if defined VSINSTALLDIR (
 	if exist "%VSINSTALLDIR%Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe" set "PATH=%VSINSTALLDIR%Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 )
 
+if /I "%~1"=="--build" (
+	rem 旧的 build 目录可能把 msvc_deps_prefix 写成乱码，先在进入本次 build 前修正一次。
+	rem 这样 Ninja 本轮编译就能重新记录头文件依赖，不必等到下一次构建才生效。
+	rem 先修复构建目录里的 msvc_deps_prefix，再进入本次 build，避免旧 rules.ninja 让头文件依赖失效。
+	py.exe -3 "%~dp0repair_ninja_msvc_prefix.py" --prepare-build %* >nul 2>&1
+	if errorlevel 1 (
+		rem 某些环境没有 py launcher，回退到 python 可执行文件。
+		python "%~dp0repair_ninja_msvc_prefix.py" --prepare-build %* >nul 2>&1
+		if errorlevel 1 exit /b 1
+	)
+)
+
 set "CMOUT=%TEMP%\cmake-windows-%RANDOM%.log"
 if /I "%~1"=="--build" (
 	cmake %* > "%CMOUT%" 2>&1
@@ -46,6 +58,21 @@ if /I "%~1"=="--build" (
 	cmake -Wno-dev %* > "%CMOUT%" 2>&1
 )
 set "CMRC=%errorlevel%"
+
+set "RULES_FIXED="
+rem build/configure 过程中如果触发了重新生成，rules.ninja 可能又被写回坏前缀，所以这里再补一次。
+rem configure/build 结束后再补一次，处理本次命令内部重新生成了 rules.ninja 的情况。
+py.exe -3 "%~dp0repair_ninja_msvc_prefix.py" %*
+if not errorlevel 1 (
+	set "RULES_FIXED=1"
+) else (
+	rem 同样保留 python 回退，避免只因为 py launcher 缺失就跳过修复。
+	python "%~dp0repair_ninja_msvc_prefix.py" %*
+	if not errorlevel 1 (
+		set "RULES_FIXED=1"
+	)
+)
+
 set "FILTERED="
 py.exe -3 "%~dp0cmake-windows-filter.py" "%CMOUT%"
 if not errorlevel 1 (
