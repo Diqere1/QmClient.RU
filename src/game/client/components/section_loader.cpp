@@ -20,12 +20,45 @@ void CSectionLoader::Begin(CUIRect MainView, float TimeBudgetMs)
 	m_BudgetPerFrameMs = (double)TimeBudgetMs;
 	m_CurrentIndex = 0;
 
+	m_bLightweight = false;
 	m_bComplete = false;
 	m_TotalFrameTimeMs = 0.0;
 }
 
+void CSectionLoader::BeginLightweight(int InitialFrames, float TimeBudgetMs)
+{
+	m_bLightweight = true;
+	m_LightweightFramesInitial = InitialFrames;
+	m_LightweightFramesRemaining = InitialFrames;
+	m_BudgetPerFrameMs = (double)TimeBudgetMs;
+	m_bComplete = false;
+	m_TotalFrameTimeMs = 0.0;
+}
+
+int CSectionLoader::GetFramesRemaining() const
+{
+	if(m_bLightweight)
+		return m_LightweightFramesRemaining;
+	// In full mode, estimate based on how many sections aren't FULL
+	int Remaining = 0;
+	for(const auto &S : m_vSections)
+		if(S.m_State != ESettingsSectionState::FULL)
+			++Remaining;
+	return Remaining;
+}
+
 bool CSectionLoader::Process()
 {
+	if(m_bLightweight)
+	{
+		CPerfTimer FrameTimer;
+		if(m_LightweightFramesRemaining > 0)
+			--m_LightweightFramesRemaining;
+		if(m_LightweightFramesRemaining <= 0)
+			m_bComplete = true;
+		return !m_bComplete;
+	}
+
 	if(!m_bInitialized)
 	{
 		for(auto &Section : m_vSections)

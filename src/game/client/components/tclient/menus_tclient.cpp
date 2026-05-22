@@ -868,19 +868,13 @@ void CMenus::RenderSettingsTClient(CUIRect MainView)
 	{
 		s_PrevCustomTab = s_CurCustomTab;
 		s_CustomTabTransitionInitialized = true;
-		BeginDeferredTClientTab(s_CurCustomTab);
-		if(s_CurCustomTab == TCLIENT_TAB_SETTINGS)
-			BeginDeferredTClientSettings();
+		s_SettingsLoader.BeginLightweight(6, 5.0f);
 	}
 	else if(s_CurCustomTab != s_PrevCustomTab)
 	{
 		s_CustomTabTransitionDirection = s_CurCustomTab > s_PrevCustomTab ? 1.0f : -1.0f;
 		TriggerUiSwitchAnimation(TClientTabSwitchNode, 0.18f);
-		BeginDeferredTClientTab(s_CurCustomTab);
-		if(s_CurCustomTab == TCLIENT_TAB_SETTINGS)
-			BeginDeferredTClientSettings();
-		else
-			gs_TClientSettingsDeferredFrames = 0;
+		s_SettingsLoader.BeginLightweight(6, 5.0f);
 		s_PrevCustomTab = s_CurCustomTab;
 	}
 
@@ -900,7 +894,7 @@ void CMenus::RenderSettingsTClient(CUIRect MainView)
 		if(s_CurCustomTab == TCLIENT_TAB_SETTINGS)
 		{
 			RenderSettingsTClientSettings(ContentView);
-			FinishDeferredTClientSettingsFrame();
+			s_SettingsLoader.Process();
 		}
 		if(s_CurCustomTab == TCLIENT_TAB_BINDCHAT)
 			RenderSettingsTClientChatBinds(ContentView);
@@ -1023,7 +1017,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 	[[maybe_unused]] static float s_TeeTrailsSectionCachedHeight = 0.0f;
 	[[maybe_unused]] static float s_BackgroundDrawSectionCachedHeight = 0.0f;
 	[[maybe_unused]] static float s_FinishNameSectionCachedHeight = 0.0f;
-	const int SettingsDeferredFrames = gs_TClientSettingsDeferredFrames;
+	const int SettingsDeferredFrames = s_SettingsLoader.GetFramesRemaining();
 	const bool DeferVisualFontHeavyControls = ShouldDeferTClientVisualStage(ScrollOffset.y, 3);
 	const bool DeferVisualNameplateHeavyControls = ShouldDeferTClientVisualStage(ScrollOffset.y, 2);
 	const bool DeferVisualEffectsHeavyControls = ShouldDeferTClientVisualStage(ScrollOffset.y, 2);

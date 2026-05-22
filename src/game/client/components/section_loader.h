@@ -105,6 +105,12 @@ public:
 	/** Reset the state machine (e.g. when switching tabs). */
 	void Reset();
 
+	/** Lightweight mode: simple frame counter without section registration.
+	    Call BeginLightweight(InitialFrames, budget) then Process() each frame.
+	    GetFramesRemaining() returns the diminishing counter. */
+	void BeginLightweight(int InitialFrames, float TimeBudgetMs = 5.0f);
+	int GetFramesRemaining() const;
+
 	// -- Pre-warming (loading screen) --
 
 	/**
@@ -148,6 +154,9 @@ private:
 	int m_CurrentIndex = 0;
 	bool m_bInitialized = false;
 	bool m_bComplete = false;
+	bool m_bLightweight = false;
+	int m_LightweightFramesInitial = 0;
+	int m_LightweightFramesRemaining = 0;
 
 	// Warmup state
 	bool m_bWarmupActive = false;
