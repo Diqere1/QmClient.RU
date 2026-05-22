@@ -30,6 +30,7 @@
 #include <game/client/components/tclient/trails.h>
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
+#include <game/client/components/section_loader.h>
 #include <game/client/skin.h>
 #include <game/client/ui.h>
 #include <game/client/ui_listbox.h>
@@ -128,6 +129,7 @@ namespace
 		}
 	}
 
+static CSectionLoader s_SettingsLoader;
 	int gs_TClientSettingsDeferredFrames = 0;
 	int gs_TClientTabDeferredFrames = 0;
 	int gs_TClientDeferredTab = -1;
