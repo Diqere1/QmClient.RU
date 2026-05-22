@@ -5113,15 +5113,7 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 	if(s_vAllClientVars.empty())
 	{
 		auto IsLegacyMigratedQmConfig = [](const char *pScriptName) {
-			return str_comp(pScriptName, "tc_hide_chat_bubbles") == 0 ||
-			       str_comp(pScriptName, "tc_chat_bubble") == 0 ||
-			       str_comp(pScriptName, "tc_chat_bubble_duration") == 0 ||
-			       str_comp(pScriptName, "tc_chat_bubble_alpha") == 0 ||
-			       str_comp(pScriptName, "tc_chat_bubble_font_size") == 0 ||
-			       str_comp(pScriptName, "tc_chat_bubble_bg_color") == 0 ||
-			       str_comp(pScriptName, "tc_chat_bubble_text_color") == 0 ||
-			       str_comp(pScriptName, "tc_chat_bubble_animation") == 0 ||
-			       str_comp(pScriptName, "cl_scoreboard_points") == 0 ||
+			return str_comp(pScriptName, "cl_scoreboard_points") == 0 ||
 			       str_comp(pScriptName, "cl_scoreboard_sort_mode") == 0 ||
 			       str_comp(pScriptName, "cl_dummy_miniview") == 0 ||
 			       str_comp(pScriptName, "cl_dummy_miniview_auto") == 0 ||
