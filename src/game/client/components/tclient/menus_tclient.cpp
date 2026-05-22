@@ -130,6 +130,7 @@ namespace
 	}
 
 static CSectionLoader s_SettingsLoader;
+static CSectionLoader s_VisualFontLoader;
 	int gs_TClientTabDeferredFrames = 0;
 	int gs_TClientDeferredTab = -1;
 
@@ -1001,6 +1002,10 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 	LeftView.VSplitLeft(MarginSmall, nullptr, &LeftView);
 	RightView.VSplitRight(MarginSmall, &RightView, nullptr);
 
+	// Initialize VisualFont section loader for this frame
+	if(s_TClientSettingsRegistered)
+		s_VisualFontLoader.Begin(LeftView, 5.0f);
+
 	{
 		CPerfTimer StageTimer;
 		for(CUIRect &Section : s_SectionBoxes)
@@ -1190,6 +1195,44 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
 			return BoxRect;
 		};
+
+		// ---- CSectionLoader trial: register VisualFontSection ----
+		static bool s_TClientSettingsRegistered = false;
+		if(!s_TClientSettingsRegistered)
+		{
+			SSettingsSection VisualFontSection;
+			VisualFontSection.m_pName = "Visual: Font & Cursor";
+
+			// Measure: call with Render=false, return consumed height
+			VisualFontSection.m_MeasureFn = [&LayoutVisualFontSection, &Column](CUIRect &Col) -> float {
+				float SavedY = Col.y;
+				LayoutVisualFontSection(Col, false);
+				return Col.y - SavedY;
+			};
+
+			// Compact: render section box + deferred summary
+			VisualFontSection.m_RenderCompactFn = [&LayoutVisualFontSection, &Column, &DrawSectionBox, &DrawCompactDeferredSection](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVisualFontSection(Col, false);
+				DrawSectionBox(BoxRect);
+				char aBuf[128];
+				const char *pFont = g_Config.m_TcCustomFont[0] ? g_Config.m_TcCustomFont : Localize("Default");
+				str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", pFont, Localize("Cursor"), g_Config.m_TcCursorScale);
+				DrawCompactDeferredSection(BoxRect, Localize("Visual: Font & Cursor"), aBuf);
+				return BoxRect.h;
+			};
+
+			// Full: render full interactive section
+			VisualFontSection.m_RenderFullFn = [&LayoutVisualFontSection, &Column](CUIRect &Col) -> float {
+				CUIRect BoxRect = LayoutVisualFontSection(Col, true);
+				return BoxRect.h;
+			};
+
+			// Dependencies: config values that affect this section
+			VisualFontSection.m_DependencyConfigInts = {&g_Config.m_TcCustomFont, &g_Config.m_TcCursorScale, &g_Config.m_TcAnimateWheelTime, &g_Config.m_TcHammerRotatesWithCursor};
+
+			s_VisualFontLoader.Register({VisualFontSection});
+			s_TClientSettingsRegistered = true;
+		}
 
 		auto LayoutVisualNameplateSection = [&](CUIRect &CurrentColumn, bool Render) {
 			CUIRect BoxRect = CurrentColumn;
@@ -1783,34 +1826,42 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			return BoxRect;
 		};
 
-		// ***** Visual: Font & Cursor ***** //
+		// ***** Visual: Font & Cursor — CSectionLoader trial ***** //
 		{
-			CUIRect MeasuredColumn = Column;
-			CUIRect BoxRect = LayoutVisualFontSection(MeasuredColumn, false);
-			if(IsSectionVisible(BoxRect, CullContext))
+			if(s_TClientSettingsRegistered)
 			{
-				CPerfTimer VisualSectionTimer;
-				DrawSectionBox(BoxRect);
-				if(CompactVisualFontSection)
-				{
-					char aBuf[128];
-					const char *pCurrentFont = g_Config.m_TcCustomFont[0] != '\0' ? g_Config.m_TcCustomFont : Localize("Default");
-					str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", pCurrentFont, Localize("Cursor"), g_Config.m_TcCursorScale);
-					DrawCompactDeferredSection(BoxRect, Localize("Visual: Font & Cursor"), aBuf);
-					s_VisualFontSectionCachedHeight = BoxRect.h;
-					Column = MeasuredColumn;
-				}
-				else
-				{
-					BoxRect = LayoutVisualFontSection(Column, true);
-					s_VisualFontSectionCachedHeight = BoxRect.h;
-				}
-				LogSettingsStage("tclient_settings_left_visual_font_section", VisualSectionTimer);
+				s_VisualFontLoader.Process();
+				Column = s_VisualFontLoader.GetRunningColumn();
 			}
 			else
 			{
-				s_VisualFontSectionCachedHeight = BoxRect.h;
-				Column = MeasuredColumn;
+				CUIRect MeasuredColumn = Column;
+				CUIRect BoxRect = LayoutVisualFontSection(MeasuredColumn, false);
+				if(IsSectionVisible(BoxRect, CullContext))
+				{
+					CPerfTimer VisualSectionTimer;
+					DrawSectionBox(BoxRect);
+					if(CompactVisualFontSection)
+					{
+						char aBuf[128];
+						const char *pCurrentFont = g_Config.m_TcCustomFont[0] != '\0' ? g_Config.m_TcCustomFont : Localize("Default");
+						str_format(aBuf, sizeof(aBuf), "%s | %s %d%%", pCurrentFont, Localize("Cursor"), g_Config.m_TcCursorScale);
+						DrawCompactDeferredSection(BoxRect, Localize("Visual: Font & Cursor"), aBuf);
+						s_VisualFontSectionCachedHeight = BoxRect.h;
+						Column = MeasuredColumn;
+					}
+					else
+					{
+						BoxRect = LayoutVisualFontSection(Column, true);
+						s_VisualFontSectionCachedHeight = BoxRect.h;
+					}
+					LogSettingsStage("tclient_settings_left_visual_font_section", VisualSectionTimer);
+				}
+				else
+				{
+					s_VisualFontSectionCachedHeight = BoxRect.h;
+					Column = MeasuredColumn;
+				}
 			}
 		}
 

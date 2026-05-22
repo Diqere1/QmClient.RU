@@ -141,6 +141,7 @@ public:
 
 	int m_ActiveTab = -1;
 	float m_ScrollY = 0.0f;
+	CUIRect GetRunningColumn() const { return m_RunningColumn; }
 
 	// -- Profiling --
 
