@@ -1962,12 +1962,6 @@ void CMenus::Render()
 			{
 				Ui()->ClipDisable();
 			}
-			if(m_MenuPage != PAGE_SETTINGS && m_Popup == POPUP_NONE)
-			{
-				CPerfTimer StageTimer;
-				PrewarmSettingsRuntimeCaches(MainViewClip);
-				LogPerfStage("settings_runtime_cache_prewarm", StageTimer.ElapsedMs(), false, "state=offline");
-			}
 			{
 				CPerfTimer StageTimer;
 				RenderMenubar(TabBar, ClientState);
@@ -2055,12 +2049,6 @@ void CMenus::Render()
 			if(TransitionActive)
 			{
 				Ui()->ClipDisable();
-			}
-			if(m_GamePage != PAGE_SETTINGS && m_Popup == POPUP_NONE)
-			{
-				CPerfTimer StageTimer;
-				PrewarmSettingsRuntimeCaches(MainViewClip);
-				LogPerfStage("settings_runtime_cache_prewarm", StageTimer.ElapsedMs(), false, "state=online");
 			}
 			{
 				CPerfTimer StageTimer;
