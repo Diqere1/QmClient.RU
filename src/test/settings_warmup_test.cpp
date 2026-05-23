@@ -242,3 +242,14 @@ TEST(SettingsRuntimeCache, BudgetStopsEveryMainThreadCost)
 	EXPECT_FALSE(SettingsWarmupConsumeBudget(Budget, ESettingsWarmupCost::JOB_RESULT_MERGE));
 	EXPECT_EQ(Budget.m_StopReason, ESettingsWarmupStopReason::MERGE_BUDGET);
 }
+
+TEST(SettingsRuntimeCache, PageCacheSlotsExistForEveryRegisteredPage)
+{
+	const SSettingsPageRuntimeRegistry Registry = BuildSettingsPageRuntimeRegistry();
+	for(int Page : Registry.m_vPages)
+	{
+		const int Tab = Page == CMenus::SETTINGS_QMCLIENT ? 0 : -1;
+		EXPECT_GE(SettingsPageRuntimeCacheSlot(Page, Tab), 0) << Page;
+	}
+	EXPECT_NE(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_TCLIENT, 0), SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_TCLIENT, 1));
+}

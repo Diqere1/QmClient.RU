@@ -3446,30 +3446,42 @@ void CMenus::RenderSettings(CUIRect MainView)
 		if(g_Config.m_UiSettingsPage == SETTINGS_LANGUAGE)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_LANGUAGE);
-			RenderLanguageSettings(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_LANGUAGE, -1);
+			if(!RuntimeCacheHit)
+				RenderLanguageSettings(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_GENERAL)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_GENERAL);
-			RenderSettingsGeneral(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_GENERAL, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsGeneral(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_PLAYER)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_PLAYER);
-			RenderSettingsPlayer(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_PLAYER, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsPlayer(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_TEE)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_TEE);
-			if(Client()->IsSixup())
-				RenderSettingsTee7(ContentView);
-			else
-				RenderSettingsTee(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_TEE, -1);
+			if(!RuntimeCacheHit)
+			{
+				if(Client()->IsSixup())
+					RenderSettingsTee7(ContentView);
+				else
+					RenderSettingsTee(ContentView);
+			}
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_APPEARANCE)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_APPEARANCE);
-			RenderSettingsAppearance(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_APPEARANCE, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsAppearance(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_CONTROLS)
 		{
@@ -3483,22 +3495,30 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_GRAPHICS)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_GRAPHICS);
-			RenderSettingsGraphics(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_GRAPHICS, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsGraphics(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_SOUND)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_SOUND);
-			RenderSettingsSound(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_SOUND, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsSound(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_DDNET)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_DDNET);
-			RenderSettingsDDNet(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_DDNET, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsDDNet(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_ASSETS)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_ASSETS);
-			RenderSettingsCustom(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_ASSETS, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsCustom(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_TCLIENT)
 		{

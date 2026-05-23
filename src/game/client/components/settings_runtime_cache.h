@@ -50,8 +50,11 @@ struct SSettingsPageRuntimeRegistry
 	std::vector<int> m_vPages;
 };
 
+constexpr int SETTINGS_PAGE_RUNTIME_CACHE_SLOTS = 32;
+
 SSettingsPageRuntimeRegistry BuildSettingsPageRuntimeRegistry();
 bool SettingsPageRuntimeRegistryContains(const SSettingsPageRuntimeRegistry &Registry, int Page);
+int SettingsPageRuntimeCacheSlot(int Page, int Tab);
 bool SettingsWarmupConsumeBudget(SSettingsWarmupFrameBudget &Budget, ESettingsWarmupCost Cost);
 const char *SettingsWarmupMissReasonName(ESettingsWarmupMissReason Reason);
 std::string SettingsPageCacheKey(int Page, int Tab);

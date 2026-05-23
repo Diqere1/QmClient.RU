@@ -2605,21 +2605,21 @@ bool CMenus::PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView)
 		s_NextTClientRuntimeCachePrewarmTab = (s_NextTClientRuntimeCachePrewarmTab + 1) % NUMBER_OF_TCLIENT_TABS;
 		if(IsFlagSet(g_Config.m_TcTClientSettingsTabs, Tab))
 		{
-			if(Tab >= 0 && Tab < SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS)
+			if(Tab >= 0 && Tab < 6)
 				m_aSettingsTClientSiblingPrewarmed[Tab] = true;
 			continue;
 		}
 		if(Tab == m_TClientSettingsTab)
 		{
-			if(Tab >= 0 && Tab < SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS)
+			if(Tab >= 0 && Tab < 6)
 				m_aSettingsTClientSiblingPrewarmed[Tab] = true;
 			continue;
 		}
-		if(PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, Tab, m_SettingsRuntimeCacheMetadata.m_LastScrollY) && Tab >= 0 && Tab < SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS)
+		if(PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, Tab, m_SettingsRuntimeCacheMetadata.m_LastScrollY) && Tab >= 0 && Tab < 6)
 			m_aSettingsTClientSiblingPrewarmed[Tab] = true;
 		break;
 	}
-	for(int Tab = 0; Tab < SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS; ++Tab)
+	for(int Tab = 0; Tab < 6; ++Tab)
 	{
 		if(!m_aSettingsTClientSiblingPrewarmed[Tab])
 			return false;
@@ -2644,37 +2644,76 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 
 	const int QmClientTab = m_SettingsRuntimeCacheMetadata.m_LastQmTab >= 0 ? m_SettingsRuntimeCacheMetadata.m_LastQmTab : m_QmClientSettingsTab;
 	const int TClientTab = m_SettingsRuntimeCacheMetadata.m_LastTClientTab >= 0 ? m_SettingsRuntimeCacheMetadata.m_LastTClientTab : m_TClientSettingsTab;
-	for(int Attempt = 0; Attempt < 4; ++Attempt)
+	static const int s_aPrewarmJobs[] = {
+		SETTINGS_LANGUAGE,
+		SETTINGS_GENERAL,
+		SETTINGS_PLAYER,
+		SETTINGS_TEE,
+		SETTINGS_APPEARANCE,
+		SETTINGS_CONTROLS,
+		SETTINGS_GRAPHICS,
+		SETTINGS_SOUND,
+		SETTINGS_DDNET,
+		SETTINGS_ASSETS,
+		SETTINGS_TCLIENT,
+		SETTINGS_QMCLIENT,
+		-1,
+	};
+	for(int Attempt = 0; Attempt < (int)(sizeof(s_aPrewarmJobs) / sizeof(s_aPrewarmJobs[0])); ++Attempt)
 	{
-		const int Job = m_SettingsRuntimePrewarmCursor;
-		m_SettingsRuntimePrewarmCursor = (m_SettingsRuntimePrewarmCursor + 1) % 4;
-		if(Job == 0 && !m_bSettingsTClientPrewarmed)
-		{
-			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, TClientTab, m_SettingsRuntimeCacheMetadata.m_LastScrollY);
-			PrewarmSettingsTClient(ContentView);
-			m_bSettingsTClientPrewarmed = PageReady;
-			break;
-		}
-		if(Job == 1 && !m_bSettingsQmClientPrewarmed)
-		{
-			m_bSettingsQmClientPrewarmed = PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_QMCLIENT, QmClientTab);
-			break;
-		}
-		if(Job == 2 && !m_bSettingsControlsPrewarmed)
-		{
-			m_bSettingsControlsPrewarmed = PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_CONTROLS, -1);
-			break;
-		}
-		if(Job == 3)
+		const int JobIndex = m_SettingsRuntimePrewarmCursor;
+		m_SettingsRuntimePrewarmCursor = (m_SettingsRuntimePrewarmCursor + 1) % (int)(sizeof(s_aPrewarmJobs) / sizeof(s_aPrewarmJobs[0]));
+		const int JobPage = s_aPrewarmJobs[JobIndex];
+		if(JobPage == -1)
 		{
 			(void)PrewarmSettingsTClientRuntimeCacheSibling(ContentView);
 			break;
 		}
+
+		const int PageTab = JobPage == SETTINGS_TCLIENT ? TClientTab : (JobPage == SETTINGS_QMCLIENT ? QmClientTab : -1);
+		const int Slot = SettingsPageRuntimeCacheSlot(JobPage, PageTab);
+		if(Slot < 0)
+			continue;
+		if(m_aSettingsPagePrewarmed[Slot])
+			continue;
+		if(JobPage == SETTINGS_TCLIENT)
+		{
+			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, TClientTab, m_SettingsRuntimeCacheMetadata.m_LastScrollY);
+			PrewarmSettingsTClient(ContentView);
+			m_aSettingsPagePrewarmed[Slot] = PageReady;
+			break;
+		}
+		m_aSettingsPagePrewarmed[Slot] = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, m_SettingsRuntimeCacheMetadata.m_LastScrollY);
+		break;
 	}
 	bool SiblingsReady = true;
-	for(int Tab = 0; Tab < SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS; ++Tab)
+	for(int Tab = 0; Tab < 6; ++Tab)
 		SiblingsReady = SiblingsReady && m_aSettingsTClientSiblingPrewarmed[Tab];
-	return m_bSettingsControlsPrewarmed && m_bSettingsQmClientPrewarmed && m_bSettingsTClientPrewarmed && SiblingsReady;
+	const int LanguageSlot = SettingsPageRuntimeCacheSlot(SETTINGS_LANGUAGE, -1);
+	const int GeneralSlot = SettingsPageRuntimeCacheSlot(SETTINGS_GENERAL, -1);
+	const int PlayerSlot = SettingsPageRuntimeCacheSlot(SETTINGS_PLAYER, -1);
+	const int TeeSlot = SettingsPageRuntimeCacheSlot(SETTINGS_TEE, -1);
+	const int AppearanceSlot = SettingsPageRuntimeCacheSlot(SETTINGS_APPEARANCE, -1);
+	const int ControlsSlot = SettingsPageRuntimeCacheSlot(SETTINGS_CONTROLS, -1);
+	const int GraphicsSlot = SettingsPageRuntimeCacheSlot(SETTINGS_GRAPHICS, -1);
+	const int SoundSlot = SettingsPageRuntimeCacheSlot(SETTINGS_SOUND, -1);
+	const int DdnetSlot = SettingsPageRuntimeCacheSlot(SETTINGS_DDNET, -1);
+	const int AssetsSlot = SettingsPageRuntimeCacheSlot(SETTINGS_ASSETS, -1);
+	const int TClientSlot = SettingsPageRuntimeCacheSlot(SETTINGS_TCLIENT, TClientTab);
+	const int QmClientSlot = SettingsPageRuntimeCacheSlot(SETTINGS_QMCLIENT, QmClientTab);
+	return m_aSettingsPagePrewarmed[LanguageSlot] &&
+		m_aSettingsPagePrewarmed[GeneralSlot] &&
+		m_aSettingsPagePrewarmed[PlayerSlot] &&
+		m_aSettingsPagePrewarmed[TeeSlot] &&
+		m_aSettingsPagePrewarmed[AppearanceSlot] &&
+		m_aSettingsPagePrewarmed[ControlsSlot] &&
+		m_aSettingsPagePrewarmed[GraphicsSlot] &&
+		m_aSettingsPagePrewarmed[SoundSlot] &&
+		m_aSettingsPagePrewarmed[DdnetSlot] &&
+		m_aSettingsPagePrewarmed[AssetsSlot] &&
+		m_aSettingsPagePrewarmed[TClientSlot] &&
+		m_aSettingsPagePrewarmed[QmClientSlot] &&
+		SiblingsReady;
 }
 
 void CMenus::LoadSettingsRuntimeCacheMetadata()

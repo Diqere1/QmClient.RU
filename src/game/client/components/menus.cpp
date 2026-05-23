@@ -3151,25 +3151,25 @@ void CMenus::OnShutdown()
 
 void CMenus::DestroySettingsPageRuntimeCaches()
 {
-	if(m_SettingsControlsRuntimeCache.m_RenderTarget.IsValid())
-		Graphics()->DestroyRenderTarget(&m_SettingsControlsRuntimeCache.m_RenderTarget);
-	for(auto &Cache : m_aSettingsTClientRuntimeCaches)
+	for(auto &Cache : m_aSettingsPageRuntimeCaches)
 	{
 		if(Cache.m_RenderTarget.IsValid())
 			Graphics()->DestroyRenderTarget(&Cache.m_RenderTarget);
-	}
-	if(m_SettingsQmClientRuntimeCache.m_RenderTarget.IsValid())
-		Graphics()->DestroyRenderTarget(&m_SettingsQmClientRuntimeCache.m_RenderTarget);
-	m_SettingsControlsRuntimeCache = {};
-	for(auto &Cache : m_aSettingsTClientRuntimeCaches)
 		Cache = {};
-	m_SettingsQmClientRuntimeCache = {};
-	m_bSettingsControlsPrewarmed = false;
-	m_bSettingsQmClientPrewarmed = false;
-	m_bSettingsTClientPrewarmed = false;
+	}
+	for(bool &Prewarmed : m_aSettingsPagePrewarmed)
+		Prewarmed = false;
 	for(bool &Prewarmed : m_aSettingsTClientSiblingPrewarmed)
 		Prewarmed = false;
 	m_SettingsRuntimePrewarmCursor = 0;
+}
+
+CMenus::SSettingsPageRuntimeCache *CMenus::GetSettingsPageRuntimeCache(int Page, int Tab)
+{
+	const int Slot = SettingsPageRuntimeCacheSlot(Page, Tab);
+	if(Slot < 0 || Slot >= SETTINGS_PAGE_RUNTIME_CACHE_SLOTS)
+		return nullptr;
+	return &m_aSettingsPageRuntimeCaches[Slot];
 }
 
 bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY)
@@ -3181,17 +3181,8 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	if(Page == SETTINGS_TCLIENT)
 		Tab = CanonicalizeTClientCacheTab(Tab);
 
-	SSettingsPageRuntimeCache *pCache = nullptr;
-	if(Page == SETTINGS_CONTROLS)
-		pCache = &m_SettingsControlsRuntimeCache;
-	else if(Page == SETTINGS_TCLIENT)
-	{
-		const int Slot = std::clamp(Tab, 0, SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS - 1);
-		pCache = &m_aSettingsTClientRuntimeCaches[Slot];
-	}
-	else if(Page == SETTINGS_QMCLIENT)
-		pCache = &m_SettingsQmClientRuntimeCache;
-	else
+	SSettingsPageRuntimeCache *pCache = GetSettingsPageRuntimeCache(Page, Tab);
+	if(pCache == nullptr)
 		return false;
 
 	const SSettingsSectionCacheRuntimeKey RuntimeKey = MakeSettingsPageRuntimeKey(ContentView, Graphics(), Page, Tab, ScrollY);
@@ -3221,8 +3212,31 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	Graphics()->MapScreen(0.0f, 0.0f, (float)Width, (float)Height);
 	CUIRect CacheView{0.0f, 0.0f, ContentView.w, ContentView.h};
 	CUiRenderOnlyScope RenderOnlyScope(Ui());
-	if(Page == SETTINGS_CONTROLS)
+	if(Page == SETTINGS_LANGUAGE)
+		RenderLanguageSettings(CacheView);
+	else if(Page == SETTINGS_GENERAL)
+		RenderSettingsGeneral(CacheView);
+	else if(Page == SETTINGS_PLAYER)
+		RenderSettingsPlayer(CacheView);
+	else if(Page == SETTINGS_TEE)
+	{
+		if(Client()->IsSixup())
+			RenderSettingsTee7(CacheView);
+		else
+			RenderSettingsTee(CacheView);
+	}
+	else if(Page == SETTINGS_APPEARANCE)
+		RenderSettingsAppearance(CacheView);
+	else if(Page == SETTINGS_CONTROLS)
 		m_MenusSettingsControls.Render(CacheView);
+	else if(Page == SETTINGS_GRAPHICS)
+		RenderSettingsGraphics(CacheView);
+	else if(Page == SETTINGS_SOUND)
+		RenderSettingsSound(CacheView);
+	else if(Page == SETTINGS_DDNET)
+		RenderSettingsDDNet(CacheView);
+	else if(Page == SETTINGS_ASSETS)
+		RenderSettingsCustom(CacheView);
 	else if(Page == SETTINGS_TCLIENT)
 	{
 		const int SavedTab = m_TClientSettingsTab;
@@ -3258,17 +3272,8 @@ bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab
 		return false;
 	if(Page == SETTINGS_TCLIENT)
 		Tab = CanonicalizeTClientCacheTab(Tab);
-	SSettingsPageRuntimeCache *pCache = nullptr;
-	if(Page == SETTINGS_CONTROLS)
-		pCache = &m_SettingsControlsRuntimeCache;
-	else if(Page == SETTINGS_TCLIENT)
-	{
-		const int Slot = std::clamp(Tab, 0, SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS - 1);
-		pCache = &m_aSettingsTClientRuntimeCaches[Slot];
-	}
-	else if(Page == SETTINGS_QMCLIENT)
-		pCache = &m_SettingsQmClientRuntimeCache;
-	else
+	SSettingsPageRuntimeCache *pCache = GetSettingsPageRuntimeCache(Page, Tab);
+	if(pCache == nullptr)
 		return false;
 
 	const int Width = std::max(1, (int)ContentView.w);

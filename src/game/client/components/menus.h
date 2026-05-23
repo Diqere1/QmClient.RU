@@ -1738,7 +1738,7 @@ public:
 	void SetShowStart(bool ShowStart);
 	void ShowQuitPopup();
 	bool PrewarmSettingsRuntimeCaches(CUIRect MainView);
-	static constexpr int SettingsRuntimeCacheWarmupSteps() { return SettingsLoadingRuntimeCacheWarmupSteps(SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS); }
+	static constexpr int SettingsRuntimeCacheWarmupSteps() { return SettingsLoadingRuntimeCacheWarmupSteps(6); }
 	void LoadSettingsRuntimeCacheMetadata();
 	void SaveSettingsRuntimeCacheMetadata();
 
@@ -1750,18 +1750,13 @@ private:
 		int m_RenderTargetWidth = 0;
 		int m_RenderTargetHeight = 0;
 	};
-	static constexpr int SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS = 6;
 
 	SSessionUiCache m_SettingsRuntimeCacheMetadata;
 	float m_SettingsTClientCurrentScrollY = 0.0f;
 	bool m_SettingsTClientScrollRestorePending = false;
-	SSettingsPageRuntimeCache m_SettingsControlsRuntimeCache;
-	SSettingsPageRuntimeCache m_aSettingsTClientRuntimeCaches[SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS];
-	SSettingsPageRuntimeCache m_SettingsQmClientRuntimeCache;
-	bool m_bSettingsControlsPrewarmed = false;
-	bool m_bSettingsQmClientPrewarmed = false;
-	bool m_bSettingsTClientPrewarmed = false;
-	bool m_aSettingsTClientSiblingPrewarmed[SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS] = {};
+	SSettingsPageRuntimeCache m_aSettingsPageRuntimeCaches[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS];
+	bool m_aSettingsPagePrewarmed[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS] = {};
+	bool m_aSettingsTClientSiblingPrewarmed[6] = {};
 	int m_SettingsRuntimePrewarmCursor = 0;
 
 	CCommunityIcons m_CommunityIcons;
@@ -1789,6 +1784,7 @@ private:
 	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
 	bool DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
 	void DestroySettingsPageRuntimeCaches();
+	SSettingsPageRuntimeCache *GetSettingsPageRuntimeCache(int Page, int Tab);
 	void RenderSettingsTClientBindWheel(CUIRect MainView);
 	void RenderSettingsTClientChatBinds(CUIRect MainView);
 	void RenderSettingsTClientWarList(CUIRect MainView);

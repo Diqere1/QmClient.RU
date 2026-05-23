@@ -50,6 +50,37 @@ bool SettingsPageRuntimeRegistryContains(const SSettingsPageRuntimeRegistry &Reg
 	return std::find(Registry.m_vPages.begin(), Registry.m_vPages.end(), Page) != Registry.m_vPages.end();
 }
 
+int SettingsPageRuntimeCacheSlot(int Page, int Tab)
+{
+	switch(Page)
+	{
+	case CMenus::SETTINGS_LANGUAGE: return 0;
+	case CMenus::SETTINGS_GENERAL: return 1;
+	case CMenus::SETTINGS_PLAYER: return 2;
+	case CMenus::SETTINGS_TEE: return 3;
+	case CMenus::SETTINGS_APPEARANCE: return 4;
+	case CMenus::SETTINGS_CONTROLS: return 5;
+	case CMenus::SETTINGS_GRAPHICS: return 6;
+	case CMenus::SETTINGS_SOUND: return 7;
+	case CMenus::SETTINGS_DDNET: return 8;
+	case CMenus::SETTINGS_ASSETS: return 9;
+	case CMenus::SETTINGS_TCLIENT:
+		if(Tab < 0)
+			return 10;
+		if(Tab >= 6)
+			return -1;
+		return 10 + Tab;
+	case CMenus::SETTINGS_QMCLIENT:
+		if(Tab < 0)
+			return 16;
+		if(Tab >= CMenus::NUMBER_OF_QMCLIENT_SETTINGS_TABS)
+			return -1;
+		return 16 + Tab;
+	default:
+		return -1;
+	}
+}
+
 bool SettingsWarmupConsumeBudget(SSettingsWarmupFrameBudget &Budget, ESettingsWarmupCost Cost)
 {
 	int *pBudgetCounter = nullptr;
