@@ -1,6 +1,8 @@
 #ifndef GAME_CLIENT_COMPONENTS_SETTINGS_WARMUP_H
 #define GAME_CLIENT_COMPONENTS_SETTINGS_WARMUP_H
 
+#include <game/client/components/settings_runtime_cache.h>
+
 #include <functional>
 #include <cstdint>
 #include <vector>

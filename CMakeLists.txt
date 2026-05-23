@@ -2701,6 +2701,8 @@ if(CLIENT)
     components/scoreboard.h
     components/section_loader.cpp
     components/section_loader.h
+    components/settings_runtime_cache.cpp
+    components/settings_runtime_cache.h
     components/settings_warmup.cpp
     components/settings_warmup.h
     components/skins.cpp
@@ -3468,6 +3470,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
   set(TESTS_EXTRA
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/components/section_loader.cpp
+    src/game/client/components/settings_runtime_cache.cpp
     src/game/client/components/settings_warmup.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
