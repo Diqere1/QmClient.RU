@@ -589,10 +589,17 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
 void CMenus::SetNeedSendInfo()
 {
+	bool &NeedSendInfo = m_Dummy ? m_NeedSendDummyinfo : m_NeedSendinfo;
+	NeedSendInfo = true;
+
+	if(Client()->State() != IClient::STATE_ONLINE)
+		return;
+
 	if(m_Dummy)
-		m_NeedSendDummyinfo = true;
+		GameClient()->SendDummyInfo(false);
 	else
-		m_NeedSendinfo = true;
+		GameClient()->SendInfo(false);
+	NeedSendInfo = false;
 }
 
 void CMenus::RenderSettingsPlayer(CUIRect MainView)
@@ -654,15 +661,6 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 			DrawRow(Row);
 		}
 	};
-
-	if(Client()->State() == IClient::STATE_ONLINE &&
-		GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
-	{
-		char aChangeInfo[128], aTimeLeft[32];
-		str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[m_Dummy] - Client()->GameTick(m_Dummy) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
-		str_format(aChangeInfo, sizeof(aChangeInfo), "%s: %s", Localize("Player info change cooldown"), aTimeLeft);
-		Ui()->DoLabel(&ChangeInfo, aChangeInfo, 10.f, TEXTALIGN_ML);
-	}
 
 	static CLineInput s_NameInput;
 	static CLineInput s_ClanInput;
@@ -840,15 +838,6 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	float TransitionAlpha = UiSwitchAnimationAlpha(TransitionStrength);
 	float TransitionOffset = 0.0f;
 	bool TransitionActive = TransitionStrength > 0.0f && s_TeeTabTransitionDirection != 0.0f;
-
-	if(s_TeeSubTab != 2 && Client()->State() == IClient::STATE_ONLINE &&
-		GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
-	{
-		char aChangeInfo[128], aTimeLeft[32];
-		str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[m_Dummy] - Client()->GameTick(m_Dummy) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
-		str_format(aChangeInfo, sizeof(aChangeInfo), "%s: %s", Localize("Player info change cooldown"), aTimeLeft);
-		Ui()->DoLabel(&ChangeInfo, aChangeInfo, 10.f, TEXTALIGN_ML);
-	}
 
 	if(g_Config.m_Debug)
 	{
@@ -1237,7 +1226,12 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		QueueSection.HSplitTop(20.0f, &QueueControls, &QueueSection);
 		CUIRect IntervalRect, LengthRect;
 		QueueControls.VSplitMid(&IntervalRect, &LengthRect, 10.0f);
-		Ui()->DoScrollbarOption(&QueueInterval, &QueueInterval, &IntervalRect, Localize("间隔"), 5, 120, &CUi::ms_LinearScrollbarScale, 0, "s");
+		CUIRect IntervalLabel, IntervalScrollbar;
+		IntervalRect.VSplitMid(&IntervalLabel, &IntervalScrollbar, minimum(10.0f, IntervalRect.w * 0.05f));
+		char aIntervalLabel[64];
+		str_format(aIntervalLabel, sizeof(aIntervalLabel), "%s: %.1fs", Localize("间隔"), QueueInterval / 10.0f);
+		Ui()->DoLabel(&IntervalLabel, aIntervalLabel, IntervalLabel.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_ML);
+		QueueInterval = CUi::ms_LinearScrollbarScale.ToAbsolute(Ui()->DoScrollbarH(&QueueInterval, &IntervalScrollbar, CUi::ms_LinearScrollbarScale.ToRelative(QueueInterval, 5, 1200)), 5, 1200);
 		if(Ui()->DoScrollbarOption(&QueueLength, &QueueLength, &LengthRect, Localize("长度"), 0, QueueMaxLimit))
 		{
 			GameClient()->m_Skins.TrimSkinQueueToLimit(QueueDummy);

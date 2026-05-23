@@ -1908,6 +1908,21 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	const float DropPreviewThickness = std::clamp(3.0f * UiScale, 2.0f, 4.0f);
 	const ColorRGBA DropPreviewColor(0.2f, 0.9f, 0.4f, 0.9f);
 	bool SearchSingleColumnMode = false;
+	bool SearchDragBlocked = false;
+	auto ResetModuleDragState = [&]() {
+		s_DragState.m_pPressed = nullptr;
+		s_DragState.m_pDragging = nullptr;
+		s_DragState.m_PressStartTime = 0.0f;
+		s_DragState.m_GrabOffset = vec2(0.0f, 0.0f);
+		s_DragState.m_DraggedWidth = 0.0f;
+		s_DragState.m_DraggedHeight = 0.0f;
+		s_DragState.m_HasDragRect = false;
+		s_DropPreview.m_Active = false;
+		s_DropPreview.m_Valid = false;
+		s_DropPreview.m_pDragged = nullptr;
+		s_DropPreview.m_pPrevVisible = nullptr;
+		s_DropPreview.m_pNextVisible = nullptr;
+	};
 	static std::array<CButtonContainer, kQmModuleCount> s_aModuleCollapseButtons;
 	auto GetModuleCollapseButtonRect = [&](const SQmModuleEntry *pModule, const CUIRect &CardRect, CUIRect *pOutRect) -> bool {
 		if(!ShowSearchModuleControls || pModule == nullptr || pModule->m_Column == EQmModuleColumn::Full)
@@ -1936,9 +1951,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const bool OverHeader = Ui()->MouseHovered(&HeaderRect) && !OverCollapseButton;
 		if(Ui()->MouseHovered(&CardRect) && Ui()->MouseButtonClicked(0))
 			RecordQmModuleUsage(pModule->m_Id);
-		const bool InteractionBlocked = BlockDrag || Ui()->ActiveItem() != nullptr || Ui()->IsPopupOpen() || Ui()->IsPopupHovered();
-		if(InteractionBlocked && s_DragState.m_pPressed == pModule && s_DragState.m_pDragging == nullptr)
-			s_DragState.m_pPressed = nullptr;
+		const bool ModuleDragActive = s_DragState.m_pPressed == pModule || s_DragState.m_pDragging == pModule;
+		const bool HardInteractionBlocked = SearchDragBlocked || BlockDrag || Ui()->IsPopupOpen() || Ui()->IsPopupHovered();
+		const bool InteractionBlocked = HardInteractionBlocked || (Ui()->ActiveItem() != nullptr && !ModuleDragActive);
+		if(HardInteractionBlocked && ModuleDragActive)
+			ResetModuleDragState();
 
 		if(!InteractionBlocked && Ui()->MouseButtonClicked(0) && OverHeader)
 		{
@@ -1949,7 +1966,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 		if(!InteractionBlocked && s_DragState.m_pPressed == pModule && Ui()->MouseButton(0) && s_DragState.m_pDragging == nullptr)
 		{
-			if(OverHeader && Client()->GlobalTime() - s_DragState.m_PressStartTime >= DragHoldSeconds)
+			if(Client()->GlobalTime() - s_DragState.m_PressStartTime >= DragHoldSeconds)
 			{
 				s_DragState.m_pDragging = pModule;
 				s_DragState.m_GrabOffset = vec2(Ui()->MouseX() - CardRect.x, Ui()->MouseY() - CardRect.y);
@@ -2085,6 +2102,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	const bool AllowModuleSearch = m_QmClientSettingsTab != QMCLIENT_SETTINGS_TAB_CONTRIBUTORS;
 	const bool HasModuleSearch = AllowModuleSearch && pModuleSearch[0] != '\0';
 	ShowSearchModuleControls = AllowModuleSearch;
+	SearchDragBlocked = HasModuleSearch;
 
 	auto ModuleSearchKeywords = [](EQmModuleId Id) -> const char * {
 		switch(Id)
@@ -2108,7 +2126,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::EntityOverlay: return "实体层颜色 shiti ceng yanse 实体层 shiti entity overlay 死亡透明度 siwang 冻结透明度 dongjie 解冻透明度 jiedong 深度冻结 shendu dongjie 深度解冻 shendu jiedong 传送透明度 chuansong cp点透明度 cp checkpoint 开关透明度 kaiguan 叠层透明度 dieceng";
 		case EQmModuleId::Laser: return "激光设置 jiguang laser 增强特效 zengqiang texiao 辉光强度 huiguang qiangdu 激光大小 daxiao 半透明 bantouming 圆角端点 yuanjiao duandian 脉冲速度 maichong sudu 脉冲幅度 maichong fudu";
 		case EQmModuleId::PlayerStats: return "玩家统计 wanjia tongji player stats gores hud 显示统计 xianshi tongji 进服重置 jinfu chongzhi";
-		case EQmModuleId::CollisionHitbox: return "碰撞体积可视化 pengzhuang tiji keshihua 碰撞箱 pengzhuangxiang collision hitbox 显示碰撞 xianshi pengzhuang 透明度 touming";
+		case EQmModuleId::CollisionHitbox: return "碰撞箱模式 pengzhuangxiang moshi 碰撞体积可视化 pengzhuang tiji keshihua collision hitbox hitbox mode 显示碰撞 武器交互 透明度";
 		case EQmModuleId::FavoriteMaps: return "收藏地图 shoucang ditu favorite maps 地图管理 ditu guanli 收藏 shoucang 取消收藏 quxiao shoucang";
 		case EQmModuleId::HJAssist: return "hj辅助 hj fuzhu 解冻辅助 jiedong fuzhu 自动取消旁观 quxiao pangguan 自动切换 qiehuan tee 自动关闭聊天 guanbi liaotian";
 		case EQmModuleId::SpeedrunTimer: return "速通计时器 sutong jishiqi speedrun timer 倒计时 daojishi 倒数 daoshu 小时 xiaoshi 分钟 fenzhong 秒 miao 毫秒 haomiao 自动关闭 zidong guanbi";
@@ -2354,7 +2372,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			TextRender()->TextColor(ColorRGBA(0.95f, 0.8f, 0.2f, 1.0f));
 			{
 				static const char *const s_apSponsors[] = {
-					"喵不一", "久桃", "芽芽", "碳烤綿芽", "骨头", "陌浅羽", "树羽小朋友", "望舒", "松子", "平凡..", "cixin", "洗点", "秀色", "朱朱", "Twen", "大恐龙", ":luv:", "小左", "Blue°F", "怯修", "yezeen", "鹑", "枫香°", "没问题啊", "·蓝蓝蓝蓝", "临渊捕鱼", "?hook?", "放肆zero", "Q币", "洛天依", "spider", "贝塔塔塔", "见月", "咩子的银耳", "Cancer", "少女`", "长亭寂寞独自愁", "fantuan", "无言鱼", "胖人老许", "夏日", "张宁我儿", "拌饭", "shengyan", "修勾在修沟", "taffy", "杀意没爱意", "DYL", "小信", "哆啦梦", "菜菜羊", "吃了吗chilem", "你就是我的", "xiaopang", "星星🌙", "軽い猫", "oxyzo1", "笨蛋猫猫", "信息检索", "炭", "江江", "晚晚晚上好", "AAA乐土猫猫", "一個廢物", "黄花的忧伤"};
+					"喵不一", "久桃", "芽芽", "碳烤綿芽", "骨头", "陌浅羽", "树羽小朋友", "望舒", "松子", "平凡..", "cixin", "洗点", "秀色", "朱朱", "Twen", "大恐龙", ":luv:", "小左", "Blue°F", "怯修", "yezeen", "鹑", "枫香°", "没问题啊", "·蓝蓝蓝蓝", "临渊捕鱼", "?hook?", "放肆zero", "Q币", "洛天依", "spider", "贝塔塔塔", "见月", "咩子的银耳", "Cancer", "少女`", "长亭寂寞独自愁", "fantuan", "无言鱼", "胖人老许", "夏日", "张宁我儿", "拌饭", "shengyan", "修勾在修沟", "taffy", "杀意没爱意", "DYL", "小信", "哆啦梦", "菜菜羊", "吃了吗chilem", "你就是我的", "xiaopang", "星星🌙", "軽い猫", "oxyzo1", "笨蛋猫猫", "信息检索", "炭", "江江", "晚晚晚上好", "AAA乐土猫猫", "一個廢物", "黄花的忧伤","潇洒的吗喽"};
 				const float SponsorFontSize = maximum(LG_BodySize * 1.1f - SponsorFontShrink, MinSponsorFontSize);
 				const float MaxLineWidth = RightContent.w;
 				static std::vector<std::string> s_SponsorLines;
@@ -2475,7 +2493,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::PlayerStats:
 			return {6, Localize("玩家统计"), Localize("看看你有多演")};
 		case EQmModuleId::CollisionHitbox:
-			return {7, Localize("碰撞体积可视化"), Localize("Hit一下你的Box")};
+			return {7, Localize("碰撞箱模式"), Localize("显示碰撞和武器交互")};
 		case EQmModuleId::FavoriteMaps:
 			return {7, Localize("收藏的地图"), Localize("你最爱的地图管家")};
 		case EQmModuleId::HJAssist:
@@ -2516,6 +2534,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		int m_LayoutIndex;
 		EQmModuleId m_Id;
 		EQmModuleColumn m_Column;
+		int m_OrderInColumn;
 		int m_SearchOrder;
 		int m_Usage;
 		float m_EstimatedHeight;
@@ -2576,14 +2595,24 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				if(Entry.m_Column == EQmModuleColumn::Left)
 				{
 					vVisibleLeft.push_back(&Entry);
-					pResult->m_VisibleLeftIndices.push_back(Entry.m_LayoutIndex);
 				}
 				else if(Entry.m_Column == EQmModuleColumn::Right)
 				{
 					vVisibleRight.push_back(&Entry);
-					pResult->m_VisibleRightIndices.push_back(Entry.m_LayoutIndex);
 				}
 			}
+
+			auto SortByLayoutOrder = [](const SQmFunctionSnapshotEntry *pA, const SQmFunctionSnapshotEntry *pB) {
+				if(pA->m_OrderInColumn != pB->m_OrderInColumn)
+					return pA->m_OrderInColumn < pB->m_OrderInColumn;
+				return pA->m_SearchOrder < pB->m_SearchOrder;
+			};
+			std::stable_sort(vVisibleLeft.begin(), vVisibleLeft.end(), SortByLayoutOrder);
+			std::stable_sort(vVisibleRight.begin(), vVisibleRight.end(), SortByLayoutOrder);
+			for(const SQmFunctionSnapshotEntry *pEntry : vVisibleLeft)
+				pResult->m_VisibleLeftIndices.push_back(pEntry->m_LayoutIndex);
+			for(const SQmFunctionSnapshotEntry *pEntry : vVisibleRight)
+				pResult->m_VisibleRightIndices.push_back(pEntry->m_LayoutIndex);
 
 			if(m_HasSearch)
 			{
@@ -2726,6 +2755,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				SnapshotEntry.m_LayoutIndex = static_cast<int>(i);
 				SnapshotEntry.m_Id = Entry.m_Id;
 				SnapshotEntry.m_Column = Entry.m_Column;
+				SnapshotEntry.m_OrderInColumn = Entry.m_OrderInColumn;
 				SnapshotEntry.m_SearchOrder = FindQmModuleIndex(Entry.m_pKey);
 				SnapshotEntry.m_Usage = GetQmModuleUsage(Entry.m_Id);
 				SnapshotEntry.m_EstimatedHeight = GetQmModuleEstimatedHeight(&Entry);
@@ -2807,40 +2837,25 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		VisibleLeftModules.reserve(LeftModules.size());
 		VisibleRightModules.reserve(RightModules.size());
 		VisibleFullModules.reserve(FullModules.size());
-		auto AppendModuleIfVisible = [&](EQmModuleId Id) {
-			const int Index = std::clamp(static_cast<int>(Id), 0, static_cast<int>(kQmModuleCount) - 1);
-			const SQmModuleEntry *pModule = s_apCachedModuleById[Index];
-			if(pModule == nullptr || !ModuleMatchesSearch(pModule))
+		auto AppendModuleIfVisible = [&](const SQmModuleEntry *pModule, std::vector<const SQmModuleEntry *> &vTarget) {
+			if(pModule == nullptr || !ModuleMatchesSelectedTab(pModule->m_Id) || !ModuleMatchesSearch(pModule))
 				return;
-			if(pModule->m_Column == EQmModuleColumn::Left)
-				VisibleLeftModules.push_back(pModule);
-			else if(pModule->m_Column == EQmModuleColumn::Right)
-				VisibleRightModules.push_back(pModule);
-			else if(pModule->m_Column == EQmModuleColumn::Full)
-				VisibleFullModules.push_back(pModule);
+			vTarget.push_back(pModule);
 		};
-		if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_VISUAL)
-		{
-			for(EQmModuleId Id : {EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi})
-				AppendModuleIfVisible(Id);
-		}
-		else if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_FUNCTION)
-		{
-			for(EQmModuleId Id : {EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::FocusMode, EQmModuleId::KeyBinds, EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist})
-				AppendModuleIfVisible(Id);
-		}
-		else if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_HUD)
-		{
-			for(EQmModuleId Id : {EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls})
-				AppendModuleIfVisible(Id);
-		}
-		else
+		if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONTRIBUTORS)
 		{
 			for(const SQmModuleEntry *pModule : FullModules)
 			{
-				if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONTRIBUTORS)
+				if(pModule->m_Id == EQmModuleId::Info)
 					VisibleFullModules.push_back(pModule);
 			}
+		}
+		else
+		{
+			for(const SQmModuleEntry *pModule : LeftModules)
+				AppendModuleIfVisible(pModule, VisibleLeftModules);
+			for(const SQmModuleEntry *pModule : RightModules)
+				AppendModuleIfVisible(pModule, VisibleRightModules);
 		}
 		SearchVisibleModules.reserve(VisibleLeftModules.size() + VisibleRightModules.size());
 		if(HasModuleSearch)
@@ -2890,6 +2905,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	const int VisibleModuleCount = HasModuleSearch ?
 					       static_cast<int>(SearchVisibleModules.size()) + VisibleFullModuleCount :
 					       static_cast<int>(VisibleLeftModules.size() + VisibleRightModules.size()) + VisibleFullModuleCount;
+	if(HasModuleSearch)
+		ResetModuleDragState();
 	{
 		char aVisibleExtra[128];
 		str_format(aVisibleExtra, sizeof(aVisibleExtra), "tab=%s visible=%d search=%d left=%d right=%d full=%d pending=%d",
@@ -5101,7 +5118,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			break;
 			case EQmModuleId::CollisionHitbox:
 			{
-				// ========== 模块: 碰撞体积可视化 ==========
+				// ========== 模块: 碰撞箱模式 ==========
 				Column.HSplitTop(LG_CardSpacing, nullptr, &Column);
 				CUIRect Card8Start_CollisionHitbox = Column;
 				s_GlassCards.push_back(Card8Start_CollisionHitbox);
@@ -5109,22 +5126,63 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Column.HSplitTop(LG_CardPadding, nullptr, &Column);
 				Column.VSplitLeft(LG_CardPadding, nullptr, &CardContent);
 				CardContent.VSplitRight(LG_CardPadding, &CardContent, nullptr);
-				DoModuleHeadline(CardContent, 7, Localize("Collision hitbox"), Localize("Show the base player collision box"));
+				DoModuleHeadline(CardContent, 7, Localize("碰撞箱模式"), Localize("显示 Tee、地图和武器交互碰撞箱"));
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmShowCollisionHitbox, Localize("Show collision hitbox"), &g_Config.m_QmShowCollisionHitbox, &Row, LG_LineHeight);
+				int HitboxModeEnabled = g_Config.m_QmHitboxMode || g_Config.m_QmShowCollisionHitbox;
+				if(DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxMode, Localize("显示碰撞箱模式"), &HitboxModeEnabled, &Row, LG_LineHeight))
+				{
+					g_Config.m_QmHitboxMode = HitboxModeEnabled;
+					g_Config.m_QmShowCollisionHitbox = 0;
+				}
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
-				if(g_Config.m_QmShowCollisionHitbox)
+				if(HitboxModeEnabled)
 				{
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxShowMap, Localize("地图危险边界"), &g_Config.m_QmHitboxShowMap, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxShowTees, Localize("Tee 碰撞箱"), &g_Config.m_QmHitboxShowTees, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxShowPickups, Localize("拾取物范围"), &g_Config.m_QmHitboxShowPickups, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxShowWeapons, Localize("武器交互范围"), &g_Config.m_QmHitboxShowWeapons, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					static std::vector<const char *> s_HitboxScopeDropDownNames;
+					s_HitboxScopeDropDownNames = {Localize("仅本地"), Localize("本地 + 分身"), Localize("所有玩家")};
+					static CUi::SDropDownState s_HitboxScopeDropDownState;
+					static CScrollRegion s_HitboxScopeDropDownScrollRegion;
+					s_HitboxScopeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_HitboxScopeDropDownScrollRegion;
+					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("玩家范围"), LG_BodySize, TEXTALIGN_ML);
+					const int HitboxScope = std::clamp(g_Config.m_QmHitboxPlayerScope, 0, 2);
+					const int HitboxScopeNew = Ui()->DoDropDown(&ControlCol, HitboxScope, s_HitboxScopeDropDownNames.data(), s_HitboxScopeDropDownNames.size(), s_HitboxScopeDropDownState);
+					if(g_Config.m_QmHitboxPlayerScope != HitboxScopeNew)
+						g_Config.m_QmHitboxPlayerScope = HitboxScopeNew;
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
 					static CButtonContainer s_FreezeColorId;
-					DoLine_ColorPicker(&s_FreezeColorId, LG_LineHeight, LG_BodySize, LG_LineSpacing, &CardContent, Localize("Freeze border color"), &g_Config.m_QmCollisionHitboxColorFreeze, ColorRGBA(1.0f, 0.0f, 1.0f), false);
+					DoLine_ColorPicker(&s_FreezeColorId, LG_LineHeight, LG_BodySize, LG_LineSpacing, &CardContent, Localize("Freeze 边界颜色"), &g_Config.m_QmHitboxColorFreeze, ColorRGBA(1.0f, 0.0f, 1.0f), false);
+
+					static CButtonContainer s_TeeColorId;
+					DoLine_ColorPicker(&s_TeeColorId, LG_LineHeight, LG_BodySize, LG_LineSpacing, &CardContent, Localize("Tee 碰撞箱颜色"), &g_Config.m_QmHitboxColorTee, ColorRGBA(0.0f, 1.0f, 1.0f), false);
+
+					static CButtonContainer s_WeaponColorId;
+					DoLine_ColorPicker(&s_WeaponColorId, LG_LineHeight, LG_BodySize, LG_LineSpacing, &CardContent, Localize("武器范围颜色"), &g_Config.m_QmHitboxColorWeapon, ColorRGBA(1.0f, 1.0f, 0.0f), false);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("Hitbox opacity"), LG_BodySize, TEXTALIGN_ML);
-					static int s_QmCollisionHitboxAlphaInputId;
-					RenderSliderWithValueInput(&s_QmCollisionHitboxAlphaInputId, ControlCol, &g_Config.m_QmCollisionHitboxAlpha, 0, 100, "%");
+					Ui()->DoLabel(&LabelCol, Localize("透明度"), LG_BodySize, TEXTALIGN_ML);
+					static int s_QmHitboxAlphaInputId;
+					RenderSliderWithValueInput(&s_QmHitboxAlphaInputId, ControlCol, &g_Config.m_QmHitboxAlpha, 0, 100, "%");
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				}
 
@@ -6476,7 +6534,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Out.push_back(static_cast<int>(i));
 			}
 			std::stable_sort(Out.begin(), Out.end(), [&](int a, int b) {
-				return s_aQmModuleLayout[a].m_OrderInColumn < s_aQmModuleLayout[b].m_OrderInColumn;
+				if(s_aQmModuleLayout[a].m_OrderInColumn != s_aQmModuleLayout[b].m_OrderInColumn)
+					return s_aQmModuleLayout[a].m_OrderInColumn < s_aQmModuleLayout[b].m_OrderInColumn;
+				return a < b;
 			});
 		};
 
@@ -6543,17 +6603,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	}
 	if(HasModuleSearch)
 	{
-		s_DragState.m_pPressed = nullptr;
-		s_DragState.m_pDragging = nullptr;
-		s_DragState.m_GrabOffset = vec2(0.0f, 0.0f);
-		s_DragState.m_DraggedWidth = 0.0f;
-		s_DragState.m_DraggedHeight = 0.0f;
-		s_DragState.m_HasDragRect = false;
-		s_DropPreview.m_Active = false;
-		s_DropPreview.m_Valid = false;
-		s_DropPreview.m_pDragged = nullptr;
-		s_DropPreview.m_pPrevVisible = nullptr;
-		s_DropPreview.m_pNextVisible = nullptr;
+		ResetModuleDragState();
 	}
 	else
 	{
@@ -6564,17 +6614,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{
 			if(s_DragState.m_pDragging != nullptr)
 				CommitDropPreview();
-			s_DragState.m_pPressed = nullptr;
-			s_DragState.m_pDragging = nullptr;
-			s_DragState.m_GrabOffset = vec2(0.0f, 0.0f);
-			s_DragState.m_DraggedWidth = 0.0f;
-			s_DragState.m_DraggedHeight = 0.0f;
-			s_DragState.m_HasDragRect = false;
-			s_DropPreview.m_Active = false;
-			s_DropPreview.m_Valid = false;
-			s_DropPreview.m_pDragged = nullptr;
-			s_DropPreview.m_pPrevVisible = nullptr;
-			s_DropPreview.m_pNextVisible = nullptr;
+			ResetModuleDragState();
 		}
 		if(s_DropPreview.m_Active && s_DropPreview.m_Valid)
 			s_DropPreview.m_LineRect.Draw(DropPreviewColor, IGraphics::CORNER_ALL, DropPreviewThickness);

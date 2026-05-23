@@ -4293,6 +4293,50 @@ void CGameClient::CClientStats::Reset()
 	m_FlagCaptures = 0;
 }
 
+int CGameClient::CClientData::LocalDummyIndex() const
+{
+	if(m_pGameClient == nullptr)
+	{
+		return -1;
+	}
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+	{
+		if(m_pGameClient->m_aLocalIds[Dummy] == m_ClientId)
+		{
+			return Dummy;
+		}
+	}
+	return -1;
+}
+
+void CGameClient::CClientData::BuildLocalSkinDescriptor(CSkinDescriptor &SkinDescriptor, int Dummy) const
+{
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES)
+	{
+		return;
+	}
+
+	CTranslationContext::CClientData &TranslatedClient = m_pGameClient->m_pClient->m_TranslationContext.m_aClients[ClientId()];
+	if(m_Active && !TranslatedClient.m_Active)
+	{
+		SkinDescriptor.m_Flags |= CSkinDescriptor::FLAG_SIX;
+		str_copy(SkinDescriptor.m_aSkinName, Dummy ? g_Config.m_ClDummySkin : g_Config.m_ClPlayerSkin);
+	}
+	else if(TranslatedClient.m_Active)
+	{
+		SkinDescriptor.m_Flags |= CSkinDescriptor::FLAG_SEVEN;
+		for(int SkinDummy = 0; SkinDummy < NUM_DUMMIES; ++SkinDummy)
+		{
+			for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+			{
+				str_copy(SkinDescriptor.m_aSixup[SkinDummy].m_aaSkinPartNames[Part], CSkins7::ms_apSkinVariables[Dummy][Part]);
+			}
+			SkinDescriptor.m_aSixup[SkinDummy].m_XmasHat = time_season() == SEASON_XMAS;
+			SkinDescriptor.m_aSixup[SkinDummy].m_BotDecoration = (TranslatedClient.m_PlayerFlags7 & protocol7::PLAYERFLAG_BOT) != 0;
+		}
+	}
+}
+
 void CGameClient::CClientData::UpdateSkinInfo()
 {
 	const CSkinDescriptor SkinDescriptor = ToSkinDescriptor();
@@ -4302,9 +4346,20 @@ void CGameClient::CClientData::UpdateSkinInfo()
 	}
 
 	const auto &&ApplySkinProperties = [&]() {
+		const int LocalDummy = LocalDummyIndex();
 		if(SkinDescriptor.m_Flags & CSkinDescriptor::FLAG_SIX)
 		{
-			m_pSkinInfo->TeeRenderInfo().ApplyColors(m_UseCustomColor, m_ColorBody, m_ColorFeet);
+			if(LocalDummy >= 0)
+			{
+				m_pSkinInfo->TeeRenderInfo().ApplyColors(
+					LocalDummy ? g_Config.m_ClDummyUseCustomColor : g_Config.m_ClPlayerUseCustomColor,
+					LocalDummy ? g_Config.m_ClDummyColorBody : g_Config.m_ClPlayerColorBody,
+					LocalDummy ? g_Config.m_ClDummyColorFeet : g_Config.m_ClPlayerColorFeet);
+			}
+			else
+			{
+				m_pSkinInfo->TeeRenderInfo().ApplyColors(m_UseCustomColor, m_ColorBody, m_ColorFeet);
+			}
 		}
 		if(SkinDescriptor.m_Flags & CSkinDescriptor::FLAG_SEVEN)
 		{
@@ -4314,7 +4369,14 @@ void CGameClient::CClientData::UpdateSkinInfo()
 				CTeeRenderInfo::CSixup &SixupSkinInfo = m_pSkinInfo->TeeRenderInfo().m_aSixup[Dummy];
 				for(int Part = 0; Part < protocol7::NUM_SKINPARTS; Part++)
 				{
-					m_pGameClient->m_Skins7.ApplyColorTo(SixupSkinInfo, SixupData.m_aUseCustomColors[Part], SixupData.m_aSkinPartColors[Part], Part);
+					if(LocalDummy >= 0)
+					{
+						m_pGameClient->m_Skins7.ApplyColorTo(SixupSkinInfo, *CSkins7::ms_apUCCVariables[LocalDummy][Part], *CSkins7::ms_apColorVariables[LocalDummy][Part], Part);
+					}
+					else
+					{
+						m_pGameClient->m_Skins7.ApplyColorTo(SixupSkinInfo, SixupData.m_aUseCustomColors[Part], SixupData.m_aSkinPartColors[Part], Part);
+					}
 				}
 				UpdateSkin7HatSprite(Dummy);
 				UpdateSkin7BotDecoration(Dummy);
@@ -4336,6 +4398,7 @@ void CGameClient::CClientData::UpdateSkinInfo()
 		m_pSkinInfo->m_SkinDescriptor = SkinDescriptor;
 		m_pGameClient->RefreshSkin(m_pSkinInfo);
 		ApplySkinProperties();
+		m_pSkinInfo->m_RefreshCallback();
 	}
 	else
 	{
@@ -4567,6 +4630,13 @@ CSkinDescriptor CGameClient::CClientData::ToSkinDescriptor() const
 	CSkinDescriptor SkinDescriptor;
 
 	CTranslationContext::CClientData &TranslatedClient = m_pGameClient->m_pClient->m_TranslationContext.m_aClients[ClientId()];
+	const int LocalDummy = LocalDummyIndex();
+	if(LocalDummy >= 0)
+	{
+		BuildLocalSkinDescriptor(SkinDescriptor, LocalDummy);
+		return SkinDescriptor;
+	}
+
 	if(m_Active && !TranslatedClient.m_Active)
 	{
 		SkinDescriptor.m_Flags |= CSkinDescriptor::FLAG_SIX;
@@ -4587,6 +4657,22 @@ CSkinDescriptor CGameClient::CClientData::ToSkinDescriptor() const
 	}
 
 	return SkinDescriptor;
+}
+
+void CGameClient::UpdateLocalSkinInfo(int Dummy)
+{
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES)
+	{
+		return;
+	}
+
+	const int ClientId = m_aLocalIds[Dummy];
+	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
+	{
+		return;
+	}
+
+	m_aClients[ClientId].UpdateSkinInfo();
 }
 
 void CGameClient::CClientData::CSixup::Reset()
@@ -4685,6 +4771,8 @@ bool CGameClient::GotWantedSkin7(bool Dummy)
 
 void CGameClient::SendInfo(bool Start)
 {
+	UpdateLocalSkinInfo(0);
+
 	if(m_pClient->IsSixup())
 	{
 		if(Start)
@@ -4727,6 +4815,8 @@ void CGameClient::SendInfo(bool Start)
 
 void CGameClient::SendDummyInfo(bool Start)
 {
+	UpdateLocalSkinInfo(1);
+
 	if(m_pClient->IsSixup())
 	{
 		if(Start)

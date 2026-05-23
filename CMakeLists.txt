@@ -1688,6 +1688,20 @@ set(EXPECTED_DATA
   qmclient/fonts/Rubik-Regular.ttf
   qmclient/fonts/minecraft_font.ttf
   qmclient/gui_logo.png
+  qmclient/rmlui/main_menu.rcss
+  qmclient/rmlui/main_menu.rml
+  qmclient/rmlui/main_menu_shell.rcss
+  qmclient/rmlui/main_menu_shell.rml
+  qmclient/rmlui/serverbrowser_page.rcss
+  qmclient/rmlui/serverbrowser_page.rml
+  qmclient/rmlui/settings_frontend.rcss
+  qmclient/rmlui/settings_frontend.rml
+  qmclient/rmlui/settings_modal.rcss
+  qmclient/rmlui/settings_modal.rml
+  qmclient/rmlui/settings_page.rcss
+  qmclient/rmlui/settings_page.rml
+  qmclient/rmlui/ui_unavailable.rcss
+  qmclient/rmlui/ui_unavailable.rml
   race_flag.png
   shader/pipeline.frag
   shader/pipeline.vert
@@ -2157,6 +2171,7 @@ set_src(BASE GLOB_RECURSE src/base
   log.h
   logger.h
   math.h
+  perf_timer.h
   rust.h
   str.cpp
   str.h
@@ -2218,9 +2233,9 @@ set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   config_tags.cpp
   config_tags.h
   config_variables.h
-  config_variables_tclient.h
   config_variables_qmclient.h
   config_variables_qmclient_extra.h
+  config_variables_tclient.h
   console.cpp
   console.h
   csv.cpp
@@ -2469,6 +2484,15 @@ if(CLIENT)
     set(STEAMAPI_KIND STATIC)
   endif()
   set(TARGET_STEAMAPI steam_api)
+  set(STEAMAPI_RUNTIME_FILE)
+  set(STEAMAPI_RUNTIME_FILE_NAME)
+  if(TARGET_OS STREQUAL "windows" AND STEAM)
+    set(STEAMAPI_RUNTIME_FILE_NAME steam_api.dll)
+    set(STEAMAPI_RUNTIME_FILE "${PROJECT_SOURCE_DIR}/${STEAMAPI_RUNTIME_FILE_NAME}")
+    if(NOT EXISTS "${STEAMAPI_RUNTIME_FILE}")
+      message(FATAL_ERROR "STEAM=ON on Windows requires the official ${STEAMAPI_RUNTIME_FILE_NAME} in the project root. The generated ${TARGET_STEAMAPI} target is only a stub for linking.")
+    endif()
+  endif()
   add_library(${TARGET_STEAMAPI} ${STEAMAPI_KIND} ${STEAMAPI_SRC})
   list(APPEND TARGETS_OWN ${TARGET_STEAMAPI})
 
@@ -2511,13 +2535,13 @@ if(CLIENT)
     friends.h
     ghost.cpp
     ghost.h
+    gpu_upload_limiter.h
     graph.cpp
     graph.h
     graphics_defines.h
     graphics_threaded.cpp
     graphics_threaded.h
     graphics_threaded_sprites.cpp
-    gpu_upload_limiter.h
     input.cpp
     input.h
     keynames.cpp
@@ -2561,6 +2585,7 @@ if(CLIENT)
     animstate.h
     component.cpp
     component.h
+    components/assets_preview_scale.h
     components/assets_resource_registry.cpp
     components/assets_resource_registry.h
     components/background.cpp
@@ -2591,6 +2616,8 @@ if(CLIENT)
     components/effects.h
     components/emoticon.cpp
     components/emoticon.h
+    components/entity_bg_preview_renderer.cpp
+    components/entity_bg_preview_renderer.h
     components/envelope_state.cpp
     components/envelope_state.h
     components/flow.cpp
@@ -2621,8 +2648,6 @@ if(CLIENT)
     components/mapsounds.h
     components/menu_background.cpp
     components/menu_background.h
-    components/message_gradient.cpp
-    components/message_gradient.h
     components/menus.cpp
     components/menus.h
     components/menus_assets_editor.cpp
@@ -2638,6 +2663,8 @@ if(CLIENT)
     components/menus_settings_controls.h
     components/menus_start.cpp
     components/menus_start.h
+    components/message_gradient.cpp
+    components/message_gradient.h
     components/motd.cpp
     components/motd.h
     components/nameplates.cpp
@@ -2650,22 +2677,10 @@ if(CLIENT)
     components/player_points.h
     components/players.cpp
     components/players.h
-    components/tclient/bg_draw.cpp
-    components/tclient/bg_draw.h
-    components/tclient/bg_draw_file.cpp
-    components/tclient/bg_draw_file.h
-    components/tclient/bindchat.cpp
-    components/tclient/bindchat.h
-    components/tclient/bindwheel.cpp
-    components/tclient/bindwheel.h
     components/qmclient/collision_hitbox.cpp
     components/qmclient/collision_hitbox.h
     components/qmclient/colored_parts.h
-    components/tclient/custom_communities.cpp
-    components/tclient/custom_communities.h
     components/qmclient/data_version.h
-    components/tclient/fast_practice.cpp
-    components/tclient/fast_practice.h
     components/qmclient/input_overlay.cpp
     components/qmclient/input_overlay.h
     components/qmclient/jelly_tee.cpp
@@ -2673,58 +2688,38 @@ if(CLIENT)
     components/qmclient/keyword_reply_rules.h
     components/qmclient/lyrics_component.cpp
     components/qmclient/lyrics_component.h
+    components/qmclient/menus_qmclient.cpp
     components/qmclient/modes.cpp
     components/qmclient/modes.h
     components/qmclient/monitoring.cpp
     components/qmclient/monitoring.h
-    components/qmclient/menus_qmclient.cpp
     components/qmclient/qmclient.cpp
     components/qmclient/qmclient.h
     components/qmclient/qmclient_utils.cpp
     components/qmclient/qmclient_utils.h
-    components/tclient/mod.cpp
-    components/tclient/mod.h
-    components/tclient/moving_tiles.cpp
-    components/tclient/moving_tiles.h
-    components/tclient/outlines.cpp
-    components/tclient/outlines.h
-    components/tclient/pet.cpp
-    components/tclient/pet.h
-    components/tclient/player_indicator.cpp
-    components/tclient/player_indicator.h
-    components/tclient/menus_tclient.cpp
-    components/tclient/tclient.cpp
-    components/tclient/tclient.h
-    components/tclient/rainbow.cpp
-    components/tclient/rainbow.h
     components/qmclient/scripting.cpp
     components/qmclient/scripting.h
     components/qmclient/scripting/impl.cpp
     components/qmclient/scripting/impl.h
-    components/tclient/skinprofiles.cpp
-    components/tclient/skinprofiles.h
-    components/tclient/statusbar.cpp
-    components/tclient/statusbar.h
-    components/tclient/trails.cpp
-    components/tclient/trails.h
     components/qmclient/translate.cpp
     components/qmclient/translate.h
+    components/qmclient/translate_parse.cpp
+    components/qmclient/translate_parse.h
     components/qmclient/translate_ui_settings.cpp
     components/qmclient/translate_ui_settings.h
-    components/qmclient/voice_component.cpp
-    components/qmclient/voice_component.h
     components/qmclient/voice_capture_pipeline.cpp
     components/qmclient/voice_capture_pipeline.h
+    components/qmclient/voice_component.cpp
+    components/qmclient/voice_component.h
     components/qmclient/voice_core.cpp
     components/qmclient/voice_core.h
     components/qmclient/voice_utils.cpp
     components/qmclient/voice_utils.h
-    components/tclient/warlist.cpp
-    components/tclient/warlist.h
     components/race_demo.cpp
     components/race_demo.h
     components/scoreboard.cpp
     components/scoreboard.h
+    components/settings_warmup.h
     components/skins.cpp
     components/skins.h
     components/skins7.cpp
@@ -2737,6 +2732,42 @@ if(CLIENT)
     components/statboard.h
     components/system_media_controls.cpp
     components/system_media_controls.h
+    components/tclient/bg_draw.cpp
+    components/tclient/bg_draw.h
+    components/tclient/bg_draw_file.cpp
+    components/tclient/bg_draw_file.h
+    components/tclient/bindchat.cpp
+    components/tclient/bindchat.h
+    components/tclient/bindwheel.cpp
+    components/tclient/bindwheel.h
+    components/tclient/custom_communities.cpp
+    components/tclient/custom_communities.h
+    components/tclient/fast_practice.cpp
+    components/tclient/fast_practice.h
+    components/tclient/menus_tclient.cpp
+    components/tclient/mod.cpp
+    components/tclient/mod.h
+    components/tclient/moving_tiles.cpp
+    components/tclient/moving_tiles.h
+    components/tclient/outlines.cpp
+    components/tclient/outlines.h
+    components/tclient/pet.cpp
+    components/tclient/pet.h
+    components/tclient/player_indicator.cpp
+    components/tclient/player_indicator.h
+    components/tclient/rainbow.cpp
+    components/tclient/rainbow.h
+    components/tclient/skinprofiles.cpp
+    components/tclient/skinprofiles.h
+    components/tclient/statusbar.cpp
+    components/tclient/statusbar.h
+    components/tclient/tclient.cpp
+    components/tclient/tclient.h
+    components/tclient/trails.cpp
+    components/tclient/trails.h
+    components/tclient/warlist.cpp
+    components/tclient/warlist.h
+    components/theme_scan.h
     components/tooltips.cpp
     components/tooltips.h
     components/touch_controls.cpp
@@ -2881,6 +2912,8 @@ if(CLIENT)
     envelope_extrema.cpp
     envelope_extrema.h
     envelope_manager.h
+    map_preview_common.cpp
+    map_preview_common.h
     map_renderer.cpp
     map_renderer.h
     render_component.cpp
@@ -2983,12 +3016,18 @@ if(CLIENT)
       PROPERTY OUTPUT_NAME ${CLIENT_EXECUTABLE}
   )
   target_link_libraries(game-client ${LIBS_CLIENT})
+  if(STEAMAPI_RUNTIME_FILE)
+    add_custom_command(TARGET game-client POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${STEAMAPI_RUNTIME_FILE}" "$<TARGET_FILE_DIR:game-client>/${STEAMAPI_RUNTIME_FILE_NAME}"
+      COMMENT "Copying official Steam API runtime")
+  endif()
   if(MSVC)
     target_compile_options(game-client PRIVATE /bigobj) # TClient, required for ChaiScript
     target_link_options(game-client PRIVATE /ENTRY:mainCRTStartup)
-    # Work around MSVC LTCG ICEs in ChaiScript-heavy translation units by excluding only
+    # Work around MSVC LTCG ICEs in heavy client translation units by excluding only
     # those files from whole-program optimization while keeping IPO enabled elsewhere.
     set_source_files_properties(
+      src/game/client/components/qmclient/jelly_tee.cpp
       src/game/client/components/qmclient/lyrics_component.cpp
       src/game/client/components/qmclient/scripting/impl.cpp
       PROPERTIES
@@ -3283,6 +3322,7 @@ if(TOOLS)
     map_find_env.cpp
     map_generator.cpp
     map_optimize.cpp
+    map_preview.cpp
     map_replace_area.cpp
     map_replace_image.cpp
     map_resave.cpp
@@ -3377,11 +3417,11 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     QmAnimTest.cpp
     QmLayoutTest.cpp
     aio_test.cpp
-    audio_pack_editor_test.cpp
     assets_editor_layout_test.cpp
     assets_preview_scale_test.cpp
     assets_resource_migration_test.cpp
     assets_resource_registry_test.cpp
+    audio_pack_editor_test.cpp
     bezier_test.cpp
     blocklist_driver_test.cpp
     bytes_be_test.cpp
@@ -3425,20 +3465,20 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     str_test.cpp
     strip_path_and_extension_test.cpp
     swap_endian_test.cpp
-    theme_scan_test.cpp
     teehistorian_test.cpp
     test.cpp
     test.h
+    theme_scan_test.cpp
     thread_test.cpp
     time_test.cpp
     timestamp_test.cpp
+    translate_boundary_test.cpp
+    translate_integration_test.cpp
     translate_json_format_test.cpp
     translate_llm_parse_test.cpp
     translate_llm_provider_test.cpp
     translate_llm_response_test.cpp
     translate_safety_test.cpp
-    translate_integration_test.cpp
-    translate_boundary_test.cpp
     translate_test.cpp
     unix_test.cpp
     uuid_test.cpp
@@ -3725,7 +3765,7 @@ if(TARGET game-server)
 endif()
 list(APPEND CPACK_TARGETS ${TARGET_TOOLS})
 
-if(STEAMAPI_KIND STREQUAL SHARED)
+if(STEAMAPI_KIND STREQUAL SHARED AND NOT STEAMAPI_RUNTIME_FILE_NAME)
   list(APPEND CPACK_TARGETS ${TARGET_STEAMAPI})
 endif()
 set(CPACK_DIRS
@@ -3738,6 +3778,9 @@ set(CPACK_FILES
   steam_appid.txt
   ${COPY_FILES}
 )
+if(STEAMAPI_RUNTIME_FILE_NAME)
+  list(APPEND CPACK_FILES ${STEAMAPI_RUNTIME_FILE_NAME})
+endif()
 
 set(CPACK_GEN_FILES
   ${VULKAN_SHADER_FILE_LIST}
@@ -3756,7 +3799,11 @@ if(NOT DEV)
     install(TARGETS game-client DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
   endif()
   if(STEAMAPI_KIND STREQUAL SHARED)
-    install(TARGETS ${TARGET_STEAMAPI} DESTINATION ${CMAKE_INSTALL_LIBDIR}/ddnet COMPONENT client)
+    if(STEAMAPI_RUNTIME_FILE)
+      install(FILES ${STEAMAPI_RUNTIME_FILE} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
+    else()
+      install(TARGETS ${TARGET_STEAMAPI} DESTINATION ${CMAKE_INSTALL_LIBDIR}/ddnet COMPONENT client)
+    endif()
   endif()
   if(TARGET game-server)
     install(TARGETS game-server DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT server)

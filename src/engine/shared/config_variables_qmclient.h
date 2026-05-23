@@ -59,6 +59,16 @@ MACRO_CONFIG_INT(QmLaserAlpha, qm_laser_alpha, 100, 0, 100, CFGFLAG_CLIENT | CFG
 MACRO_CONFIG_INT(QmShowCollisionHitbox, qm_show_collision_hitbox, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示碰撞体积边框 (Show collision hitbox outlines)")
 MACRO_CONFIG_COL(QmCollisionHitboxColorFreeze, qm_collision_hitbox_color_freeze, 16711935, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freeze碰撞边框颜色 (Freeze collision box color)")
 MACRO_CONFIG_INT(QmCollisionHitboxAlpha, qm_collision_hitbox_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞体积线条透明度 (Collision hitbox line alpha)")
+MACRO_CONFIG_INT(QmHitboxMode, qm_hitbox_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式总开关 (Hitbox mode)")
+MACRO_CONFIG_INT(QmHitboxShowMap, qm_hitbox_show_map, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式显示地图危险边界")
+MACRO_CONFIG_INT(QmHitboxShowTees, qm_hitbox_show_tees, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式显示Tee碰撞体")
+MACRO_CONFIG_INT(QmHitboxShowPickups, qm_hitbox_show_pickups, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式显示拾取物范围")
+MACRO_CONFIG_INT(QmHitboxShowWeapons, qm_hitbox_show_weapons, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式显示武器交互")
+MACRO_CONFIG_INT(QmHitboxAlpha, qm_hitbox_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式全局透明度")
+MACRO_CONFIG_INT(QmHitboxPlayerScope, qm_hitbox_player_scope, 2, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式玩家范围: 0=本地 1=本地+分身 2=所有玩家")
+MACRO_CONFIG_COL(QmHitboxColorFreeze, qm_hitbox_color_freeze, 16711935, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式Freeze边界颜色")
+MACRO_CONFIG_COL(QmHitboxColorTee, qm_hitbox_color_tee, 65535, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式Tee碰撞体颜色")
+MACRO_CONFIG_COL(QmHitboxColorWeapon, qm_hitbox_color_weapon, 16776960, CFGFLAG_CLIENT | CFGFLAG_SAVE, "碰撞箱模式武器交互颜色")
 
 // Entity Overlay / 实体叠加
 MACRO_CONFIG_INT(QmEntityOverlayDeathAlpha, qm_entity_overlay_death_alpha, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "覆盖死亡图块的实体 alpha (0-100)")

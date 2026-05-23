@@ -5515,7 +5515,22 @@ int main(int argc, const char **argv)
 			g_Config.m_ClAntiPingWeapons = 1;
 		}
 	}
-	g_Config.m_ClConfigVersion = 1;
+	if(g_Config.m_ClConfigVersion < 2)
+	{
+		if(g_Config.m_QmSkinQueueInterval <= 120)
+			g_Config.m_QmSkinQueueInterval *= 10;
+		if(g_Config.m_QmDummySkinQueueInterval <= 120)
+			g_Config.m_QmDummySkinQueueInterval *= 10;
+	}
+	if(g_Config.m_ClConfigVersion < 3)
+	{
+		if(g_Config.m_QmShowCollisionHitbox && !g_Config.m_QmHitboxMode)
+			g_Config.m_QmHitboxMode = 1;
+		g_Config.m_QmHitboxAlpha = g_Config.m_QmCollisionHitboxAlpha;
+		g_Config.m_QmHitboxColorFreeze = g_Config.m_QmCollisionHitboxColorFreeze;
+		g_Config.m_QmShowCollisionHitbox = 0;
+	}
+	g_Config.m_ClConfigVersion = 3;
 
 	// parse the command line arguments
 	pConsole->SetUnknownCommandCallback(UnknownArgumentCallback, pClient);

@@ -81,14 +81,14 @@ static bool TextContainsAny(const char *pText, const std::initializer_list<const
 	return false;
 }
 static constexpr float QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION = 2.0f;
-static constexpr float QMCLIENT_COMBO_POPUP_DURATION = 1.25f;
 static constexpr float QMCLIENT_TEXT_POPUP_FONT_SIZE = 30.0f;
 static constexpr vec2 QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET = vec2(34.0f, -78.0f);
 static constexpr vec2 QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT = vec2(18.0f, -16.0f);
 static constexpr int QMCLIENT_COMBO_POPUP_WINDOW_SECONDS = 2;
+static constexpr int QMCLIENT_COMBO_FREEZE_PARTICLE_COUNT = 14;
+static constexpr float QMCLIENT_COMBO_FREEZE_PARTICLE_RADIUS = 42.0f;
 static constexpr ColorRGBA QMCLIENT_POPUP_ROLL_COLOR_FROM = ColorRGBA(0.0f, 1.0f, 1.0f, 1.0f);
 static constexpr ColorRGBA QMCLIENT_POPUP_ROLL_COLOR_TO = ColorRGBA(1.0f, 0.0f, 1.0f, 1.0f);
-static constexpr ColorRGBA QMCLIENT_COMBO_POPUP_COLOR = ColorRGBA(1.0f, 0.96f, 0.45f, 1.0f);
 static constexpr const char *s_apKeywordNegationWords[] = {
 	"不",
 	"没",
@@ -122,10 +122,6 @@ namespace
 	enum class ETextPopupType
 	{
 		FREEZE_WAKEUP = 0,
-		COMBO_AMAZING,
-		COMBO_FANTASTIC,
-		COMBO_UNBELIEVABLE,
-		COMBO_UNSTOPPABLE,
 		NUM_TYPES,
 	};
 
@@ -136,10 +132,6 @@ namespace
 
 	static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
 		{QMCLIENT_FREEZE_WAKEUP_TEXT},
-		{"Amazing!"},
-		{"Fantastic!"},
-		{"Unbelievable!"},
-		{"Unstoppable!"},
 	}};
 
 	enum class EFreezeWakeupType
@@ -149,26 +141,38 @@ namespace
 		EXTERNAL_HAMMER,
 	};
 
-	int ComboPopupTextTypeFromCount(int ComboCount)
-	{
-		switch(ComboCount)
-		{
-		case 2: return (int)ETextPopupType::COMBO_AMAZING;
-		case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
-		case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
-		default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
-		}
-	}
-
-	bool IsComboPopupTextType(int TextType)
-	{
-		return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
-		       TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
-	}
-
 	float TextPopupDuration(int TextType)
 	{
-		return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
+		(void)TextType;
+		return QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
+	}
+
+	void AddComboFreezeParticleRing(CGameClient *pGameClient, vec2 Pos, float Alpha)
+	{
+		CParticle Part;
+		Part.SetDefault();
+		Part.m_Spr = SPRITE_PART_SNOWFLAKE;
+		Part.m_LifeSpan = 0.7f;
+		Part.m_StartSize = 18.0f;
+		Part.m_EndSize = 7.0f;
+		Part.m_UseAlphaFading = true;
+		Part.m_StartAlpha = Alpha;
+		Part.m_EndAlpha = 0.0f;
+		Part.m_Rotspeed = pi;
+		Part.m_Friction = 0.85f;
+		Part.m_FlowAffected = 0.0f;
+		Part.m_Collides = false;
+		Part.m_Color.a = Alpha;
+
+		for(int Index = 0; Index < QMCLIENT_COMBO_FREEZE_PARTICLE_COUNT; ++Index)
+		{
+			const float Angle = 2.0f * pi * Index / QMCLIENT_COMBO_FREEZE_PARTICLE_COUNT;
+			const vec2 Direction = vec2(std::cos(Angle), std::sin(Angle));
+			Part.m_Pos = Pos + Direction * QMCLIENT_COMBO_FREEZE_PARTICLE_RADIUS;
+			Part.m_Vel = Direction * 95.0f;
+			Part.m_Rot = Angle;
+			pGameClient->m_Particles.Add(CParticles::GROUP_EXTRA, &Part);
+		}
 	}
 
 	EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
@@ -2383,18 +2387,15 @@ void CTClient::CheckComboPopup()
 
 	if(!g_Config.m_QmComboPopup)
 	{
-		for(auto &Popup : m_aFreezeWakeupPopups)
-		{
-			if(Popup.m_Active && IsComboPopupTextType(Popup.m_TextType))
-				Popup.m_Active = false;
-		}
 		ResetComboState();
 		return;
 	}
 
 	const int ComboWindowTicks = maximum(1, Client()->GameTickSpeed() * QMCLIENT_COMBO_POPUP_WINDOW_SECONDS);
-	auto RegisterComboEvent = [&](int Dummy, int AnchorClientId, int TargetPlayer) {
+	auto RegisterComboEvent = [&](int Dummy, int AnchorClientId, const CCharacter *pAnchorChar, int TargetPlayer, const CCharacter *pTargetChar) {
 		if(TargetPlayer < 0 || TargetPlayer >= MAX_CLIENTS)
+			return;
+		if(pAnchorChar == nullptr)
 			return;
 
 		const int CurrentTick = Client()->GameTick(Dummy);
@@ -2410,8 +2411,22 @@ void CTClient::CheckComboPopup()
 		}
 		m_aComboLastEventTick[Dummy] = CurrentTick;
 
-		if(m_aComboPopupCount[Dummy] >= 2)
-			AddTextPopup(AnchorClientId, ComboPopupTextTypeFromCount(m_aComboPopupCount[Dummy]), true, QMCLIENT_COMBO_POPUP_COLOR);
+		const int ComboCount = m_aComboPopupCount[Dummy];
+		if(ComboCount >= 11)
+		{
+			AddComboFreezeParticleRing(GameClient(), pAnchorChar->GetPos(), 1.0f);
+			if(pTargetChar != nullptr)
+				AddComboFreezeParticleRing(GameClient(), pTargetChar->GetPos(), 1.0f);
+		}
+		else if(ComboCount >= 7)
+		{
+			AddComboFreezeParticleRing(GameClient(), pAnchorChar->GetPos(), 0.7f);
+		}
+		else if(ComboCount >= 3)
+		{
+			if(pTargetChar != nullptr)
+				AddComboFreezeParticleRing(GameClient(), pTargetChar->GetPos(), 0.4f);
+		}
 	};
 
 	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
@@ -2440,7 +2455,7 @@ void CTClient::CheckComboPopup()
 
 		const int HookedPlayer = pLocalChar->Core()->HookedPlayer();
 		if(HookedPlayer >= 0 && HookedPlayer != ClientId && HookedPlayer != m_aComboLastHookedPlayer[Dummy])
-			RegisterComboEvent(Dummy, ClientId, HookedPlayer);
+			RegisterComboEvent(Dummy, ClientId, pLocalChar, HookedPlayer, GameClient()->m_PredictedWorld.GetCharacterById(HookedPlayer));
 		m_aComboLastHookedPlayer[Dummy] = HookedPlayer >= 0 ? HookedPlayer : -1;
 
 		const int CurrentTick = Client()->GameTick(Dummy);
@@ -2457,7 +2472,7 @@ void CTClient::CheckComboPopup()
 				pTargetChar->GetLastDamageFrom() == ClientId &&
 				pTargetChar->GetLastDamageWeapon() == WEAPON_HAMMER)
 			{
-				RegisterComboEvent(Dummy, ClientId, TargetId);
+				RegisterComboEvent(Dummy, ClientId, pLocalChar, TargetId, pTargetChar);
 			}
 		}
 	}
@@ -3679,6 +3694,15 @@ bool CTClient::IsGoresGameMode() const
 	return pGameType != nullptr && pGameType[0] != '\0' && str_find_nocase(pGameType, "gores") != nullptr;
 }
 
+bool CTClient::IsGoresMapProgressMap() const
+{
+	if(IsGoresGameMode())
+		return true;
+
+	const char *pMap = Client()->GetCurrentMap();
+	return pMap != nullptr && str_comp_nocase(pMap, "NUT_race9") == 0;
+}
+
 bool CTClient::IsGoresModuleEnabled() const
 {
 	return g_Config.m_QmGores != 0;
@@ -3731,12 +3755,12 @@ void CTClient::UpdateGoresWeaponCycle()
 
 bool CTClient::IsGoresMapProgressEnabled() const
 {
-	return IsGoresGameMode() && g_Config.m_QmPlayerStatsMapProgress;
+	return IsGoresMapProgressMap() && g_Config.m_QmPlayerStatsMapProgress;
 }
 
 bool CTClient::IsGoresMapProgressDebugRouteEnabled() const
 {
-	return IsGoresGameMode() && g_Config.m_QmPlayerStatsMapProgressDbgRoute != 0;
+	return IsGoresMapProgressMap() && g_Config.m_QmPlayerStatsMapProgressDbgRoute != 0;
 }
 
 void CTClient::InvalidateGoresDistanceField()
@@ -3761,7 +3785,7 @@ void CTClient::InvalidateGoresDistanceField()
 
 void CTClient::EnsureGoresDistanceField()
 {
-	if(Client()->State() != IClient::STATE_ONLINE || !IsGoresGameMode())
+	if(Client()->State() != IClient::STATE_ONLINE || !IsGoresMapProgressMap())
 		return;
 
 	const char *pCurrentMap = Client()->GetCurrentMap();

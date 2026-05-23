@@ -328,8 +328,6 @@ private:
 
 	int m_EditorMovementDelay = 5;
 	void UpdateEditorIngameMoved();
-	bool GetPredictedHammerHitbox(CCharacter *pChar, vec2 &HitPos, float &HitRadius);
-	int FindPredictedHammerHitTargets(CCharacter *pChar, vec2 HitPos, float HitRadius, int *pTargetIds, int MaxTargetIds);
 	void HandleHammerSkinSwap(CCharacter *pChar);
 	void HandleRandomEmoteOnHit(CCharacter *pLocalChar, int DummyIndex);
 
@@ -565,6 +563,8 @@ public:
 		friend class CGameClient;
 		CGameClient *m_pGameClient;
 		int m_ClientId;
+		int LocalDummyIndex() const;
+		void BuildLocalSkinDescriptor(CSkinDescriptor &SkinDescriptor, int Dummy) const;
 
 	public:
 		int m_UseCustomColor;
@@ -804,6 +804,7 @@ public:
 	bool GotWantedSkin7(bool Dummy);
 	void SendInfo(bool Start);
 	void SendDummyInfo(bool Start) override;
+	void UpdateLocalSkinInfo(int Dummy);
 	void SendKill();
 	void SendKill() const;
 	void SendReadyChange7();
@@ -847,6 +848,8 @@ public:
 	bool IsRenderingDummyMiniMap() const { return m_RenderingDummyMiniMap; }
 	void SetRenderingDummyMiniMap(bool Rendering) { m_RenderingDummyMiniMap = Rendering; }
 	const CTuningParams *GetTuning(int i) const { return &m_aTuningList[i]; }
+	bool GetPredictedHammerHitbox(CCharacter *pChar, vec2 &HitPos, float &HitRadius);
+	int FindPredictedHammerHitTargets(CCharacter *pChar, vec2 HitPos, float HitRadius, int *pTargetIds, int MaxTargetIds);
 	ColorRGBA GetDDTeamColor(int DDTeam, float Lightness = 0.5f) const;
 	void FormatClientId(int ClientId, char (&aClientId)[16], EClientIdFormat Format) const;
 	bool IsLocalClientId(int ClientId) const;

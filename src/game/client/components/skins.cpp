@@ -25,6 +25,8 @@
 
 using namespace std::chrono_literals;
 
+static constexpr int SKIN_QUEUE_INTERVAL_UNITS_PER_SECOND = 10;
+
 static int &SkinQueueIntervalVar(int Dummy)
 {
 	return Dummy ? g_Config.m_QmDummySkinQueueInterval : g_Config.m_QmSkinQueueInterval;
@@ -79,6 +81,20 @@ static CSkins::CSkinQueueEntry MakeSkinQueueEntry(const char *pSkinName, bool Us
 	{
 		Entry.m_ColorBody = ColorBody;
 		Entry.m_ColorFeet = ColorFeet;
+	}
+	return Entry;
+}
+
+static CSkins::CSkinQueueEntry MakeSkinQueueEntry(const CGameClient::CClientData &ClientData, int Conn)
+{
+	CSkins::CSkinQueueEntry Entry = MakeSkinQueueEntry(ClientData.m_aSkinName, ClientData.m_UseCustomColor != 0, ClientData.m_ColorBody, ClientData.m_ColorFeet);
+	const CGameClient::CClientData::CSixup &SixupData = ClientData.m_aSixup[Conn];
+	Entry.m_HasSixup = true;
+	for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+	{
+		str_copy(Entry.m_aaSixupSkinPartNames[Part], SixupData.m_aaSkinPartNames[Part], sizeof(Entry.m_aaSixupSkinPartNames[Part]));
+		Entry.m_aSixupUseCustomColors[Part] = SixupData.m_aUseCustomColors[Part];
+		Entry.m_aSixupSkinPartColors[Part] = SixupData.m_aSkinPartColors[Part];
 	}
 	return Entry;
 }
@@ -696,6 +712,29 @@ void CSkins::ApplySkinQueueCurrent(int Dummy)
 		}
 	}
 
+	if(Client()->IsSixup() && TargetEntry.m_HasSixup)
+	{
+		for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+		{
+			if(str_comp(CSkins7::ms_apSkinVariables[Dummy][Part], TargetEntry.m_aaSixupSkinPartNames[Part]) != 0)
+			{
+				str_copy(CSkins7::ms_apSkinVariables[Dummy][Part], TargetEntry.m_aaSixupSkinPartNames[Part], protocol7::MAX_SKIN_ARRAY_SIZE);
+				Changed = true;
+			}
+			if(*CSkins7::ms_apUCCVariables[Dummy][Part] != TargetEntry.m_aSixupUseCustomColors[Part])
+			{
+				*CSkins7::ms_apUCCVariables[Dummy][Part] = TargetEntry.m_aSixupUseCustomColors[Part];
+				Changed = true;
+			}
+			if((int)*CSkins7::ms_apColorVariables[Dummy][Part] != TargetEntry.m_aSixupSkinPartColors[Part])
+			{
+				*CSkins7::ms_apColorVariables[Dummy][Part] = TargetEntry.m_aSixupSkinPartColors[Part];
+				Changed = true;
+			}
+		}
+		CSkins7::ms_apSkinNameVariables[Dummy][0] = '\0';
+	}
+
 	if(Changed)
 	{
 		m_SkinList.ForceRefresh();
@@ -743,7 +782,7 @@ void CSkins::UpdateSkinQueue(std::chrono::nanoseconds Now, int Dummy)
 	m_aSkinQueueElapsed[Dummy] += Now - m_aSkinQueueLastUpdate[Dummy].value();
 	m_aSkinQueueLastUpdate[Dummy] = Now;
 
-	const auto Interval = std::chrono::seconds(QueueInterval);
+	const auto Interval = std::chrono::milliseconds(QueueInterval * 1000 / SKIN_QUEUE_INTERVAL_UNITS_PER_SECOND);
 	if(Interval <= 0ns)
 	{
 		return;
@@ -778,7 +817,7 @@ void CSkins::SyncSkinQueueFromMapPlayers(int Dummy)
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 	{
 		const CNetObj_PlayerInfo *pPlayerInfo = GameClient()->m_Snap.m_apPlayerInfos[ClientId];
-		if(!pPlayerInfo || !GameClient()->m_aClients[ClientId].m_Active || pPlayerInfo->m_Team == TEAM_SPECTATORS)
+		if(!pPlayerInfo || !GameClient()->m_aClients[ClientId].m_Active || pPlayerInfo->m_Team == TEAM_SPECTATORS || GameClient()->IsLocalClientId(ClientId))
 		{
 			continue;
 		}
@@ -790,7 +829,7 @@ void CSkins::SyncSkinQueueFromMapPlayers(int Dummy)
 			continue;
 		}
 
-		const CSkinQueueEntry Entry = MakeSkinQueueEntry(pSkinName, ClientData.m_UseCustomColor != 0, ClientData.m_ColorBody, ClientData.m_ColorFeet);
+		const CSkinQueueEntry Entry = Client()->IsSixup() ? MakeSkinQueueEntry(ClientData, g_Config.m_ClDummy) : MakeSkinQueueEntry(pSkinName, ClientData.m_UseCustomColor != 0, ClientData.m_ColorBody, ClientData.m_ColorFeet);
 		if(std::find(vMapSkins.begin(), vMapSkins.end(), Entry) != vMapSkins.end())
 		{
 			continue;
