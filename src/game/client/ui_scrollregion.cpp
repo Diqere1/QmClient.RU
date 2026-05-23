@@ -255,6 +255,16 @@ void CScrollRegion::ScrollRelativeDirect(float ScrollAmount)
 	m_RequestScrollY = std::clamp(m_ScrollY + ScrollAmount, 0.0f, m_ContentH - m_ClipRect.h);
 }
 
+void CScrollRegion::SetScrollOffsetY(float OffsetY)
+{
+	m_ScrollY = maximum(0.0f, -OffsetY);
+	m_AnimInitScrollY = m_ScrollY;
+	m_AnimTargetScrollY = m_ScrollY;
+	m_AnimTime = 0.0f;
+	m_RequestScrollY = -1.0f;
+	m_ContentScrollOff.y = -m_ScrollY;
+}
+
 void CScrollRegion::DoEdgeScrolling()
 {
 	if(!ScrollbarShown())

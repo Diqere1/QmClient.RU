@@ -6,7 +6,6 @@ QmClient 配置变量使用检查工具。
   - src/engine/shared/config_variables.h
   - src/engine/shared/config_variables_tclient.h
   - src/engine/shared/config_variables_qmclient.h
-  - src/engine/shared/config_variables_qmclient_extra.h
 
 用法：
   python qmclient_scripts/check_config_variables.py
@@ -24,8 +23,6 @@ CONFIG_FILES = {
     "ddnet": "src/engine/shared/config_variables.h",
     "tclient": "src/engine/shared/config_variables_tclient.h",
     "qmclient": "src/engine/shared/config_variables_qmclient.h",
-    "qmclient_extra": "src/engine/shared/config_variables_qmclient_extra.h",
-    "qimeng": "src/engine/shared/config_variables_qimeng.h",
 }
 
 
@@ -109,8 +106,6 @@ def main():
         files_to_check = {
             "tclient": CONFIG_FILES["tclient"],
             "qmclient": CONFIG_FILES["qmclient"],
-            "qmclient_extra": CONFIG_FILES["qmclient_extra"],
-            "qimeng": CONFIG_FILES["qimeng"],
         }
     else:
         files_to_check = CONFIG_FILES

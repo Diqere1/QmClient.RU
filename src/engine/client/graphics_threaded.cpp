@@ -185,6 +185,7 @@ CGraphics_Threaded::CGraphics_Threaded()
 	m_Drawing = EDrawing::NONE;
 
 	m_TextureMemoryUsage = 0;
+	m_GLRenderTargetsSupported = false;
 
 	m_RenderEnable = true;
 	m_DoScreenshot = false;
@@ -583,6 +584,107 @@ IGraphics::CTextureHandle CGraphics_Threaded::LoadTexture(const char *pFilename,
 	}
 
 	return m_NullTexture;
+}
+
+bool CGraphics_Threaded::IsRenderTargetSupported() const
+{
+	return m_GLRenderTargetsSupported;
+}
+
+IGraphics::CRenderTargetHandle CGraphics_Threaded::CreateRenderTarget(int Width, int Height)
+{
+	if(!IsRenderTargetSupported() || Width <= 0 || Height <= 0)
+		return CRenderTargetHandle();
+
+	const size_t CurSize = m_vRenderTargetIndices.size();
+	if(m_FirstFreeRenderTarget == CurSize)
+	{
+		const size_t NewSize = CurSize == 0 ? 16 : CurSize * 2;
+		m_vRenderTargetIndices.resize(NewSize);
+		for(size_t Index = CurSize; Index < NewSize; ++Index)
+			m_vRenderTargetIndices[Index] = Index + 1;
+	}
+
+	const size_t TargetId = m_FirstFreeRenderTarget;
+	m_FirstFreeRenderTarget = m_vRenderTargetIndices[TargetId];
+	m_vRenderTargetIndices[TargetId] = -1;
+
+	CCommandBuffer::SCommand_RenderTarget_Create Cmd;
+	Cmd.m_TargetId = TargetId;
+	Cmd.m_Width = Width;
+	Cmd.m_Height = Height;
+	AddCmd(Cmd);
+
+	return CreateRenderTargetHandle(TargetId);
+}
+
+void CGraphics_Threaded::DestroyRenderTarget(CRenderTargetHandle *pTarget)
+{
+	if(!pTarget || !pTarget->IsValid())
+		return;
+	const size_t TargetId = pTarget->Id();
+	if(TargetId >= m_vRenderTargetIndices.size() || m_vRenderTargetIndices[TargetId] != -1)
+	{
+		pTarget->Invalidate();
+		return;
+	}
+
+	CCommandBuffer::SCommand_RenderTarget_Destroy Cmd;
+	Cmd.m_TargetId = TargetId;
+	AddCmd(Cmd);
+
+	m_vRenderTargetIndices[TargetId] = m_FirstFreeRenderTarget;
+	m_FirstFreeRenderTarget = TargetId;
+	pTarget->Invalidate();
+}
+
+bool CGraphics_Threaded::BeginRenderTarget(CRenderTargetHandle Target, ColorRGBA ClearColor)
+{
+	if(!IsRenderTargetSupported() || !Target.IsValid())
+		return false;
+	const size_t TargetId = Target.Id();
+	if(TargetId >= m_vRenderTargetIndices.size() || m_vRenderTargetIndices[TargetId] != -1)
+		return false;
+
+	FlushVertices();
+	CCommandBuffer::SCommand_RenderTarget_Begin Cmd;
+	Cmd.m_TargetId = TargetId;
+	Cmd.m_ClearColor.r = ClearColor.r;
+	Cmd.m_ClearColor.g = ClearColor.g;
+	Cmd.m_ClearColor.b = ClearColor.b;
+	Cmd.m_ClearColor.a = ClearColor.a;
+	Cmd.m_State = m_State;
+	AddCmd(Cmd);
+	return true;
+}
+
+void CGraphics_Threaded::EndRenderTarget()
+{
+	if(!IsRenderTargetSupported())
+		return;
+	FlushVertices();
+	CCommandBuffer::SCommand_RenderTarget_End Cmd;
+	Cmd.m_State = m_State;
+	AddCmd(Cmd);
+}
+
+void CGraphics_Threaded::DrawRenderTarget(CRenderTargetHandle Target, float X, float Y, float W, float H)
+{
+	if(!IsRenderTargetSupported() || !Target.IsValid() || W <= 0.0f || H <= 0.0f)
+		return;
+	const size_t TargetId = Target.Id();
+	if(TargetId >= m_vRenderTargetIndices.size() || m_vRenderTargetIndices[TargetId] != -1)
+		return;
+
+	FlushVertices();
+	CCommandBuffer::SCommand_RenderTarget_Draw Cmd;
+	Cmd.m_TargetId = TargetId;
+	Cmd.m_X = X;
+	Cmd.m_Y = Y;
+	Cmd.m_W = W;
+	Cmd.m_H = H;
+	Cmd.m_State = m_State;
+	AddCmd(Cmd);
 }
 
 bool CGraphics_Threaded::LoadTextTextures(size_t Width, size_t Height, CTextureHandle &TextTexture, CTextureHandle &TextOutlineTexture, uint8_t *pTextData, uint8_t *pTextOutlineData)
@@ -2664,6 +2766,7 @@ int CGraphics_Threaded::IssueInit()
 		m_GLTextBufferingEnabled = (m_GLQuadContainerBufferingEnabled && m_pBackend->HasTextBuffering());
 		m_GLUses2DTextureArrays = m_pBackend->Uses2DTextureArrays();
 		m_GLHasTextureArraysSupport = m_pBackend->HasTextureArraysSupport();
+		m_GLRenderTargetsSupported = m_pBackend->HasRenderTargets();
 		m_ScreenHiDPIScale = m_ScreenWidth / (float)g_Config.m_GfxScreenWidth;
 		m_ScreenRefreshRate = g_Config.m_GfxScreenRefreshRate;
 	}
@@ -2889,6 +2992,8 @@ int CGraphics_Threaded::Init()
 	m_vTextureGenerations.resize(CCommandBuffer::MAX_TEXTURES);
 	for(size_t i = 0; i < m_vTextureIndices.size(); ++i)
 		m_vTextureIndices[i] = i + 1;
+	m_FirstFreeRenderTarget = 0;
+	m_vRenderTargetIndices.clear();
 
 	m_FirstFreeVertexArrayInfo = -1;
 	m_FirstFreeBufferObjectIndex = -1;

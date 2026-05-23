@@ -5,6 +5,8 @@
 #include <functional>
 #include <vector>
 
+#include <engine/graphics.h>
+#include <game/client/components/settings_warmup.h>
 #include <game/client/ui_rect.h>
 
 enum class ESettingsSectionState : uint8_t
@@ -15,20 +17,32 @@ enum class ESettingsSectionState : uint8_t
 	FULL,
 };
 
+enum class ESettingsCacheDirtyReason : uint8_t
+{
+	NONE,
+	CONFIG,
+	LANGUAGE,
+	WINDOW_SIZE,
+	UI_SCALE,
+	FONT,
+	ACTIVE_INTERACTION,
+	GRAPHICS_RESET,
+};
+
 /**
  * A single section of a settings page.
  *
  * Each section provides three render callbacks:
  *   - MeasureFn:  calculate height without any rendering
- *   - RenderCompactFn: render a compact placeholder (title only)
+ *   - RenderCompactFn: optional warmup/full-equivalent fallback; never render visible summary text
  *   - RenderFullFn:    render the full interactive section
  *
  * All callbacks receive a CUIRect for the available column space and return
  * the consumed height. The caller is responsible for advancing the column rect.
  *
  * Dependencies track which g_Config values affect this section's output.
- * When the config hash matches the last rendered version, the section is
- * considered clean and FULL rendering is skipped (dirty-flag optimization).
+ * Dirty sections refresh their config hash, but FULL sections still render
+ * every frame because DDNet menus are immediate-mode UI.
  */
 struct SSettingsSection
 {
@@ -39,11 +53,22 @@ struct SSettingsSection
 	std::function<float(CUIRect &)> m_MeasureFn;
 	std::function<float(CUIRect &)> m_RenderCompactFn;
 	std::function<float(CUIRect &)> m_RenderFullFn;
+	std::function<float(CUIRect &)> m_RenderStaticLayerFn;
+	std::function<float(CUIRect &)> m_RenderInteractiveLayerFn;
+	std::function<bool(const CUIRect &)> m_ShouldRenderInteractiveLayerFn;
 
 	std::vector<const int *> m_DependencyConfigInts;
 	std::vector<const unsigned *> m_DependencyConfigCols;
 	uint64_t m_LastConfigHash = 0;
 	bool m_bDirty = true; // force render on first frame
+	bool m_bCanCacheStaticLayer = false;
+	bool m_bCacheValid = false;
+	ESettingsCacheDirtyReason m_DirtyReason = ESettingsCacheDirtyReason::CONFIG;
+	SSettingsSectionCacheRuntimeKey m_CacheRuntimeKey;
+	IGraphics::CRenderTargetHandle m_RenderTarget;
+	int m_RenderTargetWidth = 0;
+	int m_RenderTargetHeight = 0;
+	float m_StaticCachePadding = 0.0f;
 };
 
 /**
@@ -54,6 +79,7 @@ struct SSettingsSection
  */
 struct SSessionUiCache
 {
+	int m_LastSettingsPage = -1;
 	int m_LastTClientTab = -1;
 	int m_LastQmTab = -1;
 	float m_LastScrollY = 0.0f;
@@ -64,8 +90,9 @@ struct SSessionUiCache
  * Drives progressive rendering of settings-page sections.
  *
  * Usage:
- *   1. Register() all sections once.
- *   2. Call Begin() when the settings page opens.
+ *   1. Register() all sections before Begin(); frame-local callbacks must be
+ *      registered each frame with the same section names to preserve state.
+ *   2. Call Begin() for the current frame.
  *   3. Call Process() every frame; returns true while there is still work.
  *   4. Call Reset() on tab switch.
  *   5. Optionally call Warmup() during the loading screen.
@@ -74,19 +101,23 @@ struct SSessionUiCache
  * per-frame time budget:
  *
  *   UNINITIALIZED  →  measure height (negligible cost)
- *   MEASURING      →  render compact placeholder (if in/near viewport)
+ *   MEASURING      →  optional progressive warmup path when explicitly enabled
  *   COMPACT        →  render full interactive section (1–2 per frame max)
- *   FULL           →  re-render only when dirty (config changed)
+ *   FULL           →  render full UI every frame; dirty refreshes config hash
  *
  * Viewport priority ensures that sections near the current scroll position
  * are promoted before off-screen sections.
+ *
+ * Process() clears callbacks before returning, so persistent loaders do not
+ * retain references to frame-local UI layout objects.
  */
 class CSectionLoader
 {
 public:
 	CSectionLoader();
+	~CSectionLoader();
 
-	/** Register the full set of sections. Call once per settings-page instance. */
+	/** Register the full set of sections, preserving state for matching names. */
 	void Register(std::vector<SSettingsSection> vSections);
 
 	/**
@@ -105,17 +136,11 @@ public:
 	/** Reset the state machine (e.g. when switching tabs). */
 	void Reset();
 
-	/** Lightweight mode: simple frame counter without section registration.
-	    Call BeginLightweight(InitialFrames, budget) then Process() each frame.
-	    GetFramesRemaining() returns the diminishing counter. */
-	void BeginLightweight(int InitialFrames, float TimeBudgetMs = 5.0f);
-	int GetFramesRemaining() const;
-
 	// -- Pre-warming (loading screen) --
 
 	/**
-	 * Pre-render the compact pass for sections that were visible in the last
-	 * session, so glyph atlases are populated before the user opens settings.
+	 * Pre-warm real section content for sections that were visible in the last
+	 * session, so glyph atlases and section caches are ready before settings open.
 	 * Call once per frame during the loading screen.
 	 * @param pCache       Session cache from last run (null = skip).
 	 * @param TimeBudgetMs Per-frame CPU budget in milliseconds (default 3.0).
@@ -123,11 +148,12 @@ public:
 	 */
 	bool Warmup(const SSessionUiCache *pCache, float TimeBudgetMs = 3.0f);
 	bool IsWarmupComplete() const;
+	bool PrewarmStaticRenderTargets(CUIRect MainView, float ScrollY, float TimeBudgetMs = 3.0f, bool IncludeFarSections = false);
 
 	// -- Cache invalidation --
 
 	/** Invalidate all section caches (e.g. after language change or resize). */
-	void InvalidateCache();
+	void InvalidateCache(ESettingsCacheDirtyReason Reason = ESettingsCacheDirtyReason::CONFIG);
 
 	/** Mark sections dirty that depend on the given config pointer. */
 	void SetDirtyByConfig(const void *pConfigVar);
@@ -136,6 +162,16 @@ public:
 
 	static bool LoadSessionCache(SSessionUiCache &Cache, const char *pFilename, class IStorage *pStorage);
 	static void SaveSessionCache(const SSessionUiCache &Cache, const char *pFilename, class IStorage *pStorage);
+	static bool IsVisibleSummarySectionName(const char *pName);
+	static CUIRect MakeRenderTargetCacheRectForTests(float Width, float Height);
+	static CUIRect MakeRenderTargetCacheRectForTests(float Width, float Height, float Padding);
+	void SetGraphicsForCache(IGraphics *pGraphics);
+	void SetRuntimeKey(const SSettingsSectionCacheRuntimeKey &RuntimeKey);
+	void SetProgressiveEnabled(bool Enabled);
+	void SetLiveStaticCacheRecordingEnabled(bool Enabled);
+	void SetRenderTargetSupportedForTests(bool Supported);
+	void MarkCacheValidForTests(const char *pName);
+	bool IsCacheValidForTests(const char *pName) const;
 
 	// -- State exposed for the rendering loop (updated externally) --
 
@@ -156,9 +192,11 @@ private:
 	int m_CurrentIndex = 0;
 	bool m_bInitialized = false;
 	bool m_bComplete = false;
-	bool m_bLightweight = false;
-	int m_LightweightFramesInitial = 0;
-	int m_LightweightFramesRemaining = 0;
+	bool m_bProgressiveEnabled = false;
+	bool m_bLiveStaticCacheRecordingEnabled = true;
+	bool m_bRenderTargetSupportedForTests = true;
+	IGraphics *m_pGraphics = nullptr;
+	SSettingsSectionCacheRuntimeKey m_RuntimeKey;
 
 	// Warmup state
 	bool m_bWarmupActive = false;
@@ -171,6 +209,9 @@ private:
 
 	/** 0 = in viewport, 1 = near, 2 = far. */
 	int ComputeViewportPriority(const CUIRect &SectionRect) const;
+	void DestroyRenderTarget(SSettingsSection &Section);
+	bool TryRenderCachedSection(SSettingsSection &Section);
+	bool RecordStaticRenderTarget(SSettingsSection &Section, int Width, int Height);
 
 	static uint64_t ComputeConfigHash(const SSettingsSection &Section);
 };

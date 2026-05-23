@@ -1738,7 +1738,7 @@ void CQmClient::FinishQmClientUsers()
 		GameClient()->ClearQ1menGSyncMarks();
 		GameClient()->ClearQmVoiceSyncMarks();
 		ClearQmClientServerDistribution();
-		const int StatusCode = m_pQmClientUsersTask->StatusCode();
+		const int StatusCode = 0;
 		char aFailure[128];
 		str_format(aFailure, sizeof(aFailure), "state=%d status=%d", (int)m_pQmClientUsersTask->State(), StatusCode);
 		m_pQmClientUsersTask = nullptr;
@@ -1807,8 +1807,8 @@ void CQmClient::UpdateQmClientRecognition()
 	{
 		// Report can fail after center service restart (stale auth token).
 		// Clear token to force refetch on the next sync cycle.
-		const int StatusCode = m_pQmClientUsersSendTask->StatusCode();
 		const EHttpState State = m_pQmClientUsersSendTask->State();
+		const int StatusCode = State == EHttpState::DONE ? m_pQmClientUsersSendTask->StatusCode() : 0;
 		const bool HttpOk = StatusCode >= 200 && StatusCode < 300;
 		if(State != EHttpState::DONE || !HttpOk)
 		{

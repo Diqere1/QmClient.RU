@@ -601,55 +601,6 @@ void CTClient::OnInit()
 	LoadMapCategoryCache();
 	LoadMapNotes();
 
-	// 兼容旧版恰分配置：将旧规则并入关键词回复，旧隐式关键词和预设触发词不再保留。
-	{
-		bool MigratedLegacyAutoReply = false;
-		char aMergedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
-		QmKeywordReplyRules::DecodeFromConfig(g_Config.m_QmKeywordReplyRules, aMergedRules, sizeof(aMergedRules));
-
-		if(g_Config.m_QmQiaFenEnabled)
-		{
-			g_Config.m_QmKeywordReplyEnabled = 1;
-			g_Config.m_QmQiaFenEnabled = 0;
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmQiaFenUseDummy)
-		{
-			g_Config.m_QmKeywordReplyUseDummy = 1;
-			g_Config.m_QmQiaFenUseDummy = 0;
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmQiaFenRules[0] != '\0')
-		{
-			if(AppendAutoReplyRuleBlock(aMergedRules, sizeof(aMergedRules), g_Config.m_QmQiaFenRules))
-			{
-				g_Config.m_QmQiaFenRules[0] = '\0';
-				MigratedLegacyAutoReply = true;
-			}
-		}
-
-		if(g_Config.m_QmQiaFenKeywords[0] != '\0')
-		{
-			g_Config.m_QmQiaFenKeywords[0] = '\0';
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmKeywordReplyAutoRename)
-		{
-			char aMigratedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
-			if(MigrateKeywordReplyRulesAutoRenamePreservingLines(aMergedRules, aMigratedRules, sizeof(aMigratedRules)))
-			{
-				str_copy(aMergedRules, aMigratedRules, sizeof(aMergedRules));
-				g_Config.m_QmKeywordReplyAutoRename = 0;
-				MigratedLegacyAutoReply = true;
-			}
-		}
-
-		if(MigratedLegacyAutoReply)
-			QmKeywordReplyRules::EncodeForConfig(aMergedRules, g_Config.m_QmKeywordReplyRules, sizeof(g_Config.m_QmKeywordReplyRules));
-	}
 }
 
 void CTClient::OnShutdown()

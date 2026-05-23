@@ -2221,7 +2221,6 @@ set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   config_tags.h
   config_variables.h
   config_variables_qmclient.h
-  config_variables_qmclient_extra.h
   config_variables_tclient.h
   console.cpp
   console.h
@@ -2702,6 +2701,7 @@ if(CLIENT)
     components/scoreboard.h
     components/section_loader.cpp
     components/section_loader.h
+    components/settings_warmup.cpp
     components/settings_warmup.h
     components/skins.cpp
     components/skins.h
@@ -3439,6 +3439,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     serverbrowser_test.cpp
     serverinfo_test.cpp
     settings_warmup_test.cpp
+    render_target_test.cpp
     shell_execute_test.cpp
     snapshot_test.cpp
     str_test.cpp
@@ -3467,6 +3468,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
   set(TESTS_EXTRA
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/components/section_loader.cpp
+    src/game/client/components/settings_warmup.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
     src/generated/client_data.h

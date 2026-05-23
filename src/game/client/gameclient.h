@@ -76,6 +76,7 @@
 #include "components/qmclient/voice_component.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
+#include "components/section_loader.h"
 #include "components/skins.h"
 #include "components/skins7.h"
 #include "components/sounds.h"
@@ -286,6 +287,7 @@ private:
 	std::vector<class CComponent *> m_vpAll;
 	std::vector<class CComponent *> m_vpInput;
 	std::unique_ptr<CQmJelly> m_pJellyTee;
+
 	CNetObjHandler m_NetObjHandler;
 	protocol7::CNetObjHandler m_NetObjHandler7;
 
@@ -381,6 +383,8 @@ private:
 	int m_LastDemoHudRecordTick = -1;
 	int m_LastDemoInputRecordTick = -1;
 	int m_LastDemoPlaybackStateTick = -1;
+
+	void PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption);
 
 public:
 	// 将 IInterface 的 protected Kernel() 暴露给客户端组件的既有访问模式。

@@ -1,6 +1,10 @@
 #ifndef GAME_CLIENT_COMPONENTS_SETTINGS_WARMUP_H
 #define GAME_CLIENT_COMPONENTS_SETTINGS_WARMUP_H
 
+#include <functional>
+#include <cstdint>
+#include <vector>
+
 constexpr bool IsSettingsWarmupStageReady(int CurrentStage, int RequiredStage)
 {
 	return CurrentStage < 0 || CurrentStage >= RequiredStage;
@@ -12,5 +16,128 @@ constexpr int AdvanceSettingsWarmupStage(int CurrentStage, int LastStage)
 		return -1;
 	return CurrentStage < LastStage ? CurrentStage + 1 : -1;
 }
+
+constexpr int SettingsLoadingRuntimeCacheWarmupSteps(int TClientCacheSlots)
+{
+	return TClientCacheSlots + 6;
+}
+
+enum class EClassicSettingsPage
+{
+	GENERAL,
+	PLAYER,
+	TEE,
+	CONTROLS,
+	GRAPHICS,
+	SOUND,
+	DDNET,
+	ASSETS,
+	TCLIENT,
+	QMCLIENT,
+};
+
+enum class ESettingsWarmupKind : uint8_t
+{
+	TEXT,
+	RUNTIME_FBO,
+};
+
+struct SSettingsSectionCacheRuntimeKey
+{
+	int m_ViewportWidth = 0;
+	int m_ViewportHeight = 0;
+	int m_UiScale = 0;
+	uint64_t m_ConfigHash = 0;
+	uint64_t m_LanguageHash = 0;
+	uint64_t m_FontHash = 0;
+	uint64_t m_BackendHash = 0;
+	uint64_t m_WindowHash = 0;
+
+	bool operator==(const SSettingsSectionCacheRuntimeKey &Other) const
+	{
+		return m_ViewportWidth == Other.m_ViewportWidth &&
+		       m_ViewportHeight == Other.m_ViewportHeight &&
+		       m_UiScale == Other.m_UiScale &&
+		       m_ConfigHash == Other.m_ConfigHash &&
+		       m_LanguageHash == Other.m_LanguageHash &&
+		       m_FontHash == Other.m_FontHash &&
+		       m_BackendHash == Other.m_BackendHash &&
+		       m_WindowHash == Other.m_WindowHash;
+	}
+};
+
+struct SSettingsSectionCacheMetadata
+{
+	EClassicSettingsPage m_LastPage = EClassicSettingsPage::GENERAL;
+	int m_LastTab = -1;
+	float m_LastScrollY = 0.0f;
+	uint64_t m_SectionNameHash = 0;
+	float m_SectionHeight = 0.0f;
+	SSettingsSectionCacheRuntimeKey m_RuntimeKey;
+
+	bool Matches(const SSettingsSectionCacheRuntimeKey &RuntimeKey) const
+	{
+		return m_SectionNameHash != 0 &&
+		       m_SectionHeight > 0.0f &&
+		       m_RuntimeKey == RuntimeKey;
+	}
+};
+
+struct SSettingsPageRuntimeCacheState
+{
+	int m_Page = -1;
+	int m_Tab = -1;
+	SSettingsSectionCacheRuntimeKey m_RuntimeKey;
+	int m_Width = 0;
+	int m_Height = 0;
+	bool m_Valid = false;
+	bool m_DrawnOnce = false;
+};
+
+constexpr bool SettingsPageRuntimeCacheMatches(const SSettingsPageRuntimeCacheState &Cache, int Page, int Tab, int Width, int Height, const SSettingsSectionCacheRuntimeKey &RuntimeKey)
+{
+	return Cache.m_Valid &&
+	       Cache.m_Page == Page &&
+	       Cache.m_Tab == Tab &&
+	       Cache.m_Width == Width &&
+	       Cache.m_Height == Height &&
+	       Cache.m_RuntimeKey == RuntimeKey;
+}
+
+constexpr bool SettingsPageRuntimeCacheShouldShortCircuit(SSettingsPageRuntimeCacheState &Cache, int Page, int Tab, int Width, int Height, const SSettingsSectionCacheRuntimeKey &RuntimeKey)
+{
+	if(!SettingsPageRuntimeCacheMatches(Cache, Page, Tab, Width, Height, RuntimeKey))
+		return false;
+	if(Cache.m_DrawnOnce)
+		return false;
+	Cache.m_DrawnOnce = true;
+	return true;
+}
+
+struct SSettingsWarmupSection
+{
+	EClassicSettingsPage m_Page = EClassicSettingsPage::GENERAL;
+	const char *m_pName = nullptr;
+	int m_Priority = 0;
+	std::function<double()> m_WarmupFn;
+	bool m_bWarmed = false;
+	ESettingsWarmupKind m_Kind = ESettingsWarmupKind::TEXT;
+};
+
+class CSettingsWarmupScheduler
+{
+public:
+	void RegisterSection(SSettingsWarmupSection Section);
+	void SetLastSessionPage(EClassicSettingsPage Page);
+	void SetEnabled(bool Enabled);
+	bool WarmupFrame(double BudgetMs);
+	void Reset();
+
+private:
+	std::vector<SSettingsWarmupSection> m_vSections;
+	EClassicSettingsPage m_LastSessionPage = EClassicSettingsPage::GENERAL;
+	bool m_bEnabled = true;
+	bool m_bSorted = false;
+};
 
 #endif // GAME_CLIENT_COMPONENTS_SETTINGS_WARMUP_H

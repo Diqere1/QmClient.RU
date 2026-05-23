@@ -842,6 +842,45 @@ void CCommandProcessorFragment_OpenGL3_3::Cmd_RenderTex3D(const CCommandBuffer::
 	};
 }
 
+void CCommandProcessorFragment_OpenGL3_3::Cmd_RenderTarget_Draw(const CCommandBuffer::SCommand_RenderTarget_Draw *pCommand)
+{
+	if(pCommand->m_TargetId < 0 || (size_t)pCommand->m_TargetId >= m_vRenderTargets.size())
+		return;
+	const SOpenGLRenderTarget &Target = m_vRenderTargets[pCommand->m_TargetId];
+	if(Target.m_Texture == 0 || pCommand->m_W <= 0.0f || pCommand->m_H <= 0.0f)
+		return;
+
+	UseProgram(m_pPrimitiveProgramTextured);
+	SetState(pCommand->m_State, m_pPrimitiveProgramTextured);
+	glBindTexture(GL_TEXTURE_2D, Target.m_Texture);
+
+	CCommandBuffer::SVertex aVertices[4];
+	const float X0 = pCommand->m_X;
+	const float Y0 = pCommand->m_Y;
+	const float X1 = pCommand->m_X + pCommand->m_W;
+	const float Y1 = pCommand->m_Y + pCommand->m_H;
+	aVertices[0].m_Pos = vec2(X0, Y0);
+	aVertices[0].m_Tex = vec2(0.0f, 1.0f);
+	aVertices[1].m_Pos = vec2(X1, Y0);
+	aVertices[1].m_Tex = vec2(1.0f, 1.0f);
+	aVertices[2].m_Pos = vec2(X1, Y1);
+	aVertices[2].m_Tex = vec2(1.0f, 0.0f);
+	aVertices[3].m_Pos = vec2(X0, Y1);
+	aVertices[3].m_Tex = vec2(0.0f, 0.0f);
+	for(auto &Vertex : aVertices)
+		Vertex.m_Color = CCommandBuffer::SColor{255, 255, 255, 255};
+
+	UploadStreamBufferData(EPrimitiveType::QUADS, aVertices, sizeof(CCommandBuffer::SVertex), 1);
+	glBindVertexArray(m_aPrimitiveDrawVertexId[m_LastStreamBuffer]);
+	if(m_aLastIndexBufferBound[m_LastStreamBuffer] != m_QuadDrawIndexBufferId)
+	{
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_QuadDrawIndexBufferId);
+		m_aLastIndexBufferBound[m_LastStreamBuffer] = m_QuadDrawIndexBufferId;
+	}
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+	m_LastStreamBuffer = (m_LastStreamBuffer + 1 >= MAX_STREAM_BUFFER_COUNT ? 0 : m_LastStreamBuffer + 1);
+}
+
 void CCommandProcessorFragment_OpenGL3_3::DestroyBufferContainer(int Index, bool DeleteBOs)
 {
 	SBufferContainer &BufferContainer = m_vBufferContainers[Index];

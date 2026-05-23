@@ -366,6 +366,7 @@ public:
 
 private:
 	bool m_Enabled;
+	int m_RenderOnlyDepth = 0;
 
 	const void *m_pHotItem = nullptr;
 	const void *m_pActiveItem = nullptr;
@@ -495,6 +496,13 @@ public:
 
 	void SetEnabled(bool Enabled) { m_Enabled = Enabled; }
 	bool Enabled() const { return m_Enabled; }
+	void BeginRenderOnly() { ++m_RenderOnlyDepth; }
+	void EndRenderOnly()
+	{
+		dbg_assert(m_RenderOnlyDepth > 0, "render-only UI scope underflow");
+		--m_RenderOnlyDepth;
+	}
+	bool RenderOnly() const { return m_RenderOnlyDepth > 0; }
 	void Update(vec2 MouseWorldPos = vec2(-1.0f, -1.0f));
 	void DebugRender(float X, float Y);
 
@@ -525,9 +533,16 @@ public:
 	}
 	void DisableMouseLock() { m_MouseLock = false; }
 
-	void SetHotItem(const void *pId) { m_pBecomingHotItem = pId; }
+	void SetHotItem(const void *pId)
+	{
+		if(RenderOnly())
+			return;
+		m_pBecomingHotItem = pId;
+	}
 	void SetActiveItem(const void *pId)
 	{
+		if(RenderOnly())
+			return;
 		m_ActiveItemValid = true;
 		m_pActiveItem = pId;
 		if(pId)
@@ -570,7 +585,7 @@ public:
 
 	bool MouseInside(const CUIRect *pRect) const;
 	bool MouseInsideClip() const { return !IsClipped() || MouseInside(ClipArea()); }
-	bool MouseHovered(const CUIRect *pRect) const { return MouseInside(pRect) && MouseInsideClip(); }
+	bool MouseHovered(const CUIRect *pRect) const { return !RenderOnly() && MouseInside(pRect) && MouseInsideClip(); }
 	void ConvertMouseMove(float *pX, float *pY, IInput::ECursorType CursorType) const;
 	void UpdateTouchState(CTouchState &State) const;
 	void ResetMouseSlow() { m_MouseSlow = false; }

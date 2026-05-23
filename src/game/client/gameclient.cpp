@@ -351,8 +351,6 @@ void CGameClient::OnConsoleInit()
 		pComponent->OnConsoleInit();
 
 	static SConfigIntAliasSync s_aLegacyToQmHudAliases[] = {
-		{&g_Config.m_ClScoreboardPointsLegacy, &g_Config.m_QmScoreboardPoints},
-		{&g_Config.m_ClScoreboardSortModeLegacy, &g_Config.m_QmScoreboardSortMode},
 		{&g_Config.m_ClScoreboardOnDeathLegacy, &g_Config.m_QmScoreboardOnDeath},
 		{&g_Config.m_ClDummyMiniViewLegacy, &g_Config.m_QmDummyMiniView},
 		{&g_Config.m_ClDummyMiniViewAutoLegacy, &g_Config.m_QmDummyMiniViewAuto},
@@ -362,8 +360,6 @@ void CGameClient::OnConsoleInit()
 		{&g_Config.m_ClSmtcShowHudLegacy, &g_Config.m_QmSmtcShowHud},
 	};
 	static SConfigIntAliasSync s_aQmToLegacyHudAliases[] = {
-		{&g_Config.m_QmScoreboardPoints, &g_Config.m_ClScoreboardPointsLegacy},
-		{&g_Config.m_QmScoreboardSortMode, &g_Config.m_ClScoreboardSortModeLegacy},
 		{&g_Config.m_QmScoreboardOnDeath, &g_Config.m_ClScoreboardOnDeathLegacy},
 		{&g_Config.m_QmDummyMiniView, &g_Config.m_ClDummyMiniViewLegacy},
 		{&g_Config.m_QmDummyMiniViewAuto, &g_Config.m_ClDummyMiniViewAutoLegacy},
@@ -374,24 +370,20 @@ void CGameClient::OnConsoleInit()
 	};
 
 	Console()->Chain("cl_languagefile", ConchainLanguageUpdate, this);
-	Console()->Chain("cl_scoreboard_points", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[0]);
-	Console()->Chain("cl_scoreboard_sort_mode", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[1]);
-	Console()->Chain("cl_scoreboard_on_death", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[2]);
-	Console()->Chain("cl_dummy_miniview", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[3]);
-	Console()->Chain("cl_dummy_miniview_auto", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[4]);
-	Console()->Chain("cl_dummy_miniview_size", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[5]);
-	Console()->Chain("cl_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[6]);
-	Console()->Chain("cl_smtc_enable", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[7]);
-	Console()->Chain("cl_smtc_show_hud", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[8]);
-	Console()->Chain("qm_scoreboard_points", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[0]);
-	Console()->Chain("qm_scoreboard_sort_mode", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[1]);
-	Console()->Chain("qm_scoreboard_on_death", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[2]);
-	Console()->Chain("qm_dummy_miniview", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[3]);
-	Console()->Chain("qm_dummy_miniview_auto", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[4]);
-	Console()->Chain("qm_dummy_miniview_size", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[5]);
-	Console()->Chain("qm_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[6]);
-	Console()->Chain("qm_smtc_enable", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[7]);
-	Console()->Chain("qm_smtc_show_hud", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[8]);
+	Console()->Chain("cl_scoreboard_on_death", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[0]);
+	Console()->Chain("cl_dummy_miniview", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[1]);
+	Console()->Chain("cl_dummy_miniview_auto", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[2]);
+	Console()->Chain("cl_dummy_miniview_size", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[3]);
+	Console()->Chain("cl_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[4]);
+	Console()->Chain("cl_smtc_enable", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[5]);
+	Console()->Chain("cl_smtc_show_hud", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[6]);
+	Console()->Chain("qm_scoreboard_on_death", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[0]);
+	Console()->Chain("qm_dummy_miniview", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[1]);
+	Console()->Chain("qm_dummy_miniview_auto", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[2]);
+	Console()->Chain("qm_dummy_miniview_size", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[3]);
+	Console()->Chain("qm_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[4]);
+	Console()->Chain("qm_smtc_enable", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[5]);
+	Console()->Chain("qm_smtc_show_hud", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[6]);
 
 	Console()->Chain("player_name", ConchainSpecialInfoupdate, this);
 	Console()->Chain("player_clan", ConchainSpecialInfoupdate, this);
@@ -486,7 +478,6 @@ static void MigrateChatBubbleConfig()
 		if(NewValue == NewDefault && LegacyValue != LegacyDefault)
 			NewValue = LegacyValue;
 	};
-
 }
 
 static void MigrateQmHudConfig()
@@ -496,8 +487,6 @@ static void MigrateQmHudConfig()
 			NewValue = LegacyValue;
 	};
 
-	MigrateInt(g_Config.m_QmScoreboardPoints, g_Config.m_ClScoreboardPointsLegacy, CConfig::ms_QmScoreboardPoints, CConfig::ms_ClScoreboardPointsLegacy);
-	MigrateInt(g_Config.m_QmScoreboardSortMode, g_Config.m_ClScoreboardSortModeLegacy, CConfig::ms_QmScoreboardSortMode, CConfig::ms_ClScoreboardSortModeLegacy);
 	MigrateInt(g_Config.m_QmScoreboardOnDeath, g_Config.m_ClScoreboardOnDeathLegacy, CConfig::ms_QmScoreboardOnDeath, CConfig::ms_ClScoreboardOnDeathLegacy);
 	MigrateInt(g_Config.m_QmDummyMiniView, g_Config.m_ClDummyMiniViewLegacy, CConfig::ms_QmDummyMiniView, CConfig::ms_ClDummyMiniViewLegacy);
 	MigrateInt(g_Config.m_QmDummyMiniViewAuto, g_Config.m_ClDummyMiniViewAutoLegacy, CConfig::ms_QmDummyMiniViewAuto, CConfig::ms_ClDummyMiniViewAutoLegacy);
@@ -509,8 +498,6 @@ static void MigrateQmHudConfig()
 
 static void SyncQmHudLegacyAliasesFromQm()
 {
-	g_Config.m_ClScoreboardPointsLegacy = g_Config.m_QmScoreboardPoints;
-	g_Config.m_ClScoreboardSortModeLegacy = g_Config.m_QmScoreboardSortMode;
 	g_Config.m_ClScoreboardOnDeathLegacy = g_Config.m_QmScoreboardOnDeath;
 	g_Config.m_ClDummyMiniViewLegacy = g_Config.m_QmDummyMiniView;
 	g_Config.m_ClDummyMiniViewAutoLegacy = g_Config.m_QmDummyMiniViewAuto;
@@ -619,6 +606,8 @@ void CGameClient::OnInit()
 	int LoadingTotal = g_pData->m_NumImages + ComponentCount();
 	if(!g_Config.m_ClThreadsoundloading)
 		LoadingTotal += g_pData->m_NumSounds;
+	if(g_Config.m_QmSettingsPrewarm != 0 && g_Config.m_QmSettingsFboCache != 0)
+		LoadingTotal += CMenus::SettingsRuntimeCacheWarmupSteps();
 	m_Menus.StartLoading(LoadingTotal);
 
 	// init all components
@@ -689,6 +678,8 @@ void CGameClient::OnInit()
 	// window not being focused after starting client.
 	Graphics()->SetWindowGrab(true);
 
+	PrewarmSettingsRuntimeCachesDuringLoading(pLoadingDDNetCaption);
+
 	CChecksumData *pChecksum = Client()->ChecksumData();
 	pChecksum->m_SizeofGameClient = sizeof(*this);
 	pChecksum->m_NumComponents = m_vpAll.size();
@@ -704,6 +695,21 @@ void CGameClient::OnInit()
 
 	m_Menus.FinishLoading();
 	log_trace("gameclient", "initialization finished after %.2fms", (time_get() - OnInitStart) * 1000.0f / (float)time_freq());
+}
+
+void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption)
+{
+	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+		return;
+
+	Ui()->MapScreen();
+	CUIRect TabBar, MainView;
+	Ui()->Screen()->HSplitTop(24.0f, &TabBar, &MainView);
+	for(int Step = 0; Step < CMenus::SettingsRuntimeCacheWarmupSteps(); ++Step)
+	{
+		m_Menus.PrewarmSettingsRuntimeCaches(MainView);
+		m_Menus.RenderLoading(pLoadingCaption, Localize("Prewarming settings pages"), 1);
+	}
 }
 
 void CGameClient::OnUpdate()

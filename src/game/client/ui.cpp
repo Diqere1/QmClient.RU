@@ -511,6 +511,9 @@ void CUi::UpdateClipping()
 
 int CUi::DoButtonLogic(const void *pId, int Checked, const CUIRect *pRect, const unsigned Flags)
 {
+	if(RenderOnly())
+		return 0;
+
 	int ReturnValue = 0;
 	const bool Inside = MouseHovered(pRect);
 
@@ -548,6 +551,15 @@ int CUi::DoButtonLogic(const void *pId, int Checked, const CUIRect *pRect, const
 
 int CUi::DoDraggableButtonLogic(const void *pId, int Checked, const CUIRect *pRect, bool *pClicked, bool *pAbrupted)
 {
+	if(RenderOnly())
+	{
+		if(pClicked != nullptr)
+			*pClicked = false;
+		if(pAbrupted != nullptr)
+			*pAbrupted = false;
+		return 0;
+	}
+
 	// logic
 	int ReturnValue = 0;
 	const bool Inside = MouseHovered(pRect);
@@ -609,6 +621,9 @@ int CUi::DoDraggableButtonLogic(const void *pId, int Checked, const CUIRect *pRe
 
 bool CUi::DoDoubleClickLogic(const void *pId)
 {
+	if(RenderOnly())
+		return false;
+
 	if(m_DoubleClickState.m_pLastClickedId == pId &&
 		Client()->GlobalTime() - m_DoubleClickState.m_LastClickTime < 0.5f &&
 		distance(m_DoubleClickState.m_LastClickPos, MousePos()) <= 32.0f * Screen()->h / Graphics()->ScreenHeight())
@@ -624,6 +639,9 @@ bool CUi::DoDoubleClickLogic(const void *pId)
 
 EEditState CUi::DoPickerLogic(const void *pId, const CUIRect *pRect, float *pX, float *pY)
 {
+	if(RenderOnly())
+		return EEditState::NONE;
+
 	if(MouseHovered(pRect))
 		SetHotItem(pId);
 
@@ -906,16 +924,26 @@ CLabelResult CUi::DoLabel_AutoLineSize(const char *pText, float FontSize, int Al
 
 bool CUi::DoEditBox(CLineInput *pLineInput, const CUIRect *pRect, float FontSize, int Corners, const std::vector<STextColorSplit> &vColorSplits, int Align)
 {
+	const float VSpacing = 2.0f;
+	CUIRect Textbox;
+	pRect->VMargin(VSpacing, &Textbox);
+	if(RenderOnly())
+	{
+		const bool Active = m_pLastActiveItem == pLineInput;
+		pRect->Draw(ms_LightButtonColorFunction.GetColor(Active, HotItem() == pLineInput), Corners, 3.0f);
+		ClipEnable(pRect);
+		Textbox.x -= pLineInput->GetScrollOffset();
+		pLineInput->Render(&Textbox, FontSize, Align, false, -1.0f, 0.0f, vColorSplits);
+		ClipDisable();
+		return false;
+	}
+
 	const bool Inside = MouseHovered(pRect);
 	bool Active = m_pLastActiveItem == pLineInput;
 	const bool Changed = pLineInput->WasChanged();
 	const bool CursorChanged = pLineInput->WasCursorChanged();
 	const bool SubmitPressed = Input()->KeyPress(KEY_RETURN) || Input()->KeyPress(KEY_KP_ENTER) || ConsumeHotkey(HOTKEY_ENTER);
 	const bool ClickedOutside = (MouseButtonClicked(0) || MouseButtonClicked(1)) && !Inside;
-
-	const float VSpacing = 2.0f;
-	CUIRect Textbox;
-	pRect->VMargin(VSpacing, &Textbox);
 
 	bool JustGotActive = false;
 	if(CheckActiveItem(pLineInput))

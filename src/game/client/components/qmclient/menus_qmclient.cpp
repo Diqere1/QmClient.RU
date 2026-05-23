@@ -26,7 +26,6 @@
 #include <game/client/components/menus.h>
 #include <game/client/components/qmclient/keyword_reply_rules.h>
 #include <game/client/components/qmclient/translate_ui_settings.h>
-#include <game/client/components/section_loader.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/tclient/bindchat.h>
 #include <game/client/components/tclient/bindwheel.h>
@@ -129,75 +128,6 @@ namespace
 		case 4: return "config";
 		default: return "unknown";
 		}
-	}
-
-	int gs_TClientSettingsDeferredFrames = 0;
-	int gs_TClientTabDeferredFrames = 0;
-	int gs_TClientDeferredTab = -1;
-	static CSectionLoader s_QmLoader;
-
-	[[maybe_unused]] void BeginDeferredTClientSettings()
-	{
-		gs_TClientSettingsDeferredFrames = 6;
-	}
-
-	[[maybe_unused]] void BeginDeferredTClientTab(const int Tab)
-	{
-		gs_TClientDeferredTab = Tab;
-		switch(Tab)
-		{
-		case TCLIENT_TAB_SETTINGS:
-			gs_TClientTabDeferredFrames = 5;
-			break;
-		case TCLIENT_TAB_BINDWHEEL:
-			gs_TClientTabDeferredFrames = 4;
-			break;
-		case TCLIENT_TAB_STATUSBAR:
-			gs_TClientTabDeferredFrames = 5;
-			break;
-		case TCLIENT_TAB_WARLIST:
-			gs_TClientTabDeferredFrames = 4;
-			break;
-		case TCLIENT_TAB_BINDCHAT:
-			gs_TClientTabDeferredFrames = 2;
-			break;
-		case TCLIENT_TAB_INFO:
-			gs_TClientTabDeferredFrames = 4;
-			break;
-		default:
-			gs_TClientTabDeferredFrames = 2;
-			break;
-		}
-	}
-
-	[[maybe_unused]] bool ShouldDeferTClientVisualStage(const float ScrollY, const int MinRemainingFrames)
-	{
-		return gs_TClientSettingsDeferredFrames >= MinRemainingFrames && absolute(ScrollY) <= 1.0f;
-	}
-
-	[[maybe_unused]] bool ShouldDeferTClientTabContent(const int Tab)
-	{
-		return gs_TClientDeferredTab == Tab && gs_TClientTabDeferredFrames > 0;
-	}
-
-	[[maybe_unused]] int GetDeferredTClientTabFrames(const int Tab)
-	{
-		return gs_TClientDeferredTab == Tab ? gs_TClientTabDeferredFrames : 0;
-	}
-
-	[[maybe_unused]] void FinishDeferredTClientSettingsFrame()
-	{
-		if(gs_TClientSettingsDeferredFrames > 0)
-			--gs_TClientSettingsDeferredFrames;
-	}
-
-	[[maybe_unused]] void FinishDeferredTClientTabFrame(const int Tab)
-	{
-		if(gs_TClientDeferredTab != Tab || gs_TClientTabDeferredFrames <= 0)
-			return;
-		--gs_TClientTabDeferredFrames;
-		if(gs_TClientTabDeferredFrames <= 0)
-			gs_TClientDeferredTab = -1;
 	}
 
 	struct SSectionCullContext
@@ -725,8 +655,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{
 			s_PrevQmTab = m_QmClientSettingsTab;
 			s_QmTabTransitionInitialized = true;
-			if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_VISUAL)
-				s_QmLoader.BeginLightweight(1, 5.0f);
 		}
 		else if(m_QmClientSettingsTab != s_PrevQmTab)
 		{
@@ -734,8 +662,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				dbg_msg("perf/qmclient", "event=tab_switch from=%s to=%s", QmSettingsTabName(s_PrevQmTab), QmSettingsTabName(m_QmClientSettingsTab));
 			s_QmTabTransitionDirection = m_QmClientSettingsTab > s_PrevQmTab ? 1.0f : -1.0f;
 			TriggerUiSwitchAnimation(QmClientTabSwitchNode, 0.18f);
-			if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_VISUAL)
-				s_QmLoader.BeginLightweight(1, 5.0f);
 			s_PrevQmTab = m_QmClientSettingsTab;
 		}
 
@@ -809,7 +735,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
 	ScrollParams.m_ScrollbarMargin = std::clamp(8.0f * UiScale, 6.0f, 8.0f);
 	s_ScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
-	const bool DeferQmVisualHeavyModules = s_QmLoader.GetFramesRemaining() > 0 && m_QmClientSettingsTab == 0 && absolute(ScrollOffset.y) <= 1.0f;
 
 	static std::vector<CUIRect> s_GlassCards;
 	static vec2 s_PrevScrollOffset(0.0f, 0.0f);
@@ -4646,45 +4571,24 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 						if(g_Config.m_QmCameraDrift)
 						{
-							if(DeferQmVisualHeavyModules)
-							{
-								char aBuf[128];
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("漂移强度"), g_Config.m_QmCameraDriftAmount);
-								Ui()->DoLabel(&Row, aBuf, LgBodySize, TEXTALIGN_ML);
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							CUIRect LabelColValue, ControlColValue;
+							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+							Ui()->DoLabel(&LabelColValue, Localize("Drift intensity"), LgBodySize, TEXTALIGN_ML);
+							static int s_QmCameraDriftAmountInputId;
+							RenderSliderWithValueInput(&s_QmCameraDriftAmountInputId, ControlColValue, &g_Config.m_QmCameraDriftAmount, 0, 200);
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								str_format(aBuf, sizeof(aBuf), "%s: %d%%", Localize("漂移平滑度"), g_Config.m_QmCameraDriftSmoothness);
-								Ui()->DoLabel(&Row, aBuf, LgBodySize, TEXTALIGN_ML);
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+							Ui()->DoLabel(&LabelColValue, Localize("Drift smoothness"), LgBodySize, TEXTALIGN_ML);
+							static int s_QmCameraDriftSmoothnessInputId;
+							RenderSliderWithValueInput(&s_QmCameraDriftSmoothnessInputId, ControlColValue, &g_Config.m_QmCameraDriftSmoothness, 0, 100, "%");
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("漂移方向"), g_Config.m_QmCameraDriftReverse ? Localize("开") : Localize("关"));
-								Ui()->DoLabel(&Row, aBuf, LgBodySize, TEXTALIGN_ML);
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-							}
-							else
-							{
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								CUIRect LabelColValue, ControlColValue;
-								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-								Ui()->DoLabel(&LabelColValue, Localize("Drift intensity"), LgBodySize, TEXTALIGN_ML);
-								static int s_QmCameraDriftAmountInputId;
-								RenderSliderWithValueInput(&s_QmCameraDriftAmountInputId, ControlColValue, &g_Config.m_QmCameraDriftAmount, 0, 200);
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-								Ui()->DoLabel(&LabelColValue, Localize("Drift smoothness"), LgBodySize, TEXTALIGN_ML);
-								static int s_QmCameraDriftSmoothnessInputId;
-								RenderSliderWithValueInput(&s_QmCameraDriftSmoothnessInputId, ControlColValue, &g_Config.m_QmCameraDriftSmoothness, 0, 100, "%");
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmCameraDriftReverse, Localize("漂移方向"), &g_Config.m_QmCameraDriftReverse, &Row, LgLineHeight);
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-							}
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmCameraDriftReverse, Localize("漂移方向"), &g_Config.m_QmCameraDriftReverse, &Row, LgLineHeight);
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 						}
 					}
 					else
@@ -4701,36 +4605,20 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 						if(g_Config.m_QmDynamicFov)
 						{
-							if(DeferQmVisualHeavyModules)
-							{
-								char aBuf[128];
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("动态FOV强度"), g_Config.m_QmDynamicFovAmount);
-								Ui()->DoLabel(&Row, aBuf, LgBodySize, TEXTALIGN_ML);
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							CUIRect LabelColValue, ControlColValue;
+							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+							Ui()->DoLabel(&LabelColValue, Localize("Dynamic FOV intensity"), LgBodySize, TEXTALIGN_ML);
+							static int s_QmDynamicFovAmountInputId;
+							RenderSliderWithValueInput(&s_QmDynamicFovAmountInputId, ControlColValue, &g_Config.m_QmDynamicFovAmount, 0, 200);
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								str_format(aBuf, sizeof(aBuf), "%s: %d%%", Localize("动态FOV平滑度"), g_Config.m_QmDynamicFovSmoothness);
-								Ui()->DoLabel(&Row, aBuf, LgBodySize, TEXTALIGN_ML);
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-							}
-							else
-							{
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								CUIRect LabelColValue, ControlColValue;
-								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-								Ui()->DoLabel(&LabelColValue, Localize("Dynamic FOV intensity"), LgBodySize, TEXTALIGN_ML);
-								static int s_QmDynamicFovAmountInputId;
-								RenderSliderWithValueInput(&s_QmDynamicFovAmountInputId, ControlColValue, &g_Config.m_QmDynamicFovAmount, 0, 200);
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-								CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-								Ui()->DoLabel(&LabelColValue, Localize("Dynamic FOV smoothness"), LgBodySize, TEXTALIGN_ML);
-								static int s_QmDynamicFovSmoothnessInputId;
-								RenderSliderWithValueInput(&s_QmDynamicFovSmoothnessInputId, ControlColValue, &g_Config.m_QmDynamicFovSmoothness, 0, 100, "%");
-								CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-							}
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+							Ui()->DoLabel(&LabelColValue, Localize("Dynamic FOV smoothness"), LgBodySize, TEXTALIGN_ML);
+							static int s_QmDynamicFovSmoothnessInputId;
+							RenderSliderWithValueInput(&s_QmDynamicFovSmoothnessInputId, ControlColValue, &g_Config.m_QmDynamicFovSmoothness, 0, 100, "%");
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 						}
 					}
 					else
@@ -4760,53 +4648,37 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 						Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
 						Ui()->DoLabel(&LabelCol, Localize("宽高比预设"), LgBodySize, TEXTALIGN_ML);
-						if(DeferQmVisualHeavyModules)
+						const int NewPreset = Ui()->DoDropDown(&ControlCol, CurrentPreset, apAspectPresetNames, static_cast<int>(std::size(apAspectPresetNames)), s_AspectPresetDropDownState);
+						if(NewPreset != CurrentPreset)
 						{
-							Ui()->DoLabel(&ControlCol, apAspectPresetNames[CurrentPreset], LgBodySize, TEXTALIGN_ML);
-						}
-						else
-						{
-							const int NewPreset = Ui()->DoDropDown(&ControlCol, CurrentPreset, apAspectPresetNames, static_cast<int>(std::size(apAspectPresetNames)), s_AspectPresetDropDownState);
-							if(NewPreset != CurrentPreset)
+							g_Config.m_QmAspectPreset = NewPreset;
+							switch(NewPreset)
 							{
-								g_Config.m_QmAspectPreset = NewPreset;
-								switch(NewPreset)
-								{
-								case 1: g_Config.m_QmAspectRatio = 125; break;
-								case 2: g_Config.m_QmAspectRatio = 133; break;
-								case 3: g_Config.m_QmAspectRatio = 150; break;
-								case 4: g_Config.m_QmAspectRatio = 178; break;
-								case 5: g_Config.m_QmAspectRatio = 233; break;
-								case 6:
-									if(g_Config.m_QmAspectRatio < 100)
-										g_Config.m_QmAspectRatio = 178;
-									break;
-								default: break;
-								}
-								AspectChanged = true;
+							case 1: g_Config.m_QmAspectRatio = 125; break;
+							case 2: g_Config.m_QmAspectRatio = 133; break;
+							case 3: g_Config.m_QmAspectRatio = 150; break;
+							case 4: g_Config.m_QmAspectRatio = 178; break;
+							case 5: g_Config.m_QmAspectRatio = 233; break;
+							case 6:
+								if(g_Config.m_QmAspectRatio < 100)
+									g_Config.m_QmAspectRatio = 178;
+								break;
+							default: break;
 							}
+							AspectChanged = true;
 						}
 						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 						if(g_Config.m_QmAspectPreset == 6)
 						{
 							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-							if(DeferQmVisualHeavyModules)
-							{
-								char aAspectBuf[64];
-								str_format(aAspectBuf, sizeof(aAspectBuf), "%s: %d x100", Localize("自定义宽高比"), g_Config.m_QmAspectRatio);
-								Ui()->DoLabel(&Row, aAspectBuf, LgBodySize, TEXTALIGN_ML);
-							}
-							else
-							{
-								CUIRect LabelColValue, ControlColValue;
-								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-								Ui()->DoLabel(&LabelColValue, Localize("Custom ratio"), LgBodySize, TEXTALIGN_ML);
-								static int s_QmAspectRatioInputId;
-								const int OldAspectRatio = g_Config.m_QmAspectRatio;
-								RenderSliderWithValueInput(&s_QmAspectRatioInputId, ControlColValue, &g_Config.m_QmAspectRatio, 100, 300);
-								AspectChanged |= OldAspectRatio != g_Config.m_QmAspectRatio;
-							}
+							CUIRect LabelColValue, ControlColValue;
+							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+							Ui()->DoLabel(&LabelColValue, Localize("Custom ratio"), LgBodySize, TEXTALIGN_ML);
+							static int s_QmAspectRatioInputId;
+							const int OldAspectRatio = g_Config.m_QmAspectRatio;
+							RenderSliderWithValueInput(&s_QmAspectRatioInputId, ControlColValue, &g_Config.m_QmAspectRatio, 100, 300);
+							AspectChanged |= OldAspectRatio != g_Config.m_QmAspectRatio;
 							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 						}
 
@@ -4865,19 +4737,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						if(IsModuleContentBlockVisible(CardContent, SliderHeight))
 						{
 							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-							if(DeferQmVisualHeavyModules)
-							{
-								char aBuf[128];
-								str_format(aBuf, sizeof(aBuf), "%s: %d%%", pTitle, *pValue);
-								Ui()->DoLabel(&Row, aBuf, LgBodySize, TEXTALIGN_ML);
-							}
-							else
-							{
-								Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
-								Ui()->DoLabel(&LabelCol, pTitle, LgBodySize, TEXTALIGN_ML);
+							Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+							Ui()->DoLabel(&LabelCol, pTitle, LgBodySize, TEXTALIGN_ML);
 
-								RenderSliderWithValueInput(pInputId, ControlCol, pValue, 0, 100, "%");
-							}
+							RenderSliderWithValueInput(pInputId, ControlCol, pValue, 0, 100, "%");
 							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 						}
 						else
@@ -6724,7 +6587,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		TabContentClip.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, TabTransitionAlpha), IGraphics::CORNER_NONE, 0.0f);
 	if(TabTransitionActive)
 		Ui()->ClipDisable();
-	s_QmLoader.Process();
 	{
 		char aTotalExtra[96];
 		str_format(aTotalExtra, sizeof(aTotalExtra), "tab=%s transition=%d", QmSettingsTabName(m_QmClientSettingsTab), TabTransitionActive ? 1 : 0);

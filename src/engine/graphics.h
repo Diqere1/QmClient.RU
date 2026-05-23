@@ -228,6 +228,22 @@ public:
 		}
 	};
 
+	class CRenderTargetHandle
+	{
+		friend class IGraphics;
+		int m_Id;
+
+	public:
+		CRenderTargetHandle() :
+			m_Id(-1)
+		{
+		}
+
+		bool IsValid() const { return Id() >= 0; }
+		int Id() const { return m_Id; }
+		void Invalidate() { m_Id = -1; }
+	};
+
 	int ScreenWidth() const { return m_ScreenWidth; }
 	int ScreenHeight() const { return m_ScreenHeight; }
 	float ScreenAspect() const { return m_ScreenAspectOverride > 0.0f ? m_ScreenAspectOverride : (float)ScreenWidth() / (float)ScreenHeight(); }
@@ -304,6 +320,13 @@ public:
 	virtual CTextureHandle LoadTexture(const char *pFilename, int StorageType, int Flags = 0) = 0;
 	virtual void TextureSet(CTextureHandle Texture) = 0;
 	void TextureClear() { TextureSet(CTextureHandle()); }
+
+	virtual bool IsRenderTargetSupported() const = 0;
+	virtual CRenderTargetHandle CreateRenderTarget(int Width, int Height) = 0;
+	virtual void DestroyRenderTarget(CRenderTargetHandle *pTarget) = 0;
+	virtual bool BeginRenderTarget(CRenderTargetHandle Target, ColorRGBA ClearColor) = 0;
+	virtual void EndRenderTarget() = 0;
+	virtual void DrawRenderTarget(CRenderTargetHandle Target, float X, float Y, float W, float H) = 0;
 
 	// pTextData & pTextOutlineData are automatically free'd
 	virtual bool LoadTextTextures(size_t Width, size_t Height, CTextureHandle &TextTexture, CTextureHandle &TextOutlineTexture, uint8_t *pTextData, uint8_t *pTextOutlineData) = 0;
@@ -623,6 +646,13 @@ protected:
 		Tex.m_Id = Index;
 		Tex.m_Generation = Generation;
 		return Tex;
+	}
+
+	CRenderTargetHandle CreateRenderTargetHandle(int Index)
+	{
+		CRenderTargetHandle Target;
+		Target.m_Id = Index;
+		return Target;
 	}
 
 public:

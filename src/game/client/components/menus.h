@@ -25,6 +25,7 @@
 #include <game/client/components/menus_ingame_touch_controls.h>
 #include <game/client/components/menus_settings_controls.h>
 #include <game/client/components/menus_start.h>
+#include <game/client/components/section_loader.h>
 #include <game/client/components/skins7.h>
 #include <game/client/components/tclient/warlist.h>
 #include <game/client/lineinput.h>
@@ -1641,6 +1642,7 @@ public:
 	std::array<CUIElement, SETTINGS_LENGTH> m_aSettingsTabLabelElements;
 	std::array<const char *, SETTINGS_LENGTH> m_apSettingsTabs{};
 	int m_QmClientSettingsTab = QMCLIENT_SETTINGS_TAB_VISUAL;
+	int m_TClientSettingsTab = 0;
 	CLineInputBuffered<128> m_aQmClientModuleSearchInputs[NUMBER_OF_QMCLIENT_SETTINGS_TABS];
 	void ClearQmClientSettingsSearchInputs();
 
@@ -1735,8 +1737,33 @@ public:
 	void ForceRefreshLanPage();
 	void SetShowStart(bool ShowStart);
 	void ShowQuitPopup();
+	bool PrewarmSettingsRuntimeCaches(CUIRect MainView);
+	static constexpr int SettingsRuntimeCacheWarmupSteps() { return SettingsLoadingRuntimeCacheWarmupSteps(SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS); }
+	void LoadSettingsRuntimeCacheMetadata();
+	void SaveSettingsRuntimeCacheMetadata();
 
 private:
+	struct SSettingsPageRuntimeCache
+	{
+		SSettingsPageRuntimeCacheState m_State;
+		IGraphics::CRenderTargetHandle m_RenderTarget;
+		int m_RenderTargetWidth = 0;
+		int m_RenderTargetHeight = 0;
+	};
+	static constexpr int SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS = 6;
+
+	SSessionUiCache m_SettingsRuntimeCacheMetadata;
+	float m_SettingsTClientCurrentScrollY = 0.0f;
+	bool m_SettingsTClientScrollRestorePending = false;
+	SSettingsPageRuntimeCache m_SettingsControlsRuntimeCache;
+	SSettingsPageRuntimeCache m_aSettingsTClientRuntimeCaches[SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS];
+	SSettingsPageRuntimeCache m_SettingsQmClientRuntimeCache;
+	bool m_bSettingsControlsPrewarmed = false;
+	bool m_bSettingsQmClientPrewarmed = false;
+	bool m_bSettingsTClientPrewarmed = false;
+	bool m_aSettingsTClientSiblingPrewarmed[SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS] = {};
+	int m_SettingsRuntimePrewarmCursor = 0;
+
 	CCommunityIcons m_CommunityIcons;
 	CMenusIngameTouchControls m_MenusIngameTouchControls;
 	friend CMenusIngameTouchControls;
@@ -1755,8 +1782,13 @@ private:
 	void RenderSettingsAppearance(CUIRect MainView);
 
 	// found in menus_qmclient.cpp
-	void RenderSettingsTClient(CUIRect MainView);
-	void RenderSettingsTClientSettings(CUIRect MainView);
+	void RenderSettingsTClient(CUIRect MainView, bool PrewarmOnly = false);
+	void RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly = false);
+	void PrewarmSettingsTClient(CUIRect MainView);
+	bool PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView);
+	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
+	bool DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
+	void DestroySettingsPageRuntimeCaches();
 	void RenderSettingsTClientBindWheel(CUIRect MainView);
 	void RenderSettingsTClientChatBinds(CUIRect MainView);
 	void RenderSettingsTClientWarList(CUIRect MainView);

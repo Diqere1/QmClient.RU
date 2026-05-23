@@ -44,6 +44,91 @@
 #include <unordered_map>
 #include <vector>
 
+namespace {
+class CUiRenderOnlyScope
+{
+public:
+	explicit CUiRenderOnlyScope(CUi *pUi) :
+		m_pUi(pUi)
+	{
+		m_pUi->BeginRenderOnly();
+	}
+
+	~CUiRenderOnlyScope()
+	{
+		m_pUi->EndRenderOnly();
+	}
+
+private:
+	CUi *m_pUi;
+};
+
+uint64_t HashMenuCacheValue(uint64_t Hash, int Value)
+{
+	const uint8_t *pBytes = reinterpret_cast<const uint8_t *>(&Value);
+	for(size_t i = 0; i < sizeof(Value); ++i)
+	{
+		Hash ^= pBytes[i];
+		Hash *= 1099511628211ull;
+	}
+	return Hash;
+}
+
+uint64_t HashSettingsPageConfig()
+{
+	uint64_t Hash = 1469598103934665603ull;
+#define MACRO_CONFIG_INT(Name, ScriptName, Def, Min, Max, Save, Desc) Hash = HashMenuCacheValue(Hash, g_Config.m_##Name);
+#define MACRO_CONFIG_COL(Name, ScriptName, Def, Save, Desc) Hash = HashMenuCacheValue(Hash, g_Config.m_##Name);
+#define MACRO_CONFIG_STR(Name, ScriptName, Len, Def, Save, Desc) Hash ^= str_quickhash(g_Config.m_##Name); Hash *= 1099511628211ull;
+#define SET_CONFIG_DOMAIN(ConfigDomain) ;
+#include <engine/shared/config_includes.h>
+#undef MACRO_CONFIG_INT
+#undef MACRO_CONFIG_COL
+#undef MACRO_CONFIG_STR
+#undef SET_CONFIG_DOMAIN
+	return Hash;
+}
+
+int CanonicalizeTClientCacheTab(int Tab)
+{
+	static constexpr int TCLIENT_CACHE_SLOTS = 6;
+	auto IsTabHidden = [](int Candidate) {
+		return (g_Config.m_TcTClientSettingsTabs & (1 << Candidate)) != 0;
+	};
+	if(Tab < 0 || Tab >= TCLIENT_CACHE_SLOTS || IsTabHidden(Tab))
+	{
+		for(int Candidate = 0; Candidate < TCLIENT_CACHE_SLOTS; ++Candidate)
+		{
+			if(!IsTabHidden(Candidate))
+				return Candidate;
+		}
+		return 0;
+	}
+	return Tab;
+}
+
+SSettingsSectionCacheRuntimeKey MakeSettingsPageRuntimeKey(CUIRect View, IGraphics *pGraphics, int Page, int Tab, float ScrollY)
+{
+	SSettingsSectionCacheRuntimeKey RuntimeKey;
+	RuntimeKey.m_ViewportWidth = std::max(1, (int)View.w);
+	RuntimeKey.m_ViewportHeight = std::max(1, (int)View.h);
+	RuntimeKey.m_ConfigHash = HashSettingsPageConfig();
+	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, Page);
+	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, Tab);
+	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, (int)std::round(ScrollY));
+	RuntimeKey.m_LanguageHash = str_quickhash(g_Config.m_ClLanguagefile);
+	RuntimeKey.m_FontHash = str_quickhash(g_Config.m_TcCustomFont);
+	RuntimeKey.m_BackendHash = str_quickhash(g_Config.m_GfxBackend);
+	if(pGraphics)
+	{
+		RuntimeKey.m_UiScale = std::max(1, (int)std::round(pGraphics->ScreenHiDPIScale() * 100.0f));
+		RuntimeKey.m_WindowHash = HashMenuCacheValue(1469598103934665603ull, pGraphics->WindowWidth());
+		RuntimeKey.m_WindowHash = HashMenuCacheValue(RuntimeKey.m_WindowHash, pGraphics->WindowHeight());
+	}
+	return RuntimeKey;
+}
+}
+
 using namespace FontIcons;
 using namespace std::chrono_literals;
 
@@ -1579,6 +1664,7 @@ void CMenus::OnInit()
 	m_TextureBlob = Graphics()->LoadTexture("blob.png", IStorage::TYPE_ALL);
 
 	m_IsInit = true;
+	LoadSettingsRuntimeCacheMetadata();
 
 	// load menu images
 	m_vMenuImages.clear();
@@ -1876,6 +1962,12 @@ void CMenus::Render()
 			{
 				Ui()->ClipDisable();
 			}
+			if(m_MenuPage != PAGE_SETTINGS && m_Popup == POPUP_NONE)
+			{
+				CPerfTimer StageTimer;
+				PrewarmSettingsRuntimeCaches(MainViewClip);
+				LogPerfStage("settings_runtime_cache_prewarm", StageTimer.ElapsedMs(), false, "state=offline");
+			}
 			{
 				CPerfTimer StageTimer;
 				RenderMenubar(TabBar, ClientState);
@@ -1963,6 +2055,12 @@ void CMenus::Render()
 			if(TransitionActive)
 			{
 				Ui()->ClipDisable();
+			}
+			if(m_GamePage != PAGE_SETTINGS && m_Popup == POPUP_NONE)
+			{
+				CPerfTimer StageTimer;
+				PrewarmSettingsRuntimeCaches(MainViewClip);
+				LogPerfStage("settings_runtime_cache_prewarm", StageTimer.ElapsedMs(), false, "state=online");
 			}
 			{
 				CPerfTimer StageTimer;
@@ -3057,8 +3155,145 @@ void CMenus::OnReset()
 
 void CMenus::OnShutdown()
 {
+	SaveSettingsRuntimeCacheMetadata();
+	DestroySettingsPageRuntimeCaches();
 	ResetDemoScreenshotPreview();
 	m_CommunityIcons.Shutdown();
+}
+
+void CMenus::DestroySettingsPageRuntimeCaches()
+{
+	if(m_SettingsControlsRuntimeCache.m_RenderTarget.IsValid())
+		Graphics()->DestroyRenderTarget(&m_SettingsControlsRuntimeCache.m_RenderTarget);
+	for(auto &Cache : m_aSettingsTClientRuntimeCaches)
+	{
+		if(Cache.m_RenderTarget.IsValid())
+			Graphics()->DestroyRenderTarget(&Cache.m_RenderTarget);
+	}
+	if(m_SettingsQmClientRuntimeCache.m_RenderTarget.IsValid())
+		Graphics()->DestroyRenderTarget(&m_SettingsQmClientRuntimeCache.m_RenderTarget);
+	m_SettingsControlsRuntimeCache = {};
+	for(auto &Cache : m_aSettingsTClientRuntimeCaches)
+		Cache = {};
+	m_SettingsQmClientRuntimeCache = {};
+	m_bSettingsControlsPrewarmed = false;
+	m_bSettingsQmClientPrewarmed = false;
+	m_bSettingsTClientPrewarmed = false;
+	for(bool &Prewarmed : m_aSettingsTClientSiblingPrewarmed)
+		Prewarmed = false;
+	m_SettingsRuntimePrewarmCursor = 0;
+}
+
+bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY)
+{
+	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+		return false;
+	if(!Graphics()->IsRenderTargetSupported())
+		return false;
+	if(Page == SETTINGS_TCLIENT)
+		Tab = CanonicalizeTClientCacheTab(Tab);
+
+	SSettingsPageRuntimeCache *pCache = nullptr;
+	if(Page == SETTINGS_CONTROLS)
+		pCache = &m_SettingsControlsRuntimeCache;
+	else if(Page == SETTINGS_TCLIENT)
+	{
+		const int Slot = std::clamp(Tab, 0, SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS - 1);
+		pCache = &m_aSettingsTClientRuntimeCaches[Slot];
+	}
+	else if(Page == SETTINGS_QMCLIENT)
+		pCache = &m_SettingsQmClientRuntimeCache;
+	else
+		return false;
+
+	const SSettingsSectionCacheRuntimeKey RuntimeKey = MakeSettingsPageRuntimeKey(ContentView, Graphics(), Page, Tab, ScrollY);
+	const int Width = std::max(1, (int)ContentView.w);
+	const int Height = std::max(1, (int)ContentView.h);
+	if(SettingsPageRuntimeCacheMatches(pCache->m_State, Page, Tab, Width, Height, RuntimeKey))
+		return true;
+
+	if(pCache->m_RenderTarget.IsValid() && (pCache->m_RenderTargetWidth != Width || pCache->m_RenderTargetHeight != Height))
+		Graphics()->DestroyRenderTarget(&pCache->m_RenderTarget);
+	if(!pCache->m_RenderTarget.IsValid())
+	{
+		pCache->m_RenderTarget = Graphics()->CreateRenderTarget(Width, Height);
+		pCache->m_RenderTargetWidth = Width;
+		pCache->m_RenderTargetHeight = Height;
+	}
+	if(!pCache->m_RenderTarget.IsValid())
+		return false;
+
+	float ScreenTLX = 0.0f;
+	float ScreenTLY = 0.0f;
+	float ScreenBRX = 0.0f;
+	float ScreenBRY = 0.0f;
+	Graphics()->GetScreen(&ScreenTLX, &ScreenTLY, &ScreenBRX, &ScreenBRY);
+	if(!Graphics()->BeginRenderTarget(pCache->m_RenderTarget, ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f)))
+		return false;
+	Graphics()->MapScreen(0.0f, 0.0f, (float)Width, (float)Height);
+	CUIRect CacheView{0.0f, 0.0f, ContentView.w, ContentView.h};
+	CUiRenderOnlyScope RenderOnlyScope(Ui());
+	if(Page == SETTINGS_CONTROLS)
+		m_MenusSettingsControls.Render(CacheView);
+	else if(Page == SETTINGS_TCLIENT)
+	{
+		const int SavedTab = m_TClientSettingsTab;
+		if(Tab >= 0)
+			m_TClientSettingsTab = Tab;
+		RenderSettingsTClient(CacheView, true);
+		m_TClientSettingsTab = SavedTab;
+	}
+	else if(Page == SETTINGS_QMCLIENT)
+	{
+		const int SavedTab = m_QmClientSettingsTab;
+		if(Tab >= 0)
+			m_QmClientSettingsTab = Tab;
+		RenderSettingsQmClient(CacheView);
+		m_QmClientSettingsTab = SavedTab;
+	}
+	Graphics()->MapScreen(ScreenTLX, ScreenTLY, ScreenBRX, ScreenBRY);
+	Graphics()->EndRenderTarget();
+
+	pCache->m_State.m_Page = Page;
+	pCache->m_State.m_Tab = Tab;
+	pCache->m_State.m_RuntimeKey = RuntimeKey;
+	pCache->m_State.m_Width = Width;
+	pCache->m_State.m_Height = Height;
+	pCache->m_State.m_Valid = true;
+	pCache->m_State.m_DrawnOnce = false;
+	return true;
+}
+
+bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY)
+{
+	if(g_Config.m_QmSettingsFboCache == 0)
+		return false;
+	if(Page == SETTINGS_TCLIENT)
+		Tab = CanonicalizeTClientCacheTab(Tab);
+	SSettingsPageRuntimeCache *pCache = nullptr;
+	if(Page == SETTINGS_CONTROLS)
+		pCache = &m_SettingsControlsRuntimeCache;
+	else if(Page == SETTINGS_TCLIENT)
+	{
+		const int Slot = std::clamp(Tab, 0, SETTINGS_TCLIENT_RUNTIME_CACHE_SLOTS - 1);
+		pCache = &m_aSettingsTClientRuntimeCaches[Slot];
+	}
+	else if(Page == SETTINGS_QMCLIENT)
+		pCache = &m_SettingsQmClientRuntimeCache;
+	else
+		return false;
+
+	const int Width = std::max(1, (int)ContentView.w);
+	const int Height = std::max(1, (int)ContentView.h);
+	if(pCache->m_State.m_DrawnOnce)
+		return false;
+	const SSettingsSectionCacheRuntimeKey RuntimeKey = MakeSettingsPageRuntimeKey(ContentView, Graphics(), Page, Tab, ScrollY);
+	if(!pCache->m_RenderTarget.IsValid() || !SettingsPageRuntimeCacheMatches(pCache->m_State, Page, Tab, Width, Height, RuntimeKey))
+		return false;
+
+	Graphics()->DrawRenderTarget(pCache->m_RenderTarget, ContentView.x, ContentView.y, ContentView.w, ContentView.h);
+	SettingsPageRuntimeCacheShouldShortCircuit(pCache->m_State, Page, Tab, Width, Height, RuntimeKey);
+	return true;
 }
 
 bool CMenus::OnCursorMove(float x, float y, IInput::ECursorType CursorType)

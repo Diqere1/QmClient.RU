@@ -2,10 +2,10 @@
 """
 QmClient 设置/命令文档导出工具
 
-基于上游 scripts/export_settings_commands_table.py 适配，支持 QmClient 的三套配置变量文件：
-  - src/engine/shared/config_variables.h          (DDNet 上游)
-  - src/engine/shared/config_variables_qmclient.h (TaterClient 继承，Tc 前缀)
-  - src/engine/shared/config_variables_qmclient_extra.h (QmClient 自研，Qm 前缀)
+基于上游 scripts/export_settings_commands_table.py 适配，支持 QmClient 的配置变量文件：
+  - src/engine/shared/config_variables.h          (DDNet 官方)
+  - src/engine/shared/config_variables_tclient.h  (TaterClient)
+  - src/engine/shared/config_variables_qmclient.h (QmClient)
 
 输出包含 QmClient 专属的配置分类：
   - QmClient 客户端设置 (Qm/Tc 前缀)
@@ -29,7 +29,6 @@ os.chdir(os.path.dirname(__file__) + "/..")
 CONFIG_FILES = [
     "src/engine/shared/config_variables.h",
     "src/engine/shared/config_variables_qmclient.h",
-    "src/engine/shared/config_variables_qimeng.h",
 ]
 
 

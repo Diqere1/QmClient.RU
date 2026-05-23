@@ -208,8 +208,6 @@ namespace
 	float gs_CreditsHeight = 0.0f;
 	char gs_aCreditsLanguageFile[IO_MAX_PATH_LENGTH] = {};
 	char gs_aLanguageCacheLanguageFile[IO_MAX_PATH_LENGTH] = {};
-	int gs_SettingsDeferredPage = -1;
-	int gs_SettingsDeferredFrames = 0;
 
 	void EnsureLanguagePageCacheInit(CUi *pUi)
 	{
@@ -280,42 +278,6 @@ namespace
 		gs_CreditsHeight = gs_CreditsLabelElement.Rect(0)->m_Cursor.Height();
 		gs_CreditsLineWidth = CreditsLineWidth;
 		str_copy(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile, sizeof(gs_aCreditsLanguageFile));
-	}
-
-	bool ShouldDeferSettingsTailSection(const int Page)
-	{
-		return gs_SettingsDeferredPage == Page && gs_SettingsDeferredFrames > 0;
-	}
-
-	int DeferredSettingsTailFrames(const int Page)
-	{
-		return gs_SettingsDeferredPage == Page ? gs_SettingsDeferredFrames : 0;
-	}
-
-	void BeginDeferredSettingsPage(const int Page)
-	{
-		gs_SettingsDeferredPage = Page;
-		switch(Page)
-		{
-		case CMenus::SETTINGS_DDNET:
-			gs_SettingsDeferredFrames = 3;
-			break;
-		case CMenus::SETTINGS_GENERAL:
-		case CMenus::SETTINGS_GRAPHICS:
-		default:
-			gs_SettingsDeferredFrames = 1;
-			break;
-		}
-	}
-
-	void FinishDeferredSettingsFrame(const int Page)
-	{
-		if(gs_SettingsDeferredPage != Page || gs_SettingsDeferredFrames <= 0)
-			return;
-
-		--gs_SettingsDeferredFrames;
-		if(gs_SettingsDeferredFrames <= 0)
-			gs_SettingsDeferredPage = -1;
 	}
 
 	const char *SettingsPageName(const int Page)
@@ -392,7 +354,6 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 	CPerfTimer RenderTimer;
 	char aBuf[128 + IO_MAX_PATH_LENGTH];
 	CUIRect Label, Button, Left, Right, Game, ClientSettings;
-	const bool DeferTailSections = ShouldDeferSettingsTailSection(SETTINGS_GENERAL);
 	MainView.HSplitTop(150.0f, &Game, &ClientSettings);
 
 	// game
@@ -520,20 +481,16 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 		}
 		GameClient()->m_Tooltips.DoToolTip(&s_ThemesButtonId, &DirectoryButton, Localize("Open the directory to add custom themes"));
 
-		if(!DeferTailSections)
+		Left.HSplitTop(20.0f, nullptr, &Left);
 		{
-			Left.HSplitTop(20.0f, nullptr, &Left);
-			{
-				CPerfTimer StageTimer;
-				RenderThemeSelection(Left);
-				LogPerfStage("general_theme_selection", StageTimer.ElapsedMs(), false, "page=general");
-			}
+			CPerfTimer StageTimer;
+			RenderThemeSelection(Left);
+			LogPerfStage("general_theme_selection", StageTimer.ElapsedMs(), false, "page=general");
 		}
 
 		// automatic recording
 		CUIRect AutoRecordView = Right;
 		AutoRecordView.HSplitTop(40.0f, nullptr, &AutoRecordView);
-		if(!DeferTailSections)
 		{
 			{
 				CPerfTimer StageTimer;
@@ -1751,7 +1708,6 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	CUIRect Button;
 	char aBuf[128];
 	bool CheckSettings = false;
-	const bool DeferHeavyGraphics = ShouldDeferSettingsTailSection(SETTINGS_GRAPHICS);
 	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "") {
 		CUIRect Label, Controls, Slider, Input, SuffixRect;
 		const float InputWidth = 58.0f;
@@ -1834,18 +1790,6 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		Ui()->DoLabel(&ModeLabel, aBuf, FontSizeResListHeader, TEXTALIGN_MC);
 	}
 
-	if(DeferHeavyGraphics)
-	{
-		ModeList.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f), IGraphics::CORNER_ALL, 6.0f);
-		ModeList.Margin(8.0f, &ModeList);
-		ModeList.HSplitTop(18.0f * UiScale, &Button, &ModeList);
-		str_format(aBuf, sizeof(aBuf), Localize("Preparing %d display modes..."), s_NumNodes);
-		Ui()->DoLabel(&Button, aBuf, FontSizeResList, TEXTALIGN_ML);
-		ModeList.HSplitTop(8.0f * UiScale, nullptr, &ModeList);
-		ModeList.HSplitTop(18.0f * UiScale, &Button, &ModeList);
-		Ui()->DoLabel(&Button, Localize("Renderer and GPU options will appear next frame"), FontSizeResList, TEXTALIGN_ML);
-	}
-	else
 	{
 		int SelectedOld = -1;
 		s_ListBox.SetActive(!Ui()->IsPopupOpen());
@@ -2015,29 +1959,26 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	};
 	std::array<std::array<SMenuBackendInfo, EGraphicsDriverAgeType::GRAPHICS_DRIVER_AGE_TYPE_COUNT>, EBackendType::BACKEND_TYPE_COUNT> aaSupportedBackends{};
 	uint32_t FoundBackendCount = 0;
-	if(!DeferHeavyGraphics)
+	for(uint32_t i = 0; i < BACKEND_TYPE_COUNT; ++i)
 	{
-		for(uint32_t i = 0; i < BACKEND_TYPE_COUNT; ++i)
+		if(EBackendType(i) == BACKEND_TYPE_AUTO)
+			continue;
+		for(uint32_t n = 0; n < GRAPHICS_DRIVER_AGE_TYPE_COUNT; ++n)
 		{
-			if(EBackendType(i) == BACKEND_TYPE_AUTO)
-				continue;
-			for(uint32_t n = 0; n < GRAPHICS_DRIVER_AGE_TYPE_COUNT; ++n)
+			auto &Info = aaSupportedBackends[i][n];
+			if(Graphics()->GetDriverVersion(EGraphicsDriverAgeType(n), Info.m_Major, Info.m_Minor, Info.m_Patch, Info.m_pBackendName, EBackendType(i)))
 			{
-				auto &Info = aaSupportedBackends[i][n];
-				if(Graphics()->GetDriverVersion(EGraphicsDriverAgeType(n), Info.m_Major, Info.m_Minor, Info.m_Patch, Info.m_pBackendName, EBackendType(i)))
+				// don't count blocked opengl drivers
+				if(EBackendType(i) != BACKEND_TYPE_OPENGL || EGraphicsDriverAgeType(n) == GRAPHICS_DRIVER_AGE_TYPE_LEGACY || g_Config.m_GfxDriverIsBlocked == 0)
 				{
-					// don't count blocked opengl drivers
-					if(EBackendType(i) != BACKEND_TYPE_OPENGL || EGraphicsDriverAgeType(n) == GRAPHICS_DRIVER_AGE_TYPE_LEGACY || g_Config.m_GfxDriverIsBlocked == 0)
-					{
-						Info.m_Found = true;
-						++FoundBackendCount;
-					}
+					Info.m_Found = true;
+					++FoundBackendCount;
 				}
 			}
 		}
 	}
 
-	if(FoundBackendCount > 1 || DeferHeavyGraphics)
+	if(FoundBackendCount > 1)
 	{
 		CUIRect Text, BackendDropDown;
 		MainView.HSplitTop(10.0f, nullptr, &MainView);
@@ -2046,13 +1987,6 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		MainView.HSplitTop(20.0f, &BackendDropDown, &MainView);
 		Ui()->DoLabel(&Text, Localize("Renderer"), 16.0f, TEXTALIGN_MC);
 
-		if(DeferHeavyGraphics)
-		{
-			str_copy(aBuf, Localize("Preparing renderer list..."), sizeof(aBuf));
-			Ui()->DoLabel(&BackendDropDown, aBuf, 13.0f, TEXTALIGN_ML);
-		}
-		else
-		{
 			static std::vector<std::string> s_vBackendIdNames;
 			static std::vector<const char *> s_vpBackendIdNamesCStr;
 			static std::vector<SMenuBackendInfo> s_vBackendInfos;
@@ -2129,12 +2063,11 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 				CheckSettings = true;
 				s_GfxBackendChanged = s_SelectedOldBackend != NewBackend;
 			}
-		}
 	}
 
 	// GPU list
 	const auto &GpuList = Graphics()->GetGpus();
-	if(GpuList.m_vGpus.size() > 1 || DeferHeavyGraphics)
+	if(GpuList.m_vGpus.size() > 1)
 	{
 		CUIRect Text, GpuDropDown;
 		MainView.HSplitTop(10.0f, nullptr, &MainView);
@@ -2143,13 +2076,6 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		MainView.HSplitTop(20.0f, &GpuDropDown, &MainView);
 		Ui()->DoLabel(&Text, Localize("Graphics card"), 16.0f, TEXTALIGN_MC);
 
-		if(DeferHeavyGraphics)
-		{
-			str_copy(aBuf, Localize("Preparing graphics device list..."), sizeof(aBuf));
-			Ui()->DoLabel(&GpuDropDown, aBuf, 13.0f, TEXTALIGN_ML);
-		}
-		else
-		{
 			static std::vector<const char *> s_vpGpuIdNames;
 
 			size_t GpuCount = GpuList.m_vGpus.size() + 1;
@@ -2196,7 +2122,6 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 				CheckSettings = true;
 				s_GfxGpuChanged = NewGpu != s_OldSelectedGpu;
 			}
-		}
 	}
 
 	// check if the new settings require a restart
@@ -3495,13 +3420,6 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		s_PrevSettingsPage = g_Config.m_UiSettingsPage;
 		s_SettingsTransitionInitialized = true;
-		if(g_Config.m_UiSettingsPage == SETTINGS_GENERAL || g_Config.m_UiSettingsPage == SETTINGS_DDNET || g_Config.m_UiSettingsPage == SETTINGS_GRAPHICS)
-			BeginDeferredSettingsPage(g_Config.m_UiSettingsPage);
-		else
-			gs_SettingsDeferredPage = -1;
-
-		if(g_Config.m_UiSettingsPage == SETTINGS_CONTROLS)
-			m_MenusSettingsControls.SetDeferredFrames(4);
 	}
 	else if(g_Config.m_UiSettingsPage != s_PrevSettingsPage)
 	{
@@ -3509,13 +3427,6 @@ void CMenus::RenderSettings(CUIRect MainView)
 			dbg_msg("perf/menu", "event=settings_page_switch from=%s to=%s", SettingsPageName(s_PrevSettingsPage), SettingsPageName(g_Config.m_UiSettingsPage));
 		s_SettingsTransitionDirection = g_Config.m_UiSettingsPage > s_PrevSettingsPage ? 1.0f : -1.0f;
 		TriggerUiSwitchAnimation(SettingsPageSwitchNode, 0.18f);
-		if(g_Config.m_UiSettingsPage == SETTINGS_GENERAL || g_Config.m_UiSettingsPage == SETTINGS_DDNET || g_Config.m_UiSettingsPage == SETTINGS_GRAPHICS)
-			BeginDeferredSettingsPage(g_Config.m_UiSettingsPage);
-		else
-			gs_SettingsDeferredPage = -1;
-
-		if(g_Config.m_UiSettingsPage == SETTINGS_CONTROLS)
-			m_MenusSettingsControls.SetDeferredFrames(4);
 		s_PrevSettingsPage = g_Config.m_UiSettingsPage;
 	}
 
@@ -3563,7 +3474,11 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_CONTROLS)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CONTROLS);
-			m_MenusSettingsControls.Render(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_CONTROLS, -1);
+			if(!RuntimeCacheHit)
+				m_MenusSettingsControls.Render(ContentView);
+			m_SettingsRuntimeCacheMetadata.m_LastSettingsPage = SETTINGS_CONTROLS;
+			m_SettingsRuntimeCacheMetadata.m_bValid = true;
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_GRAPHICS)
 		{
@@ -3588,12 +3503,23 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_TCLIENT)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(13);
-			RenderSettingsTClient(ContentView);
+			const float TClientCacheScrollY = m_SettingsTClientScrollRestorePending ? m_SettingsRuntimeCacheMetadata.m_LastScrollY : m_SettingsTClientCurrentScrollY;
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, m_TClientSettingsTab, TClientCacheScrollY);
+			if(!RuntimeCacheHit)
+				RenderSettingsTClient(ContentView);
+			m_SettingsRuntimeCacheMetadata.m_LastSettingsPage = SETTINGS_TCLIENT;
+			m_SettingsRuntimeCacheMetadata.m_LastTClientTab = m_TClientSettingsTab;
+			m_SettingsRuntimeCacheMetadata.m_bValid = true;
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_QMCLIENT)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(15);
-			RenderSettingsQmClient(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_QMCLIENT, m_QmClientSettingsTab);
+			if(!RuntimeCacheHit)
+				RenderSettingsQmClient(ContentView);
+			m_SettingsRuntimeCacheMetadata.m_LastSettingsPage = SETTINGS_QMCLIENT;
+			m_SettingsRuntimeCacheMetadata.m_LastQmTab = m_QmClientSettingsTab;
+			m_SettingsRuntimeCacheMetadata.m_bValid = true;
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_PROFILES)
 		{
@@ -3604,11 +3530,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 		{
 			dbg_assert_failed("ui_settings_page invalid");
 		}
-
 		char aContentExtra[128];
 		str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", SettingsPageName(g_Config.m_UiSettingsPage), TransitionActive ? 1 : 0);
 		LogPerfStage("settings_page_content", StageTimer.ElapsedMs(), TransitionActive, aContentExtra);
-		FinishDeferredSettingsFrame(g_Config.m_UiSettingsPage);
 	}
 
 	if(TransitionActive && TransitionAlpha > 0.0f)
@@ -3619,7 +3543,6 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		Ui()->ClipDisable();
 	}
-
 	if(NeedRestart)
 	{
 		CUIRect RestartWarning, RestartButton;
@@ -4900,8 +4823,6 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 void CMenus::RenderSettingsDDNet(CUIRect MainView)
 {
 	CUIRect Button, Left, Right, LeftLeft, Label;
-	const int DeferredTailFrames = DeferredSettingsTailFrames(SETTINGS_DDNET);
-	const bool DeferTailSections = DeferredTailFrames > 0;
 
 	// demo
 	CUIRect Demo;
@@ -5057,7 +4978,6 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 		}
 	}
 
-	if(!DeferTailSections)
 	{
 		CUIRect Background, Miscellaneous;
 		MainView.VSplitMid(&Background, &Miscellaneous, 20.0f);
@@ -5167,135 +5087,6 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 			Client()->ShellUnregister();
 		}
 #endif
-	}
-	else
-	{
-		CUIRect Background, Miscellaneous;
-		MainView.VSplitMid(&Background, &Miscellaneous, 20.0f);
-
-		if(DeferredTailFrames <= 1)
-		{
-			// background
-			Background.HSplitTop(30.0f, &Label, &Background);
-			Background.HSplitTop(5.0f, nullptr, &Background);
-			Ui()->DoLabel(&Label, Localize("Background"), 20.0f, TEXTALIGN_ML);
-
-			ColorRGBA GreyDefault(0.5f, 0.5f, 0.5f, 1);
-
-			static CButtonContainer s_ResetId1;
-			DoLine_ColorPicker(&s_ResetId1, 25.0f, 13.0f, 5.0f, &Background, Localize("Regular background color"), &g_Config.m_ClBackgroundColor, GreyDefault, false);
-
-			static CButtonContainer s_ResetId2;
-			DoLine_ColorPicker(&s_ResetId2, 25.0f, 13.0f, 5.0f, &Background, Localize("Entities background color"), &g_Config.m_ClBackgroundEntitiesColor, GreyDefault, false);
-
-			CUIRect EditBox, ReloadButton;
-			Background.HSplitTop(20.0f, &Label, &Background);
-			Background.HSplitTop(2.0f, nullptr, &Background);
-			Label.VSplitLeft(100.0f, &Label, &EditBox);
-			EditBox.VSplitRight(60.0f, &EditBox, &Button);
-			Button.VSplitMid(&ReloadButton, &Button, 5.0f);
-			EditBox.VSplitRight(5.0f, &EditBox, nullptr);
-
-			Ui()->DoLabel(&Label, Localize("Map"), 14.0f, TEXTALIGN_ML);
-
-			static CLineInput s_BackgroundEntitiesInput(g_Config.m_ClBackgroundEntities, sizeof(g_Config.m_ClBackgroundEntities));
-			static char s_aBackgroundEntitiesSync[sizeof(g_Config.m_ClBackgroundEntities)] = "";
-			const bool WasInputActive = s_BackgroundEntitiesInput.IsActive();
-			const bool InputCommitted = Ui()->DoEditBox(&s_BackgroundEntitiesInput, &EditBox, 14.0f);
-			bool BackgroundChanged = false;
-			if(InputCommitted)
-				BackgroundChanged = ApplyBackgroundEntitiesInputValue(s_BackgroundEntitiesInput);
-			else if(ShouldCommitBackgroundEntitiesInputOnBlur(WasInputActive, s_BackgroundEntitiesInput.IsActive(), s_BackgroundEntitiesInput.GetString(), s_aBackgroundEntitiesSync))
-				BackgroundChanged = ApplyBackgroundEntitiesInputValue(s_BackgroundEntitiesInput);
-			SyncBackgroundEntitiesInput(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-
-			static CButtonContainer s_BackgroundEntitiesMapPicker, s_BackgroundEntitiesReload;
-
-			if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesReload, FONT_ICON_ARROW_ROTATE_RIGHT, 0, &ReloadButton, BUTTONFLAG_LEFT))
-			{
-				CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-				g_Config.m_ClBackgroundEntities[0] = '\0';
-				s_BackgroundEntitiesInput.Set("");
-				s_aBackgroundEntitiesSync[0] = '\0';
-				BackgroundChanged = true;
-			}
-
-			if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesMapPicker, FONT_ICON_FOLDER, 0, &Button, BUTTONFLAG_LEFT))
-			{
-				BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-				static SPopupMenuId s_PopupMapPickerId;
-				static CPopupMapPickerContext s_PopupMapPickerContext;
-				s_PopupMapPickerContext.m_pMenus = this;
-				s_PopupMapPickerContext.m_pTargetConfig = g_Config.m_ClBackgroundEntities;
-				s_PopupMapPickerContext.m_TargetConfigSize = sizeof(g_Config.m_ClBackgroundEntities);
-				s_PopupMapPickerContext.MapListPopulate();
-				Ui()->DoPopupMenu(&s_PopupMapPickerId, Ui()->MouseX(), Ui()->MouseY(), 300.0f, 250.0f, &s_PopupMapPickerContext, PopupMapPicker);
-			}
-
-			Background.HSplitTop(20.0f, &Button, &Background);
-			const bool UseCurrentMap = IsCurrentMapBackgroundEntitiesValue(g_Config.m_ClBackgroundEntities);
-			static int s_UseCurrentMapId = 0;
-			if(DoButton_CheckBox(&s_UseCurrentMapId, Localize("Use current map as background"), UseCurrentMap, &Button))
-			{
-				BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-				BackgroundChanged |= ToggleCurrentMapBackground(s_BackgroundEntitiesInput);
-				SyncBackgroundEntitiesInput(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-			}
-
-			if(BackgroundChanged)
-				GameClient()->m_Background.LoadBackground();
-
-			Background.HSplitTop(20.0f, &Button, &Background);
-			if(DoButton_CheckBox(&g_Config.m_ClBackgroundShowTilesLayers, Localize("Show tiles layers from BG map"), g_Config.m_ClBackgroundShowTilesLayers, &Button))
-				g_Config.m_ClBackgroundShowTilesLayers ^= 1;
-		}
-		else
-		{
-			Background.HSplitTop(30.0f, &Label, &Background);
-			Ui()->DoLabel(&Label, Localize("Background"), 20.0f, TEXTALIGN_ML);
-			Background.HSplitTop(10.0f, nullptr, &Background);
-			Background.HSplitTop(20.0f, &Label, &Background);
-			Ui()->DoLabel(&Label, Localize("Background settings are committed on the next frame"), 14.0f, TEXTALIGN_ML);
-		}
-
-		Miscellaneous.HSplitTop(30.0f, &Label, &Miscellaneous);
-		Miscellaneous.HSplitTop(5.0f, nullptr, &Miscellaneous);
-		Ui()->DoLabel(&Label, Localize("Miscellaneous"), 20.0f, TEXTALIGN_ML);
-
-		if(DeferredTailFrames <= 1)
-		{
-			static CButtonContainer s_ButtonTimeout;
-			Miscellaneous.HSplitTop(20.0f, &Button, &Miscellaneous);
-			if(DoButton_Menu(&s_ButtonTimeout, Localize("New random timeout code"), 0, &Button))
-			{
-				Client()->GenerateTimeoutSeed();
-			}
-
-			Miscellaneous.HSplitTop(5.0f, nullptr, &Miscellaneous);
-			Miscellaneous.HSplitTop(20.0f, &Label, &Miscellaneous);
-			Miscellaneous.HSplitTop(2.0f, nullptr, &Miscellaneous);
-			Ui()->DoLabel(&Label, Localize("Run on join"), 14.0f, TEXTALIGN_ML);
-			Miscellaneous.HSplitTop(20.0f, &Button, &Miscellaneous);
-			static CLineInput s_RunOnJoinInput(g_Config.m_ClRunOnJoin, sizeof(g_Config.m_ClRunOnJoin));
-			s_RunOnJoinInput.SetEmptyText(Localize("Chat command (e.g. showall 1)"));
-			Ui()->DoEditBox(&s_RunOnJoinInput, &Button, 14.0f);
-
-#if defined(CONF_FAMILY_WINDOWS)
-			static CButtonContainer s_ButtonUnregisterShell;
-			Miscellaneous.HSplitTop(10.0f, nullptr, &Miscellaneous);
-			Miscellaneous.HSplitTop(20.0f, &Button, &Miscellaneous);
-			if(DoButton_Menu(&s_ButtonUnregisterShell, Localize("Unregister protocol and file extensions"), 0, &Button))
-			{
-				Client()->ShellUnregister();
-			}
-#endif
-		}
-		else
-		{
-			Miscellaneous.HSplitTop(10.0f, nullptr, &Miscellaneous);
-			Miscellaneous.HSplitTop(20.0f, &Label, &Miscellaneous);
-			Ui()->DoLabel(&Label, Localize("Miscellaneous options are committed after background"), 14.0f, TEXTALIGN_ML);
-		}
 	}
 }
 
