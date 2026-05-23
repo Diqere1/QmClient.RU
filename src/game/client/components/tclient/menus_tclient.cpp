@@ -23,7 +23,6 @@
 #include <game/client/components/countryflags.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/menus.h>
-#include <game/client/components/qmclient/translate_ui_settings.h>
 #include <game/client/components/section_loader.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/tclient/bindchat.h>
@@ -90,19 +89,6 @@ namespace
 		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 	}
 
-	[[maybe_unused]] void LogQmPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
-	{
-		if(!PerfDebugEnabled())
-			return;
-		if(DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-	}
-
 	void LogTClientPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
 	{
 		if(!PerfDebugEnabled())
@@ -114,19 +100,6 @@ namespace
 			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
 		else
 			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
-	}
-
-	[[maybe_unused]] const char *QmSettingsTabName(int Tab)
-	{
-		switch(Tab)
-		{
-		case 0: return "visuals";
-		case 1: return "functions";
-		case 2: return "hud";
-		case 3: return "contributors";
-		case 4: return "config";
-		default: return "unknown";
-		}
 	}
 
 	static CSectionLoader s_VisualFontLoader;
