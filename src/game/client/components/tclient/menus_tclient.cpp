@@ -2888,6 +2888,7 @@ void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 	// ***** All the stuff ***** //
 
 	auto DoBindchatDefault = [&](CUIRect &Column, CBindChat::CBindDefault &BindDefault) {
+		static std::unordered_map<const char *, CUIElement> s_DefaultTitleLabels;
 		Column.HSplitTop(MarginSmall, nullptr, &Column);
 		Column.HSplitTop(LineSize, &Button, &Column);
 		CBindChat::CBind *pOldBind = GameClient()->m_BindChat.GetBind(BindDefault.m_Bind.m_aCommand);
@@ -2897,7 +2898,15 @@ void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 			pName = s_aTempName;
 		else
 			pName = pOldBind->m_aName;
-		if(DoEditBoxWithLabel(&BindDefault.m_LineInput, &Button, Localize(BindDefault.m_pTitle), BindDefault.m_Bind.m_aName, pName, BINDCHAT_MAX_NAME) && BindDefault.m_LineInput.IsActive())
+		CUIRect Input, Title;
+		Button.VSplitLeft(210.0f, &Title, &Input);
+		CUIElement &TitleElement = s_DefaultTitleLabels[BindDefault.m_pTitle];
+		if(!TitleElement.AreRectsInit())
+			TitleElement.Init(Ui(), 1);
+		Ui()->DoLabelStreamed(*TitleElement.Rect(0), &Title, Localize(BindDefault.m_pTitle), FontSize, TEXTALIGN_ML);
+		BindDefault.m_LineInput.SetBuffer(pName, BINDCHAT_MAX_NAME);
+		BindDefault.m_LineInput.SetEmptyText(BindDefault.m_Bind.m_aName);
+		if(Ui()->DoEditBox(&BindDefault.m_LineInput, &Input, EditBoxFontSize) && BindDefault.m_LineInput.IsActive())
 		{
 			if(!pOldBind && pName[0] != '\0')
 			{
@@ -2914,7 +2923,8 @@ void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 		}
 	};
 
-	auto DoBindchatDefaults = [&](CUIRect &Column, const char *pTitle, std::vector<CBindChat::CBindDefault> &vBindchatDefaults) {
+	auto DoBindchatDefaults = [&](CUIRect &Column, const char *pTitleKey, const char *pTitle, std::vector<CBindChat::CBindDefault> &vBindchatDefaults) {
+		static std::unordered_map<const char *, CUIElement> s_SectionTitleLabels;
 		const float SectionHeight = HeadlineHeight + MarginSmall + vBindchatDefaults.size() * (MarginSmall + LineSize);
 		CUIRect Section = Column;
 		Section.h = SectionHeight;
@@ -2933,7 +2943,10 @@ void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 		Background.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f), IGraphics::CORNER_ALL, 10.0f);
 
 		Column.HSplitTop(HeadlineHeight, &Label, &Column);
-		Ui()->DoLabel(&Label, pTitle, HeadlineFontSize, TEXTALIGN_ML);
+		CUIElement &TitleElement = s_SectionTitleLabels[pTitleKey];
+		if(!TitleElement.AreRectsInit())
+			TitleElement.Init(Ui(), 1);
+		Ui()->DoLabelStreamed(*TitleElement.Rect(0), &Label, pTitle, HeadlineFontSize, TEXTALIGN_ML);
 		Column.HSplitTop(MarginSmall, nullptr, &Column);
 		for(CBindChat::CBindDefault &BindchatDefault : vBindchatDefaults)
 			DoBindchatDefault(Column, BindchatDefault);
@@ -2945,7 +2958,7 @@ void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 	{
 		float &Size = SizeL > SizeR ? SizeR : SizeL;
 		CUIRect &Column = SizeL > SizeR ? RightView : LeftView;
-		DoBindchatDefaults(Column, Localize(pTitle), vBindDefaults);
+		DoBindchatDefaults(Column, pTitle, Localize(pTitle), vBindDefaults);
 		Size += vBindDefaults.size() * (MarginSmall + LineSize) + HeadlineHeight + HeadlineFontSize + MarginSmall * 2.0f;
 	}
 
