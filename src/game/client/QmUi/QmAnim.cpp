@@ -15,10 +15,45 @@ void CUiV2AnimationRuntime::Reset()
 	m_QueuedTracks.clear();
 }
 
-float CUiV2AnimationRuntime::ApplyEasing(float t, EEasing Easing) const
+static float SolveBezierY(float TargetX, const SUiBezier &Bezier)
+{
+	auto SampleX = [&](float t) {
+		const float OneMinusT = 1.0f - t;
+		return 3.0f * OneMinusT * OneMinusT * t * Bezier.m_X1
+			+ 3.0f * OneMinusT * t * t * Bezier.m_X2
+			+ t * t * t;
+	};
+	auto SampleXPrime = [&](float t) {
+		const float OneMinusT = 1.0f - t;
+		return 3.0f * OneMinusT * OneMinusT * Bezier.m_X1
+			+ 6.0f * OneMinusT * t * (Bezier.m_X2 - Bezier.m_X1)
+			+ 3.0f * t * t * (1.0f - Bezier.m_X2);
+	};
+
+	float t = TargetX;
+	for(int i = 0; i < 8; ++i)
+	{
+		const float CurrentX = SampleX(t);
+		const float Err = CurrentX - TargetX;
+		if(std::abs(Err) < 1e-5f)
+			break;
+		const float Slope = SampleXPrime(t);
+		if(std::abs(Slope) < 1e-6f)
+			break;
+		t -= Err / Slope;
+		t = std::clamp(t, 0.0f, 1.0f);
+	}
+
+	const float OneMinusT = 1.0f - t;
+	return 3.0f * OneMinusT * OneMinusT * t * Bezier.m_Y1
+		+ 3.0f * OneMinusT * t * t * Bezier.m_Y2
+		+ t * t * t;
+}
+
+float CUiV2AnimationRuntime::ApplyEasing(float t, const SUiAnimTransition &Transition) const
 {
 	const float Clamped = std::clamp(t, 0.0f, 1.0f);
-	switch(Easing)
+	switch(Transition.m_Easing)
 	{
 	case EEasing::LINEAR:
 		return Clamped;
@@ -28,6 +63,24 @@ float CUiV2AnimationRuntime::ApplyEasing(float t, EEasing Easing) const
 		return Clamped * (2.0f - Clamped);
 	case EEasing::EASE_IN_OUT:
 		return Clamped < 0.5f ? 2.0f * Clamped * Clamped : -1.0f + (4.0f - 2.0f * Clamped) * Clamped;
+	case EEasing::EASE_OUT_QUART:
+	{
+		const float OneMinusT = 1.0f - Clamped;
+		return 1.0f - OneMinusT * OneMinusT * OneMinusT * OneMinusT;
+	}
+	case EEasing::EASE_OUT_BACK:
+	{
+		constexpr float c1 = 1.70158f;
+		constexpr float c3 = c1 + 1.0f;
+		const float Shifted = Clamped - 1.0f;
+		return 1.0f + c3 * Shifted * Shifted * Shifted + c1 * Shifted * Shifted;
+	}
+	case EEasing::EASE_IN_OUT_CUBIC:
+		return Clamped < 0.5f
+			? 4.0f * Clamped * Clamped * Clamped
+			: 1.0f - std::pow(-2.0f * Clamped + 2.0f, 3.0f) / 2.0f;
+	case EEasing::CUBIC_BEZIER:
+		return SolveBezierY(Clamped, Transition.m_Bezier);
 	}
 	return Clamped;
 }
@@ -49,13 +102,24 @@ bool CUiV2AnimationRuntime::StartTrack(const STrackKey &Key, const SUiAnimReques
 	Track.m_Target = Request.m_Target;
 	Track.m_Current = StartValue;
 	Track.m_ElapsedSec = 0.0f;
+	Track.m_Velocity = 0.0f;
+	Track.m_RestTimerSec = 0.0f;
 	Track.m_Transition = Request.m_Transition;
 	if(Track.m_Transition.m_DurationSec < 0.0f)
 		Track.m_Transition.m_DurationSec = 0.0f;
 	if(Track.m_Transition.m_DelaySec < 0.0f)
 		Track.m_Transition.m_DelaySec = 0.0f;
 	Track.m_TrackId = Request.m_TrackId != 0 ? Request.m_TrackId : m_NextTrackId++;
-	if(Track.m_Transition.m_DurationSec <= 0.0f && Track.m_Transition.m_DelaySec <= 0.0f)
+
+	const bool IsSpring = Track.m_Transition.m_Driver == EUiAnimDriver::SPRING;
+	if(!IsSpring && Track.m_Transition.m_DurationSec <= 0.0f && Track.m_Transition.m_DelaySec <= 0.0f)
+	{
+		m_Values[Key] = Track.m_Target;
+		m_CompletedEvents.push_back({Key.m_NodeKey, Key.m_Property, Track.m_TrackId});
+		return false;
+	}
+
+	if(IsSpring && std::abs(Track.m_Current - Track.m_Target) < Track.m_Transition.m_Spring.m_RestEpsilon)
 	{
 		m_Values[Key] = Track.m_Target;
 		m_CompletedEvents.push_back({Key.m_NodeKey, Key.m_Property, Track.m_TrackId});
@@ -160,7 +224,8 @@ bool CUiV2AnimationRuntime::RequestAnimation(const SUiAnimRequest &Request)
 	{
 		if(Active.m_Transition.m_Priority > Request.m_Transition.m_Priority)
 			return false;
-		if(Request.m_Transition.m_DurationSec <= 0.0f && Request.m_Transition.m_DelaySec <= 0.0f)
+		const bool RequestIsTween = Request.m_Transition.m_Driver == EUiAnimDriver::TWEEN;
+		if(RequestIsTween && Request.m_Transition.m_DurationSec <= 0.0f && Request.m_Transition.m_DelaySec <= 0.0f)
 		{
 			const uint32_t TrackId = Request.m_TrackId != 0 ? Request.m_TrackId : Active.m_TrackId;
 			m_Values[Key] = Request.m_Target;
@@ -170,7 +235,18 @@ bool CUiV2AnimationRuntime::RequestAnimation(const SUiAnimRequest &Request)
 			return true;
 		}
 
-		const float Progress = ApplyEasing(TrackProgress(Active), Active.m_Transition.m_Easing);
+		if(Active.m_Transition.m_Driver == EUiAnimDriver::SPRING)
+		{
+			Active.m_Target = Request.m_Target;
+			Active.m_Transition.m_Priority = Request.m_Transition.m_Priority;
+			if(!RequestIsTween)
+				Active.m_Transition.m_Spring = Request.m_Transition.m_Spring;
+			Active.m_RestTimerSec = 0.0f;
+			Active.m_TrackId = Request.m_TrackId != 0 ? Request.m_TrackId : Active.m_TrackId;
+			return true;
+		}
+
+		const float Progress = ApplyEasing(TrackProgress(Active), Active.m_Transition);
 		const float Current = Active.m_Current;
 		const float Denominator = 1.0f - Progress;
 		float NewStart = Current;
@@ -189,12 +265,47 @@ bool CUiV2AnimationRuntime::RequestAnimation(const SUiAnimRequest &Request)
 	return false;
 }
 
+void CUiV2AnimationRuntime::AdvanceSpring(SActiveTrack &Track, float Dt) const
+{
+	const float Delay = std::max(0.0f, Track.m_Transition.m_DelaySec);
+	if(Track.m_ElapsedSec < Delay)
+		return;
+
+	const SUiSpringConfig &Cfg = Track.m_Transition.m_Spring;
+	const float Mass = std::max(Cfg.m_Mass, 1e-4f);
+	const float Stiffness = std::max(Cfg.m_Stiffness, 0.0f);
+	const float Damping = std::max(Cfg.m_Damping, 0.0f);
+
+	constexpr float kFixedSubStep = 1.0f / 240.0f;
+	constexpr int kMaxSubSteps = 8;
+	int SubSteps = static_cast<int>(std::ceil(Dt / kFixedSubStep));
+	SubSteps = std::clamp(SubSteps, 1, kMaxSubSteps);
+	const float SubDt = Dt / static_cast<float>(SubSteps);
+
+	for(int i = 0; i < SubSteps; ++i)
+	{
+		const float Disp = Track.m_Current - Track.m_Target;
+		const float Accel = (-Stiffness * Disp - Damping * Track.m_Velocity) / Mass;
+		Track.m_Velocity += Accel * SubDt;
+		Track.m_Current += Track.m_Velocity * SubDt;
+	}
+
+	const bool AtRest = std::abs(Track.m_Current - Track.m_Target) < Cfg.m_RestEpsilon
+		&& std::abs(Track.m_Velocity) < Cfg.m_RestVelocity;
+	if(AtRest)
+		Track.m_RestTimerSec += Dt;
+	else
+		Track.m_RestTimerSec = 0.0f;
+}
+
 void CUiV2AnimationRuntime::Advance(float Dt)
 {
 	if(Dt <= 0.0f)
 		return;
 	const float ClampedDt = std::min(Dt, 1.0f / 15.0f);
 	m_TimeSec += ClampedDt;
+
+	constexpr float kSpringRestHoldSec = 0.033f;
 
 	std::deque<STrackKey> vCompleted;
 	for(auto &Pair : m_ActiveTracks)
@@ -203,13 +314,31 @@ void CUiV2AnimationRuntime::Advance(float Dt)
 		SActiveTrack &Track = Pair.second;
 		Track.m_ElapsedSec += ClampedDt;
 
-		const float RawProgress = TrackProgress(Track);
-		const float Progress = ApplyEasing(RawProgress, Track.m_Transition.m_Easing);
-		Track.m_Current = Track.m_Start + (Track.m_Target - Track.m_Start) * Progress;
-		m_Values[Key] = Track.m_Current;
+		if(Track.m_Transition.m_Driver == EUiAnimDriver::SPRING)
+		{
+			AdvanceSpring(Track, ClampedDt);
+			if(Track.m_RestTimerSec >= kSpringRestHoldSec)
+			{
+				Track.m_Current = Track.m_Target;
+				Track.m_Velocity = 0.0f;
+				m_Values[Key] = Track.m_Current;
+				vCompleted.push_back(Key);
+			}
+			else
+			{
+				m_Values[Key] = Track.m_Current;
+			}
+		}
+		else
+		{
+			const float RawProgress = TrackProgress(Track);
+			const float Progress = ApplyEasing(RawProgress, Track.m_Transition);
+			Track.m_Current = Track.m_Start + (Track.m_Target - Track.m_Start) * Progress;
+			m_Values[Key] = Track.m_Current;
 
-		if(RawProgress >= 1.0f)
-			vCompleted.push_back(Key);
+			if(RawProgress >= 1.0f)
+				vCompleted.push_back(Key);
+		}
 	}
 
 	for(const STrackKey &Key : vCompleted)

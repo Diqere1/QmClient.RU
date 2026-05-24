@@ -2571,6 +2571,7 @@ if(CLIENT)
   set_src(GAME_CLIENT GLOB_RECURSE src/game/client
     QmUi/QmAnim.cpp
     QmUi/QmAnim.h
+    QmUi/QmAnimCurves.h
     QmUi/QmLayout.cpp
     QmUi/QmLayout.h
     QmUi/QmLegacy.cpp
