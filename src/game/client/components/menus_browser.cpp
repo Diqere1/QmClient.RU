@@ -386,6 +386,27 @@ void CMenus::RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemAct
 	Headers.VSplitRight(s_ListBox.ScrollbarWidthMax(), &Headers, nullptr);
 	View.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.15f), IGraphics::CORNER_NONE, 0.0f);
 
+	{
+		CUIRect ResetBtn;
+		Headers.VSplitLeft(ms_ListheaderHeight, &ResetBtn, &Headers);
+		ResetBtn.Margin(3.0f, &ResetBtn);
+		static CButtonContainer s_ResetColsButton;
+		if(Ui()->DoButton_FontIcon(&s_ResetColsButton, FONT_ICON_ARROW_ROTATE_RIGHT, 0, &ResetBtn, BUTTONFLAG_LEFT))
+		{
+			g_Config.m_BrColWidthName = 120;
+			g_Config.m_BrColWidthGametype = 50;
+			g_Config.m_BrColWidthMap = 120;
+			g_Config.m_BrColWidthFriends = 20;
+			g_Config.m_BrColWidthPlayers = 60;
+			g_Config.m_BrColWidthPing = 40;
+			ConfigManager()->Save();
+		}
+		if(Ui()->HotItem() == &s_ResetColsButton)
+		{
+			GameClient()->m_Tooltips.DoToolTip(&s_ResetColsButton, &ResetBtn, Localize("Reset column widths"));
+		}
+	}
+
 	struct SColumn
 	{
 		int m_Id;
@@ -435,16 +456,78 @@ void CMenus::RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemAct
 		{COL_COMMUNITY, -1, "", -1, 28.0f, {0}},
 		{COL_NAME, IServerBrowser::SORT_NAME, Localizable("Name"), 0, 50.0f, {0}},
 		{COL_GAMETYPE, IServerBrowser::SORT_GAMETYPE, Localizable("Type"), 1, 50.0f, {0}},
-		{COL_MAP, IServerBrowser::SORT_MAP, Localizable("Map"), 1, 120.0f + (Headers.w - 480) / 8, {0}},
+		{COL_MAP, IServerBrowser::SORT_MAP, Localizable("Map"), 1, 120.0f, {0}},
 		{COL_FRIENDS, IServerBrowser::SORT_NUMFRIENDS, "", 1, 20.0f, {0}},
 		{COL_PLAYERS, IServerBrowser::SORT_NUMPLAYERS, Localizable("Players"), 1, 60.0f, {0}},
 		{-1, -1, "", 1, 4.0f, {0}},
 		{COL_PING, IServerBrowser::SORT_PING, Localizable("Ping"), 1, 40.0f, {0}},
 	};
 
+	auto ClampConfigWidth = [](int Value, int MinWidth, int MaxWidth) {
+		return std::clamp(Value, MinWidth, MaxWidth);
+	};
+
+	s_aCols[5].m_Width = (float)ClampConfigWidth(g_Config.m_BrColWidthGametype, 36, 300);
+	s_aCols[6].m_Width = (float)ClampConfigWidth(g_Config.m_BrColWidthMap, 60, 800);
+	s_aCols[7].m_Width = (float)ClampConfigWidth(g_Config.m_BrColWidthFriends, 18, 120);
+	s_aCols[8].m_Width = (float)ClampConfigWidth(g_Config.m_BrColWidthPlayers, 48, 240);
+	s_aCols[10].m_Width = (float)ClampConfigWidth(g_Config.m_BrColWidthPing, 32, 180);
+
 	const int NumCols = std::size(s_aCols);
 
-	// do layout
+	auto GetColWidthConfig = [](int ColId) -> int * {
+		switch(ColId)
+		{
+		case COL_GAMETYPE: return &g_Config.m_BrColWidthGametype;
+		case COL_MAP: return &g_Config.m_BrColWidthMap;
+		case COL_FRIENDS: return &g_Config.m_BrColWidthFriends;
+		case COL_PLAYERS: return &g_Config.m_BrColWidthPlayers;
+		case COL_PING: return &g_Config.m_BrColWidthPing;
+		default: return nullptr;
+		}
+	};
+
+	auto GetColMinWidth = [](int ColId) {
+		switch(ColId)
+		{
+		case COL_GAMETYPE: return 36.0f;
+		case COL_MAP: return 60.0f;
+		case COL_FRIENDS: return 18.0f;
+		case COL_PLAYERS: return 48.0f;
+		case COL_PING: return 32.0f;
+		default: return 10.0f;
+		}
+	};
+
+	auto GetColMaxWidth = [](int ColId) {
+		switch(ColId)
+		{
+		case COL_GAMETYPE: return 300.0f;
+		case COL_MAP: return 800.0f;
+		case COL_FRIENDS: return 120.0f;
+		case COL_PLAYERS: return 240.0f;
+		case COL_PING: return 180.0f;
+		default: return 1000.0f;
+		}
+	};
+
+	auto SetColWidthConfig = [](int *pConfig, float Width, float MinWidth, float MaxWidth) {
+		*pConfig = std::clamp((int)(Width + 0.5f), (int)MinWidth, (int)MaxWidth);
+	};
+
+	struct SResizeHandle
+	{
+		CUIRect m_Rect;
+		int m_ColIndex;
+		int *m_pWidthConfig;
+		float m_MinWidth;
+		float m_MaxWidth;
+	};
+
+	static std::vector<SResizeHandle> s_vResizeHandles;
+	s_vResizeHandles.clear();
+
+	// do layout - left columns
 	for(int i = 0; i < NumCols; i++)
 	{
 		if(s_aCols[i].m_Direction == -1)
@@ -453,7 +536,15 @@ void CMenus::RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemAct
 
 			if(i + 1 < NumCols)
 			{
-				Headers.VSplitLeft(2.0f, nullptr, &Headers);
+				CUIRect Gap;
+				Headers.VSplitLeft(2.0f, &Gap, &Headers);
+				int *pConfig = GetColWidthConfig(s_aCols[i].m_Id);
+				if(pConfig)
+				{
+					Gap.x -= 3.0f;
+					Gap.w = 8.0f;
+					s_vResizeHandles.push_back({Gap, i, pConfig, GetColMinWidth(s_aCols[i].m_Id), GetColMaxWidth(s_aCols[i].m_Id)});
+				}
 			}
 		}
 	}
@@ -463,7 +554,15 @@ void CMenus::RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemAct
 		if(s_aCols[i].m_Direction == 1)
 		{
 			Headers.VSplitRight(s_aCols[i].m_Width, &Headers, &s_aCols[i].m_Rect);
-			Headers.VSplitRight(2.0f, &Headers, nullptr);
+			CUIRect Gap;
+			Headers.VSplitRight(2.0f, &Headers, &Gap);
+			int *pConfig = GetColWidthConfig(s_aCols[i].m_Id);
+			if(pConfig)
+			{
+				Gap.x -= 3.0f;
+				Gap.w = 8.0f;
+				s_vResizeHandles.push_back({Gap, i, pConfig, GetColMinWidth(s_aCols[i].m_Id), GetColMaxWidth(s_aCols[i].m_Id)});
+			}
 		}
 	}
 
@@ -502,6 +601,101 @@ void CMenus::RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemAct
 			TextRender()->SetRenderFlags(0);
 			TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 		}
+	}
+
+	// Resize handles run after the header buttons so the handle's SetHotItem wins
+	// over DoButton_GridHeader on overlapping pixels near the column separator.
+	static int s_ResizeDragColIndex = -1;
+	static float s_ResizeDragStartMouseX = 0.0f;
+	static float s_ResizeDragStartWidth = 0.0f;
+	static float s_ResizeDragStartFlexWidth = 0.0f;
+	static float s_ResizeDragCurrentWidth = 0.0f;
+
+	const float MinNameWidth = (float)ClampConfigWidth(g_Config.m_BrColWidthName, 60, 1000);
+
+	const int FlexColIndex = [&]() {
+		for(int i = 0; i < NumCols; i++)
+			if(s_aCols[i].m_Direction == 0)
+				return i;
+		return -1;
+	}();
+
+	for(const auto &Handle : s_vResizeHandles)
+	{
+		const void *pHandleId = &s_aCols[Handle.m_ColIndex].m_Width;
+		const int ColIdx = Handle.m_ColIndex;
+		const bool IsRightCol = s_aCols[ColIdx].m_Direction == 1;
+
+		if(s_ResizeDragColIndex == ColIdx)
+		{
+			if(!Ui()->MouseButton(0))
+			{
+				SetColWidthConfig(Handle.m_pWidthConfig, s_ResizeDragCurrentWidth, Handle.m_MinWidth, Handle.m_MaxWidth);
+				s_ResizeDragColIndex = -1;
+				Ui()->SetActiveItem(nullptr);
+				ConfigManager()->Save();
+			}
+			else
+			{
+				float DeltaX = Ui()->MouseX() - s_ResizeDragStartMouseX;
+				float NewWidth = s_ResizeDragStartWidth + (IsRightCol ? -DeltaX : DeltaX);
+				NewWidth = std::clamp(NewWidth, Handle.m_MinWidth, Handle.m_MaxWidth);
+
+				if(IsRightCol && FlexColIndex >= 0)
+				{
+					float MaxWidth = s_ResizeDragStartWidth + s_ResizeDragStartFlexWidth - MinNameWidth;
+					NewWidth = minimum(NewWidth, MaxWidth);
+				}
+				NewWidth = maximum(NewWidth, Handle.m_MinWidth);
+				s_ResizeDragCurrentWidth = NewWidth;
+				SetColWidthConfig(Handle.m_pWidthConfig, NewWidth, Handle.m_MinWidth, Handle.m_MaxWidth);
+			}
+		}
+		else if(Ui()->MouseHovered(&Handle.m_Rect))
+		{
+			Ui()->SetHotItem(pHandleId);
+			if(Ui()->MouseButtonClicked(0))
+			{
+				s_ResizeDragColIndex = ColIdx;
+				s_ResizeDragStartMouseX = Ui()->MouseX();
+				s_ResizeDragStartWidth = s_aCols[ColIdx].m_Width;
+				s_ResizeDragStartFlexWidth = FlexColIndex >= 0 ? s_aCols[FlexColIndex].m_Rect.w : 0.0f;
+				s_ResizeDragCurrentWidth = s_ResizeDragStartWidth;
+				Ui()->SetActiveItem(pHandleId);
+			}
+		}
+	}
+
+	for(const auto &Handle : s_vResizeHandles)
+	{
+		const int ColIdx = Handle.m_ColIndex;
+		const bool IsRightCol = s_aCols[ColIdx].m_Direction == 1;
+		bool Hovered = Ui()->HotItem() == &s_aCols[ColIdx].m_Width;
+		bool Dragging = s_ResizeDragColIndex == ColIdx;
+
+		float LineX = IsRightCol
+			? s_aCols[ColIdx].m_Rect.x - 1.0f
+			: s_aCols[ColIdx].m_Rect.x + s_aCols[ColIdx].m_Rect.w + 1.0f;
+
+		float Alpha = 0.15f;
+		float LineW = 1.0f;
+		if(Hovered)
+		{
+			Alpha = 0.5f;
+			LineW = 2.0f;
+		}
+		if(Dragging)
+		{
+			Alpha = 1.0f;
+			LineW = 2.0f;
+		}
+
+		CUIRect Line;
+		Line.x = LineX;
+		Line.y = s_aCols[ColIdx].m_Rect.y;
+		Line.w = LineW;
+		Line.h = s_aCols[ColIdx].m_Rect.h;
+		Line.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, Alpha), IGraphics::CORNER_NONE, 0.0f);
 	}
 
 	const int NumServers = ServerBrowser()->NumSortedServers();

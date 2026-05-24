@@ -2131,7 +2131,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::HJAssist: return "hj辅助 hj fuzhu 解冻辅助 jiedong fuzhu 自动取消旁观 quxiao pangguan 自动切换 qiehuan tee 自动关闭聊天 guanbi liaotian";
 		case EQmModuleId::SpeedrunTimer: return "速通计时器 sutong jishiqi speedrun timer 倒计时 daojishi 倒数 daoshu 小时 xiaoshi 分钟 fenzhong 秒 miao 毫秒 haomiao 自动关闭 zidong guanbi";
 		case EQmModuleId::InputOverlay: return "按键显示 anjian xianshi input overlay 按键叠加 anjian diejia 大小 daxiao 不透明度 butouming 水平位置 shuiping weizhi 垂直位置 chuizhi weizhi";
-		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo";
+		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo 高级 gaoji advanced";
 		case EQmModuleId::DynamicIsland: return "灵动岛 lld lingdongdao dynamic island hud 顶部 dingbu 背景 beijing 颜色 yanse 透明度 touming 黑底 heidi 原版 yuanban 默认 moren classic old style";
 		case EQmModuleId::SystemMediaControls: return "系统媒体控制 xitong meiti kongzhi smtc media controls 启用系统媒体 qiyong 显示歌曲信息 gequ xinxi 上一个 shangyige 播放暂停 bofang zanting 下一个 xiayige";
 		case EQmModuleId::Info: return "贡献者 gongxianzhe 社区 shequ qq群 反馈 fankui 更新 gengxin 赞助 zanzhu 支持 zhichi 开发人员 kaifa sponsor supporters team";
@@ -5861,25 +5861,57 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					}
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceShowConnectionStatus, Localize("显示语音连接状态"), &g_Config.m_QmVoiceShowConnectionStatus, &Row, LG_LineHeight);
+					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("房间密码"), LG_BodySize, TEXTALIGN_ML);
+					static CLineInput s_VoiceToken(g_Config.m_QmVoiceToken, sizeof(g_Config.m_QmVoiceToken));
+					s_VoiceToken.SetEmptyText(Localize("留空以进入公共房间"));
+					Ui()->DoEditBox(&s_VoiceToken, &ControlCol, LG_BodySize);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
-					if(g_Config.m_QmVoiceShowConnectionStatus)
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceMicMute, Localize("静音麦克风"), &g_Config.m_QmVoiceMicMute, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					{
-						AddVoiceSectionLabel(Localize("当前状态"), Localize("先看这里，可以快速判断卡在设备、服务器还是房间"));
-						RenderVoiceStatusRow(Localize("麦克风"), LocalizeVoiceUiMicStatus(VoiceUiStatus));
-						RenderVoiceStatusRow(Localize("扬声器"), LocalizeVoiceUiOutputStatus(VoiceUiStatus));
-						RenderVoiceStatusRow(Localize("输入切换"), aVoiceInputRouteStatus);
-						RenderVoiceStatusRow(Localize("输出切换"), aVoiceOutputRouteStatus);
-						RenderVoiceStatusRow(Localize("服务器"), aVoiceServerStatus);
-						RenderVoiceStatusRow(Localize("房间"), aVoiceRoomStatus);
-						RenderVoiceStatusRow(Localize("收发"), aVoiceTransportDetail);
-						RenderVoiceStatusRow(Localize("建议排查"), LocalizeVoiceUiActionHint(VoiceUiStatus));
-						RenderVoiceStatusRow(Localize("音频问题"), LocalizeVoiceUiAudioIssue(VoiceUiStatus));
-						if(VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus)[0] != '\0')
-							RenderVoiceStatusRow(Localize("详细原因"), VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus));
-						CardContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &CardContent);
+						CUIRect LabelColValue, ControlColValue;
+						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
+						Ui()->DoLabel(&LabelColValue, Localize("麦克风音量"), LG_BodySize, TEXTALIGN_ML);
+						static int s_QmVoiceMicVolumeInputId;
+						RenderSliderWithValueInput(&s_QmVoiceMicVolumeInputId, ControlColValue, &g_Config.m_QmVoiceMicVolume, 0, 300, "%");
 					}
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceVadEnable, Localize("自动检测说话时开麦"), &g_Config.m_QmVoiceVadEnable, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceShowAdvanced, Localize("高级选项"), &g_Config.m_QmVoiceShowAdvanced, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_QmVoiceShowAdvanced)
+					{
+						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+						DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceShowConnectionStatus, Localize("显示语音连接状态"), &g_Config.m_QmVoiceShowConnectionStatus, &Row, LG_LineHeight);
+						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+						if(g_Config.m_QmVoiceShowConnectionStatus)
+						{
+							AddVoiceSectionLabel(Localize("当前状态"), Localize("先看这里，可以快速判断卡在设备、服务器还是房间"));
+							RenderVoiceStatusRow(Localize("麦克风"), LocalizeVoiceUiMicStatus(VoiceUiStatus));
+							RenderVoiceStatusRow(Localize("扬声器"), LocalizeVoiceUiOutputStatus(VoiceUiStatus));
+							RenderVoiceStatusRow(Localize("输入切换"), aVoiceInputRouteStatus);
+							RenderVoiceStatusRow(Localize("输出切换"), aVoiceOutputRouteStatus);
+							RenderVoiceStatusRow(Localize("服务器"), aVoiceServerStatus);
+							RenderVoiceStatusRow(Localize("房间"), aVoiceRoomStatus);
+							RenderVoiceStatusRow(Localize("收发"), aVoiceTransportDetail);
+							RenderVoiceStatusRow(Localize("建议排查"), LocalizeVoiceUiActionHint(VoiceUiStatus));
+							RenderVoiceStatusRow(Localize("音频问题"), LocalizeVoiceUiAudioIssue(VoiceUiStatus));
+							if(VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus)[0] != '\0')
+								RenderVoiceStatusRow(Localize("详细原因"), VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus));
+							CardContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &CardContent);
+						}
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
@@ -5888,14 +5920,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					s_VoiceServer.SetEmptyText("42.194.185.210:9987");
 					Ui()->DoEditBox(&s_VoiceServer, &ControlCol, LG_BodySize);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("房间密码"), LG_BodySize, TEXTALIGN_ML);
-					static CLineInput s_VoiceToken(g_Config.m_QmVoiceToken, sizeof(g_Config.m_QmVoiceToken));
-					s_VoiceToken.SetEmptyText(Localize("留空以进入公共房间"));
-					Ui()->DoEditBox(&s_VoiceToken, &ControlCol, LG_BodySize);
-					CardContent.HSplitTop(LG_LineSpacing * 1.15f, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
@@ -6034,20 +6058,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceMicMute, Localize("静音麦克风"), &g_Config.m_QmVoiceMicMute, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					{
-						CUIRect LabelColValue, ControlColValue;
-						Row.VSplitLeft(LG_LabelWidth, &LabelColValue, &ControlColValue);
-						Ui()->DoLabel(&LabelColValue, Localize("麦克风音量"), LG_BodySize, TEXTALIGN_ML);
-						static int s_QmVoiceMicVolumeInputId;
-						RenderSliderWithValueInput(&s_QmVoiceMicVolumeInputId, ControlColValue, &g_Config.m_QmVoiceMicVolume, 0, 300, "%");
-					}
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					{
 						static std::vector<const char *> s_VoiceBitrateProfileDropDownNames;
 						s_VoiceBitrateProfileDropDownNames = {
@@ -6130,10 +6140,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceAgcEnable, Localize("自动平衡麦克风音量（AGC，实验性）"), &g_Config.m_QmVoiceAgcEnable, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
-					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceVadEnable, Localize("自动检测说话时开麦"), &g_Config.m_QmVoiceVadEnable, &Row, LG_LineHeight);
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
 					if(g_Config.m_QmVoiceVadEnable)
 					{
 						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
@@ -6199,6 +6205,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceGroupGlobal, Localize("同房间全图收听"), &g_Config.m_QmVoiceGroupGlobal, &Row, LG_LineHeight);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+					}
 				}
 
 				CardContent.HSplitTop(LG_CardPadding, nullptr, &CardContent);

@@ -319,6 +319,9 @@ Rename demo
 Reset filter
 == 重置筛选
 
+Reset column widths
+== 重置列宽
+
 Score
 == 分数
 
