@@ -2372,7 +2372,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			TextRender()->TextColor(ColorRGBA(0.95f, 0.8f, 0.2f, 1.0f));
 			{
 				static const char *const s_apSponsors[] = {
-					"喵不一", "久桃", "芽芽", "碳烤綿芽", "骨头", "陌浅羽", "树羽小朋友", "望舒", "松子", "平凡..", "cixin", "洗点", "秀色", "朱朱", "Twen", "大恐龙", ":luv:", "小左", "Blue°F", "怯修", "yezeen", "鹑", "枫香°", "没问题啊", "·蓝蓝蓝蓝", "临渊捕鱼", "?hook?", "放肆zero", "Q币", "洛天依", "spider", "贝塔塔塔", "见月", "咩子的银耳", "Cancer", "少女`", "长亭寂寞独自愁", "fantuan", "无言鱼", "胖人老许", "夏日", "张宁我儿", "拌饭", "shengyan", "修勾在修沟", "taffy", "杀意没爱意", "DYL", "小信", "哆啦梦", "菜菜羊", "吃了吗chilem", "你就是我的", "xiaopang", "星星🌙", "軽い猫", "oxyzo1", "笨蛋猫猫", "信息检索", "炭", "江江", "晚晚晚上好", "AAA乐土猫猫", "一個廢物", "黄花的忧伤","潇洒的吗喽"};
+					"喵不一", "久桃", "芽芽", "碳烤綿芽", "骨头", "陌浅羽", "树羽小朋友", "望舒", "松子", "平凡..", "cixin", "洗点", "秀色", "朱朱", "Twen", "大恐龙", ":luv:", "小左", "Blue°F", "怯修", "yezeen", "鹑", "枫香°", "没问题啊", "·蓝蓝蓝蓝", "临渊捕鱼", "?hook?", "放肆zero", "Q币", "洛天依", "spider", "贝塔塔塔", "见月", "咩子的银耳", "Cancer", "汐惜", "长亭寂寞独自愁", "fantuan", "无言鱼", "胖人老许", "夏日", "张宁我儿", "拌饭", "shengyan", "修勾在修沟", "taffy", "杀意没爱意", "DYL", "小信", "哆啦梦", "菜菜羊", "吃了吗chilem", "你就是我的", "xiaopang", "星星🌙", "軽い猫", "oxyzo1", "笨蛋猫猫", "信息检索", "炭", "江江", "晚晚晚上好", "AAA乐土猫猫", "一個廢物", "黄花的忧伤","潇洒的吗喽","weijiu"};
 				const float SponsorFontSize = maximum(LG_BodySize * 1.1f - SponsorFontShrink, MinSponsorFontSize);
 				const float MaxLineWidth = RightContent.w;
 				static std::vector<std::string> s_SponsorLines;
@@ -3851,14 +3851,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				}
 				CardContent.HSplitTop(LG_LineSpacing * 0.5f, nullptr, &CardContent);
 
-				CardContent.HSplitTop(LG_LineHeight * 0.8f, &Row, &CardContent);
-				Row.VMargin(LG_LabelWidth, &Row);
-				Ui()->DoLabel(&Row, Localize("看起来已经是目标语言的消息会跳过自动翻译"), LG_BodySize * 0.8f, TEXTALIGN_ML);
-				CardContent.HSplitTop(LG_LineSpacing * 0.35f, nullptr, &CardContent);
-				CardContent.HSplitTop(LG_LineHeight * 0.8f, &Row, &CardContent);
-				Row.VMargin(LG_LabelWidth, &Row);
-				Ui()->DoLabel(&Row, Localize("纯数字消息会直接跳过"), LG_BodySize * 0.8f, TEXTALIGN_ML);
-				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				// Endpoint 配置 - 根据后端类型显示不同的端点输入
 				if(IsTencentCloudBackend)
 				{
@@ -4976,10 +4968,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						static int s_QmLaserPulseSpeedInputId;
 						RenderSliderWithValueInput(&s_QmLaserPulseSpeedInputId, ControlColValue, &g_Config.m_QmLaserPulseSpeed, 10, 500);
 					}
-					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LG_LineHeight * 1.75f, &Row, &CardContent);
-					Ui()->DoLabel(&Row, Localize("默认配置已偏向更自然的人声与更稳的响度；如果你的环境底噪较高，可提高噪声抑制强度。自动增益控制（AGC）默认关闭，可在需要时手动开启。"), LG_BodySize * 0.82f, TEXTALIGN_ML);
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
