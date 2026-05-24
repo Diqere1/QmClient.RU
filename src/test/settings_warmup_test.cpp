@@ -352,6 +352,38 @@ TEST(SettingsRuntimeCache, PageCacheSlotsRejectInvalidPersistedTabs)
 	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_QMCLIENT, CMenus::NUMBER_OF_QMCLIENT_SETTINGS_TABS), -1);
 }
 
+TEST(SettingsRuntimeCache, SectionRegistryCoversComplexPages)
+{
+	SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
+
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_TCLIENT, "binds"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_QMCLIENT, "general"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_CONTROLS, "movement"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_ASSETS, "resource-list"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_LANGUAGE, "language-list"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_PLAYER, "skin-list"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_GENERAL, "body"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_APPEARANCE, "body"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_GRAPHICS, "body"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_SOUND, "body"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_DDNET, "body"));
+	EXPECT_FALSE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_GENERAL, "missing"));
+}
+
+TEST(SettingsRuntimeCache, TextCacheKeysAreStableAcrossFrames)
+{
+	EXPECT_EQ(SettingsTextCacheKey(CMenus::SETTINGS_TCLIENT, 1, "auto-reply-title"), SettingsTextCacheKey(CMenus::SETTINGS_TCLIENT, 1, "auto-reply-title"));
+	EXPECT_NE(SettingsTextCacheKey(CMenus::SETTINGS_TCLIENT, 1, "auto-reply-title"), SettingsTextCacheKey(CMenus::SETTINGS_TCLIENT, 2, "auto-reply-title"));
+}
+
+TEST(SettingsRuntimeCache, SectionRegistryRequiresBothLayersForStaticFbo)
+{
+	const SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 3, "binds"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "binds"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "missing"));
+}
+
 TEST(SettingsResourceJobs, SkinPlanKeepsSelectedFavoritesThenSorted)
 {
 	std::vector<SSettingsSkinListEntry> vEntries = {

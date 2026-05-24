@@ -202,8 +202,6 @@ namespace
 	float gs_LanguageLabelWidth = -1.0f;
 
 	CScrollRegion gs_CreditsScrollRegion;
-	CUIElement gs_CreditsLabelElement;
-	bool gs_CreditsLabelElementInit = false;
 	float gs_CreditsLineWidth = -1.0f;
 	float gs_CreditsHeight = 0.0f;
 	char gs_aCreditsLanguageFile[IO_MAX_PATH_LENGTH] = {};
@@ -218,11 +216,6 @@ namespace
 			gs_LanguageLabelElementsInit = true;
 		}
 
-		if(!gs_CreditsLabelElementInit)
-		{
-			gs_CreditsLabelElement.Init(pUi, 1);
-			gs_CreditsLabelElementInit = true;
-		}
 	}
 
 	void LayoutLanguagePageBaseRects(float MainViewWidth, CUIRect &List, CUIRect &CreditsScroll)
@@ -247,25 +240,12 @@ namespace
 		return Label.w;
 	}
 
-	bool LanguageLabelCacheInvalid()
-	{
-		if(g_Localization.Languages().size() > MAX_LANGUAGE_CACHE)
-			return true;
-
-		for(size_t i = 0; i < g_Localization.Languages().size(); ++i)
-		{
-			if(!gs_aLanguageLabelElements[i].Rect(0)->m_UITextContainer.Valid())
-				return true;
-		}
-		return false;
-	}
-
 	bool UseLanguagePageCache()
 	{
 		return g_Localization.Languages().size() <= MAX_LANGUAGE_CACHE;
 	}
 
-	void RebuildLanguageCreditsCache(CUi *pUi, const char *pCreditsText, float CreditsLineWidth)
+	void RebuildLanguageCreditsCache(CUi *pUi, CUIElement &CreditsElement, const char *pCreditsText, float CreditsLineWidth)
 	{
 		CUIRect CreditsCacheRect;
 		CreditsCacheRect.x = 0.0f;
@@ -274,8 +254,8 @@ namespace
 		CreditsCacheRect.h = 128.0f;
 		SLabelProperties CreditsLabelProps;
 		CreditsLabelProps.m_MaxWidth = CreditsCacheRect.w;
-		pUi->DoLabelStreamed(*gs_CreditsLabelElement.Rect(0), &CreditsCacheRect, pCreditsText, LANGUAGE_CREDITS_FONT_SIZE, TEXTALIGN_TL, CreditsLabelProps);
-		gs_CreditsHeight = gs_CreditsLabelElement.Rect(0)->m_Cursor.Height();
+		pUi->DoLabelStreamed(*CreditsElement.Rect(0), &CreditsCacheRect, pCreditsText, LANGUAGE_CREDITS_FONT_SIZE, TEXTALIGN_TL, CreditsLabelProps);
+		gs_CreditsHeight = CreditsElement.Rect(0)->m_Cursor.Height();
 		gs_CreditsLineWidth = CreditsLineWidth;
 		str_copy(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile, sizeof(gs_aCreditsLanguageFile));
 	}
@@ -360,7 +340,8 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 	{
 		// headline
 		Game.HSplitTop(30.0f, &Label, &Game);
-		Ui()->DoLabel(&Label, Localize("Game"), 20.0f, TEXTALIGN_ML);
+		CUIElement &GameTitleElement = SettingsTextElement(SETTINGS_GENERAL, -1, "game-title");
+		Ui()->DoLabelStreamed(*GameTitleElement.Rect(0), &Label, Localize("Game"), 20.0f, TEXTALIGN_ML);
 		Game.HSplitTop(5.0f, nullptr, &Game);
 		Game.VSplitMid(&Left, nullptr, 20.0f);
 
@@ -416,7 +397,8 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 	{
 		// headline
 		ClientSettings.HSplitTop(30.0f, &Label, &ClientSettings);
-		Ui()->DoLabel(&Label, Localize("Client"), 20.0f, TEXTALIGN_ML);
+		CUIElement &ClientTitleElement = SettingsTextElement(SETTINGS_GENERAL, -1, "client-title");
+		Ui()->DoLabelStreamed(*ClientTitleElement.Rect(0), &Label, Localize("Client"), 20.0f, TEXTALIGN_ML);
 		ClientSettings.HSplitTop(5.0f, nullptr, &ClientSettings);
 		ClientSettings.VSplitMid(&Left, &Right, 20.0f);
 
@@ -3174,22 +3156,35 @@ void CMenus::PrepareLanguagePageCache(float MainViewWidth)
 	LayoutLanguagePageBaseRects(MainViewWidth, List, CreditsScroll);
 
 	const char *pCreditsText = Localize("English translation by the DDNet Team", "Translation credits: Add your own name here when you update translations");
+	CUIElement &CreditsElement = SettingsTextElement(SETTINGS_LANGUAGE, -1, "credits");
 	const float CreditsLineWidth = CreditsScroll.w - 2.0f * LANGUAGE_CREDITS_MARGIN;
 	const float LabelWidth = LanguageListLabelWidth(List);
 	const bool LanguageChanged = str_comp(gs_aLanguageCacheLanguageFile, g_Config.m_ClLanguagefile) != 0;
-	const bool LabelCacheInvalid = LanguageLabelCacheInvalid();
+	bool LabelCacheInvalid = g_Localization.Languages().size() > MAX_LANGUAGE_CACHE;
+	if(!LabelCacheInvalid)
+	{
+		for(size_t i = 0; i < g_Localization.Languages().size(); ++i)
+		{
+			CUIElement &LabelElement = SettingsTextElement(SETTINGS_LANGUAGE, -1, g_Localization.Languages()[i].m_Filename.c_str());
+			if(!LabelElement.Rect(0)->m_UITextContainer.Valid())
+			{
+				LabelCacheInvalid = true;
+				break;
+			}
+		}
+	}
 	const bool CreditsLanguageChanged = str_comp(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile) != 0;
 	const bool CreditsWidthChanged = absolute(gs_CreditsLineWidth - CreditsLineWidth) > 0.01f;
 	if(!LanguageChanged &&
 		!LabelCacheInvalid &&
 		absolute(gs_LanguageLabelWidth - LabelWidth) <= 0.01f &&
-		!(CreditsLanguageChanged || CreditsWidthChanged || !gs_CreditsLabelElement.Rect(0)->m_UITextContainer.Valid()))
+		!(CreditsLanguageChanged || CreditsWidthChanged || !CreditsElement.Rect(0)->m_UITextContainer.Valid()))
 	{
 		return;
 	}
 
-	if(CreditsLanguageChanged || CreditsWidthChanged || !gs_CreditsLabelElement.Rect(0)->m_UITextContainer.Valid())
-		RebuildLanguageCreditsCache(Ui(), pCreditsText, CreditsLineWidth);
+	if(CreditsLanguageChanged || CreditsWidthChanged || !CreditsElement.Rect(0)->m_UITextContainer.Valid())
+		RebuildLanguageCreditsCache(Ui(), CreditsElement, pCreditsText, CreditsLineWidth);
 
 	CUIRect ScrollClip = List;
 	ScrollClip.VSplitRight(LANGUAGE_SCROLLBAR_WIDTH, &ScrollClip, nullptr);
@@ -3202,7 +3197,8 @@ void CMenus::PrepareLanguagePageCache(float MainViewWidth)
 
 		CUIRect FlagRect, Label;
 		ItemRect.VSplitLeft(ItemRect.h * 2.0f, &FlagRect, &Label);
-		Ui()->DoLabelStreamed(*gs_aLanguageLabelElements[i].Rect(0), &Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
+		CUIElement &LabelElement = SettingsTextElement(SETTINGS_LANGUAGE, -1, Language.m_Filename.c_str());
+		Ui()->DoLabelStreamed(*LabelElement.Rect(0), &Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
 	}
 
 	gs_LanguageLabelWidth = LabelWidth;
@@ -3220,12 +3216,13 @@ void CMenus::RenderLanguageSettings(CUIRect MainView)
 	List.HSplitBottom(5.0f, &List, nullptr);
 
 	const char *pCreditsText = Localize("English translation by the DDNet Team", "Translation credits: Add your own name here when you update translations");
+	CUIElement &CreditsElement = SettingsTextElement(SETTINGS_LANGUAGE, -1, "credits");
 	const float CreditsLineWidth = CreditsScroll.w - 2.0f * CreditsMargin;
 	const int NumLanguages = (int)g_Localization.Languages().size();
 	EnsureLanguagePageCacheInit(Ui());
 	const bool LanguageChanged = str_comp(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile) != 0;
 	const bool WidthChanged = absolute(gs_CreditsLineWidth - CreditsLineWidth) > 0.01f;
-	const bool CreditsNeedRefresh = LanguageChanged || WidthChanged || !gs_CreditsLabelElement.Rect(0)->m_UITextContainer.Valid();
+	const bool CreditsNeedRefresh = LanguageChanged || WidthChanged || !CreditsElement.Rect(0)->m_UITextContainer.Valid();
 	{
 		CPerfTimer StageTimer;
 		RenderLanguageSelection(List);
@@ -3238,7 +3235,7 @@ void CMenus::RenderLanguageSettings(CUIRect MainView)
 
 	auto RefreshCreditsMetrics = [&]() {
 		CPerfTimer CreditsCreateTimer;
-		RebuildLanguageCreditsCache(Ui(), pCreditsText, CreditsLineWidth);
+		RebuildLanguageCreditsCache(Ui(), CreditsElement, pCreditsText, CreditsLineWidth);
 		LogPerfStage("language_credits_create", CreditsCreateTimer.ElapsedMs(), false, "page=language");
 	};
 
@@ -3262,7 +3259,7 @@ void CMenus::RenderLanguageSettings(CUIRect MainView)
 		CreditsLabel.Margin(CreditsMargin, &CreditsLabel);
 		SLabelProperties CreditsLabelProps;
 		CreditsLabelProps.m_MaxWidth = CreditsLabel.w;
-		Ui()->DoLabelStreamed(*gs_CreditsLabelElement.Rect(0), &CreditsLabel, pCreditsText, CreditsFontSize, TEXTALIGN_TL, CreditsLabelProps);
+		Ui()->DoLabelStreamed(*CreditsElement.Rect(0), &CreditsLabel, pCreditsText, CreditsFontSize, TEXTALIGN_TL, CreditsLabelProps);
 		LogPerfStage("language_credits_text", CreditsRenderTimer.ElapsedMs(), false, "page=language");
 
 		gs_CreditsScrollRegion.End();
@@ -3334,7 +3331,10 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 		FlagRect.HMargin(3.0f, &FlagRect);
 		GameClient()->m_CountryFlags.Render(Language.m_CountryCode, ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), FlagRect.x, FlagRect.y, FlagRect.w, FlagRect.h);
 		if(UseCache)
-			Ui()->DoLabelStreamed(*gs_aLanguageLabelElements[i].Rect(0), &Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
+		{
+			CUIElement &LabelElement = SettingsTextElement(SETTINGS_LANGUAGE, -1, Language.m_Filename.c_str());
+			Ui()->DoLabelStreamed(*LabelElement.Rect(0), &Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
+		}
 		else
 			Ui()->DoLabel(&Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
 	}

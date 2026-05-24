@@ -3159,12 +3159,14 @@ void CMenus::OnReset()
 	ResetReportScan();
 	ResetDemoScreenshotPreview();
 	ClearQmClientSettingsSearchInputs();
+	InvalidateSettingsTextPool();
 }
 
 void CMenus::OnShutdown()
 {
 	SaveSettingsRuntimeCacheMetadata();
 	DestroySettingsPageRuntimeCaches();
+	InvalidateSettingsTextPool();
 	ResetDemoScreenshotPreview();
 	m_CommunityIcons.Shutdown();
 }
@@ -3185,6 +3187,36 @@ void CMenus::DestroySettingsPageRuntimeCaches()
 		Prewarmed = false;
 	m_SettingsStartupWarmupCursor = 0;
 	m_SettingsRuntimePrewarmCursor = 0;
+}
+
+CUIElement &CMenus::SettingsTextElement(int Page, int Tab, const char *pTextId)
+{
+	const uint64_t LanguageHash = str_quickhash(g_Config.m_ClLanguagefile);
+	const uint64_t FontHash = str_quickhash(g_Config.m_TcCustomFont);
+	if(m_SettingsTextPoolLanguageHash != LanguageHash || m_SettingsTextPoolFontHash != FontHash)
+		InvalidateSettingsTextPool();
+
+	m_SettingsTextPoolLanguageHash = LanguageHash;
+	m_SettingsTextPoolFontHash = FontHash;
+
+	const std::string Key = SettingsTextCacheKey(Page, Tab, pTextId);
+	auto It = m_SettingsTextPool.find(Key);
+	if(It == m_SettingsTextPool.end())
+	{
+		SSettingsTextPoolEntry Entry;
+		Entry.m_Element.Init(Ui(), 1);
+		It = m_SettingsTextPool.emplace(Key, std::move(Entry)).first;
+	}
+	return It->second.m_Element;
+}
+
+void CMenus::InvalidateSettingsTextPool()
+{
+	for(auto &[Key, Entry] : m_SettingsTextPool)
+		Ui()->ResetUIElement(Entry.m_Element);
+	m_SettingsTextPool.clear();
+	m_SettingsTextPoolLanguageHash = 0;
+	m_SettingsTextPoolFontHash = 0;
 }
 
 CMenus::SSettingsPageRuntimeCache *CMenus::GetSettingsPageRuntimeCache(int Page, int Tab)
@@ -3350,6 +3382,35 @@ bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab
 	return true;
 }
 
+bool CMenus::PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId)
+{
+	(void)SectionView;
+	const SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
+	if(!SettingsSectionCanRecordStaticFbo(Registry, Page, Tab, pSectionId))
+		return false;
+	if(g_Config.m_QmSettingsFboCache == 0 || !Graphics()->IsRenderTargetSupported())
+		return false;
+	if(Ui()->ActiveItem() != nullptr)
+		return false;
+	return false;
+}
+
+bool CMenus::DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId)
+{
+	(void)SectionView;
+	const SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
+	if(!SettingsSectionCanRecordStaticFbo(Registry, Page, Tab, pSectionId))
+		return false;
+	return false;
+}
+
+void CMenus::InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char *pSectionId)
+{
+	(void)Page;
+	(void)Tab;
+	(void)pSectionId;
+}
+
 bool CMenus::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 {
 	if(!m_MenuActive)
@@ -3422,6 +3483,7 @@ void CMenus::OnStateChange(int NewState, int OldState)
 void CMenus::OnWindowResize()
 {
 	TextRender()->DeleteTextContainer(m_MotdTextContainerIndex);
+	InvalidateSettingsTextPool();
 }
 
 void CMenus::OnRender()

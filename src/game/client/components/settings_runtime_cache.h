@@ -61,6 +61,20 @@ struct SSettingsPageRuntimeRegistry
 	std::vector<int> m_vPages;
 };
 
+struct SSettingsSectionEntry
+{
+	int m_Page = -1;
+	int m_Tab = -1;
+	std::string m_Id;
+	bool m_HasStaticRenderer = false;
+	bool m_HasInteractiveRenderer = false;
+};
+
+struct SSettingsSectionRegistry
+{
+	std::vector<SSettingsSectionEntry> m_vSections;
+};
+
 struct SSettingsRuntimeCacheKey
 {
 	uint64_t m_LanguageHash = 0;
@@ -98,6 +112,9 @@ constexpr int SETTINGS_PAGE_RUNTIME_CACHE_SLOTS = 32;
 
 SSettingsPageRuntimeRegistry BuildSettingsPageRuntimeRegistry();
 bool SettingsPageRuntimeRegistryContains(const SSettingsPageRuntimeRegistry &Registry, int Page);
+SSettingsSectionRegistry BuildSettingsSectionRegistry();
+bool SettingsSectionRegistryContains(const SSettingsSectionRegistry &Registry, int Page, const char *pSection);
+bool SettingsSectionCanRecordStaticFbo(const SSettingsSectionRegistry &Registry, int Page, int Tab, const char *pSection);
 int SettingsPageRuntimeCacheSlot(int Page, int Tab);
 bool SettingsRuntimeCacheKeyMatches(const SSettingsRuntimeCacheKey &A, const SSettingsRuntimeCacheKey &B);
 bool SettingsPageUsesRuntimeScroll(int Page);

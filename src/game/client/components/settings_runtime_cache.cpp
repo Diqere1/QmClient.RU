@@ -12,6 +12,23 @@ static void AddUnique(std::vector<int> &vValues, int Value)
 		vValues.push_back(Value);
 }
 
+static void AddSection(std::vector<SSettingsSectionEntry> &vSections, int Page, int Tab, const char *pSection, bool HasStaticRenderer, bool HasInteractiveRenderer)
+{
+	for(const auto &Section : vSections)
+	{
+		if(Section.m_Page == Page && Section.m_Tab == Tab && Section.m_Id == pSection)
+			return;
+	}
+
+	SSettingsSectionEntry Entry;
+	Entry.m_Page = Page;
+	Entry.m_Tab = Tab;
+	Entry.m_Id = pSection;
+	Entry.m_HasStaticRenderer = HasStaticRenderer;
+	Entry.m_HasInteractiveRenderer = HasInteractiveRenderer;
+	vSections.push_back(std::move(Entry));
+}
+
 static std::string BuildRuntimeCacheKey(const char *pPrefix, const char *pPageName, int Tab, const char *pSuffix, const char *pId)
 {
 	std::string Key = pPrefix;
@@ -79,6 +96,60 @@ SSettingsPageRuntimeRegistry BuildSettingsPageRuntimeRegistry()
 bool SettingsPageRuntimeRegistryContains(const SSettingsPageRuntimeRegistry &Registry, int Page)
 {
 	return std::find(Registry.m_vPages.begin(), Registry.m_vPages.end(), Page) != Registry.m_vPages.end();
+}
+
+SSettingsSectionRegistry BuildSettingsSectionRegistry()
+{
+	SSettingsSectionRegistry Registry;
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 3, "binds", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 0, "auto-reply", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 0, "pet", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 0, "theme", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 0, "misc", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_VISUAL, "general", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_CONFIG, "config", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_CONTRIBUTORS, "contributors", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_CONTROLS, -1, "movement", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_CONTROLS, -1, "weapons", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_CONTROLS, -1, "voting", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_ASSETS, -1, "resource-list", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_ASSETS, -1, "preview", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_LANGUAGE, -1, "language-list", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_LANGUAGE, -1, "credits", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_PLAYER, -1, "skin-list", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_PLAYER, -1, "identity", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TEE, -1, "skin-list", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TEE, -1, "identity", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_GENERAL, -1, "header", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_GENERAL, -1, "body", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_APPEARANCE, -1, "header", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_APPEARANCE, -1, "body", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_GRAPHICS, -1, "header", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_GRAPHICS, -1, "body", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_SOUND, -1, "header", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_SOUND, -1, "body", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_DDNET, -1, "header", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_DDNET, -1, "body", false, false);
+	return Registry;
+}
+
+bool SettingsSectionRegistryContains(const SSettingsSectionRegistry &Registry, int Page, const char *pSection)
+{
+	return std::find_if(Registry.m_vSections.begin(), Registry.m_vSections.end(), [Page, pSection](const SSettingsSectionEntry &Entry) {
+		return Entry.m_Page == Page && Entry.m_Id == pSection;
+	}) != Registry.m_vSections.end();
+}
+
+bool SettingsSectionCanRecordStaticFbo(const SSettingsSectionRegistry &Registry, int Page, int Tab, const char *pSection)
+{
+	const auto It = std::find_if(Registry.m_vSections.begin(), Registry.m_vSections.end(), [Page, Tab, pSection](const SSettingsSectionEntry &Entry) {
+		return Entry.m_Page == Page &&
+			(Entry.m_Tab < 0 || Tab < 0 || Entry.m_Tab == Tab) &&
+			Entry.m_Id == pSection;
+	});
+	if(It == Registry.m_vSections.end())
+		return false;
+	return It->m_HasStaticRenderer && It->m_HasInteractiveRenderer;
 }
 
 int SettingsPageRuntimeCacheSlot(int Page, int Tab)

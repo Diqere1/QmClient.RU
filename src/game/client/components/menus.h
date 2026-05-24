@@ -1761,8 +1761,15 @@ public:
 	static int SettingsRuntimeCacheWarmupSteps() { return (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() + 6 + (NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1); }
 	void LoadSettingsRuntimeCacheMetadata();
 	void SaveSettingsRuntimeCacheMetadata();
+	CUIElement &SettingsTextElement(int Page, int Tab, const char *pTextId);
+	void InvalidateSettingsTextPool();
 
 private:
+	struct SSettingsTextPoolEntry
+	{
+		CUIElement m_Element;
+	};
+
 	struct SSettingsPageRuntimeCache
 	{
 		SSettingsPageRuntimeCacheState m_State;
@@ -1783,6 +1790,9 @@ private:
 	bool m_aSettingsTClientSiblingPrewarmed[6] = {};
 	bool m_aSettingsQmClientSiblingPrewarmed[NUMBER_OF_QMCLIENT_SETTINGS_TABS] = {};
 	int m_SettingsRuntimePrewarmCursor = 0;
+	std::unordered_map<std::string, SSettingsTextPoolEntry> m_SettingsTextPool;
+	uint64_t m_SettingsTextPoolLanguageHash = 0;
+	uint64_t m_SettingsTextPoolFontHash = 0;
 
 	CCommunityIcons m_CommunityIcons;
 	CMenusIngameTouchControls m_MenusIngameTouchControls;
@@ -1809,6 +1819,9 @@ private:
 	bool PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView);
 	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
 	bool DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
+	bool PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
+	bool DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
+	void InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char *pSectionId);
 	void DestroySettingsPageRuntimeCaches();
 	bool PrewarmSettingsPageResources(int Page, int Tab);
 	SSettingsPageRuntimeCache *GetSettingsPageRuntimeCache(int Page, int Tab);
