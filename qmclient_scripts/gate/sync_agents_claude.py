@@ -51,7 +51,8 @@ def read_text(path: Path) -> str:
 def write_text(path: Path, text: str, newline: str) -> None:
     normalized = normalize_text(text)
     rewritten = normalized.replace("\n", newline)
-    path.write_text(rewritten, encoding="utf-8", newline="")
+    with path.open("w", encoding="utf-8", newline="") as f:
+        f.write(rewritten)
 
 
 def read_state() -> dict:

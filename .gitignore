@@ -22,9 +22,15 @@ docs/superpowers/
 .superpowers
 .trae
 .claude
+skills/
+feature_list.json
+progress.md
+session-handoff.md
+init.sh
 
 # tmp
 tmp/
+QmClient_codeQmClienttmp_harness_repo/
 
 # Git worktrees
 worktrees/

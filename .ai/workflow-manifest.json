@@ -18,11 +18,13 @@
     ".ai/reference.md"
   ],
   "agents_required_sections": [
-    "## 项目定位",
-    "## 文档入口/文档说明",
-    "## 工作边界",
-    "## 构建命令",
-    "## 仓库级检查与测试"
+    "## Project overview",
+    "## Build",
+    "## Test",
+    "## Pre-commit validation (gate)",
+    "## Source architecture",
+    "## Key configuration",
+    "## Document hierarchy"
   ],
   "claude_sync_references": [
     ".ai/reference.md"
