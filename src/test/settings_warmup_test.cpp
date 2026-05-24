@@ -180,10 +180,9 @@ TEST(SettingsWarmup, RuntimeFboWarmupRunsBeforeTextOnlyFallback)
 	EXPECT_STREQ(vOrder[0], "fbo");
 }
 
-TEST(SettingsWarmup, LoadingRuntimeCacheWarmupIncludesCorePagesAndTClientTabs)
+TEST(SettingsWarmup, LoadingRuntimeCacheWarmupIncludesRegisteredPagesAndTClientTabs)
 {
-	EXPECT_EQ(SettingsLoadingRuntimeCacheWarmupSteps(6), 12);
-	EXPECT_EQ(SettingsLoadingRuntimeCacheWarmupSteps(0), 6);
+	EXPECT_EQ(CMenus::SettingsRuntimeCacheWarmupSteps(), (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() + 6);
 }
 
 TEST(SettingsRuntimeCache, RegistersAllSettingsPages)
@@ -262,4 +261,83 @@ TEST(SettingsRuntimeCache, TClientPerfStageNamesAreStable)
 	EXPECT_STREQ(SettingsTClientPerfStageName(ETClientSettingsPerfStage::RESOURCE_PRETRIGGER), "tclient_resource_pretrigger");
 	EXPECT_STREQ(SettingsTClientPerfStageName(ETClientSettingsPerfStage::STATIC_LAYER), "tclient_static_layer");
 	EXPECT_STREQ(SettingsTClientPerfStageName(ETClientSettingsPerfStage::INTERACTIVE_LAYER), "tclient_interactive_layer");
+}
+
+TEST(SettingsRuntimeCache, RuntimeKeyInvalidatesOnLanguageFontBackendWindowScaleAndConfig)
+{
+	SSettingsRuntimeCacheKey A;
+	A.m_LanguageHash = 1;
+	A.m_FontGeneration = 2;
+	A.m_BackendGeneration = 3;
+	A.m_WindowWidth = 1280;
+	A.m_WindowHeight = 720;
+	A.m_UiScale = 100;
+	A.m_ConfigHash = 4;
+
+	SSettingsRuntimeCacheKey B = A;
+	EXPECT_TRUE(SettingsRuntimeCacheKeyMatches(A, B));
+
+	B.m_LanguageHash = 9;
+	EXPECT_FALSE(SettingsRuntimeCacheKeyMatches(A, B));
+	B = A;
+	B.m_FontGeneration = 9;
+	EXPECT_FALSE(SettingsRuntimeCacheKeyMatches(A, B));
+	B = A;
+	B.m_BackendGeneration = 9;
+	EXPECT_FALSE(SettingsRuntimeCacheKeyMatches(A, B));
+	B = A;
+	B.m_WindowWidth = 1920;
+	EXPECT_FALSE(SettingsRuntimeCacheKeyMatches(A, B));
+	B = A;
+	B.m_UiScale = 125;
+	EXPECT_FALSE(SettingsRuntimeCacheKeyMatches(A, B));
+	B = A;
+	B.m_ConfigHash = 9;
+	EXPECT_FALSE(SettingsRuntimeCacheKeyMatches(A, B));
+}
+
+TEST(SettingsRuntimeCache, ScrollWarmupOnlyUsesMatchingScrollPage)
+{
+	SSettingsRuntimeCacheMetadata Metadata;
+	Metadata.m_LastPage = CMenus::SETTINGS_QMCLIENT;
+	Metadata.m_LastQmTab = CMenus::QMCLIENT_SETTINGS_TAB_CONFIG;
+	Metadata.m_LastScrollPage = CMenus::SETTINGS_TCLIENT;
+	Metadata.m_LastScrollY = 128.0f;
+	Metadata.m_Valid = true;
+
+	const SSettingsPageRuntimeRegistry Registry = BuildSettingsPageRuntimeRegistry();
+	const SSettingsWarmupStartupPlan Plan = BuildSettingsWarmupStartupPlan(Metadata, Registry);
+
+	ASSERT_FALSE(Plan.m_vPageJobs.empty());
+	EXPECT_EQ(Plan.m_vPageJobs.front().m_Page, CMenus::SETTINGS_QMCLIENT);
+	EXPECT_FLOAT_EQ(Plan.m_vPageJobs.front().m_ScrollY, 0.0f);
+
+	auto It = std::find_if(Plan.m_vPageJobs.begin(), Plan.m_vPageJobs.end(), [](const SSettingsWarmupPageJob &Job) {
+		return Job.m_Page == CMenus::SETTINGS_TCLIENT;
+	});
+	ASSERT_NE(It, Plan.m_vPageJobs.end());
+	EXPECT_FLOAT_EQ(It->m_ScrollY, 0.0f);
+
+	Metadata.m_LastPage = CMenus::SETTINGS_TCLIENT;
+	const SSettingsWarmupStartupPlan TClientPlan = BuildSettingsWarmupStartupPlan(Metadata, Registry);
+	ASSERT_FALSE(TClientPlan.m_vPageJobs.empty());
+	EXPECT_EQ(TClientPlan.m_vPageJobs.front().m_Page, CMenus::SETTINGS_TCLIENT);
+	EXPECT_FLOAT_EQ(TClientPlan.m_vPageJobs.front().m_ScrollY, 128.0f);
+}
+
+TEST(SettingsRuntimeCache, StartupPlanCoversLastPageAndAllRegisteredPages)
+{
+	SSettingsRuntimeCacheMetadata Metadata;
+	Metadata.m_LastPage = CMenus::SETTINGS_ASSETS;
+	Metadata.m_LastTClientTab = 2;
+	Metadata.m_LastQmTab = 1;
+	Metadata.m_LastScrollPage = CMenus::SETTINGS_TCLIENT;
+	Metadata.m_LastScrollY = 128.0f;
+
+	const SSettingsWarmupStartupPlan Plan = BuildSettingsWarmupStartupPlan(Metadata, BuildSettingsPageRuntimeRegistry());
+
+	ASSERT_FALSE(Plan.m_vPageJobs.empty());
+	EXPECT_EQ(Plan.m_vPageJobs[0].m_Page, CMenus::SETTINGS_ASSETS);
+	for(int Page : BuildSettingsPageRuntimeRegistry().m_vPages)
+		EXPECT_TRUE(SettingsWarmupPlanContainsPage(Plan, Page));
 }

@@ -1738,7 +1738,8 @@ public:
 	void SetShowStart(bool ShowStart);
 	void ShowQuitPopup();
 	bool PrewarmSettingsRuntimeCaches(CUIRect MainView);
-	static constexpr int SettingsRuntimeCacheWarmupSteps() { return SettingsLoadingRuntimeCacheWarmupSteps(6); }
+	void PrepareSettingsRuntimeWarmupPlan();
+	static int SettingsRuntimeCacheWarmupSteps() { return (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() + 6; }
 	void LoadSettingsRuntimeCacheMetadata();
 	void SaveSettingsRuntimeCacheMetadata();
 
@@ -1751,9 +1752,13 @@ private:
 		int m_RenderTargetHeight = 0;
 	};
 
-	SSessionUiCache m_SettingsRuntimeCacheMetadata;
+	SSettingsRuntimeCacheMetadata m_SettingsRuntimeMetadata;
+	SSettingsWarmupStartupPlan m_SettingsStartupWarmupPlan;
+	size_t m_SettingsStartupWarmupCursor = 0;
 	float m_SettingsTClientCurrentScrollY = 0.0f;
 	bool m_SettingsTClientScrollRestorePending = false;
+	bool m_SettingsPageSwitchActive = false;
+	bool m_SettingsScrollActive = false;
 	SSettingsPageRuntimeCache m_aSettingsPageRuntimeCaches[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS];
 	bool m_aSettingsPagePrewarmed[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS] = {};
 	bool m_aSettingsTClientSiblingPrewarmed[6] = {};

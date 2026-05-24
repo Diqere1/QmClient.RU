@@ -3248,9 +3248,12 @@ void CMenus::RenderLanguageSettings(CUIRect MainView)
 
 	{
 		vec2 ScrollOffset(0.0f, 0.0f);
+		static float s_PrevCreditsScrollY = 0.0f;
 		CScrollRegionParams ScrollParams;
 		ScrollParams.m_ScrollUnit = CreditsFontSize;
 		gs_CreditsScrollRegion.Begin(&CreditsScroll, &ScrollOffset, &ScrollParams);
+		m_SettingsScrollActive = m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevCreditsScrollY) > 0.01f;
+		s_PrevCreditsScrollY = ScrollOffset.y;
 		CreditsScroll.y += ScrollOffset.y;
 
 		CPerfTimer CreditsRenderTimer;
@@ -3292,11 +3295,14 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 	bool Activated = false;
 
 	vec2 ScrollOffset(0.0f, 0.0f);
+	static float s_PrevLanguageScrollY = 0.0f;
 	CScrollRegionParams ScrollParams;
 	ScrollParams.m_ScrollUnit = LANGUAGE_ROW_HEIGHT;
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
 	ScrollParams.m_ScrollbarMargin = 5.0f;
 	gs_LanguageScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
+	m_SettingsScrollActive = m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevLanguageScrollY) > 0.01f;
+	s_PrevLanguageScrollY = ScrollOffset.y;
 
 	CUIRect Content = MainView;
 	Content.y += ScrollOffset.y;
@@ -3354,6 +3360,10 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 void CMenus::RenderSettings(CUIRect MainView)
 {
 	// This handles cases where old config files have an invalid page index
+	m_SettingsScrollActive = Input()->KeyPress(KEY_MOUSE_WHEEL_UP) ||
+		Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) ||
+		Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) ||
+		Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
 	if(g_Config.m_UiSettingsPage < 0 || g_Config.m_UiSettingsPage >= SETTINGS_LENGTH)
 		g_Config.m_UiSettingsPage = SETTINGS_LANGUAGE;
 	if(g_Config.m_UiSettingsPage == SETTINGS_CONFIGS)
@@ -3433,6 +3443,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 	CUIRect ContentView = MainView;
 	const float TransitionStrength = ReadUiSwitchAnimation(SettingsPageSwitchNode);
 	const bool TransitionActive = TransitionStrength > 0.0f && s_SettingsTransitionDirection != 0.0f;
+	m_SettingsPageSwitchActive = TransitionActive;
 	const CUIRect ContentClip = MainView;
 	const float TransitionAlpha = UiSwitchAnimationAlpha(TransitionStrength);
 	if(TransitionActive)
@@ -3489,8 +3500,6 @@ void CMenus::RenderSettings(CUIRect MainView)
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_CONTROLS, -1);
 			if(!RuntimeCacheHit)
 				m_MenusSettingsControls.Render(ContentView);
-			m_SettingsRuntimeCacheMetadata.m_LastSettingsPage = SETTINGS_CONTROLS;
-			m_SettingsRuntimeCacheMetadata.m_bValid = true;
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_GRAPHICS)
 		{
@@ -3523,13 +3532,11 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_TCLIENT)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(13);
-			const float TClientCacheScrollY = m_SettingsTClientScrollRestorePending ? m_SettingsRuntimeCacheMetadata.m_LastScrollY : m_SettingsTClientCurrentScrollY;
+			const float TClientCacheScrollY = m_SettingsTClientScrollRestorePending ? m_SettingsRuntimeMetadata.m_LastScrollY : m_SettingsTClientCurrentScrollY;
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, m_TClientSettingsTab, TClientCacheScrollY);
 			if(!RuntimeCacheHit)
 				RenderSettingsTClient(ContentView);
-			m_SettingsRuntimeCacheMetadata.m_LastSettingsPage = SETTINGS_TCLIENT;
-			m_SettingsRuntimeCacheMetadata.m_LastTClientTab = m_TClientSettingsTab;
-			m_SettingsRuntimeCacheMetadata.m_bValid = true;
+			m_SettingsRuntimeMetadata.m_LastTClientTab = m_TClientSettingsTab;
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_QMCLIENT)
 		{
@@ -3537,9 +3544,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_QMCLIENT, m_QmClientSettingsTab);
 			if(!RuntimeCacheHit)
 				RenderSettingsQmClient(ContentView);
-			m_SettingsRuntimeCacheMetadata.m_LastSettingsPage = SETTINGS_QMCLIENT;
-			m_SettingsRuntimeCacheMetadata.m_LastQmTab = m_QmClientSettingsTab;
-			m_SettingsRuntimeCacheMetadata.m_bValid = true;
+			m_SettingsRuntimeMetadata.m_LastQmTab = m_QmClientSettingsTab;
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_PROFILES)
 		{
@@ -3554,6 +3559,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 		str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", SettingsPageName(g_Config.m_UiSettingsPage), TransitionActive ? 1 : 0);
 		LogPerfStage("settings_page_content", StageTimer.ElapsedMs(), TransitionActive, aContentExtra);
 	}
+	m_SettingsRuntimeMetadata.m_LastPage = g_Config.m_UiSettingsPage;
+	m_SettingsRuntimeMetadata.m_Valid = true;
 
 	if(TransitionActive && TransitionAlpha > 0.0f)
 	{

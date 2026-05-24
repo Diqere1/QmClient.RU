@@ -606,8 +606,6 @@ void CGameClient::OnInit()
 	int LoadingTotal = g_pData->m_NumImages + ComponentCount();
 	if(!g_Config.m_ClThreadsoundloading)
 		LoadingTotal += g_pData->m_NumSounds;
-	if(g_Config.m_QmSettingsPrewarm != 0 && g_Config.m_QmSettingsFboCache != 0)
-		LoadingTotal += CMenus::SettingsRuntimeCacheWarmupSteps();
 	m_Menus.StartLoading(LoadingTotal);
 
 	// init all components
@@ -705,10 +703,13 @@ void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoading
 	Ui()->MapScreen();
 	CUIRect TabBar, MainView;
 	Ui()->Screen()->HSplitTop(24.0f, &TabBar, &MainView);
-	for(int Step = 0; Step < CMenus::SettingsRuntimeCacheWarmupSteps(); ++Step)
+	m_Menus.PrepareSettingsRuntimeWarmupPlan();
+	const int MaxAttempts = maximum(CMenus::SettingsRuntimeCacheWarmupSteps() * 4, 1);
+	for(int Step = 0; Step < MaxAttempts; ++Step)
 	{
-		m_Menus.PrewarmSettingsRuntimeCaches(MainView);
-		m_Menus.RenderLoading(pLoadingCaption, Localize("Prewarming settings pages"), 1);
+		if(m_Menus.PrewarmSettingsRuntimeCaches(MainView))
+			break;
+		m_Menus.RenderLoading(pLoadingCaption, Localize("Prewarming settings pages"), 0);
 	}
 }
 

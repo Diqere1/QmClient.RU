@@ -27,6 +27,37 @@ static std::string BuildRuntimeCacheKey(const char *pPrefix, const char *pPageNa
 	return Key;
 }
 
+static int SettingsWarmupPageTab(const SSettingsRuntimeCacheMetadata &Metadata, int Page)
+{
+	if(Page == CMenus::SETTINGS_TCLIENT)
+		return Metadata.m_LastTClientTab;
+	if(Page == CMenus::SETTINGS_QMCLIENT)
+		return Metadata.m_LastQmTab;
+	return -1;
+}
+
+static int CanonicalizeSettingsWarmupPage(int Page)
+{
+	if(Page == CMenus::SETTINGS_CONFIGS || Page == CMenus::SETTINGS_CONTRIBUTORS)
+		return CMenus::SETTINGS_QMCLIENT;
+	return Page;
+}
+
+static void AddWarmupPageJob(std::vector<SSettingsWarmupPageJob> &vJobs, const SSettingsRuntimeCacheMetadata &Metadata, int Page, bool UseScroll)
+{
+	for(const SSettingsWarmupPageJob &Job : vJobs)
+	{
+		if(Job.m_Page == Page)
+			return;
+	}
+
+	SSettingsWarmupPageJob Job;
+	Job.m_Page = Page;
+	Job.m_Tab = SettingsWarmupPageTab(Metadata, Page);
+	Job.m_ScrollY = UseScroll && Metadata.m_LastScrollPage == Page && SettingsPageUsesRuntimeScroll(Page) ? Metadata.m_LastScrollY : 0.0f;
+	vJobs.push_back(Job);
+}
+
 SSettingsPageRuntimeRegistry BuildSettingsPageRuntimeRegistry()
 {
 	SSettingsPageRuntimeRegistry Registry;
@@ -79,6 +110,40 @@ int SettingsPageRuntimeCacheSlot(int Page, int Tab)
 	default:
 		return -1;
 	}
+}
+
+bool SettingsRuntimeCacheKeyMatches(const SSettingsRuntimeCacheKey &A, const SSettingsRuntimeCacheKey &B)
+{
+	return A.m_LanguageHash == B.m_LanguageHash &&
+		A.m_FontGeneration == B.m_FontGeneration &&
+		A.m_BackendGeneration == B.m_BackendGeneration &&
+		A.m_WindowWidth == B.m_WindowWidth &&
+		A.m_WindowHeight == B.m_WindowHeight &&
+		A.m_UiScale == B.m_UiScale &&
+		A.m_ConfigHash == B.m_ConfigHash;
+}
+
+bool SettingsPageUsesRuntimeScroll(int Page)
+{
+	return Page == CMenus::SETTINGS_TCLIENT;
+}
+
+SSettingsWarmupStartupPlan BuildSettingsWarmupStartupPlan(const SSettingsRuntimeCacheMetadata &Metadata, const SSettingsPageRuntimeRegistry &Registry)
+{
+	SSettingsWarmupStartupPlan Plan;
+	const int LastPage = CanonicalizeSettingsWarmupPage(Metadata.m_LastPage);
+	if(SettingsPageRuntimeRegistryContains(Registry, LastPage))
+		AddWarmupPageJob(Plan.m_vPageJobs, Metadata, LastPage, true);
+	for(int Page : Registry.m_vPages)
+		AddWarmupPageJob(Plan.m_vPageJobs, Metadata, Page, Page == LastPage);
+	return Plan;
+}
+
+bool SettingsWarmupPlanContainsPage(const SSettingsWarmupStartupPlan &Plan, int Page)
+{
+	return std::find_if(Plan.m_vPageJobs.begin(), Plan.m_vPageJobs.end(), [Page](const SSettingsWarmupPageJob &Job) {
+		return Job.m_Page == Page;
+	}) != Plan.m_vPageJobs.end();
 }
 
 bool SettingsWarmupConsumeBudget(SSettingsWarmupFrameBudget &Budget, ESettingsWarmupCost Cost)

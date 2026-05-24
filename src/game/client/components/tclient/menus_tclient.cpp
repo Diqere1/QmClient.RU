@@ -859,6 +859,8 @@ void CMenus::RenderSettingsTClient(CUIRect MainView, bool PrewarmOnly)
 	CUIRect ContentView = MainView;
 	const float TransitionStrength = PrewarmOnly ? 0.0f : ReadUiSwitchAnimation(TClientTabSwitchNode);
 	const bool TransitionActive = TransitionStrength > 0.0f && s_CustomTabTransitionDirection != 0.0f;
+	if(!PrewarmOnly)
+		m_SettingsPageSwitchActive = m_SettingsPageSwitchActive || TransitionActive;
 	const CUIRect ContentClip = MainView;
 	const float TransitionAlpha = UiSwitchAnimationAlpha(TransitionStrength);
 	if(TransitionActive)
@@ -902,8 +904,8 @@ void CMenus::RenderSettingsTClient(CUIRect MainView, bool PrewarmOnly)
 	LogTClientPerfStage("tclient_page_total", RenderTimer.ElapsedMs(), false, aExtra);
 	if(!PrewarmOnly)
 	{
-		m_SettingsRuntimeCacheMetadata.m_LastTClientTab = m_TClientSettingsTab;
-		m_SettingsRuntimeCacheMetadata.m_bValid = true;
+		m_SettingsRuntimeMetadata.m_LastTClientTab = m_TClientSettingsTab;
+		m_SettingsRuntimeMetadata.m_Valid = true;
 	}
 }
 
@@ -928,19 +930,22 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 		CPerfTimer StageTimer;
 		if(!PrewarmOnly)
 		{
+			const float PreviousScrollY = m_SettingsTClientCurrentScrollY;
 			if(m_SettingsTClientScrollRestorePending)
 			{
-				s_ScrollRegion.SetScrollOffsetY(m_SettingsRuntimeCacheMetadata.m_LastScrollY);
+				s_ScrollRegion.SetScrollOffsetY(m_SettingsRuntimeMetadata.m_LastScrollY);
 				m_SettingsTClientScrollRestorePending = false;
 			}
 			s_ScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
 			m_SettingsTClientCurrentScrollY = ScrollOffset.y;
-			m_SettingsRuntimeCacheMetadata.m_LastScrollY = ScrollOffset.y;
-			m_SettingsRuntimeCacheMetadata.m_bValid = true;
+			m_SettingsRuntimeMetadata.m_LastScrollPage = SETTINGS_TCLIENT;
+			m_SettingsRuntimeMetadata.m_LastScrollY = ScrollOffset.y;
+			m_SettingsRuntimeMetadata.m_Valid = true;
+			m_SettingsScrollActive = absolute(ScrollOffset.y - PreviousScrollY) > 0.01f;
 		}
-		else if(m_SettingsRuntimeCacheMetadata.m_bValid)
+		else if(m_SettingsRuntimeMetadata.m_Valid)
 		{
-			ScrollOffset.y = m_SettingsRuntimeCacheMetadata.m_LastScrollY;
+			ScrollOffset.y = m_SettingsRuntimeMetadata.m_LastScrollY;
 		}
 		LogSettingsStage("tclient_settings_scroll_begin", StageTimer);
 	}
@@ -2601,7 +2606,7 @@ bool CMenus::PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView)
 				m_aSettingsTClientSiblingPrewarmed[Tab] = true;
 			continue;
 		}
-		if(PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, Tab, m_SettingsRuntimeCacheMetadata.m_LastScrollY) && Tab >= 0 && Tab < 6)
+		if(PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, Tab, m_SettingsRuntimeMetadata.m_LastScrollY) && Tab >= 0 && Tab < 6)
 			m_aSettingsTClientSiblingPrewarmed[Tab] = true;
 		break;
 	}
@@ -2611,6 +2616,12 @@ bool CMenus::PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView)
 			return false;
 	}
 	return true;
+}
+
+void CMenus::PrepareSettingsRuntimeWarmupPlan()
+{
+	m_SettingsStartupWarmupPlan = BuildSettingsWarmupStartupPlan(m_SettingsRuntimeMetadata, BuildSettingsPageRuntimeRegistry());
+	m_SettingsStartupWarmupCursor = 0;
 }
 
 bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
@@ -2628,49 +2639,42 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		ContentView.HSplitBottom(10.0f, &ContentView, nullptr);
 	}
 
-	const int QmClientTab = m_SettingsRuntimeCacheMetadata.m_LastQmTab >= 0 ? m_SettingsRuntimeCacheMetadata.m_LastQmTab : m_QmClientSettingsTab;
-	const int TClientTab = m_SettingsRuntimeCacheMetadata.m_LastTClientTab >= 0 ? m_SettingsRuntimeCacheMetadata.m_LastTClientTab : m_TClientSettingsTab;
-	static const int s_aPrewarmJobs[] = {
-		SETTINGS_LANGUAGE,
-		SETTINGS_GENERAL,
-		SETTINGS_PLAYER,
-		SETTINGS_TEE,
-		SETTINGS_APPEARANCE,
-		SETTINGS_CONTROLS,
-		SETTINGS_GRAPHICS,
-		SETTINGS_SOUND,
-		SETTINGS_DDNET,
-		SETTINGS_ASSETS,
-		SETTINGS_TCLIENT,
-		SETTINGS_QMCLIENT,
-		-1,
-	};
-	for(int Attempt = 0; Attempt < (int)(sizeof(s_aPrewarmJobs) / sizeof(s_aPrewarmJobs[0])); ++Attempt)
+	if(m_SettingsStartupWarmupPlan.m_vPageJobs.empty() ||
+		m_SettingsStartupWarmupCursor > m_SettingsStartupWarmupPlan.m_vPageJobs.size())
 	{
-		const int JobIndex = m_SettingsRuntimePrewarmCursor;
-		m_SettingsRuntimePrewarmCursor = (m_SettingsRuntimePrewarmCursor + 1) % (int)(sizeof(s_aPrewarmJobs) / sizeof(s_aPrewarmJobs[0]));
-		const int JobPage = s_aPrewarmJobs[JobIndex];
-		if(JobPage == -1)
-		{
-			(void)PrewarmSettingsTClientRuntimeCacheSibling(ContentView);
-			break;
-		}
+		PrepareSettingsRuntimeWarmupPlan();
+	}
 
-		const int PageTab = JobPage == SETTINGS_TCLIENT ? TClientTab : (JobPage == SETTINGS_QMCLIENT ? QmClientTab : -1);
+	const int QmClientTab = m_SettingsRuntimeMetadata.m_LastQmTab >= 0 ? m_SettingsRuntimeMetadata.m_LastQmTab : m_QmClientSettingsTab;
+	const int TClientTab = m_SettingsRuntimeMetadata.m_LastTClientTab >= 0 ? m_SettingsRuntimeMetadata.m_LastTClientTab : m_TClientSettingsTab;
+	if(m_SettingsStartupWarmupCursor < m_SettingsStartupWarmupPlan.m_vPageJobs.size())
+	{
+		const SSettingsWarmupPageJob &Job = m_SettingsStartupWarmupPlan.m_vPageJobs[m_SettingsStartupWarmupCursor];
+		const int JobPage = Job.m_Page;
+		const int PageTab = JobPage == SETTINGS_TCLIENT ? TClientTab : (JobPage == SETTINGS_QMCLIENT ? QmClientTab : Job.m_Tab);
 		const int Slot = SettingsPageRuntimeCacheSlot(JobPage, PageTab);
-		if(Slot < 0)
-			continue;
-		if(m_aSettingsPagePrewarmed[Slot])
-			continue;
-		if(JobPage == SETTINGS_TCLIENT)
+		if(Slot < 0 || m_aSettingsPagePrewarmed[Slot])
 		{
-			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, TClientTab, m_SettingsRuntimeCacheMetadata.m_LastScrollY);
+			++m_SettingsStartupWarmupCursor;
+		}
+		else if(JobPage == SETTINGS_TCLIENT)
+		{
+			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, TClientTab, Job.m_ScrollY);
 			PrewarmSettingsTClient(ContentView);
 			m_aSettingsPagePrewarmed[Slot] = PageReady;
-			break;
+			if(PageReady)
+				++m_SettingsStartupWarmupCursor;
 		}
-		m_aSettingsPagePrewarmed[Slot] = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, m_SettingsRuntimeCacheMetadata.m_LastScrollY);
-		break;
+		else
+		{
+			m_aSettingsPagePrewarmed[Slot] = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, Job.m_ScrollY);
+			if(m_aSettingsPagePrewarmed[Slot])
+				++m_SettingsStartupWarmupCursor;
+		}
+	}
+	else
+	{
+		(void)PrewarmSettingsTClientRuntimeCacheSibling(ContentView);
 	}
 	bool SiblingsReady = true;
 	for(int Tab = 0; Tab < 6; ++Tab)
@@ -2704,25 +2708,49 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 
 void CMenus::LoadSettingsRuntimeCacheMetadata()
 {
-	m_SettingsRuntimeCacheMetadata = {};
-	CSectionLoader::LoadSessionCache(m_SettingsRuntimeCacheMetadata, SETTINGS_RUNTIME_CACHE_METADATA_FILE, Storage());
-	if(m_SettingsRuntimeCacheMetadata.m_LastTClientTab >= 0)
-		m_TClientSettingsTab = m_SettingsRuntimeCacheMetadata.m_LastTClientTab;
-	m_SettingsTClientCurrentScrollY = m_SettingsRuntimeCacheMetadata.m_LastScrollY;
-	m_SettingsTClientScrollRestorePending = m_SettingsRuntimeCacheMetadata.m_bValid;
-	if(m_SettingsRuntimeCacheMetadata.m_LastQmTab >= 0)
-		m_QmClientSettingsTab = m_SettingsRuntimeCacheMetadata.m_LastQmTab;
+	SSessionUiCache SessionCache;
+	CSectionLoader::LoadSessionCache(SessionCache, SETTINGS_RUNTIME_CACHE_METADATA_FILE, Storage());
+	m_SettingsRuntimeMetadata = {};
+	m_SettingsRuntimeMetadata.m_LastPage = SessionCache.m_LastSettingsPage;
+	m_SettingsRuntimeMetadata.m_LastTClientTab = SessionCache.m_LastTClientTab >= 0 ? SessionCache.m_LastTClientTab : 0;
+	m_SettingsRuntimeMetadata.m_LastQmTab = SessionCache.m_LastQmTab >= 0 ? SessionCache.m_LastQmTab : 0;
+	m_SettingsRuntimeMetadata.m_LastScrollPage = SessionCache.m_bValid ? SETTINGS_TCLIENT : -1;
+	m_SettingsRuntimeMetadata.m_LastScrollY = SessionCache.m_LastScrollY;
+	m_SettingsRuntimeMetadata.m_Valid = SessionCache.m_bValid;
+	if(m_SettingsRuntimeMetadata.m_LastPage == SETTINGS_CONFIGS)
+	{
+		m_SettingsRuntimeMetadata.m_LastPage = SETTINGS_QMCLIENT;
+		m_SettingsRuntimeMetadata.m_LastQmTab = QMCLIENT_SETTINGS_TAB_CONFIG;
+	}
+	else if(m_SettingsRuntimeMetadata.m_LastPage == SETTINGS_CONTRIBUTORS)
+	{
+		m_SettingsRuntimeMetadata.m_LastPage = SETTINGS_QMCLIENT;
+		m_SettingsRuntimeMetadata.m_LastQmTab = QMCLIENT_SETTINGS_TAB_CONTRIBUTORS;
+	}
+	if(SessionCache.m_LastTClientTab >= 0)
+		m_TClientSettingsTab = SessionCache.m_LastTClientTab;
+	m_SettingsTClientCurrentScrollY = SessionCache.m_LastScrollY;
+	m_SettingsTClientScrollRestorePending = SessionCache.m_bValid;
+	if(SessionCache.m_LastQmTab >= 0)
+		m_QmClientSettingsTab = SessionCache.m_LastQmTab;
+	PrepareSettingsRuntimeWarmupPlan();
 }
 
 void CMenus::SaveSettingsRuntimeCacheMetadata()
 {
-	if(m_SettingsRuntimeCacheMetadata.m_LastSettingsPage < 0 && g_Config.m_UiSettingsPage >= 0)
-		m_SettingsRuntimeCacheMetadata.m_LastSettingsPage = g_Config.m_UiSettingsPage;
-	m_SettingsRuntimeCacheMetadata.m_LastQmTab = m_QmClientSettingsTab;
-	m_SettingsRuntimeCacheMetadata.m_LastTClientTab = m_TClientSettingsTab;
-	if(m_SettingsRuntimeCacheMetadata.m_LastSettingsPage >= 0)
-		m_SettingsRuntimeCacheMetadata.m_bValid = true;
-	CSectionLoader::SaveSessionCache(m_SettingsRuntimeCacheMetadata, SETTINGS_RUNTIME_CACHE_METADATA_FILE, Storage());
+	if(m_SettingsRuntimeMetadata.m_LastPage < 0 && g_Config.m_UiSettingsPage >= 0)
+		m_SettingsRuntimeMetadata.m_LastPage = g_Config.m_UiSettingsPage;
+	m_SettingsRuntimeMetadata.m_LastQmTab = m_QmClientSettingsTab;
+	m_SettingsRuntimeMetadata.m_LastTClientTab = m_TClientSettingsTab;
+	if(m_SettingsRuntimeMetadata.m_LastPage >= 0)
+		m_SettingsRuntimeMetadata.m_Valid = true;
+	SSessionUiCache SessionCache;
+	SessionCache.m_LastSettingsPage = m_SettingsRuntimeMetadata.m_LastPage;
+	SessionCache.m_LastTClientTab = m_SettingsRuntimeMetadata.m_LastTClientTab;
+	SessionCache.m_LastQmTab = m_SettingsRuntimeMetadata.m_LastQmTab;
+	SessionCache.m_LastScrollY = m_SettingsRuntimeMetadata.m_LastScrollPage == SETTINGS_TCLIENT ? m_SettingsRuntimeMetadata.m_LastScrollY : 0.0f;
+	SessionCache.m_bValid = m_SettingsRuntimeMetadata.m_Valid;
+	CSectionLoader::SaveSessionCache(SessionCache, SETTINGS_RUNTIME_CACHE_METADATA_FILE, Storage());
 }
 
 void CMenus::RenderSettingsTClientBindWheel(CUIRect MainView)
@@ -2901,7 +2929,10 @@ void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 	ScrollParams.m_ScrollbarMargin = 5.0f;
 	{
 		CPerfTimer LayoutTimer;
+		static float s_PrevChatBindsScrollY = 0.0f;
 		s_ScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
+		m_SettingsScrollActive = m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevChatBindsScrollY) > 0.01f;
+		s_PrevChatBindsScrollY = ScrollOffset.y;
 		char aExtra[96];
 		str_format(aExtra, sizeof(aExtra), "scroll_y=%.1f", ScrollOffset.y);
 		LogTClientPerfStageEx("tclient_chatbinds", "layout", ETClientSettingsPerfStage::SECTION_LAYOUT, LayoutTimer.ElapsedMs(), false, aExtra);
@@ -4787,7 +4818,10 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 	ScrollParams.m_ScrollUnit = 60.0f;
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
 	CPerfTimer ListTimer;
+	static float s_PrevConfigsScrollY = 0.0f;
 	s_ScrollRegion.Begin(&ListArea, &ScrollOffset, &ScrollParams);
+	m_SettingsScrollActive = m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevConfigsScrollY) > 0.01f;
+	s_PrevConfigsScrollY = ScrollOffset.y;
 
 	ListArea.y += ScrollOffset.y;
 	ListArea.VSplitRight(5.0f, &ListArea, nullptr);

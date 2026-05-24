@@ -1945,6 +1945,16 @@ void CMenus::Render()
 			else if(m_MenuPage == PAGE_SETTINGS)
 			{
 				RenderSettings(MainView);
+				if(g_Config.m_QmSettingsPrewarm != 0 &&
+					Ui()->ActiveItem() == nullptr &&
+					Ui()->HotItem() == nullptr &&
+					!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
+					!Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) &&
+					!Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) &&
+					!Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT) &&
+					!m_SettingsPageSwitchActive &&
+					!m_SettingsScrollActive)
+					(void)PrewarmSettingsRuntimeCaches(MainView);
 			}
 			else
 			{
@@ -2033,6 +2043,16 @@ void CMenus::Render()
 			else if(m_GamePage == PAGE_SETTINGS)
 			{
 				RenderSettings(MainView);
+				if(g_Config.m_QmSettingsPrewarm != 0 &&
+					Ui()->ActiveItem() == nullptr &&
+					Ui()->HotItem() == nullptr &&
+					!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
+					!Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) &&
+					!Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) &&
+					!Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT) &&
+					!m_SettingsPageSwitchActive &&
+					!m_SettingsScrollActive)
+					(void)PrewarmSettingsRuntimeCaches(MainView);
 			}
 			else
 			{
@@ -3161,6 +3181,7 @@ void CMenus::DestroySettingsPageRuntimeCaches()
 		Prewarmed = false;
 	for(bool &Prewarmed : m_aSettingsTClientSiblingPrewarmed)
 		Prewarmed = false;
+	m_SettingsStartupWarmupCursor = 0;
 	m_SettingsRuntimePrewarmCursor = 0;
 }
 

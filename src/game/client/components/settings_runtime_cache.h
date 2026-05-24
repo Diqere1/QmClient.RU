@@ -1,6 +1,7 @@
 #ifndef GAME_CLIENT_COMPONENTS_SETTINGS_RUNTIME_CACHE_H
 #define GAME_CLIENT_COMPONENTS_SETTINGS_RUNTIME_CACHE_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -60,11 +61,48 @@ struct SSettingsPageRuntimeRegistry
 	std::vector<int> m_vPages;
 };
 
+struct SSettingsRuntimeCacheKey
+{
+	uint64_t m_LanguageHash = 0;
+	uint64_t m_FontGeneration = 0;
+	uint64_t m_BackendGeneration = 0;
+	int m_WindowWidth = 0;
+	int m_WindowHeight = 0;
+	int m_UiScale = 100;
+	uint64_t m_ConfigHash = 0;
+};
+
+struct SSettingsRuntimeCacheMetadata
+{
+	int m_LastPage = -1;
+	int m_LastTClientTab = 0;
+	int m_LastQmTab = 0;
+	int m_LastScrollPage = -1;
+	float m_LastScrollY = 0.0f;
+	bool m_Valid = false;
+};
+
+struct SSettingsWarmupPageJob
+{
+	int m_Page = -1;
+	int m_Tab = -1;
+	float m_ScrollY = 0.0f;
+};
+
+struct SSettingsWarmupStartupPlan
+{
+	std::vector<SSettingsWarmupPageJob> m_vPageJobs;
+};
+
 constexpr int SETTINGS_PAGE_RUNTIME_CACHE_SLOTS = 32;
 
 SSettingsPageRuntimeRegistry BuildSettingsPageRuntimeRegistry();
 bool SettingsPageRuntimeRegistryContains(const SSettingsPageRuntimeRegistry &Registry, int Page);
 int SettingsPageRuntimeCacheSlot(int Page, int Tab);
+bool SettingsRuntimeCacheKeyMatches(const SSettingsRuntimeCacheKey &A, const SSettingsRuntimeCacheKey &B);
+bool SettingsPageUsesRuntimeScroll(int Page);
+SSettingsWarmupStartupPlan BuildSettingsWarmupStartupPlan(const SSettingsRuntimeCacheMetadata &Metadata, const SSettingsPageRuntimeRegistry &Registry);
+bool SettingsWarmupPlanContainsPage(const SSettingsWarmupStartupPlan &Plan, int Page);
 bool SettingsWarmupConsumeBudget(SSettingsWarmupFrameBudget &Budget, ESettingsWarmupCost Cost);
 const char *SettingsWarmupMissReasonName(ESettingsWarmupMissReason Reason);
 const char *SettingsTClientPerfStageName(ETClientSettingsPerfStage Stage);

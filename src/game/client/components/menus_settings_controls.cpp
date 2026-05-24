@@ -187,10 +187,13 @@ void CMenusSettingsControls::Render(CUIRect MainView)
 	}
 
 	vec2 ScrollOffset(0.0f, 0.0f);
+	static float s_PrevSettingsScrollY = 0.0f;
 	CScrollRegionParams ScrollParams;
 	ScrollParams.m_ScrollUnit = 6.0f * BUTTON_HEIGHT;
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
 	m_SettingsScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
+	GameClient()->m_Menus.m_SettingsScrollActive = GameClient()->m_Menus.m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevSettingsScrollY) > 0.01f;
+	s_PrevSettingsScrollY = ScrollOffset.y;
 	MainView.y += ScrollOffset.y;
 
 	CUIRect LeftColumn, RightColumn;
