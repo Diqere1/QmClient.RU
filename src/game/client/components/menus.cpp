@@ -217,6 +217,26 @@ namespace
 		return AnimRuntime.GetValue(NodeKey, Property, Target);
 	}
 
+	CUIRect ResolveUiAnimValueRect(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, const CUIRect &Target, float DurationSec, EEasing Easing)
+	{
+		CUIRect Out;
+		Out.x = ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::POS_X, Target.x, DurationSec, Easing);
+		Out.y = ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::POS_Y, Target.y, DurationSec, Easing);
+		Out.w = ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::WIDTH, Target.w, DurationSec, Easing);
+		Out.h = ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::HEIGHT, Target.h, DurationSec, Easing);
+		return Out;
+	}
+
+	ColorRGBA ResolveUiAnimValueColor(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, const ColorRGBA &Target, float DurationSec, EEasing Easing)
+	{
+		ColorRGBA Out;
+		Out.r = ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::COLOR_R, Target.r, DurationSec, Easing);
+		Out.g = ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::COLOR_G, Target.g, DurationSec, Easing);
+		Out.b = ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::COLOR_B, Target.b, DurationSec, Easing);
+		Out.a = ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::COLOR_A, Target.a, DurationSec, Easing);
+		return Out;
+	}
+
 	bool PerfDebugEnabled()
 	{
 		return g_Config.m_QmPerfDebug != 0;
