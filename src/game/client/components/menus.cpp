@@ -3181,6 +3181,8 @@ void CMenus::DestroySettingsPageRuntimeCaches()
 		Prewarmed = false;
 	for(bool &Prewarmed : m_aSettingsTClientSiblingPrewarmed)
 		Prewarmed = false;
+	for(bool &Prewarmed : m_aSettingsQmClientSiblingPrewarmed)
+		Prewarmed = false;
 	m_SettingsStartupWarmupCursor = 0;
 	m_SettingsRuntimePrewarmCursor = 0;
 }
@@ -3284,6 +3286,44 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	pCache->m_State.m_Height = Height;
 	pCache->m_State.m_Valid = true;
 	pCache->m_State.m_DrawnOnce = false;
+	return true;
+}
+
+bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
+{
+	constexpr int ResourceWarmRows = 12;
+	if(Page == SETTINGS_LANGUAGE)
+	{
+		std::vector<int> vCountryCodes;
+		const int NumLanguages = (int)g_Localization.Languages().size();
+		vCountryCodes.reserve(minimum(NumLanguages, ResourceWarmRows) + 1);
+		for(int i = 0; i < NumLanguages; ++i)
+		{
+			const auto &Language = g_Localization.Languages()[i];
+			if(str_comp(Language.m_Filename.c_str(), g_Config.m_ClLanguagefile) == 0)
+			{
+				vCountryCodes.push_back(Language.m_CountryCode);
+				break;
+			}
+		}
+		for(int i = 0; i < minimum(NumLanguages, ResourceWarmRows); ++i)
+			vCountryCodes.push_back(g_Localization.Languages()[i].m_CountryCode);
+		return GameClient()->m_CountryFlags.PrewarmByCountryCodesReady(BuildSettingsCountryFlagWarmupPlan(vCountryCodes));
+	}
+	else if(Page == SETTINGS_PLAYER)
+	{
+		std::vector<int> vIndices;
+		vIndices.reserve(ResourceWarmRows + 1);
+		for(int i = 0; i < minimum((int)GameClient()->m_CountryFlags.Num(), ResourceWarmRows); ++i)
+			vIndices.push_back(i);
+		return GameClient()->m_CountryFlags.PrewarmByIndicesReady(vIndices);
+	}
+	else if(Page == SETTINGS_TEE)
+	{
+		const bool PlayerReady = GameClient()->m_Skins.PrewarmPlayerPreviewReady(0, ResourceWarmRows);
+		const bool DummyReady = GameClient()->m_Skins.PrewarmPlayerPreviewReady(1, ResourceWarmRows);
+		return PlayerReady && DummyReady;
+	}
 	return true;
 }
 

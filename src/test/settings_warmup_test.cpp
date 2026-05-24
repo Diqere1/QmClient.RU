@@ -1,5 +1,6 @@
 #include <game/client/components/settings_warmup.h>
 #include <game/client/components/menus.h>
+#include <game/client/components/settings_resource_jobs.h>
 
 #include <gtest/gtest.h>
 
@@ -182,7 +183,8 @@ TEST(SettingsWarmup, RuntimeFboWarmupRunsBeforeTextOnlyFallback)
 
 TEST(SettingsWarmup, LoadingRuntimeCacheWarmupIncludesRegisteredPagesAndTClientTabs)
 {
-	EXPECT_EQ(CMenus::SettingsRuntimeCacheWarmupSteps(), (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() + 6);
+	EXPECT_EQ(CMenus::SettingsRuntimeCacheWarmupSteps(), (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() +
+		6 + (CMenus::NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1));
 }
 
 TEST(SettingsRuntimeCache, RegistersAllSettingsPages)
@@ -340,4 +342,67 @@ TEST(SettingsRuntimeCache, StartupPlanCoversLastPageAndAllRegisteredPages)
 	EXPECT_EQ(Plan.m_vPageJobs[0].m_Page, CMenus::SETTINGS_ASSETS);
 	for(int Page : BuildSettingsPageRuntimeRegistry().m_vPages)
 		EXPECT_TRUE(SettingsWarmupPlanContainsPage(Plan, Page));
+}
+
+TEST(SettingsRuntimeCache, PageCacheSlotsRejectInvalidPersistedTabs)
+{
+	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_TCLIENT, -1), 10);
+	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_TCLIENT, 99), -1);
+	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_QMCLIENT, -1), 16);
+	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_QMCLIENT, CMenus::NUMBER_OF_QMCLIENT_SETTINGS_TABS), -1);
+}
+
+TEST(SettingsResourceJobs, SkinPlanKeepsSelectedFavoritesThenSorted)
+{
+	std::vector<SSettingsSkinListEntry> vEntries = {
+		{"zeta", false, false},
+		{"alpha", false, true},
+		{"selected", true, false},
+	};
+	const SSettingsSkinListPlan Plan = BuildSettingsSkinListPlan(vEntries);
+
+	ASSERT_EQ(Plan.m_vNames.size(), 3u);
+	EXPECT_EQ(Plan.m_vNames[0], "selected");
+	EXPECT_EQ(Plan.m_vNames[1], "alpha");
+	EXPECT_EQ(Plan.m_vNames[2], "zeta");
+}
+
+TEST(SettingsResourceJobs, CountryFlagPlanDeduplicatesAndKeepsOrder)
+{
+	const std::vector<int> vPlan = BuildSettingsCountryFlagWarmupPlan({156, 840, 156, -1});
+	ASSERT_EQ(vPlan.size(), 3u);
+	EXPECT_EQ(vPlan[0], 156);
+	EXPECT_EQ(vPlan[1], 840);
+	EXPECT_EQ(vPlan[2], -1);
+}
+
+TEST(SettingsResourceJobs, ResourceMergeBudgetStopsBatchWork)
+{
+	SSettingsResourceMergeBudget Budget;
+	Budget.m_MaxListEntries = 2;
+	Budget.m_MaxGpuUploads = 1;
+
+	EXPECT_TRUE(SettingsResourceConsumeMergeEntry(Budget));
+	EXPECT_TRUE(SettingsResourceConsumeMergeEntry(Budget));
+	EXPECT_FALSE(SettingsResourceConsumeMergeEntry(Budget));
+	EXPECT_EQ(Budget.m_StopReason, ESettingsWarmupStopReason::MERGE_BUDGET);
+
+	Budget.m_StopReason = ESettingsWarmupStopReason::NONE;
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(Budget));
+	EXPECT_FALSE(SettingsResourceConsumeGpuUpload(Budget));
+	EXPECT_EQ(Budget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
+}
+
+TEST(SettingsResourceJobs, SkinSnapshotRejectsStaleGeneration)
+{
+	SSettingsSkinListPlanResult Result;
+	Result.m_Generation = 7;
+	EXPECT_TRUE(SettingsSkinListPlanGenerationMatches(Result, 7));
+	EXPECT_FALSE(SettingsSkinListPlanGenerationMatches(Result, 8));
+}
+
+TEST(SettingsResourceJobs, CountryFlagPlanHandlesEmptyInput)
+{
+	const std::vector<int> vPlan = BuildSettingsCountryFlagWarmupPlan({});
+	EXPECT_TRUE(vPlan.empty());
 }

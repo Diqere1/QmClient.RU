@@ -134,7 +134,24 @@ public:
 	{
 		ASSET_LOAD_STATE_UNLOADED = 0,
 		ASSET_LOAD_STATE_LOADING,
+		ASSET_LOAD_STATE_MERGING,
 		ASSET_LOAD_STATE_LOADED,
+	};
+
+	struct SSettingsAssetMergeEntry
+	{
+		char m_aName[IO_MAX_PATH_LENGTH];
+		bool m_IsDir = false;
+		EEntityBgHierarchyEntrySource m_Source = EEntityBgHierarchyEntrySource::LOCAL;
+	};
+
+	struct SSettingsAssetPendingMerge
+	{
+		int m_Tab = -1;
+		int m_Generation = 0;
+		size_t m_Cursor = 0;
+		bool m_ListReady = false;
+		std::vector<SSettingsAssetMergeEntry> m_vEntries;
 	};
 
 private:
@@ -151,6 +168,8 @@ private:
 		ASSET_LOAD_STATE_UNLOADED,
 	};
 	std::shared_ptr<IJob> m_apAssetLoadJobs[NUMBER_OF_ASSETS_TABS];
+	SSettingsAssetPendingMerge m_aAssetPendingMerges[NUMBER_OF_ASSETS_TABS];
+	int m_aAssetLoadGenerations[NUMBER_OF_ASSETS_TABS] = {};
 
 public:
 	struct SCustomItem
@@ -1739,7 +1758,7 @@ public:
 	void ShowQuitPopup();
 	bool PrewarmSettingsRuntimeCaches(CUIRect MainView);
 	void PrepareSettingsRuntimeWarmupPlan();
-	static int SettingsRuntimeCacheWarmupSteps() { return (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() + 6; }
+	static int SettingsRuntimeCacheWarmupSteps() { return (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() + 6 + (NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1); }
 	void LoadSettingsRuntimeCacheMetadata();
 	void SaveSettingsRuntimeCacheMetadata();
 
@@ -1762,6 +1781,7 @@ private:
 	SSettingsPageRuntimeCache m_aSettingsPageRuntimeCaches[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS];
 	bool m_aSettingsPagePrewarmed[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS] = {};
 	bool m_aSettingsTClientSiblingPrewarmed[6] = {};
+	bool m_aSettingsQmClientSiblingPrewarmed[NUMBER_OF_QMCLIENT_SETTINGS_TABS] = {};
 	int m_SettingsRuntimePrewarmCursor = 0;
 
 	CCommunityIcons m_CommunityIcons;
@@ -1786,9 +1806,11 @@ private:
 	void RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly = false);
 	void PrewarmSettingsTClient(CUIRect MainView);
 	bool PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView);
+	bool PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView);
 	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
 	bool DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
 	void DestroySettingsPageRuntimeCaches();
+	bool PrewarmSettingsPageResources(int Page, int Tab);
 	SSettingsPageRuntimeCache *GetSettingsPageRuntimeCache(int Page, int Tab);
 	void RenderSettingsTClientBindWheel(CUIRect MainView);
 	void RenderSettingsTClientChatBinds(CUIRect MainView);

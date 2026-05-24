@@ -78,6 +78,19 @@ extern bool g_CommandBindCacheInitialized;
 
 namespace
 {
+	int CanonicalizePersistedTClientTab(int Tab)
+	{
+		if(Tab < 0 || Tab >= NUMBER_OF_TCLIENT_TABS)
+			return TCLIENT_TAB_SETTINGS;
+		return Tab;
+	}
+
+	int CanonicalizePersistedQmClientTab(int Tab)
+	{
+		if(Tab < 0 || Tab >= CMenus::NUMBER_OF_QMCLIENT_SETTINGS_TABS)
+			return CMenus::QMCLIENT_SETTINGS_TAB_VISUAL;
+		return Tab;
+	}
 
 	bool PerfDebugEnabled()
 	{
@@ -2618,6 +2631,32 @@ bool CMenus::PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView)
 	return true;
 }
 
+bool CMenus::PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView)
+{
+	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+		return true;
+	static int s_NextQmClientRuntimeCachePrewarmTab = QMCLIENT_SETTINGS_TAB_VISUAL;
+	for(int Attempt = 0; Attempt < NUMBER_OF_QMCLIENT_SETTINGS_TABS; ++Attempt)
+	{
+		const int Tab = s_NextQmClientRuntimeCachePrewarmTab;
+		s_NextQmClientRuntimeCachePrewarmTab = (s_NextQmClientRuntimeCachePrewarmTab + 1) % NUMBER_OF_QMCLIENT_SETTINGS_TABS;
+		if(Tab == m_QmClientSettingsTab)
+		{
+			m_aSettingsQmClientSiblingPrewarmed[Tab] = true;
+			continue;
+		}
+		if(PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_QMCLIENT, Tab, 0.0f))
+			m_aSettingsQmClientSiblingPrewarmed[Tab] = true;
+		break;
+	}
+	for(int Tab = 0; Tab < NUMBER_OF_QMCLIENT_SETTINGS_TABS; ++Tab)
+	{
+		if(!m_aSettingsQmClientSiblingPrewarmed[Tab])
+			return false;
+	}
+	return true;
+}
+
 void CMenus::PrepareSettingsRuntimeWarmupPlan()
 {
 	m_SettingsStartupWarmupPlan = BuildSettingsWarmupStartupPlan(m_SettingsRuntimeMetadata, BuildSettingsPageRuntimeRegistry());
@@ -2645,8 +2684,8 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		PrepareSettingsRuntimeWarmupPlan();
 	}
 
-	const int QmClientTab = m_SettingsRuntimeMetadata.m_LastQmTab >= 0 ? m_SettingsRuntimeMetadata.m_LastQmTab : m_QmClientSettingsTab;
-	const int TClientTab = m_SettingsRuntimeMetadata.m_LastTClientTab >= 0 ? m_SettingsRuntimeMetadata.m_LastTClientTab : m_TClientSettingsTab;
+	const int QmClientTab = CanonicalizePersistedQmClientTab(m_SettingsRuntimeMetadata.m_LastQmTab >= 0 ? m_SettingsRuntimeMetadata.m_LastQmTab : m_QmClientSettingsTab);
+	const int TClientTab = CanonicalizePersistedTClientTab(m_SettingsRuntimeMetadata.m_LastTClientTab >= 0 ? m_SettingsRuntimeMetadata.m_LastTClientTab : m_TClientSettingsTab);
 	if(m_SettingsStartupWarmupCursor < m_SettingsStartupWarmupPlan.m_vPageJobs.size())
 	{
 		const SSettingsWarmupPageJob &Job = m_SettingsStartupWarmupPlan.m_vPageJobs[m_SettingsStartupWarmupCursor];
@@ -2667,7 +2706,9 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		}
 		else
 		{
-			m_aSettingsPagePrewarmed[Slot] = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, Job.m_ScrollY);
+			const bool ResourcesReady = PrewarmSettingsPageResources(JobPage, PageTab);
+			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, Job.m_ScrollY);
+			m_aSettingsPagePrewarmed[Slot] = ResourcesReady && PageReady;
 			if(m_aSettingsPagePrewarmed[Slot])
 				++m_SettingsStartupWarmupCursor;
 		}
@@ -2675,10 +2716,14 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 	else
 	{
 		(void)PrewarmSettingsTClientRuntimeCacheSibling(ContentView);
+		(void)PrewarmSettingsQmClientRuntimeCacheSibling(ContentView);
 	}
-	bool SiblingsReady = true;
+	bool TClientSiblingsReady = true;
 	for(int Tab = 0; Tab < 6; ++Tab)
-		SiblingsReady = SiblingsReady && m_aSettingsTClientSiblingPrewarmed[Tab];
+		TClientSiblingsReady = TClientSiblingsReady && m_aSettingsTClientSiblingPrewarmed[Tab];
+	bool QmClientSiblingsReady = true;
+	for(int Tab = 0; Tab < NUMBER_OF_QMCLIENT_SETTINGS_TABS; ++Tab)
+		QmClientSiblingsReady = QmClientSiblingsReady && m_aSettingsQmClientSiblingPrewarmed[Tab];
 	const int LanguageSlot = SettingsPageRuntimeCacheSlot(SETTINGS_LANGUAGE, -1);
 	const int GeneralSlot = SettingsPageRuntimeCacheSlot(SETTINGS_GENERAL, -1);
 	const int PlayerSlot = SettingsPageRuntimeCacheSlot(SETTINGS_PLAYER, -1);
@@ -2703,7 +2748,8 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		m_aSettingsPagePrewarmed[AssetsSlot] &&
 		m_aSettingsPagePrewarmed[TClientSlot] &&
 		m_aSettingsPagePrewarmed[QmClientSlot] &&
-		SiblingsReady;
+		TClientSiblingsReady &&
+		QmClientSiblingsReady;
 }
 
 void CMenus::LoadSettingsRuntimeCacheMetadata()
@@ -2712,8 +2758,8 @@ void CMenus::LoadSettingsRuntimeCacheMetadata()
 	CSectionLoader::LoadSessionCache(SessionCache, SETTINGS_RUNTIME_CACHE_METADATA_FILE, Storage());
 	m_SettingsRuntimeMetadata = {};
 	m_SettingsRuntimeMetadata.m_LastPage = SessionCache.m_LastSettingsPage;
-	m_SettingsRuntimeMetadata.m_LastTClientTab = SessionCache.m_LastTClientTab >= 0 ? SessionCache.m_LastTClientTab : 0;
-	m_SettingsRuntimeMetadata.m_LastQmTab = SessionCache.m_LastQmTab >= 0 ? SessionCache.m_LastQmTab : 0;
+	m_SettingsRuntimeMetadata.m_LastTClientTab = CanonicalizePersistedTClientTab(SessionCache.m_LastTClientTab >= 0 ? SessionCache.m_LastTClientTab : 0);
+	m_SettingsRuntimeMetadata.m_LastQmTab = CanonicalizePersistedQmClientTab(SessionCache.m_LastQmTab >= 0 ? SessionCache.m_LastQmTab : 0);
 	m_SettingsRuntimeMetadata.m_LastScrollPage = SessionCache.m_bValid ? SETTINGS_TCLIENT : -1;
 	m_SettingsRuntimeMetadata.m_LastScrollY = SessionCache.m_LastScrollY;
 	m_SettingsRuntimeMetadata.m_Valid = SessionCache.m_bValid;
@@ -2728,11 +2774,11 @@ void CMenus::LoadSettingsRuntimeCacheMetadata()
 		m_SettingsRuntimeMetadata.m_LastQmTab = QMCLIENT_SETTINGS_TAB_CONTRIBUTORS;
 	}
 	if(SessionCache.m_LastTClientTab >= 0)
-		m_TClientSettingsTab = SessionCache.m_LastTClientTab;
+		m_TClientSettingsTab = CanonicalizePersistedTClientTab(SessionCache.m_LastTClientTab);
 	m_SettingsTClientCurrentScrollY = SessionCache.m_LastScrollY;
 	m_SettingsTClientScrollRestorePending = SessionCache.m_bValid;
 	if(SessionCache.m_LastQmTab >= 0)
-		m_QmClientSettingsTab = SessionCache.m_LastQmTab;
+		m_QmClientSettingsTab = CanonicalizePersistedQmClientTab(SessionCache.m_LastQmTab);
 	PrepareSettingsRuntimeWarmupPlan();
 }
 
@@ -2740,8 +2786,8 @@ void CMenus::SaveSettingsRuntimeCacheMetadata()
 {
 	if(m_SettingsRuntimeMetadata.m_LastPage < 0 && g_Config.m_UiSettingsPage >= 0)
 		m_SettingsRuntimeMetadata.m_LastPage = g_Config.m_UiSettingsPage;
-	m_SettingsRuntimeMetadata.m_LastQmTab = m_QmClientSettingsTab;
-	m_SettingsRuntimeMetadata.m_LastTClientTab = m_TClientSettingsTab;
+	m_SettingsRuntimeMetadata.m_LastQmTab = CanonicalizePersistedQmClientTab(m_QmClientSettingsTab);
+	m_SettingsRuntimeMetadata.m_LastTClientTab = CanonicalizePersistedTClientTab(m_TClientSettingsTab);
 	if(m_SettingsRuntimeMetadata.m_LastPage >= 0)
 		m_SettingsRuntimeMetadata.m_Valid = true;
 	SSessionUiCache SessionCache;

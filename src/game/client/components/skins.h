@@ -10,6 +10,7 @@
 #include <engine/shared/jobs.h>
 
 #include <game/client/component.h>
+#include <game/client/components/settings_resource_jobs.h>
 #include <game/client/skin.h>
 
 #include <array>
@@ -242,6 +243,8 @@ public:
 	void Refresh(TSkinLoadedCallback &&SkinLoadedCallback);
 	CSkinLoadingStats LoadingStats() const;
 	CSkinList &SkinList();
+	void PrewarmByNames(const std::vector<std::string> &vNames, bool Immediate = false);
+	bool PrewarmPlayerPreviewReady(int Dummy, int MaxEntries);
 
 	const CSkinContainer *FindContainerOrNullptr(const char *pName);
 	const CSkin *FindOrNullptr(const char *pName);
@@ -338,6 +341,62 @@ private:
 		std::shared_ptr<CHttpRequest> m_pGetRequest GUARDED_BY(m_Lock);
 	};
 
+	struct SSkinListSnapshotEntry
+	{
+		std::string m_Name;
+		bool m_SelectedMain = false;
+		bool m_SelectedDummy = false;
+		bool m_Favorite = false;
+		bool m_NotFound = false;
+		bool m_Special = false;
+	};
+
+	class CSkinListPlanJob : public IJob
+	{
+	public:
+		CSkinListPlanJob(std::vector<SSkinListSnapshotEntry> vEntries, std::string Filter, int Generation);
+
+		struct SResult
+		{
+			int m_Generation = 0;
+			int m_UnfilteredCount = 0;
+			SSettingsSkinListPlan m_Plan;
+			std::string m_Filter;
+		};
+
+		const SResult &Result() const { return m_Result; }
+
+	protected:
+		void Run() override;
+
+	private:
+		std::vector<SSkinListSnapshotEntry> m_vEntries;
+		std::string m_Filter;
+		SResult m_Result;
+	};
+
+	class CSkinDirectoryScanJob : public IJob
+	{
+	public:
+		CSkinDirectoryScanJob(IStorage *pStorage);
+
+		struct SResult
+		{
+			std::vector<std::pair<std::string, int>> m_vEntries;
+		};
+
+		const SResult &Result() const { return m_Result; }
+
+	protected:
+		void Run() override;
+
+	private:
+		static int ScanCallback(const char *pName, int IsDir, int StorageType, void *pUser);
+
+		IStorage *m_pStorage;
+		SResult m_Result;
+	};
+
 	std::unordered_map<std::string, std::unique_ptr<CSkinContainer>> m_Skins;
 	std::optional<std::chrono::nanoseconds> m_ContainerUpdateTime;
 	/**
@@ -347,6 +406,14 @@ private:
 	std::list<std::string> m_SkinsUsageList;
 
 	CSkinList m_SkinList;
+	std::shared_ptr<CSkinDirectoryScanJob> m_pSkinDirectoryScanJob;
+	std::shared_ptr<CSkinListPlanJob> m_pSkinListPlanJob;
+	std::vector<std::string> m_vPendingSkinListMergeNames;
+	size_t m_SkinListMergeCursor = 0;
+	int m_PendingSkinListUnfilteredCount = 0;
+	int m_SkinListPlanGeneration = 0;
+	std::vector<std::pair<std::string, int>> m_vPendingSkinDirectoryEntries;
+	size_t m_SkinDirectoryMergeCursor = 0;
 	std::set<std::string> m_Favorites;
 	std::array<std::vector<CSkinQueueEntry>, NUM_DUMMIES> m_aSkinQueue;
 	std::array<std::vector<CSkinQueuePreset>, NUM_DUMMIES> m_aSkinQueuePresets;
@@ -383,6 +450,10 @@ private:
 	void UpdateUnloadSkins(CSkinLoadingStats &Stats);
 	void UpdateStartLoading(CSkinLoadingStats &Stats);
 	void UpdateFinishLoading(CSkinLoadingStats &Stats, std::chrono::nanoseconds StartTime, std::chrono::nanoseconds MaxTime);
+	void QueueSkinDirectoryScanJob();
+	void ProcessSkinDirectoryScanJob();
+	void QueueSkinListPlanJob();
+	void ProcessSkinListPlanJob();
 
 	static void ConAddFavoriteSkin(IConsole::IResult *pResult, void *pUserData);
 	static void ConRemFavoriteSkin(IConsole::IResult *pResult, void *pUserData);

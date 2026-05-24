@@ -14,6 +14,25 @@
 #include <engine/storage.h>
 
 #include <game/client/gameclient.h>
+#include <game/client/components/settings_runtime_cache.h>
+
+namespace
+{
+	bool CountryFlagsPerfDebugEnabled()
+	{
+		return g_Config.m_QmPerfDebug != 0;
+	}
+
+	void LogCountryFlagsPerfStage(const char *pStage, const char *pExtra)
+	{
+		if(!CountryFlagsPerfDebugEnabled())
+			return;
+		if(pExtra != nullptr && pExtra[0] != '\0')
+			dbg_msg("perf/countryflags", "stage=%s %s", pStage, pExtra);
+		else
+			dbg_msg("perf/countryflags", "stage=%s", pStage);
+	}
+}
 
 CCountryFlags::CCountryFlagLoadJob::CCountryFlagLoadJob(const char *pPath, int CountryCode, IStorage *pStorage) :
 	m_Path(pPath),
@@ -151,6 +170,7 @@ void CCountryFlags::ProcessCompletedJobs()
 
 		if(!GameClient()->GpuUploadLimiter()->CanUpload())
 		{
+			LogCountryFlagsPerfStage("countryflags_gpu_upload_budget", SettingsWarmupMissReasonName(ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET));
 			break;
 		}
 
@@ -221,6 +241,46 @@ const CCountryFlags::CCountryFlag &CCountryFlags::GetByIndex(size_t Index) const
 {
 	const_cast<CCountryFlags *>(this)->StartFlagLoadJob(Index);
 	return m_vCountryFlags[Index % m_vCountryFlags.size()];
+}
+
+void CCountryFlags::PrewarmByCountryCodes(const std::vector<int> &vCountryCodes)
+{
+	for(int CountryCode : vCountryCodes)
+	{
+		size_t Index = m_aCodeIndexLUT[maximum(0, (CountryCode - CODE_LB) % CODE_RANGE)];
+		StartFlagLoadJob((int)Index);
+	}
+}
+
+void CCountryFlags::PrewarmByIndices(const std::vector<int> &vIndices)
+{
+	for(int Index : vIndices)
+		StartFlagLoadJob(Index);
+}
+
+bool CCountryFlags::PrewarmByCountryCodesReady(const std::vector<int> &vCountryCodes)
+{
+	PrewarmByCountryCodes(vCountryCodes);
+	ProcessCompletedJobs();
+	for(int CountryCode : vCountryCodes)
+	{
+		size_t Index = m_aCodeIndexLUT[maximum(0, (CountryCode - CODE_LB) % CODE_RANGE)];
+		if(Index >= m_vCountryFlags.size() || !m_vCountryFlags[Index].m_Loaded)
+			return false;
+	}
+	return true;
+}
+
+bool CCountryFlags::PrewarmByIndicesReady(const std::vector<int> &vIndices)
+{
+	PrewarmByIndices(vIndices);
+	ProcessCompletedJobs();
+	for(int Index : vIndices)
+	{
+		if(Index < 0 || Index >= (int)m_vCountryFlags.size() || !m_vCountryFlags[Index].m_Loaded)
+			return false;
+	}
+	return true;
 }
 
 void CCountryFlags::Render(const CCountryFlag &Flag, ColorRGBA Color, float x, float y, float w, float h)

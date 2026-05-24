@@ -2,6 +2,7 @@
 #include "assets_resource_registry.h"
 #include "background.h"
 #include "menus.h"
+#include "settings_resource_jobs.h"
 
 #include <base/lock.h>
 #include <base/perf_timer.h>
@@ -621,6 +622,15 @@ public:
 
 	EAssetType GetType() const { return m_Type; }
 };
+
+static CMenus::SSettingsAssetMergeEntry AssetMergeEntryFromJobEntry(const CAssetListLoadJob::SAssetEntry &Entry)
+{
+	CMenus::SSettingsAssetMergeEntry MergeEntry;
+	str_copy(MergeEntry.m_aName, Entry.m_aName, sizeof(MergeEntry.m_aName));
+	MergeEntry.m_IsDir = Entry.m_IsDir;
+	MergeEntry.m_Source = Entry.m_Source;
+	return MergeEntry;
+}
 
 static bool LoadFileToBuffer(IStorage *pStorage, const char *pFilename, int StorageType, std::vector<uint8_t> &vBuffer)
 {
@@ -2745,185 +2755,166 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		m_aaCustomPreviewDecodeQueue[s_CurCustomTab].clear();
 		m_aaCustomPreviewReadyQueue[s_CurCustomTab].clear();
 		m_aaCustomPreviewReadyQueued[s_CurCustomTab].clear();
+		SSettingsAssetPendingMerge &PendingMerge = m_aAssetPendingMerges[s_CurCustomTab];
+		PendingMerge = {};
+		PendingMerge.m_Tab = s_CurCustomTab;
+		PendingMerge.m_Generation = ++m_aAssetLoadGenerations[s_CurCustomTab];
+		PendingMerge.m_vEntries.reserve(vEntries.size());
+		for(const auto &Entry : vEntries)
+			PendingMerge.m_vEntries.push_back(AssetMergeEntryFromJobEntry(Entry));
+		m_aAssetLoadStates[s_CurCustomTab] = ASSET_LOAD_STATE_MERGING;
+		m_apAssetLoadJobs[s_CurCustomTab].reset();
+	}
 
-		const SAssetResourceCategory *pCurrentCategory = AssetResourceCategoryByTab(s_CurCustomTab);
-
-		// Populate the appropriate list
+	if(m_aAssetLoadStates[s_CurCustomTab] == ASSET_LOAD_STATE_MERGING)
+	{
+		SSettingsAssetPendingMerge &PendingMerge = m_aAssetPendingMerges[s_CurCustomTab];
+		SSettingsResourceMergeBudget MergeBudget;
+		MergeBudget.m_MaxListEntries = 64;
 		CPerfTimer MergeTimer;
-		switch(s_CurCustomTab)
+		size_t MergedThisFrame = 0;
+
+		while(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
 		{
-		case ASSETS_TAB_ENTITIES:
-			for(const auto &Entry : vEntries)
+			const SSettingsAssetMergeEntry &Entry = PendingMerge.m_vEntries[PendingMerge.m_Cursor++];
+			switch(s_CurCustomTab)
+			{
+			case ASSETS_TAB_ENTITIES:
 			{
 				SCustomEntities EntitiesItem;
 				str_copy(EntitiesItem.m_aName, Entry.m_aName);
 				m_vEntitiesList.push_back(EntitiesItem);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "entities category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vEntitiesList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vEntitiesList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_GAME:
-			for(const auto &Entry : vEntries)
+			case ASSETS_TAB_GAME:
 			{
 				SCustomGame GameItem;
 				str_copy(GameItem.m_aName, Entry.m_aName);
 				m_vGameList.push_back(GameItem);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "game category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vGameList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vGameList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_EMOTICONS:
-			for(const auto &Entry : vEntries)
+			case ASSETS_TAB_EMOTICONS:
 			{
 				SCustomEmoticon EmoticonItem;
 				str_copy(EmoticonItem.m_aName, Entry.m_aName);
 				m_vEmoticonList.push_back(EmoticonItem);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "emoticons category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vEmoticonList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vEmoticonList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_PARTICLES:
-			for(const auto &Entry : vEntries)
+			case ASSETS_TAB_PARTICLES:
 			{
 				SCustomParticle ParticleItem;
 				str_copy(ParticleItem.m_aName, Entry.m_aName);
 				m_vParticlesList.push_back(ParticleItem);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "particles category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vParticlesList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vParticlesList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_HUD:
-			for(const auto &Entry : vEntries)
+			case ASSETS_TAB_HUD:
 			{
 				SCustomHud HudItem;
 				str_copy(HudItem.m_aName, Entry.m_aName);
 				m_vHudList.push_back(HudItem);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "hud category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vHudList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vHudList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_GUI_CURSOR:
-			for(const auto &Entry : vEntries)
+			case ASSETS_TAB_GUI_CURSOR:
 			{
 				SCustomGuiCursor Item;
 				str_copy(Item.m_aName, Entry.m_aName);
 				m_vGuiCursorList.push_back(Item);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "gui cursor category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vGuiCursorList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vGuiCursorList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_ARROW:
-			for(const auto &Entry : vEntries)
+			case ASSETS_TAB_ARROW:
 			{
 				SCustomArrow Item;
 				str_copy(Item.m_aName, Entry.m_aName);
 				m_vArrowList.push_back(Item);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "arrow category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vArrowList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vArrowList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_STRONG_WEAK:
-			for(const auto &Entry : vEntries)
+			case ASSETS_TAB_STRONG_WEAK:
 			{
 				SCustomStrongWeak Item;
 				str_copy(Item.m_aName, Entry.m_aName);
 				m_vStrongWeakList.push_back(Item);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "strong weak category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vStrongWeakList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vStrongWeakList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_ENTITY_BG:
-			m_vEntityBgSourceNames.clear();
-			m_vEntityBgSourceKinds.clear();
-			m_vEntityBgSourceNames.reserve(vEntries.size());
-			m_vEntityBgSourceKinds.reserve(vEntries.size());
-			for(const auto &Entry : vEntries)
-			{
+			case ASSETS_TAB_ENTITY_BG:
 				m_vEntityBgSourceNames.emplace_back(Entry.m_aName);
 				m_vEntityBgSourceKinds[Entry.m_aName] = Entry.m_Source;
-			}
-			{
-				CPerfTimer SortTimer;
-				RefreshEntityBgHierarchyView();
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vEntityBgList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
-			}
-			break;
-		case ASSETS_TAB_EXTRAS:
-			for(const auto &Entry : vEntries)
+				break;
+			case ASSETS_TAB_EXTRAS:
 			{
 				SCustomExtras ExtrasItem;
 				str_copy(ExtrasItem.m_aName, Entry.m_aName);
 				m_vExtrasList.push_back(ExtrasItem);
+				break;
 			}
-			{
-				CPerfTimer SortTimer;
-				dbg_assert(pCurrentCategory != nullptr, "extras category must exist");
-				EnsureDefaultAssetVisible(*pCurrentCategory, m_vExtrasList);
-				char aExtra[128];
-				str_format(aExtra, sizeof(aExtra), "tab=%d list_size=%d", s_CurCustomTab, (int)m_vExtrasList.size());
-				LogAssetsPerfStage("assets_sort_list", SortTimer.ElapsedMs(), false, aExtra);
+			default:
+				break;
 			}
-			break;
-		}
-		{
-			char aExtra[128];
-			str_format(aExtra, sizeof(aExtra), "tab=%d entries=%d", s_CurCustomTab, (int)vEntries.size());
-			LogAssetsPerfStage("assets_merge_results", MergeTimer.ElapsedMs(), true, aExtra);
+			++MergedThisFrame;
 		}
 
-		m_aAssetLoadStates[s_CurCustomTab] = ASSET_LOAD_STATE_LOADED;
-		gs_aInitCustomList[s_CurCustomTab] = true;
-		m_apAssetLoadJobs[s_CurCustomTab].reset();
+		if(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size())
+		{
+			char aExtra[128];
+			str_format(aExtra, sizeof(aExtra), "tab=%d merged=%d remaining=%d reason=%s",
+				s_CurCustomTab, (int)MergedThisFrame, (int)(PendingMerge.m_vEntries.size() - PendingMerge.m_Cursor),
+				SettingsWarmupMissReasonName(ESettingsWarmupMissReason::JOB_RESULT_PENDING));
+			LogAssetsPerfStage("assets_merge_budget", MergeTimer.ElapsedMs(), true, aExtra);
+		}
+		else
+		{
+			const SAssetResourceCategory *pCurrentCategory = AssetResourceCategoryByTab(s_CurCustomTab);
+			switch(s_CurCustomTab)
+			{
+			case ASSETS_TAB_ENTITIES:
+				dbg_assert(pCurrentCategory != nullptr, "entities category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vEntitiesList);
+				break;
+			case ASSETS_TAB_GAME:
+				dbg_assert(pCurrentCategory != nullptr, "game category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vGameList);
+				break;
+			case ASSETS_TAB_EMOTICONS:
+				dbg_assert(pCurrentCategory != nullptr, "emoticons category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vEmoticonList);
+				break;
+			case ASSETS_TAB_PARTICLES:
+				dbg_assert(pCurrentCategory != nullptr, "particles category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vParticlesList);
+				break;
+			case ASSETS_TAB_HUD:
+				dbg_assert(pCurrentCategory != nullptr, "hud category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vHudList);
+				break;
+			case ASSETS_TAB_GUI_CURSOR:
+				dbg_assert(pCurrentCategory != nullptr, "gui cursor category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vGuiCursorList);
+				break;
+			case ASSETS_TAB_ARROW:
+				dbg_assert(pCurrentCategory != nullptr, "arrow category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vArrowList);
+				break;
+			case ASSETS_TAB_STRONG_WEAK:
+				dbg_assert(pCurrentCategory != nullptr, "strong weak category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vStrongWeakList);
+				break;
+			case ASSETS_TAB_ENTITY_BG:
+				RefreshEntityBgHierarchyView();
+				break;
+			case ASSETS_TAB_EXTRAS:
+				dbg_assert(pCurrentCategory != nullptr, "extras category must exist");
+				EnsureDefaultAssetVisible(*pCurrentCategory, m_vExtrasList);
+				break;
+			default:
+				break;
+			}
+
+			char aExtra[128];
+			str_format(aExtra, sizeof(aExtra), "tab=%d entries=%d", s_CurCustomTab, (int)PendingMerge.m_vEntries.size());
+			LogAssetsPerfStage("assets_merge_results", MergeTimer.ElapsedMs(), true, aExtra);
+			PendingMerge = {};
+			m_aAssetLoadStates[s_CurCustomTab] = ASSET_LOAD_STATE_LOADED;
+			gs_aInitCustomList[s_CurCustomTab] = true;
+		}
 	}
 
 	// Mark for search list rebuild if size changed

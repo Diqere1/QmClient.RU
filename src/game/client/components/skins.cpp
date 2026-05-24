@@ -102,6 +102,74 @@ CSkins::CSkinLoadJob::CSkinLoadJob(CSkins *pSkins, const char *pName, int Storag
 {
 }
 
+CSkins::CSkinListPlanJob::CSkinListPlanJob(std::vector<SSkinListSnapshotEntry> vEntries, std::string Filter, int Generation) :
+	m_vEntries(std::move(vEntries)),
+	m_Filter(std::move(Filter))
+{
+	m_Result.m_Generation = Generation;
+}
+
+CSkins::CSkinDirectoryScanJob::CSkinDirectoryScanJob(IStorage *pStorage) :
+	m_pStorage(pStorage)
+{
+}
+
+int CSkins::CSkinDirectoryScanJob::ScanCallback(const char *pName, int IsDir, int StorageType, void *pUser)
+{
+	auto *pSelf = static_cast<CSkinDirectoryScanJob *>(pUser);
+	if(IsDir)
+		return 0;
+
+	const char *pSuffix = str_endswith(pName, ".png");
+	if(pSuffix == nullptr)
+		return 0;
+
+	char aSkinName[IO_MAX_PATH_LENGTH];
+	str_truncate(aSkinName, sizeof(aSkinName), pName, pSuffix - pName);
+	if(!CSkin::IsValidName(aSkinName))
+		return 0;
+
+	pSelf->m_Result.m_vEntries.emplace_back(aSkinName, StorageType);
+	return 0;
+}
+
+void CSkins::CSkinDirectoryScanJob::Run()
+{
+	m_pStorage->ListDirectory(IStorage::TYPE_ALL, "skins", ScanCallback, this);
+}
+
+void CSkins::CSkinListPlanJob::Run()
+{
+	std::vector<SSettingsSkinListEntry> vPlanEntries;
+	vPlanEntries.reserve(m_vEntries.size());
+
+	for(const SSkinListSnapshotEntry &Entry : m_vEntries)
+	{
+		if(Entry.m_Special)
+			continue;
+
+		if(Entry.m_NotFound && !Entry.m_SelectedMain && !Entry.m_SelectedDummy && !Entry.m_Favorite)
+			continue;
+
+		++m_Result.m_UnfilteredCount;
+		if(!m_Filter.empty())
+		{
+			const char *pNameMatchEnd = nullptr;
+			if(str_utf8_find_nocase(Entry.m_Name.c_str(), m_Filter.c_str(), &pNameMatchEnd) == nullptr)
+				continue;
+		}
+
+		SSettingsSkinListEntry PlanEntry;
+		PlanEntry.m_Name = Entry.m_Name;
+		PlanEntry.m_Selected = Entry.m_SelectedMain || Entry.m_SelectedDummy;
+		PlanEntry.m_Favorite = Entry.m_Favorite;
+		vPlanEntries.push_back(std::move(PlanEntry));
+	}
+
+	m_Result.m_Filter = m_Filter;
+	m_Result.m_Plan = BuildSettingsSkinListPlan(std::move(vPlanEntries));
+}
+
 CSkins::CSkinContainer::CSkinContainer(CSkins *pSkins, const char *pName, EType Type, int StorageType) :
 	m_pSkins(pSkins),
 	m_Type(Type),
@@ -601,6 +669,10 @@ void CSkins::OnInit()
 
 void CSkins::OnShutdown()
 {
+	if(m_pSkinDirectoryScanJob)
+		m_pSkinDirectoryScanJob->Abort();
+	if(m_pSkinListPlanJob)
+		m_pSkinListPlanJob->Abort();
 	for(auto &[_, pSkinContainer] : m_Skins)
 	{
 		if(pSkinContainer->m_pLoadJob)
@@ -637,9 +709,11 @@ void CSkins::OnUpdate()
 	FindContainerOrNullptr(g_Config.m_ClDummySkin);
 
 	CSkinLoadingStats Stats = LoadingStats();
+	ProcessSkinDirectoryScanJob();
 	UpdateUnloadSkins(Stats);
 	UpdateStartLoading(Stats);
 	UpdateFinishLoading(Stats, Now, MaxTime);
+	ProcessSkinListPlanJob();
 }
 
 void CSkins::ClampSkinQueueIndex(int Dummy)
@@ -1082,6 +1156,22 @@ void CSkins::RefreshEventSkins()
 
 void CSkins::Refresh(TSkinLoadedCallback &&SkinLoadedCallback)
 {
+	if(m_pSkinDirectoryScanJob)
+	{
+		m_pSkinDirectoryScanJob->Abort();
+		m_pSkinDirectoryScanJob.reset();
+	}
+	if(m_pSkinListPlanJob)
+	{
+		m_pSkinListPlanJob->Abort();
+		m_pSkinListPlanJob.reset();
+	}
+	m_vPendingSkinListMergeNames.clear();
+	m_SkinListMergeCursor = 0;
+	m_PendingSkinListUnfilteredCount = 0;
+	m_vPendingSkinDirectoryEntries.clear();
+	m_SkinDirectoryMergeCursor = 0;
+
 	for(auto &[_, pSkinContainer] : m_Skins)
 	{
 		if(pSkinContainer->m_pLoadJob)
@@ -1096,14 +1186,13 @@ void CSkins::Refresh(TSkinLoadedCallback &&SkinLoadedCallback)
 	}
 	m_Skins.clear();
 	m_SkinsUsageList.clear();
+	m_SkinList.m_vSkins.clear();
+	m_SkinList.m_UnfilteredCount = 0;
+	m_SkinList.m_NeedsUpdate = true;
 
 	LoadSkinDirect("default");
 	SkinLoadedCallback();
-
-	CSkinScanUser SkinScanUser;
-	SkinScanUser.m_pThis = this;
-	SkinScanUser.m_SkinLoadedCallback = SkinLoadedCallback;
-	Storage()->ListDirectory(IStorage::TYPE_ALL, "skins", SkinScan, &SkinScanUser);
+	QueueSkinDirectoryScanJob();
 }
 
 CSkins::CSkinLoadingStats CSkins::LoadingStats() const
@@ -1138,61 +1227,209 @@ CSkins::CSkinLoadingStats CSkins::LoadingStats() const
 
 CSkins::CSkinList &CSkins::SkinList()
 {
-	if(!m_SkinList.m_NeedsUpdate)
+	ProcessSkinListPlanJob();
+	if(m_SkinList.m_NeedsUpdate && m_pSkinListPlanJob == nullptr && m_vPendingSkinListMergeNames.empty())
+	{
+		QueueSkinListPlanJob();
+		m_SkinList.m_NeedsUpdate = false;
+	}
+
+	if(!m_SkinList.m_NeedsUpdate && m_pSkinListPlanJob == nullptr && m_vPendingSkinListMergeNames.empty())
 	{
 		return m_SkinList;
 	}
+	return m_SkinList;
+}
 
-	m_SkinList.m_vSkins.clear();
-	m_SkinList.m_UnfilteredCount = 0;
-
-	// Ensure all favorite skins are present as skin containers so they are included in the next loop.
-	for(const auto &FavoriteSkin : m_Favorites)
+void CSkins::PrewarmByNames(const std::vector<std::string> &vNames, bool Immediate)
+{
+	for(const std::string &Name : vNames)
 	{
-		FindContainerOrNullptr(FavoriteSkin.c_str());
+		if(Name.empty())
+			continue;
+
+		const CSkinContainer *pContainer = FindContainerOrNullptr(Name.c_str());
+		if(pContainer == nullptr)
+			continue;
+
+		const_cast<CSkinContainer *>(pContainer)->RequestLoad(Immediate);
+	}
+}
+
+bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries)
+{
+	CSkinList &List = SkinList();
+
+	std::vector<std::string> vNames;
+	vNames.reserve(minimum((int)List.Skins().size(), MaxEntries) + 1);
+	const char *pSelectedSkin = Dummy ? g_Config.m_ClDummySkin : g_Config.m_ClPlayerSkin;
+	vNames.push_back(pSelectedSkin != nullptr && pSelectedSkin[0] != '\0' ? pSelectedSkin : "default");
+	for(int i = 0; i < minimum((int)List.Skins().size(), MaxEntries); ++i)
+	{
+		const CSkinContainer *pContainer = List.Skins()[i].SkinContainer();
+		if(pContainer != nullptr)
+			vNames.emplace_back(pContainer->Name());
 	}
 
-	m_SkinList.m_vSkins.reserve(m_Skins.size());
-	for(const auto &[_, pSkinContainer] : m_Skins)
-	{
-		if(pSkinContainer->IsSpecial())
-		{
-			continue;
-		}
+	PrewarmByNames(vNames, true);
 
+	const bool ListReady = !m_SkinList.m_NeedsUpdate &&
+		m_pSkinDirectoryScanJob == nullptr &&
+		m_pSkinListPlanJob == nullptr &&
+		m_vPendingSkinDirectoryEntries.empty() &&
+		m_vPendingSkinListMergeNames.empty();
+	if(!ListReady)
+		return false;
+
+	const CSkinContainer *pDefaultContainer = FindContainerOrNullptr("default");
+	const bool DefaultReady = pDefaultContainer != nullptr && pDefaultContainer->State() == CSkinContainer::EState::LOADED;
+	if(!DefaultReady)
+		return false;
+
+	for(const std::string &Name : vNames)
+	{
+		const CSkinContainer *pContainer = FindContainerOrNullptr(Name.c_str());
+		if(pContainer == nullptr)
+			continue;
+
+		const CSkinContainer::EState State = pContainer->State();
+		if(State == CSkinContainer::EState::LOADED)
+			continue;
+
+		if(State != CSkinContainer::EState::ERROR &&
+			State != CSkinContainer::EState::NOT_FOUND)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void CSkins::QueueSkinListPlanJob()
+{
+	for(const auto &FavoriteSkin : m_Favorites)
+		FindContainerOrNullptr(FavoriteSkin.c_str());
+
+	std::vector<SSkinListSnapshotEntry> vEntries;
+	vEntries.reserve(m_Skins.size());
+	for(const auto &[Name, pSkinContainer] : m_Skins)
+	{
+		SSkinListSnapshotEntry Entry;
+		Entry.m_Name = Name;
+		Entry.m_SelectedMain = str_comp(pSkinContainer->Name(), g_Config.m_ClPlayerSkin) == 0;
+		Entry.m_SelectedDummy = str_comp(pSkinContainer->Name(), g_Config.m_ClDummySkin) == 0;
+		Entry.m_Favorite = IsFavorite(pSkinContainer->Name());
+		Entry.m_NotFound = pSkinContainer->m_State == CSkinContainer::EState::NOT_FOUND;
+		Entry.m_Special = pSkinContainer->IsSpecial();
+		vEntries.push_back(std::move(Entry));
+	}
+
+	m_pSkinListPlanJob = std::make_shared<CSkinListPlanJob>(std::move(vEntries), g_Config.m_ClSkinFilterString, ++m_SkinListPlanGeneration);
+	Engine()->AddJob(m_pSkinListPlanJob);
+}
+
+void CSkins::QueueSkinDirectoryScanJob()
+{
+	m_pSkinDirectoryScanJob = std::make_shared<CSkinDirectoryScanJob>(Storage());
+	Engine()->AddJob(m_pSkinDirectoryScanJob);
+}
+
+void CSkins::ProcessSkinDirectoryScanJob()
+{
+	if(m_pSkinDirectoryScanJob && m_pSkinDirectoryScanJob->State() == IJob::STATE_DONE)
+	{
+		m_vPendingSkinDirectoryEntries = m_pSkinDirectoryScanJob->Result().m_vEntries;
+		m_SkinDirectoryMergeCursor = 0;
+		m_pSkinDirectoryScanJob.reset();
+	}
+
+	if(m_vPendingSkinDirectoryEntries.empty())
+		return;
+
+	SSettingsResourceMergeBudget MergeBudget;
+	MergeBudget.m_MaxListEntries = 64;
+	while(m_SkinDirectoryMergeCursor < m_vPendingSkinDirectoryEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
+	{
+		const auto &[Name, StorageType] = m_vPendingSkinDirectoryEntries[m_SkinDirectoryMergeCursor++];
+		if(m_Skins.contains(Name))
+			continue;
+
+		CSkinContainer SkinContainer(this, Name.c_str(), CSkinContainer::EType::LOCAL, StorageType);
+		auto &&pSkinContainer = std::make_unique<CSkinContainer>(std::move(SkinContainer));
+		pSkinContainer->SetState(pSkinContainer->DetermineInitialState());
+		m_Skins.insert({pSkinContainer->Name(), std::move(pSkinContainer)});
+		m_SkinList.m_NeedsUpdate = true;
+	}
+
+	if(m_SkinDirectoryMergeCursor >= m_vPendingSkinDirectoryEntries.size())
+	{
+		m_vPendingSkinDirectoryEntries.clear();
+		m_SkinDirectoryMergeCursor = 0;
+	}
+}
+
+void CSkins::ProcessSkinListPlanJob()
+{
+	if(m_pSkinListPlanJob && m_pSkinListPlanJob->State() == IJob::STATE_DONE)
+	{
+		const auto &Result = m_pSkinListPlanJob->Result();
+		if(!m_SkinList.m_NeedsUpdate && SettingsSkinListPlanGenerationMatches({Result.m_Generation, Result.m_Plan}, m_SkinListPlanGeneration))
+		{
+			m_vPendingSkinListMergeNames = Result.m_Plan.m_vNames;
+			m_SkinListMergeCursor = 0;
+			m_PendingSkinListUnfilteredCount = Result.m_UnfilteredCount;
+			m_SkinList.m_vSkins.clear();
+			m_SkinList.m_vSkins.reserve(m_vPendingSkinListMergeNames.size());
+		}
+		m_pSkinListPlanJob.reset();
+	}
+
+	if(m_SkinList.m_NeedsUpdate)
+	{
+		m_vPendingSkinListMergeNames.clear();
+		m_SkinListMergeCursor = 0;
+		if(m_pSkinListPlanJob == nullptr)
+		{
+			QueueSkinListPlanJob();
+			m_SkinList.m_NeedsUpdate = false;
+		}
+		return;
+	}
+
+	if(m_vPendingSkinListMergeNames.empty())
+		return;
+
+	SSettingsResourceMergeBudget MergeBudget;
+	MergeBudget.m_MaxListEntries = 64;
+	while(m_SkinListMergeCursor < m_vPendingSkinListMergeNames.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
+	{
+		const std::string &Name = m_vPendingSkinListMergeNames[m_SkinListMergeCursor++];
+		const CSkinContainer *pSkinContainer = FindContainerOrNullptr(Name.c_str());
+		if(pSkinContainer == nullptr)
+			continue;
+
+		const bool Favorite = IsFavorite(pSkinContainer->Name());
 		const bool SelectedMain = str_comp(pSkinContainer->Name(), g_Config.m_ClPlayerSkin) == 0;
 		const bool SelectedDummy = str_comp(pSkinContainer->Name(), g_Config.m_ClDummySkin) == 0;
-		const bool Favorite = IsFavorite(pSkinContainer->Name());
-
-		// Don't include skins in the list that couldn't be found in the database except the current player
-		// and dummy skins to avoid showing a lot of not-found entries while the user is typing a skin name.
-		if(pSkinContainer->m_State == CSkinContainer::EState::NOT_FOUND &&
-			!pSkinContainer->IsSpecial() &&
-			!SelectedMain &&
-			!SelectedDummy &&
-			!Favorite)
-		{
-			continue;
-		}
-		m_SkinList.m_UnfilteredCount++;
 
 		std::optional<std::pair<int, int>> NameMatch;
 		if(g_Config.m_ClSkinFilterString[0] != '\0')
 		{
-			const char *pNameMatchEnd;
+			const char *pNameMatchEnd = nullptr;
 			const char *pNameMatchStart = str_utf8_find_nocase(pSkinContainer->Name(), g_Config.m_ClSkinFilterString, &pNameMatchEnd);
-			if(pNameMatchStart == nullptr)
-			{
-				continue;
-			}
-			NameMatch = std::make_pair<int, int>(pNameMatchStart - pSkinContainer->Name(), pNameMatchEnd - pNameMatchStart);
+			if(pNameMatchStart != nullptr)
+				NameMatch = std::make_pair<int, int>(pNameMatchStart - pSkinContainer->Name(), pNameMatchEnd - pNameMatchStart);
 		}
-		m_SkinList.m_vSkins.emplace_back(pSkinContainer.get(), Favorite, SelectedMain, SelectedDummy, NameMatch);
+
+		m_SkinList.m_vSkins.emplace_back(const_cast<CSkinContainer *>(pSkinContainer), Favorite, SelectedMain, SelectedDummy, NameMatch);
 	}
 
-	std::sort(m_SkinList.m_vSkins.begin(), m_SkinList.m_vSkins.end());
-	m_SkinList.m_NeedsUpdate = false;
-	return m_SkinList;
+	if(m_SkinListMergeCursor >= m_vPendingSkinListMergeNames.size())
+	{
+		m_SkinList.m_UnfilteredCount = m_PendingSkinListUnfilteredCount;
+		m_vPendingSkinListMergeNames.clear();
+		m_SkinListMergeCursor = 0;
+	}
 }
 
 const CSkin *CSkins::Find(const char *pName)

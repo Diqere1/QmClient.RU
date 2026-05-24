@@ -682,7 +682,6 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 			continue;
 		vpFilteredFlags.push_back(&Entry);
 	}
-
 	MainView.HSplitTop(10.0f, nullptr, &MainView);
 	MainView.HSplitBottom(20.0f, &MainView, &QuickSearch);
 	MainView.HSplitBottom(5.0f, &MainView, nullptr);
