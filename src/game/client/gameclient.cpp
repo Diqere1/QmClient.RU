@@ -474,27 +474,6 @@ static void GenerateTimeoutCode(char *pTimeoutCode)
 	}
 }
 
-static void MigrateChatBubbleConfig()
-{
-	auto MigrateInt = [](int &NewValue, int LegacyValue, int NewDefault, int LegacyDefault) {
-		if(NewValue == NewDefault && LegacyValue != LegacyDefault)
-			NewValue = LegacyValue;
-	};
-	auto MigrateCol = [](unsigned &NewValue, unsigned LegacyValue, unsigned NewDefault, unsigned LegacyDefault) {
-		if(NewValue == NewDefault && LegacyValue != LegacyDefault)
-			NewValue = LegacyValue;
-	};
-
-	MigrateInt(g_Config.m_QmHideChatBubbles, g_Config.m_TcHideChatBubblesLegacy, CConfig::ms_QmHideChatBubbles, CConfig::ms_TcHideChatBubblesLegacy);
-	MigrateInt(g_Config.m_QmChatBubble, g_Config.m_TcChatBubbleLegacy, CConfig::ms_QmChatBubble, CConfig::ms_TcChatBubbleLegacy);
-	MigrateInt(g_Config.m_QmChatBubbleDuration, g_Config.m_TcChatBubbleDurationLegacy, CConfig::ms_QmChatBubbleDuration, CConfig::ms_TcChatBubbleDurationLegacy);
-	MigrateInt(g_Config.m_QmChatBubbleAlpha, g_Config.m_TcChatBubbleAlphaLegacy, CConfig::ms_QmChatBubbleAlpha, CConfig::ms_TcChatBubbleAlphaLegacy);
-	MigrateInt(g_Config.m_QmChatBubbleFontSize, g_Config.m_TcChatBubbleFontSizeLegacy, CConfig::ms_QmChatBubbleFontSize, CConfig::ms_TcChatBubbleFontSizeLegacy);
-	MigrateInt(g_Config.m_QmChatBubbleAnimation, g_Config.m_TcChatBubbleAnimationLegacy, CConfig::ms_QmChatBubbleAnimation, CConfig::ms_TcChatBubbleAnimationLegacy);
-	MigrateCol(g_Config.m_QmChatBubbleBgColor, g_Config.m_TcChatBubbleBgColorLegacy, CConfig::ms_QmChatBubbleBgColor, CConfig::ms_TcChatBubbleBgColorLegacy);
-	MigrateCol(g_Config.m_QmChatBubbleTextColor, g_Config.m_TcChatBubbleTextColorLegacy, CConfig::ms_QmChatBubbleTextColor, CConfig::ms_TcChatBubbleTextColorLegacy);
-}
-
 static void MigrateQmHudConfig()
 {
 	auto MigrateInt = [](int &NewValue, int LegacyValue, int NewDefault, int LegacyDefault) {
@@ -548,7 +527,6 @@ void CGameClient::ForceUpdateConsoleRemoteCompletionSuggestions()
 void CGameClient::OnInit()
 {
 	const int64_t OnInitStart = time_get();
-	MigrateChatBubbleConfig();
 	MigrateQmHudConfig();
 	SyncQmHudLegacyAliasesFromQm();
 
