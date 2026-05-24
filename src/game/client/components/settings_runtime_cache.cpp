@@ -135,6 +135,20 @@ const char *SettingsWarmupMissReasonName(ESettingsWarmupMissReason Reason)
 	return "unknown";
 }
 
+const char *SettingsTClientPerfStageName(ETClientSettingsPerfStage Stage)
+{
+	switch(Stage)
+	{
+	case ETClientSettingsPerfStage::TAB_SHELL: return "tclient_tab_shell";
+	case ETClientSettingsPerfStage::SECTION_LAYOUT: return "tclient_section_layout";
+	case ETClientSettingsPerfStage::TEXT_CACHE: return "tclient_text_cache";
+	case ETClientSettingsPerfStage::RESOURCE_PRETRIGGER: return "tclient_resource_pretrigger";
+	case ETClientSettingsPerfStage::STATIC_LAYER: return "tclient_static_layer";
+	case ETClientSettingsPerfStage::INTERACTIVE_LAYER: return "tclient_interactive_layer";
+	}
+	return "tclient_unknown";
+}
+
 static std::string SettingsRuntimePageName(int Page)
 {
 	switch(Page)

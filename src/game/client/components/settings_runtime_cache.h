@@ -36,6 +36,16 @@ enum class ESettingsWarmupMissReason
 	INVALID_RUNTIME_KEY,
 };
 
+enum class ETClientSettingsPerfStage
+{
+	TAB_SHELL,
+	SECTION_LAYOUT,
+	TEXT_CACHE,
+	RESOURCE_PRETRIGGER,
+	STATIC_LAYER,
+	INTERACTIVE_LAYER,
+};
+
 struct SSettingsWarmupFrameBudget
 {
 	int m_MaxTextContainers = 8;
@@ -57,6 +67,7 @@ bool SettingsPageRuntimeRegistryContains(const SSettingsPageRuntimeRegistry &Reg
 int SettingsPageRuntimeCacheSlot(int Page, int Tab);
 bool SettingsWarmupConsumeBudget(SSettingsWarmupFrameBudget &Budget, ESettingsWarmupCost Cost);
 const char *SettingsWarmupMissReasonName(ESettingsWarmupMissReason Reason);
+const char *SettingsTClientPerfStageName(ETClientSettingsPerfStage Stage);
 std::string SettingsPageCacheKey(int Page, int Tab);
 std::string SettingsSectionCacheKey(int Page, int Tab, const char *pSection);
 std::string SettingsTextCacheKey(int Page, int Tab, const char *pTextId);

@@ -102,8 +102,19 @@ namespace
 			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
 	}
 
+	void LogTClientPerfStageEx(const char *pScope, const char *pSection, ETClientSettingsPerfStage Stage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
+	{
+		char aStage[128];
+		if(pSection != nullptr && pSection[0] != '\0')
+			str_format(aStage, sizeof(aStage), "%s_%s_%s", pScope, pSection, SettingsTClientPerfStageName(Stage));
+		else
+			str_format(aStage, sizeof(aStage), "%s_%s", pScope, SettingsTClientPerfStageName(Stage));
+		LogTClientPerfStage(aStage, DurationMs, Force, pExtra);
+	}
+
 	static CSectionLoader s_VisualFontLoader;
 	static CSectionLoader s_RightSectionLoader;
+	static int s_TClientWarListFilterRevision = 0;
 
 	struct SSectionCullContext
 	{
@@ -762,6 +773,7 @@ int CMenus::DoButtonNoRect_FontIcon(CButtonContainer *pButtonContainer, const ch
 void CMenus::PopupConfirmRemoveWarType()
 {
 	GameClient()->m_WarList.RemoveWarType(m_pRemoveWarType->m_aWarName);
+	++s_TClientWarListFilterRevision;
 	m_pRemoveWarType = nullptr;
 }
 
@@ -873,6 +885,7 @@ void CMenus::RenderSettingsTClient(CUIRect MainView, bool PrewarmOnly)
 			RenderSettingsTClientInfo(ContentView);
 		char aExtra[96];
 		str_format(aExtra, sizeof(aExtra), "tab=%d transition=%d", m_TClientSettingsTab, TransitionActive ? 1 : 0);
+		LogTClientPerfStageEx("tclient_tab", nullptr, ETClientSettingsPerfStage::TAB_SHELL, StageTimer.ElapsedMs(), TransitionActive, aExtra);
 		LogTClientPerfStage("tclient_tab_content", StageTimer.ElapsedMs(), TransitionActive, aExtra);
 	}
 
@@ -2878,6 +2891,7 @@ void CMenus::RenderSettingsTClientBindWheel(CUIRect MainView)
 void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 {
 	CUIRect LeftView, RightView, Button, Label;
+	CPerfTimer RenderTimer;
 
 	static CScrollRegion s_ScrollRegion;
 	vec2 ScrollOffset(0.0f, 0.0f);
@@ -2885,7 +2899,13 @@ void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 	ScrollParams.m_ScrollUnit = 60.0f;
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
 	ScrollParams.m_ScrollbarMargin = 5.0f;
-	s_ScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
+	{
+		CPerfTimer LayoutTimer;
+		s_ScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
+		char aExtra[96];
+		str_format(aExtra, sizeof(aExtra), "scroll_y=%.1f", ScrollOffset.y);
+		LogTClientPerfStageEx("tclient_chatbinds", "layout", ETClientSettingsPerfStage::SECTION_LAYOUT, LayoutTimer.ElapsedMs(), false, aExtra);
+	}
 
 	MainView.y += ScrollOffset.y;
 
@@ -2965,39 +2985,55 @@ void CMenus::RenderSettingsTClientChatBinds(CUIRect MainView)
 		Column.HSplitTop(MarginBetweenSections, nullptr, &Column);
 	};
 
-	float SizeL = 0.0f, SizeR = 0.0f;
-	for(auto &[pTitle, vBindDefaults] : CBindChat::BIND_DEFAULTS)
 	{
-		float &Size = SizeL > SizeR ? SizeR : SizeL;
-		CUIRect &Column = SizeL > SizeR ? RightView : LeftView;
-		DoBindchatDefaults(Column, pTitle, Localize(pTitle), vBindDefaults);
-		Size += vBindDefaults.size() * (MarginSmall + LineSize) + HeadlineHeight + HeadlineFontSize + MarginSmall * 2.0f;
+		CPerfTimer ListTimer;
+		float SizeL = 0.0f, SizeR = 0.0f;
+		for(auto &[pTitle, vBindDefaults] : CBindChat::BIND_DEFAULTS)
+		{
+			float &Size = SizeL > SizeR ? SizeR : SizeL;
+			CUIRect &Column = SizeL > SizeR ? RightView : LeftView;
+			DoBindchatDefaults(Column, pTitle, Localize(pTitle), vBindDefaults);
+			Size += vBindDefaults.size() * (MarginSmall + LineSize) + HeadlineHeight + HeadlineFontSize + MarginSmall * 2.0f;
+		}
+		char aExtra[96];
+		str_format(aExtra, sizeof(aExtra), "groups=%d", (int)CBindChat::BIND_DEFAULTS.size());
+		LogTClientPerfStageEx("tclient_chatbinds", "list", ETClientSettingsPerfStage::TEXT_CACHE, ListTimer.ElapsedMs(), false, aExtra);
 	}
 
 	// Scroll
-	CUIRect ScrollRegion;
-	ScrollRegion.x = MainView.x;
-	ScrollRegion.y = maximum(LeftView.y, RightView.y) + MarginSmall * 2.0f;
-	ScrollRegion.w = MainView.w;
-	ScrollRegion.h = 0.0f;
-	s_ScrollRegion.AddRect(ScrollRegion);
-	s_ScrollRegion.End();
+	{
+		CPerfTimer ButtonTimer;
+		CUIRect ScrollRegion;
+		ScrollRegion.x = MainView.x;
+		ScrollRegion.y = maximum(LeftView.y, RightView.y) + MarginSmall * 2.0f;
+		ScrollRegion.w = MainView.w;
+		ScrollRegion.h = 0.0f;
+		s_ScrollRegion.AddRect(ScrollRegion);
+		s_ScrollRegion.End();
+		char aExtra[96];
+		str_format(aExtra, sizeof(aExtra), "scroll_y=%.1f", ScrollOffset.y);
+		LogTClientPerfStageEx("tclient_chatbinds", "buttons", ETClientSettingsPerfStage::INTERACTIVE_LAYER, ButtonTimer.ElapsedMs(), false, aExtra);
+	}
+	LogTClientPerfStage("tclient_chatbinds_total", RenderTimer.ElapsedMs(), false);
 }
 
 void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 {
 	CUIRect RightView, LeftView, Column1, Column2, Column3, Column4, Button, ButtonL, ButtonR, Label;
+	CPerfTimer RenderTimer;
 
-	MainView.HSplitTop(MarginSmall, nullptr, &MainView);
-	MainView.VSplitMid(&LeftView, &RightView, Margin);
-	LeftView.VSplitLeft(MarginSmall, nullptr, &LeftView);
-	RightView.VSplitRight(MarginSmall, &RightView, nullptr);
+	{
+		CPerfTimer LayoutTimer;
+		MainView.HSplitTop(MarginSmall, nullptr, &MainView);
+		MainView.VSplitMid(&LeftView, &RightView, Margin);
+		LeftView.VSplitLeft(MarginSmall, nullptr, &LeftView);
+		RightView.VSplitRight(MarginSmall, &RightView, nullptr);
+		LogTClientPerfStageEx("tclient_warlist", "layout", ETClientSettingsPerfStage::SECTION_LAYOUT, LayoutTimer.ElapsedMs());
+	}
 
 	// WAR LIST will have 4 columns
 	//  [War entries] - [Entry Editing] - [Group Types] - [Recent Players]
-	//									 [Group Editing]
-
-	// putting this here so it can be updated by the entry list
+	//					 [Group Editing]
 	static char s_aEntryName[MAX_NAME_LENGTH];
 	static char s_aEntryClan[MAX_CLAN_LENGTH];
 	static char s_aEntryReason[MAX_WARLIST_REASON_LENGTH];
@@ -3007,10 +3043,10 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 	LeftView.VSplitMid(&Column1, &Column2, Margin);
 	RightView.VSplitMid(&Column3, &Column4, Margin);
 
-	// ======WAR ENTRIES======
 	static CWarEntry *s_pSelectedEntry = nullptr;
 	static CWarType *s_pSelectedType = GameClient()->m_WarList.m_WarTypes[0];
 	{
+		CPerfTimer ListTimer;
 		Column1.HSplitTop(HeadlineHeight, &Label, &Column1);
 		Label.VSplitRight(25.0f, &Label, &Button);
 		Ui()->DoLabel(&Label, Localize("War Entries"), HeadlineFontSize, TEXTALIGN_ML);
@@ -3019,46 +3055,53 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 		static CButtonContainer s_ReverseEntries;
 		static bool s_Reversed = true;
 		if(Ui()->DoButton_FontIcon(&s_ReverseEntries, s_Reversed ? FONT_ICON_CHEVRON_UP : FONT_ICON_CHEVRON_DOWN, 0, &Button, IGraphics::CORNER_ALL))
-		{
 			s_Reversed = !s_Reversed;
-		}
 
 		CUIRect EntriesSearch;
 		Column1.HSplitBottom(25.0f, &Column1, &EntriesSearch);
 		EntriesSearch.HSplitTop(MarginSmall, nullptr, &EntriesSearch);
 
-		// Filter the list
 		static CLineInputBuffered<128> s_EntriesFilterInput;
-		std::vector<CWarEntry *> vpFilteredEntries;
-		for(CWarEntry &Entry : GameClient()->m_WarList.m_vWarEntries)
+		static std::vector<CWarEntry *> s_vFilteredEntries;
+		static char s_aCachedEntriesFilter[128] = "";
+		static bool s_CachedReversed = false;
+		static int s_CachedWarEntriesRevision = -1;
+		if(str_comp(s_aCachedEntriesFilter, s_EntriesFilterInput.GetString()) != 0 ||
+			s_CachedReversed != s_Reversed ||
+			s_CachedWarEntriesRevision != s_TClientWarListFilterRevision)
 		{
-			if(str_find_nocase(Entry.m_aName, s_EntriesFilterInput.GetString()))
-				vpFilteredEntries.push_back(&Entry);
-			else if(str_find_nocase(Entry.m_aClan, s_EntriesFilterInput.GetString()))
-				vpFilteredEntries.push_back(&Entry);
-			else if(str_find_nocase(Entry.m_pWarType->m_aWarName, s_EntriesFilterInput.GetString()))
-				vpFilteredEntries.push_back(&Entry);
+			s_vFilteredEntries.clear();
+			for(CWarEntry &Entry : GameClient()->m_WarList.m_vWarEntries)
+			{
+				if(str_find_nocase(Entry.m_aName, s_EntriesFilterInput.GetString()))
+					s_vFilteredEntries.push_back(&Entry);
+				else if(str_find_nocase(Entry.m_aClan, s_EntriesFilterInput.GetString()))
+					s_vFilteredEntries.push_back(&Entry);
+				else if(str_find_nocase(Entry.m_pWarType->m_aWarName, s_EntriesFilterInput.GetString()))
+					s_vFilteredEntries.push_back(&Entry);
+			}
+			if(s_Reversed)
+				std::reverse(s_vFilteredEntries.begin(), s_vFilteredEntries.end());
+			str_copy(s_aCachedEntriesFilter, s_EntriesFilterInput.GetString(), sizeof(s_aCachedEntriesFilter));
+			s_CachedReversed = s_Reversed;
+			s_CachedWarEntriesRevision = s_TClientWarListFilterRevision;
 		}
-		if(s_Reversed)
-			std::reverse(vpFilteredEntries.begin(), vpFilteredEntries.end());
 
 		int SelectedOldEntry = -1;
 		static CListBox s_EntriesListBox;
-		s_EntriesListBox.DoStart(35.0f, vpFilteredEntries.size(), 1, 2, SelectedOldEntry, &Column1);
+		s_EntriesListBox.DoStart(35.0f, s_vFilteredEntries.size(), 1, 2, SelectedOldEntry, &Column1);
 
 		static std::vector<unsigned char> s_vItemIds;
 		static std::vector<CButtonContainer> s_vDeleteButtons;
-
 		const int MaxEntries = GameClient()->m_WarList.m_vWarEntries.size();
 		s_vItemIds.resize(MaxEntries);
 		s_vDeleteButtons.resize(MaxEntries);
 
-		for(size_t i = 0; i < vpFilteredEntries.size(); i++)
+		for(size_t i = 0; i < s_vFilteredEntries.size(); i++)
 		{
-			CWarEntry *pEntry = vpFilteredEntries[i];
-
+			CWarEntry *pEntry = s_vFilteredEntries[i];
 			if(s_pSelectedEntry && pEntry == s_pSelectedEntry)
-				SelectedOldEntry = i;
+				SelectedOldEntry = (int)i;
 
 			const CListboxItem Item = s_EntriesListBox.DoNextItem(&s_vItemIds[i], SelectedOldEntry >= 0 && (size_t)SelectedOldEntry == i);
 			if(!Item.m_Visible)
@@ -3070,9 +3113,11 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 			DeleteButton.HMargin(7.5f, &DeleteButton);
 			DeleteButton.VSplitLeft(MarginSmall, nullptr, &DeleteButton);
 			DeleteButton.VSplitRight(MarginExtraSmall, &DeleteButton, nullptr);
-
 			if(Ui()->DoButton_FontIcon(&s_vDeleteButtons[i], FONT_ICON_TRASH, 0, &DeleteButton, IGraphics::CORNER_ALL))
+			{
 				GameClient()->m_WarList.RemoveWarEntry(pEntry);
+				++s_TClientWarListFilterRevision;
+			}
 
 			bool IsClan = false;
 			char aBuf[32];
@@ -3086,15 +3131,10 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 				str_copy(aBuf, pEntry->m_aName);
 			}
 			EntryRect.VSplitLeft(35.0f, &EntryTypeRect, &EntryRect);
-
 			if(IsClan)
-			{
 				RenderFontIcon(EntryTypeRect, FONT_ICON_USERS, 18.0f, TEXTALIGN_MC);
-			}
 			else
-			{
 				RenderDevSkin(EntryTypeRect.Center(), 35.0f, "default", "default", false, 0, 0, 0, false, false);
-			}
 
 			if(str_comp(pEntry->m_aReason, "") != 0)
 			{
@@ -3106,16 +3146,17 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 
 			EntryRect.HMargin(MarginExtraSmall, &EntryRect);
 			EntryRect.HSplitMid(&EntryRect, &WarType, MarginSmall);
-
 			Ui()->DoLabel(&EntryRect, aBuf, StandardFontSize, TEXTALIGN_ML);
 			TextRender()->TextColor(pEntry->m_pWarType->m_Color);
 			Ui()->DoLabel(&WarType, pEntry->m_pWarType->m_aWarName, StandardFontSize, TEXTALIGN_ML);
 			TextRender()->TextColor(TextRender()->DefaultTextColor());
 		}
+
 		const int NewSelectedEntry = s_EntriesListBox.DoEnd();
-		if(SelectedOldEntry != NewSelectedEntry || (SelectedOldEntry >= 0 && Ui()->HotItem() == &s_vItemIds[NewSelectedEntry] && Ui()->MouseButtonClicked(0)))
+		if(NewSelectedEntry >= 0 &&
+			(SelectedOldEntry != NewSelectedEntry || (Ui()->HotItem() == &s_vItemIds[NewSelectedEntry] && Ui()->MouseButtonClicked(0))))
 		{
-			s_pSelectedEntry = vpFilteredEntries[NewSelectedEntry];
+			s_pSelectedEntry = s_vFilteredEntries[NewSelectedEntry];
 			if(!Ui()->LastMouseButton(1) && !Ui()->LastMouseButton(2))
 			{
 				str_copy(s_aEntryName, s_pSelectedEntry->m_aName);
@@ -3136,312 +3177,326 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 		}
 
 		Ui()->DoEditBox_Search(&s_EntriesFilterInput, &EntriesSearch, 14.0f, !Ui()->IsPopupOpen() && !GameClient()->m_GameConsole.IsActive());
+		char aExtra[96];
+		str_format(aExtra, sizeof(aExtra), "entries=%d filtered=%d", (int)GameClient()->m_WarList.m_vWarEntries.size(), (int)s_vFilteredEntries.size());
+		LogTClientPerfStageEx("tclient_warlist", "list", ETClientSettingsPerfStage::TEXT_CACHE, ListTimer.ElapsedMs(), false, aExtra);
 	}
 
-	// ======WAR ENTRY EDITING======
-	Column2.HSplitTop(HeadlineHeight, &Label, &Column2);
-	Label.VSplitRight(25.0f, &Label, &Button);
-	Ui()->DoLabel(&Label, Localize("Edit Entry"), HeadlineFontSize, TEXTALIGN_ML);
-	Column2.HSplitTop(MarginSmall, nullptr, &Column2);
-	Column2.HSplitTop(HeadlineFontSize, &Button, &Column2);
-
-	Button.VSplitMid(&ButtonL, &ButtonR, MarginSmall);
-	static CLineInput s_NameInput;
-	s_NameInput.SetBuffer(s_aEntryName, sizeof(s_aEntryName));
-	s_NameInput.SetEmptyText(Localize("Name"));
-	if(s_IsName)
 	{
-		Ui()->DoEditBox(&s_NameInput, &ButtonL, 12.0f);
-	}
-	else
-	{
-		ButtonL.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f), 15, 3.0f);
-		Ui()->ClipEnable(&ButtonL);
-		ButtonL.VMargin(2.0f, &ButtonL);
-		s_NameInput.Render(&ButtonL, 12.0f, TEXTALIGN_ML, false, -1.0f, 0.0f);
-		Ui()->ClipDisable();
-	}
+		CPerfTimer FilterTimer;
+		Column2.HSplitTop(HeadlineHeight, &Label, &Column2);
+		Label.VSplitRight(25.0f, &Label, &Button);
+		Ui()->DoLabel(&Label, Localize("Edit Entry"), HeadlineFontSize, TEXTALIGN_ML);
+		Column2.HSplitTop(MarginSmall, nullptr, &Column2);
+		Column2.HSplitTop(HeadlineFontSize, &Button, &Column2);
 
-	static CLineInput s_ClanInput;
-	s_ClanInput.SetBuffer(s_aEntryClan, sizeof(s_aEntryClan));
-	s_ClanInput.SetEmptyText(Localize("Clan"));
-	if(s_IsClan)
-	{
-		Ui()->DoEditBox(&s_ClanInput, &ButtonR, 12.0f);
-	}
-	else
-	{
-		ButtonR.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f), 15, 3.0f);
-		Ui()->ClipEnable(&ButtonR);
-		ButtonR.VMargin(2.0f, &ButtonR);
-		s_ClanInput.Render(&ButtonR, 12.0f, TEXTALIGN_ML, false, -1.0f, 0.0f);
-		Ui()->ClipDisable();
-	}
-
-	Column2.HSplitTop(MarginSmall, nullptr, &Column2);
-	Column2.HSplitTop(LineSize, &Button, &Column2);
-	Button.VSplitMid(&ButtonL, &ButtonR, MarginSmall);
-	static unsigned char s_NameRadio, s_ClanRadio;
-	if(DoButton_CheckBox_Common(&s_NameRadio, Localize("Name"), s_IsName ? "X" : "", &ButtonL, BUTTONFLAG_LEFT))
-	{
-		s_IsName = true;
-		s_IsClan = false;
-	}
-	if(DoButton_CheckBox_Common(&s_ClanRadio, Localize("Clan"), s_IsClan ? "X" : "", &ButtonR, BUTTONFLAG_LEFT))
-	{
-		s_IsName = false;
-		s_IsClan = true;
-	}
-	if(!s_IsName)
-		str_copy(s_aEntryName, "");
-	if(!s_IsClan)
-		str_copy(s_aEntryClan, "");
-
-	Column2.HSplitTop(MarginSmall, nullptr, &Column2);
-	Column2.HSplitTop(HeadlineFontSize, &Button, &Column2);
-	static CLineInput s_ReasonInput;
-	s_ReasonInput.SetBuffer(s_aEntryReason, sizeof(s_aEntryReason));
-	s_ReasonInput.SetEmptyText(Localize("Reason"));
-	Ui()->DoEditBox(&s_ReasonInput, &Button, 12.0f);
-
-	static CButtonContainer s_AddButton, s_OverrideButton;
-
-	Column2.HSplitTop(MarginSmall, nullptr, &Column2);
-	Column2.HSplitTop(LineSize * 2.0f, &Button, &Column2);
-	Button.VSplitMid(&ButtonL, &ButtonR, MarginSmall);
-
-	if(DoButtonLineSize_Menu(&s_OverrideButton, Localize("Override Entry"), 0, &ButtonL, LineSize) && s_pSelectedEntry)
-	{
-		if(s_pSelectedEntry && s_pSelectedType && (str_comp(s_aEntryName, "") != 0 || str_comp(s_aEntryClan, "") != 0))
+		Button.VSplitMid(&ButtonL, &ButtonR, MarginSmall);
+		static CLineInput s_NameInput;
+		s_NameInput.SetBuffer(s_aEntryName, sizeof(s_aEntryName));
+		s_NameInput.SetEmptyText(Localize("Name"));
+		if(s_IsName)
+			Ui()->DoEditBox(&s_NameInput, &ButtonL, 12.0f);
+		else
 		{
-			str_copy(s_pSelectedEntry->m_aName, s_aEntryName);
-			str_copy(s_pSelectedEntry->m_aClan, s_aEntryClan);
-			str_copy(s_pSelectedEntry->m_aReason, s_aEntryReason);
-			s_pSelectedEntry->m_pWarType = s_pSelectedType;
+			ButtonL.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f), 15, 3.0f);
+			Ui()->ClipEnable(&ButtonL);
+			ButtonL.VMargin(2.0f, &ButtonL);
+			s_NameInput.Render(&ButtonL, 12.0f, TEXTALIGN_ML, false, -1.0f, 0.0f);
+			Ui()->ClipDisable();
 		}
-	}
-	if(DoButtonLineSize_Menu(&s_AddButton, Localize("Add Entry"), 0, &ButtonR, LineSize))
-	{
-		if(s_pSelectedType)
-			GameClient()->m_WarList.AddWarEntry(s_aEntryName, s_aEntryClan, s_aEntryReason, s_pSelectedType->m_aWarName);
-	}
-	Column2.HSplitTop(MarginSmall, nullptr, &Column2);
-	Column2.HSplitTop(HeadlineFontSize + MarginSmall, &Button, &Column2);
-	if(s_pSelectedType)
-	{
-		float Shade = 0.0f;
-		Button.Draw(ColorRGBA(Shade, Shade, Shade, 0.25f), 15, 3.0f);
-		TextRender()->TextColor(s_pSelectedType->m_Color);
-		Ui()->DoLabel(&Button, s_pSelectedType->m_aWarName, HeadlineFontSize, TEXTALIGN_MC);
-		TextRender()->TextColor(TextRender()->DefaultTextColor());
-	}
 
-	Column2.HSplitBottom(150.0f, nullptr, &Column2);
-
-	Column2.HSplitTop(HeadlineHeight, &Label, &Column2);
-	Ui()->DoLabel(&Label, Localize("Settings"), HeadlineFontSize, TEXTALIGN_ML);
-	Column2.HSplitTop(MarginSmall, nullptr, &Column2);
-
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListAllowDuplicates, Localize("Allow Duplicate Entries"), &g_Config.m_TcWarListAllowDuplicates, &Column2, LineSize);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarList, Localize("Enable warlist"), &g_Config.m_TcWarList, &Column2, LineSize);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListChat, Localize("Colors in chat"), &g_Config.m_TcWarListChat, &Column2, LineSize);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListScoreboard, Localize("Colors in scoreboard"), &g_Config.m_TcWarListScoreboard, &Column2, LineSize);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListSpectate, Localize("Colors in spectate select"), &g_Config.m_TcWarListSpectate, &Column2, LineSize);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListShowClan, Localize("Show clan if war"), &g_Config.m_TcWarListShowClan, &Column2, LineSize);
-
-	// ======WAR TYPE EDITING======
-
-	Column3.HSplitTop(HeadlineHeight, &Label, &Column3);
-	Ui()->DoLabel(&Label, Localize("War Groups"), HeadlineFontSize, TEXTALIGN_ML);
-	Column3.HSplitTop(MarginSmall, nullptr, &Column3);
-
-	static char s_aTypeName[MAX_WARLIST_TYPE_LENGTH];
-	static ColorRGBA s_GroupColor = ColorRGBA(1, 1, 1, 1);
-
-	CUIRect WarTypeList;
-	Column3.HSplitBottom(180.0f, &WarTypeList, &Column3);
-	m_pRemoveWarType = nullptr;
-	int SelectedOldType = -1;
-	static CListBox s_WarTypeListBox;
-	s_WarTypeListBox.DoStart(25.0f, GameClient()->m_WarList.m_WarTypes.size(), 1, 2, SelectedOldType, &WarTypeList, true, IGraphics::CORNER_ALL, true);
-
-	static std::vector<unsigned char> s_vTypeItemIds;
-	static std::vector<CButtonContainer> s_vTypeDeleteButtons;
-
-	const int MaxTypes = GameClient()->m_WarList.m_WarTypes.size();
-	s_vTypeItemIds.resize(MaxTypes);
-	s_vTypeDeleteButtons.resize(MaxTypes);
-
-	for(int i = 0; i < (int)GameClient()->m_WarList.m_WarTypes.size(); i++)
-	{
-		CWarType *pType = GameClient()->m_WarList.m_WarTypes[i];
-
-		if(!pType)
-			continue;
-
-		if(s_pSelectedType && pType == s_pSelectedType)
-			SelectedOldType = i;
-
-		const CListboxItem Item = s_WarTypeListBox.DoNextItem(&s_vTypeItemIds[i], SelectedOldType >= 0 && SelectedOldType == i);
-		if(!Item.m_Visible)
-			continue;
-
-		CUIRect TypeRect, DeleteButton;
-		Item.m_Rect.Margin(0.0f, &TypeRect);
-
-		if(pType->m_Removable)
+		static CLineInput s_ClanInput;
+		s_ClanInput.SetBuffer(s_aEntryClan, sizeof(s_aEntryClan));
+		s_ClanInput.SetEmptyText(Localize("Clan"));
+		if(s_IsClan)
+			Ui()->DoEditBox(&s_ClanInput, &ButtonR, 12.0f);
+		else
 		{
-			TypeRect.VSplitRight(20.0f, &TypeRect, &DeleteButton);
-			DeleteButton.HSplitTop(20.0f, &DeleteButton, nullptr);
-			DeleteButton.Margin(2.0f, &DeleteButton);
-			if(DoButtonNoRect_FontIcon(&s_vTypeDeleteButtons[i], FONT_ICON_TRASH, 0, &DeleteButton, IGraphics::CORNER_ALL))
-				m_pRemoveWarType = pType;
+			ButtonR.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f), 15, 3.0f);
+			Ui()->ClipEnable(&ButtonR);
+			ButtonR.VMargin(2.0f, &ButtonR);
+			s_ClanInput.Render(&ButtonR, 12.0f, TEXTALIGN_ML, false, -1.0f, 0.0f);
+			Ui()->ClipDisable();
 		}
-		TextRender()->TextColor(pType->m_Color);
-		Ui()->DoLabel(&TypeRect, pType->m_aWarName, StandardFontSize, TEXTALIGN_ML);
-		TextRender()->TextColor(TextRender()->DefaultTextColor());
-	}
-	const int NewSelectedType = s_WarTypeListBox.DoEnd();
-	if((SelectedOldType != NewSelectedType && NewSelectedType >= 0) || (NewSelectedType >= 0 && Ui()->HotItem() == &s_vTypeItemIds[NewSelectedType] && Ui()->MouseButtonClicked(0)))
-	{
-		s_pSelectedType = GameClient()->m_WarList.m_WarTypes[NewSelectedType];
-		if(!Ui()->LastMouseButton(1) && !Ui()->LastMouseButton(2))
-		{
-			str_copy(s_aTypeName, s_pSelectedType->m_aWarName);
-			s_GroupColor = s_pSelectedType->m_Color;
-		}
-	}
-	if(m_pRemoveWarType != nullptr)
-	{
-		char aMessage[256];
-		str_format(aMessage, sizeof(aMessage),
-			Localize("Are you sure that you want to remove '%s' from your war groups?"),
-			m_pRemoveWarType->m_aWarName);
-		PopupConfirm(Localize("Remove War Group"), aMessage, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmRemoveWarType);
-	}
 
-	static CLineInput s_TypeNameInput;
-	Column3.HSplitTop(MarginSmall, nullptr, &Column3);
-	Column3.HSplitTop(HeadlineFontSize + MarginSmall, &Button, &Column3);
-	s_TypeNameInput.SetBuffer(s_aTypeName, sizeof(s_aTypeName));
-	s_TypeNameInput.SetEmptyText(Localize("Group name"));
-	Ui()->DoEditBox(&s_TypeNameInput, &Button, 12.0f);
-	static CButtonContainer s_AddGroupButton, s_OverrideGroupButton, s_GroupColorPicker;
-
-	Column3.HSplitTop(MarginSmall, nullptr, &Column3);
-	static unsigned int s_ColorValue = 0;
-	s_ColorValue = color_cast<ColorHSLA>(s_GroupColor).Pack(false);
-	ColorHSLA PickedColor = DoLine_ColorPicker(&s_GroupColorPicker, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &Column3, Localize("Color"), &s_ColorValue, ColorRGBA(1.0f, 1.0f, 1.0f), true);
-	s_GroupColor = color_cast<ColorRGBA>(PickedColor);
-
-	Column3.HSplitTop(LineSize * 2.0f, &Button, &Column3);
-	Button.VSplitMid(&ButtonL, &ButtonR, MarginSmall);
-	bool OverrideDisabled = NewSelectedType == 0;
-	if(DoButtonLineSize_Menu(&s_OverrideGroupButton, Localize("Override Group"), 0, &ButtonL, LineSize, OverrideDisabled) && s_pSelectedType)
-	{
-		if(s_pSelectedType && str_comp(s_aTypeName, "") != 0)
-		{
-			str_copy(s_pSelectedType->m_aWarName, s_aTypeName);
-			s_pSelectedType->m_Color = s_GroupColor;
-		}
-	}
-	bool AddDisabled = str_comp(GameClient()->m_WarList.FindWarType(s_aTypeName)->m_aWarName, "none") != 0 || str_comp(s_aTypeName, "none") == 0;
-	if(DoButtonLineSize_Menu(&s_AddGroupButton, Localize("Add Group"), 0, &ButtonR, LineSize, AddDisabled))
-	{
-		GameClient()->m_WarList.AddWarType(s_aTypeName, s_GroupColor);
-	}
-
-	// ======ONLINE PLAYER LIST======
-
-	Column4.HSplitTop(HeadlineHeight, &Label, &Column4);
-	Ui()->DoLabel(&Label, Localize("Online Players"), HeadlineFontSize, TEXTALIGN_ML);
-	Column4.HSplitTop(MarginSmall, nullptr, &Column4);
-
-	CUIRect PlayerSearch;
-	Column4.HSplitBottom(25.0f, &Column4, &PlayerSearch);
-	PlayerSearch.HSplitTop(MarginSmall, nullptr, &PlayerSearch);
-	static CLineInputBuffered<128> s_PlayerSearchInput;
-	Ui()->DoEditBox_Search(&s_PlayerSearchInput, &PlayerSearch, 14.0f, !Ui()->IsPopupOpen() && !GameClient()->m_GameConsole.IsActive());
-
-	CUIRect PlayerList;
-	Column4.HSplitBottom(0.0f, &PlayerList, &Column4);
-	static CListBox s_PlayerListBox;
-	s_PlayerListBox.DoStart(30.0f, MAX_CLIENTS, 1, 2, -1, &PlayerList, true, IGraphics::CORNER_ALL, true);
-
-	static std::vector<unsigned char> s_vPlayerItemIds;
-	static std::vector<CButtonContainer> s_vNameButtons;
-	static std::vector<CButtonContainer> s_vClanButtons;
-
-	s_vPlayerItemIds.resize(MAX_CLIENTS);
-	s_vNameButtons.resize(MAX_CLIENTS);
-	s_vClanButtons.resize(MAX_CLIENTS);
-
-	for(int i = 0; i < MAX_CLIENTS; i++)
-	{
-		if(!GameClient()->m_Snap.m_apPlayerInfos[i])
-			continue;
-
-		const auto &Client = GameClient()->m_aClients[i];
-
-		if(!str_find_nocase(Client.m_aName, s_PlayerSearchInput.GetString()) &&
-			!str_find_nocase(Client.m_aClan, s_PlayerSearchInput.GetString()))
-			continue;
-
-		const CListboxItem Item = s_PlayerListBox.DoNextItem(&s_vPlayerItemIds[i], false);
-		if(!Item.m_Visible)
-			continue;
-
-		CUIRect PlayerRect, TeeRect, NameRect, ClanRect;
-		Item.m_Rect.Margin(0.0f, &PlayerRect);
-		PlayerRect.VSplitLeft(25.0f, &TeeRect, &PlayerRect);
-
-		PlayerRect.VSplitMid(&NameRect, &ClanRect);
-		PlayerRect = NameRect;
-		PlayerRect.x = TeeRect.x;
-		PlayerRect.w += TeeRect.w;
-		TextRender()->TextColor(GameClient()->m_WarList.GetWarData(i).m_NameColor);
-		ColorRGBA NameButtonColor = Ui()->CheckActiveItem(&s_vNameButtons[i]) ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.75f) :
-											(Ui()->HotItem() == &s_vNameButtons[i] ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.0f));
-		PlayerRect.Draw(NameButtonColor, IGraphics::CORNER_L, 5.0f);
-		Ui()->DoLabel(&NameRect, Client.m_aName, StandardFontSize, TEXTALIGN_ML);
-		if(Ui()->DoButtonLogic(&s_vNameButtons[i], false, &PlayerRect, BUTTONFLAG_LEFT))
+		Column2.HSplitTop(MarginSmall, nullptr, &Column2);
+		Column2.HSplitTop(LineSize, &Button, &Column2);
+		Button.VSplitMid(&ButtonL, &ButtonR, MarginSmall);
+		static unsigned char s_NameRadio, s_ClanRadio;
+		if(DoButton_CheckBox_Common(&s_NameRadio, Localize("Name"), s_IsName ? "X" : "", &ButtonL, BUTTONFLAG_LEFT))
 		{
 			s_IsName = true;
 			s_IsClan = false;
-			str_copy(s_aEntryName, Client.m_aName);
 		}
-
-		TextRender()->TextColor(GameClient()->m_WarList.GetWarData(i).m_ClanColor);
-		ColorRGBA ClanButtonColor = Ui()->CheckActiveItem(&s_vClanButtons[i]) ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.75f) :
-											(Ui()->HotItem() == &s_vClanButtons[i] ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.0f));
-		ClanRect.Draw(ClanButtonColor, IGraphics::CORNER_R, 5.0f);
-		Ui()->DoLabel(&ClanRect, Client.m_aClan, StandardFontSize, TEXTALIGN_ML);
-		if(Ui()->DoButtonLogic(&s_vClanButtons[i], false, &ClanRect, BUTTONFLAG_LEFT))
+		if(DoButton_CheckBox_Common(&s_ClanRadio, Localize("Clan"), s_IsClan ? "X" : "", &ButtonR, BUTTONFLAG_LEFT))
 		{
 			s_IsName = false;
 			s_IsClan = true;
-			str_copy(s_aEntryClan, Client.m_aClan);
 		}
-		TextRender()->TextColor(TextRender()->DefaultTextColor());
+		if(!s_IsName)
+			str_copy(s_aEntryName, "");
+		if(!s_IsClan)
+			str_copy(s_aEntryClan, "");
 
-		CTeeRenderInfo TeeInfo = Client.m_RenderInfo;
-		TeeInfo.m_Size = 25.0f;
-		RenderTeeCute(CAnimState::GetIdle(), &TeeInfo, 0, vec2(1.0f, 0.0f), TeeRect.Center() + vec2(-1.0f, 2.5f), true);
+		Column2.HSplitTop(MarginSmall, nullptr, &Column2);
+		Column2.HSplitTop(HeadlineFontSize, &Button, &Column2);
+		static CLineInput s_ReasonInput;
+		s_ReasonInput.SetBuffer(s_aEntryReason, sizeof(s_aEntryReason));
+		s_ReasonInput.SetEmptyText(Localize("Reason"));
+		Ui()->DoEditBox(&s_ReasonInput, &Button, 12.0f);
+
+		static CButtonContainer s_AddButton, s_OverrideButton;
+		Column2.HSplitTop(MarginSmall, nullptr, &Column2);
+		Column2.HSplitTop(LineSize * 2.0f, &Button, &Column2);
+		Button.VSplitMid(&ButtonL, &ButtonR, MarginSmall);
+		if(DoButtonLineSize_Menu(&s_OverrideButton, Localize("Override Entry"), 0, &ButtonL, LineSize) && s_pSelectedEntry)
+		{
+			if(s_pSelectedEntry && s_pSelectedType && (str_comp(s_aEntryName, "") != 0 || str_comp(s_aEntryClan, "") != 0))
+			{
+				str_copy(s_pSelectedEntry->m_aName, s_aEntryName);
+				str_copy(s_pSelectedEntry->m_aClan, s_aEntryClan);
+				str_copy(s_pSelectedEntry->m_aReason, s_aEntryReason);
+				s_pSelectedEntry->m_pWarType = s_pSelectedType;
+				++s_TClientWarListFilterRevision;
+			}
+		}
+		if(DoButtonLineSize_Menu(&s_AddButton, Localize("Add Entry"), 0, &ButtonR, LineSize))
+		{
+			if(s_pSelectedType)
+			{
+				GameClient()->m_WarList.AddWarEntry(s_aEntryName, s_aEntryClan, s_aEntryReason, s_pSelectedType->m_aWarName);
+				++s_TClientWarListFilterRevision;
+			}
+		}
+
+		Column2.HSplitTop(MarginSmall, nullptr, &Column2);
+		Column2.HSplitTop(HeadlineFontSize + MarginSmall, &Button, &Column2);
+		if(s_pSelectedType)
+		{
+			float Shade = 0.0f;
+			Button.Draw(ColorRGBA(Shade, Shade, Shade, 0.25f), 15, 3.0f);
+			TextRender()->TextColor(s_pSelectedType->m_Color);
+			Ui()->DoLabel(&Button, s_pSelectedType->m_aWarName, HeadlineFontSize, TEXTALIGN_MC);
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
+		}
+
+		Column2.HSplitBottom(150.0f, nullptr, &Column2);
+		Column2.HSplitTop(HeadlineHeight, &Label, &Column2);
+		Ui()->DoLabel(&Label, Localize("Settings"), HeadlineFontSize, TEXTALIGN_ML);
+		Column2.HSplitTop(MarginSmall, nullptr, &Column2);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListAllowDuplicates, Localize("Allow Duplicate Entries"), &g_Config.m_TcWarListAllowDuplicates, &Column2, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarList, Localize("Enable warlist"), &g_Config.m_TcWarList, &Column2, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListChat, Localize("Colors in chat"), &g_Config.m_TcWarListChat, &Column2, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListScoreboard, Localize("Colors in scoreboard"), &g_Config.m_TcWarListScoreboard, &Column2, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListSpectate, Localize("Colors in spectate select"), &g_Config.m_TcWarListSpectate, &Column2, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListShowClan, Localize("Show clan if war"), &g_Config.m_TcWarListShowClan, &Column2, LineSize);
+		LogTClientPerfStageEx("tclient_warlist", "filter", ETClientSettingsPerfStage::INTERACTIVE_LAYER, FilterTimer.ElapsedMs());
 	}
-	s_PlayerListBox.DoEnd();
+
+	{
+		CPerfTimer ActionsTimer;
+		Column3.HSplitTop(HeadlineHeight, &Label, &Column3);
+		Ui()->DoLabel(&Label, Localize("War Groups"), HeadlineFontSize, TEXTALIGN_ML);
+		Column3.HSplitTop(MarginSmall, nullptr, &Column3);
+
+		static char s_aTypeName[MAX_WARLIST_TYPE_LENGTH];
+		static ColorRGBA s_GroupColor = ColorRGBA(1, 1, 1, 1);
+		CUIRect WarTypeList;
+		Column3.HSplitBottom(180.0f, &WarTypeList, &Column3);
+		m_pRemoveWarType = nullptr;
+		int SelectedOldType = -1;
+		static CListBox s_WarTypeListBox;
+		s_WarTypeListBox.DoStart(25.0f, GameClient()->m_WarList.m_WarTypes.size(), 1, 2, SelectedOldType, &WarTypeList, true, IGraphics::CORNER_ALL, true);
+
+		static std::vector<unsigned char> s_vTypeItemIds;
+		static std::vector<CButtonContainer> s_vTypeDeleteButtons;
+		const int MaxTypes = GameClient()->m_WarList.m_WarTypes.size();
+		s_vTypeItemIds.resize(MaxTypes);
+		s_vTypeDeleteButtons.resize(MaxTypes);
+
+		for(int i = 0; i < (int)GameClient()->m_WarList.m_WarTypes.size(); i++)
+		{
+			CWarType *pType = GameClient()->m_WarList.m_WarTypes[i];
+			if(!pType)
+				continue;
+			if(s_pSelectedType && pType == s_pSelectedType)
+				SelectedOldType = i;
+
+			const CListboxItem Item = s_WarTypeListBox.DoNextItem(&s_vTypeItemIds[i], SelectedOldType >= 0 && SelectedOldType == i);
+			if(!Item.m_Visible)
+				continue;
+
+			CUIRect TypeRect, DeleteButton;
+			Item.m_Rect.Margin(0.0f, &TypeRect);
+			if(pType->m_Removable)
+			{
+				TypeRect.VSplitRight(20.0f, &TypeRect, &DeleteButton);
+				DeleteButton.HSplitTop(20.0f, &DeleteButton, nullptr);
+				DeleteButton.Margin(2.0f, &DeleteButton);
+				if(DoButtonNoRect_FontIcon(&s_vTypeDeleteButtons[i], FONT_ICON_TRASH, 0, &DeleteButton, IGraphics::CORNER_ALL))
+					m_pRemoveWarType = pType;
+			}
+			TextRender()->TextColor(pType->m_Color);
+			Ui()->DoLabel(&TypeRect, pType->m_aWarName, StandardFontSize, TEXTALIGN_ML);
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
+		}
+
+		const int NewSelectedType = s_WarTypeListBox.DoEnd();
+		if((SelectedOldType != NewSelectedType && NewSelectedType >= 0) || (NewSelectedType >= 0 && Ui()->HotItem() == &s_vTypeItemIds[NewSelectedType] && Ui()->MouseButtonClicked(0)))
+		{
+			s_pSelectedType = GameClient()->m_WarList.m_WarTypes[NewSelectedType];
+			if(!Ui()->LastMouseButton(1) && !Ui()->LastMouseButton(2))
+			{
+				str_copy(s_aTypeName, s_pSelectedType->m_aWarName);
+				s_GroupColor = s_pSelectedType->m_Color;
+			}
+		}
+		if(m_pRemoveWarType != nullptr)
+		{
+			char aMessage[256];
+			str_format(aMessage, sizeof(aMessage),
+				Localize("Are you sure that you want to remove '%s' from your war groups?"),
+				m_pRemoveWarType->m_aWarName);
+			PopupConfirm(Localize("Remove War Group"), aMessage, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmRemoveWarType);
+		}
+
+		static CLineInput s_TypeNameInput;
+		Column3.HSplitTop(MarginSmall, nullptr, &Column3);
+		Column3.HSplitTop(HeadlineFontSize + MarginSmall, &Button, &Column3);
+		s_TypeNameInput.SetBuffer(s_aTypeName, sizeof(s_aTypeName));
+		s_TypeNameInput.SetEmptyText(Localize("Group name"));
+		Ui()->DoEditBox(&s_TypeNameInput, &Button, 12.0f);
+		static CButtonContainer s_AddGroupButton, s_OverrideGroupButton, s_GroupColorPicker;
+
+		Column3.HSplitTop(MarginSmall, nullptr, &Column3);
+		static unsigned int s_ColorValue = 0;
+		s_ColorValue = color_cast<ColorHSLA>(s_GroupColor).Pack(false);
+		ColorHSLA PickedColor = DoLine_ColorPicker(&s_GroupColorPicker, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &Column3, Localize("Color"), &s_ColorValue, ColorRGBA(1.0f, 1.0f, 1.0f), true);
+		s_GroupColor = color_cast<ColorRGBA>(PickedColor);
+
+		Column3.HSplitTop(LineSize * 2.0f, &Button, &Column3);
+		Button.VSplitMid(&ButtonL, &ButtonR, MarginSmall);
+		bool OverrideDisabled = NewSelectedType == 0;
+		if(DoButtonLineSize_Menu(&s_OverrideGroupButton, Localize("Override Group"), 0, &ButtonL, LineSize, OverrideDisabled) && s_pSelectedType)
+		{
+			if(s_pSelectedType && str_comp(s_aTypeName, "") != 0)
+			{
+				str_copy(s_pSelectedType->m_aWarName, s_aTypeName);
+				s_pSelectedType->m_Color = s_GroupColor;
+				++s_TClientWarListFilterRevision;
+			}
+		}
+		bool AddDisabled = str_comp(GameClient()->m_WarList.FindWarType(s_aTypeName)->m_aWarName, "none") != 0 || str_comp(s_aTypeName, "none") == 0;
+		if(DoButtonLineSize_Menu(&s_AddGroupButton, Localize("Add Group"), 0, &ButtonR, LineSize, AddDisabled))
+		{
+			GameClient()->m_WarList.AddWarType(s_aTypeName, s_GroupColor);
+			++s_TClientWarListFilterRevision;
+		}
+
+		char aExtra[96];
+		str_format(aExtra, sizeof(aExtra), "groups=%d", (int)GameClient()->m_WarList.m_WarTypes.size());
+		LogTClientPerfStageEx("tclient_warlist", "actions", ETClientSettingsPerfStage::RESOURCE_PRETRIGGER, ActionsTimer.ElapsedMs(), false, aExtra);
+	}
+
+	{
+		CPerfTimer PlayersTimer;
+		Column4.HSplitTop(HeadlineHeight, &Label, &Column4);
+		Ui()->DoLabel(&Label, Localize("Online Players"), HeadlineFontSize, TEXTALIGN_ML);
+		Column4.HSplitTop(MarginSmall, nullptr, &Column4);
+
+		CUIRect PlayerSearch;
+		Column4.HSplitBottom(25.0f, &Column4, &PlayerSearch);
+		PlayerSearch.HSplitTop(MarginSmall, nullptr, &PlayerSearch);
+		static CLineInputBuffered<128> s_PlayerSearchInput;
+		Ui()->DoEditBox_Search(&s_PlayerSearchInput, &PlayerSearch, 14.0f, !Ui()->IsPopupOpen() && !GameClient()->m_GameConsole.IsActive());
+
+		CUIRect PlayerList;
+		Column4.HSplitBottom(0.0f, &PlayerList, &Column4);
+		static CListBox s_PlayerListBox;
+		s_PlayerListBox.DoStart(30.0f, MAX_CLIENTS, 1, 2, -1, &PlayerList, true, IGraphics::CORNER_ALL, true);
+
+		static std::vector<unsigned char> s_vPlayerItemIds;
+		static std::vector<CButtonContainer> s_vNameButtons;
+		static std::vector<CButtonContainer> s_vClanButtons;
+		s_vPlayerItemIds.resize(MAX_CLIENTS);
+		s_vNameButtons.resize(MAX_CLIENTS);
+		s_vClanButtons.resize(MAX_CLIENTS);
+
+		int VisiblePlayers = 0;
+		for(int i = 0; i < MAX_CLIENTS; i++)
+		{
+			if(!GameClient()->m_Snap.m_apPlayerInfos[i])
+				continue;
+
+			const auto &Client = GameClient()->m_aClients[i];
+			if(!str_find_nocase(Client.m_aName, s_PlayerSearchInput.GetString()) &&
+				!str_find_nocase(Client.m_aClan, s_PlayerSearchInput.GetString()))
+				continue;
+			VisiblePlayers++;
+
+			const CListboxItem Item = s_PlayerListBox.DoNextItem(&s_vPlayerItemIds[i], false);
+			if(!Item.m_Visible)
+				continue;
+
+			CUIRect PlayerRect, TeeRect, NameRect, ClanRect;
+			Item.m_Rect.Margin(0.0f, &PlayerRect);
+			PlayerRect.VSplitLeft(25.0f, &TeeRect, &PlayerRect);
+			PlayerRect.VSplitMid(&NameRect, &ClanRect);
+			PlayerRect = NameRect;
+			PlayerRect.x = TeeRect.x;
+			PlayerRect.w += TeeRect.w;
+			TextRender()->TextColor(GameClient()->m_WarList.GetWarData(i).m_NameColor);
+			ColorRGBA NameButtonColor = Ui()->CheckActiveItem(&s_vNameButtons[i]) ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.75f) :
+							(Ui()->HotItem() == &s_vNameButtons[i] ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.0f));
+			PlayerRect.Draw(NameButtonColor, IGraphics::CORNER_L, 5.0f);
+			Ui()->DoLabel(&NameRect, Client.m_aName, StandardFontSize, TEXTALIGN_ML);
+			if(Ui()->DoButtonLogic(&s_vNameButtons[i], false, &PlayerRect, BUTTONFLAG_LEFT))
+			{
+				s_IsName = true;
+				s_IsClan = false;
+				str_copy(s_aEntryName, Client.m_aName);
+			}
+
+			TextRender()->TextColor(GameClient()->m_WarList.GetWarData(i).m_ClanColor);
+			ColorRGBA ClanButtonColor = Ui()->CheckActiveItem(&s_vClanButtons[i]) ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.75f) :
+							(Ui()->HotItem() == &s_vClanButtons[i] ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.0f));
+			ClanRect.Draw(ClanButtonColor, IGraphics::CORNER_R, 5.0f);
+			Ui()->DoLabel(&ClanRect, Client.m_aClan, StandardFontSize, TEXTALIGN_ML);
+			if(Ui()->DoButtonLogic(&s_vClanButtons[i], false, &ClanRect, BUTTONFLAG_LEFT))
+			{
+				s_IsName = false;
+				s_IsClan = true;
+				str_copy(s_aEntryClan, Client.m_aClan);
+			}
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
+
+			CTeeRenderInfo TeeInfo = Client.m_RenderInfo;
+			TeeInfo.m_Size = 25.0f;
+			RenderTeeCute(CAnimState::GetIdle(), &TeeInfo, 0, vec2(1.0f, 0.0f), TeeRect.Center() + vec2(-1.0f, 2.5f), true);
+		}
+		s_PlayerListBox.DoEnd();
+
+		char aExtra[96];
+		str_format(aExtra, sizeof(aExtra), "players=%d filtered=%d", MAX_CLIENTS, VisiblePlayers);
+		LogTClientPerfStageEx("tclient_warlist", "players", ETClientSettingsPerfStage::STATIC_LAYER, PlayersTimer.ElapsedMs(), false, aExtra);
+	}
+
+	LogTClientPerfStage("tclient_warlist_total", RenderTimer.ElapsedMs(), false);
 }
 
 void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 {
 	CUIRect LeftView, RightView, Button, Label, StatusBar;
 
-	MainView.HSplitTop(MarginSmall, nullptr, &MainView);
-
-	MainView.HSplitBottom(100.0f, &MainView, &StatusBar);
-
-	MainView.VSplitMid(&LeftView, &RightView, MarginBetweenViews);
-	LeftView.VSplitLeft(MarginSmall, nullptr, &LeftView);
-	RightView.VSplitRight(MarginSmall, &RightView, nullptr);
+	{
+		CPerfTimer LayoutTimer;
+		MainView.HSplitTop(MarginSmall, nullptr, &MainView);
+		MainView.HSplitBottom(100.0f, &MainView, &StatusBar);
+		MainView.VSplitMid(&LeftView, &RightView, MarginBetweenViews);
+		LeftView.VSplitLeft(MarginSmall, nullptr, &LeftView);
+		RightView.VSplitRight(MarginSmall, &RightView, nullptr);
+		LogTClientPerfStageEx("tclient_statusbar", "layout", ETClientSettingsPerfStage::SECTION_LAYOUT, LayoutTimer.ElapsedMs());
+	}
 
 	auto GetStatusBarEditorLabel = [](const CStatusItem *pItem) {
 		return str_comp(pItem->m_aName, "Space") == 0 ? pItem->m_aName : pItem->m_aDisplayName;
@@ -3520,39 +3575,47 @@ void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 			Ui()->DoLabel(&Label, aBuf, FontSize, TEXTALIGN_ML);
 		}
 	};
-	LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
-	Ui()->DoLabel(&Label, Localize("Status Bar"), HeadlineFontSize, TEXTALIGN_ML);
-	LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
-
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcStatusBar, Localize("Show status bar"), &g_Config.m_TcStatusBar, &LeftView, LineSize);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcStatusBarLabels, Localize("Show labels on status bar items"), &g_Config.m_TcStatusBarLabels, &LeftView, LineSize);
-	LeftView.HSplitTop(LineSize, &Button, &LeftView);
-	Ui()->DoScrollbarOption(&g_Config.m_TcStatusBarHeight, &g_Config.m_TcStatusBarHeight, &Button, Localize("Status bar height"), 1, 16);
-
-	LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
-
-	LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
-	Ui()->DoLabel(&Label, Localize("Local Time"), HeadlineFontSize, TEXTALIGN_ML);
-	LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcStatusBar12HourClock, Localize("Use 12 hour clock"), &g_Config.m_TcStatusBar12HourClock, &LeftView, LineSize);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcStatusBarLocalTimeSeconds, Localize("Show seconds on clock"), &g_Config.m_TcStatusBarLocalTimeSeconds, &LeftView, LineSize);
-	LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
 	{
+		CPerfTimer SectionsTimer;
 		LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
-		Ui()->DoLabel(&Label, Localize("Colors"), HeadlineFontSize, TEXTALIGN_ML);
+		Ui()->DoLabel(&Label, Localize("Status Bar"), HeadlineFontSize, TEXTALIGN_ML);
 		LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
-		static CButtonContainer s_StatusbarColor, s_StatusbarTextColor;
 
-		DoLine_ColorPicker(&s_StatusbarColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &LeftView, Localize("Status bar color"), &g_Config.m_TcStatusBarColor, ColorRGBA(0.0f, 0.0f, 0.0f), false);
-		DoLine_ColorPicker(&s_StatusbarTextColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &LeftView, Localize("Text color"), &g_Config.m_TcStatusBarTextColor, ColorRGBA(1.0f, 1.0f, 1.0f), false);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcStatusBar, Localize("Show status bar"), &g_Config.m_TcStatusBar, &LeftView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcStatusBarLabels, Localize("Show labels on status bar items"), &g_Config.m_TcStatusBarLabels, &LeftView, LineSize);
 		LeftView.HSplitTop(LineSize, &Button, &LeftView);
-		Ui()->DoScrollbarOption(&g_Config.m_TcStatusBarAlpha, &g_Config.m_TcStatusBarAlpha, &Button, Localize("Status bar alpha"), 0, 100);
-		LeftView.HSplitTop(LineSize, &Button, &LeftView);
-		Ui()->DoScrollbarOption(&g_Config.m_TcStatusBarTextAlpha, &g_Config.m_TcStatusBarTextAlpha, &Button, Localize("Text alpha"), 0, 100);
+		Ui()->DoScrollbarOption(&g_Config.m_TcStatusBarHeight, &g_Config.m_TcStatusBarHeight, &Button, Localize("Status bar height"), 1, 16);
+
+		LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
+		LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
+		Ui()->DoLabel(&Label, Localize("Local Time"), HeadlineFontSize, TEXTALIGN_ML);
+		LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcStatusBar12HourClock, Localize("Use 12 hour clock"), &g_Config.m_TcStatusBar12HourClock, &LeftView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcStatusBarLocalTimeSeconds, Localize("Show seconds on clock"), &g_Config.m_TcStatusBarLocalTimeSeconds, &LeftView, LineSize);
+		LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
+		{
+			LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
+			Ui()->DoLabel(&Label, Localize("Colors"), HeadlineFontSize, TEXTALIGN_ML);
+			LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
+			static CButtonContainer s_StatusbarColor, s_StatusbarTextColor;
+
+			DoLine_ColorPicker(&s_StatusbarColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &LeftView, Localize("Status bar color"), &g_Config.m_TcStatusBarColor, ColorRGBA(0.0f, 0.0f, 0.0f), false);
+			DoLine_ColorPicker(&s_StatusbarTextColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &LeftView, Localize("Text color"), &g_Config.m_TcStatusBarTextColor, ColorRGBA(1.0f, 1.0f, 1.0f), false);
+			LeftView.HSplitTop(LineSize, &Button, &LeftView);
+			Ui()->DoScrollbarOption(&g_Config.m_TcStatusBarAlpha, &g_Config.m_TcStatusBarAlpha, &Button, Localize("Status bar alpha"), 0, 100);
+			LeftView.HSplitTop(LineSize, &Button, &LeftView);
+			Ui()->DoScrollbarOption(&g_Config.m_TcStatusBarTextAlpha, &g_Config.m_TcStatusBarTextAlpha, &Button, Localize("Text alpha"), 0, 100);
+		}
+		LogTClientPerfStageEx("tclient_statusbar", "sections", ETClientSettingsPerfStage::INTERACTIVE_LAYER, SectionsTimer.ElapsedMs());
 	}
 
-	RenderStatusBarCodes(RightView, 0);
+	{
+		CPerfTimer CodesTimer;
+		RenderStatusBarCodes(RightView, 0);
+		LogTClientPerfStageEx("tclient_statusbar", "codes", ETClientSettingsPerfStage::TEXT_CACHE, CodesTimer.ElapsedMs());
+	}
 
+	CPerfTimer EditorTimer;
 	static int s_SelectedItem = -1;
 	static int s_TypeSelectedOld = -1;
 
@@ -3632,6 +3695,7 @@ void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 	if(ItemCount <= 0)
 	{
 		RenderStatusBarPreview(StatusBar);
+		LogTClientPerfStageEx("tclient_statusbar", "editor", ETClientSettingsPerfStage::STATIC_LAYER, EditorTimer.ElapsedMs());
 		return;
 	}
 	float AvailableWidth = StatusBar.w;
@@ -3728,55 +3792,65 @@ void CMenus::RenderSettingsTClientStatusBar(CUIRect MainView)
 	}
 	if(!StatusItemActive)
 		s_SelectedItem = std::max(-1, s_SelectedItem);
+	LogTClientPerfStageEx("tclient_statusbar", "editor", ETClientSettingsPerfStage::STATIC_LAYER, EditorTimer.ElapsedMs());
 }
 
 void CMenus::RenderSettingsTClientInfo(CUIRect MainView)
 {
 	CUIRect LeftView, RightView, Button, Label, LowerLeftView;
+	CPerfTimer RenderTimer;
 
-	MainView.HSplitTop(MarginSmall, nullptr, &MainView);
+	{
+		CPerfTimer LayoutTimer;
+		MainView.HSplitTop(MarginSmall, nullptr, &MainView);
+		MainView.VSplitMid(&LeftView, &RightView, MarginBetweenViews);
+		LeftView.VSplitLeft(MarginSmall, nullptr, &LeftView);
+		RightView.VSplitRight(MarginSmall, &RightView, nullptr);
+		LeftView.HSplitMid(&LeftView, &LowerLeftView, 0.0f);
+		LogTClientPerfStageEx("tclient_info", "layout", ETClientSettingsPerfStage::SECTION_LAYOUT, LayoutTimer.ElapsedMs());
+	}
 
-	MainView.VSplitMid(&LeftView, &RightView, MarginBetweenViews);
-	LeftView.VSplitLeft(MarginSmall, nullptr, &LeftView);
-	RightView.VSplitRight(MarginSmall, &RightView, nullptr);
-	LeftView.HSplitMid(&LeftView, &LowerLeftView, 0.0f);
+	{
+		CPerfTimer LinksTimer;
+		LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
+		Ui()->DoLabel(&Label, Localize("TClient Links"), HeadlineFontSize, TEXTALIGN_ML);
+		LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
 
-	LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
-	Ui()->DoLabel(&Label, Localize("TClient Links"), HeadlineFontSize, TEXTALIGN_ML);
-	LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
+		static CButtonContainer s_DiscordButton, s_WebsiteButton, s_GithubButton, s_SupportButton;
+		CUIRect ButtonLeft, ButtonRight;
 
-	static CButtonContainer s_DiscordButton, s_WebsiteButton, s_GithubButton, s_SupportButton;
-	CUIRect ButtonLeft, ButtonRight;
+		LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
+		Button.VSplitMid(&ButtonLeft, &ButtonRight, MarginSmall);
+		if(DoButtonLineSize_Menu(&s_DiscordButton, Localize("Discord"), 0, &ButtonLeft, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
+			Client()->ViewLink("https://discord.gg/fBvhH93Bt6");
+		if(DoButtonLineSize_Menu(&s_WebsiteButton, Localize("Website"), 0, &ButtonRight, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
+			Client()->ViewLink("https://tclient.app/");
 
-	LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
-	Button.VSplitMid(&ButtonLeft, &ButtonRight, MarginSmall);
-	if(DoButtonLineSize_Menu(&s_DiscordButton, Localize("Discord"), 0, &ButtonLeft, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
-		Client()->ViewLink("https://discord.gg/fBvhH93Bt6");
-	if(DoButtonLineSize_Menu(&s_WebsiteButton, Localize("Website"), 0, &ButtonRight, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
-		Client()->ViewLink("https://tclient.app/");
+		LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
+		LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
+		Button.VSplitMid(&ButtonLeft, &ButtonRight, MarginSmall);
 
-	LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
-	LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
-	Button.VSplitMid(&ButtonLeft, &ButtonRight, MarginSmall);
-
-	if(DoButtonLineSize_Menu(&s_GithubButton, Localize("Github"), 0, &ButtonLeft, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
-		Client()->ViewLink("https://github.com/sjrc6/TaterClient-ddnet");
-	if(DoButtonLineSize_Menu(&s_SupportButton, Localize("Support ♥"), 0, &ButtonRight, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
-		Client()->ViewLink("https://ko-fi.com/Totar");
+		if(DoButtonLineSize_Menu(&s_GithubButton, Localize("Github"), 0, &ButtonLeft, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
+			Client()->ViewLink("https://github.com/sjrc6/TaterClient-ddnet");
+		if(DoButtonLineSize_Menu(&s_SupportButton, Localize("Support ♥"), 0, &ButtonRight, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
+			Client()->ViewLink("https://ko-fi.com/Totar");
+		LogTClientPerfStageEx("tclient_info", "links", ETClientSettingsPerfStage::INTERACTIVE_LAYER, LinksTimer.ElapsedMs());
+	}
 
 	LeftView = LowerLeftView;
-	LeftView.HSplitBottom(LineSize * 4.0f + MarginSmall * 2.0f + HeadlineFontSize, nullptr, &LeftView);
-	LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
-	Ui()->DoLabel(&Label, Localize("Config Files"), HeadlineFontSize, TEXTALIGN_ML);
-	LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
+	{
+		CPerfTimer FilesTimer;
+		LeftView.HSplitBottom(LineSize * 4.0f + MarginSmall * 2.0f + HeadlineFontSize, nullptr, &LeftView);
+		LeftView.HSplitTop(HeadlineHeight, &Label, &LeftView);
+		Ui()->DoLabel(&Label, Localize("Config Files"), HeadlineFontSize, TEXTALIGN_ML);
+		LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
 
-	char aBuf[128 + IO_MAX_PATH_LENGTH];
-	CUIRect TClientConfig, ProfilesFile, WarlistFile, ChatbindsFile;
+		char aBuf[128 + IO_MAX_PATH_LENGTH];
+		CUIRect TClientConfig, ProfilesFile, WarlistFile, ChatbindsFile;
+		static CButtonContainer s_Config, s_Profiles, s_Warlist, s_Chatbinds;
 
-	static CButtonContainer s_Config, s_Profiles, s_Warlist, s_Chatbinds;
-
-	LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
-	Button.VSplitMid(&TClientConfig, &ProfilesFile, MarginSmall);
+		LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
+		Button.VSplitMid(&TClientConfig, &ProfilesFile, MarginSmall);
 
 	if(DoButtonLineSize_Menu(&s_Config, Localize("QmClient Settings"), 0, &TClientConfig, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
 	{
@@ -3798,14 +3872,17 @@ void CMenus::RenderSettingsTClientInfo(CUIRect MainView)
 		Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::TCLIENTWARLIST].m_aConfigPath, aBuf, sizeof(aBuf));
 		Client()->ViewFile(aBuf);
 	}
-	if(DoButtonLineSize_Menu(&s_Chatbinds, Localize("Chat Binds"), 0, &ChatbindsFile, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
-	{
-		Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::TCLIENTCHATBINDS].m_aConfigPath, aBuf, sizeof(aBuf));
-		Client()->ViewFile(aBuf);
+		if(DoButtonLineSize_Menu(&s_Chatbinds, Localize("Chat Binds"), 0, &ChatbindsFile, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
+		{
+			Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::TCLIENTCHATBINDS].m_aConfigPath, aBuf, sizeof(aBuf));
+			Client()->ViewFile(aBuf);
+		}
+		LogTClientPerfStageEx("tclient_info", "files", ETClientSettingsPerfStage::RESOURCE_PRETRIGGER, FilesTimer.ElapsedMs());
 	}
 
 	// =======RIGHT VIEW========
 	{
+		CPerfTimer RightViewTimer;
 		RightView.HSplitTop(HeadlineHeight, &Label, &RightView);
 		Ui()->DoLabel(&Label, Localize("TClient Developers"), HeadlineFontSize, TEXTALIGN_ML);
 		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
@@ -3870,9 +3947,11 @@ void CMenus::RenderSettingsTClientInfo(CUIRect MainView)
 				Client()->ViewLink("https://github.com/ChillerDragon");
 			RenderDevSkin(TeeRect.Center(), 50.0f, "glow_greensward", "greensward", false, 0, 0, 0, false, true, ColorRGBA(1.00f, 1.00f, 1.00f, 1.00f), ColorRGBA(1.00f, 0.02f, 0.13f, 1.00f));
 		}
+		LogTClientPerfStageEx("tclient_info", "developers", ETClientSettingsPerfStage::TEXT_CACHE, RightViewTimer.ElapsedMs());
 	}
 
 	{
+		CPerfTimer TabsTimer;
 		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
 		RightView.HSplitTop(HeadlineHeight, &Label, &RightView);
 		Ui()->DoLabel(&Label, Localize("Hide Settings Tabs"), HeadlineFontSize, TEXTALIGN_ML);
@@ -3895,7 +3974,9 @@ void CMenus::RenderSettingsTClientInfo(CUIRect MainView)
 			DoButton_CheckBoxAutoVMarginAndSet(&s_aShowTabs[i], apTabNames[i], &s_aShowTabs[i], i % 2 == 0 ? &LeftSettings : &RightSettings, LineSize);
 			SetFlag(g_Config.m_TcTClientSettingsTabs, i, s_aShowTabs[i]);
 		}
+		LogTClientPerfStageEx("tclient_info", "settings_tabs", ETClientSettingsPerfStage::INTERACTIVE_LAYER, TabsTimer.ElapsedMs());
 	}
+	LogTClientPerfStage("tclient_info_total", RenderTimer.ElapsedMs(), false);
 
 	// RightView.HSplitTop(HeadlineHeight, &Label, &RightView);
 	// Ui()->DoLabel(&Label, Localize("Integration"), HeadlineFontSize, TEXTALIGN_ML);
@@ -3905,6 +3986,7 @@ void CMenus::RenderSettingsTClientInfo(CUIRect MainView)
 
 void CMenus::RenderSettingsTClientProfiles(CUIRect MainView)
 {
+	CPerfTimer RenderTimer;
 	int *pCurrentUseCustomColor = m_Dummy ? &g_Config.m_ClDummyUseCustomColor : &g_Config.m_ClPlayerUseCustomColor;
 
 	const char *pCurrentSkinName = m_Dummy ? g_Config.m_ClDummySkin : g_Config.m_ClPlayerSkin;
@@ -4093,6 +4175,7 @@ void CMenus::RenderSettingsTClientProfiles(CUIRect MainView)
 	};
 
 	{
+		CPerfTimer ActionsTimer;
 		CUIRect Top;
 		MainView.HSplitTop(160.0f, &Top, &MainView);
 		CUIRect Profiles, Settings, Actions;
@@ -4170,6 +4253,7 @@ void CMenus::RenderSettingsTClientProfiles(CUIRect MainView)
 				}
 			}
 		}
+		LogTClientPerfStageEx("tclient_profiles", "actions", ETClientSettingsPerfStage::INTERACTIVE_LAYER, ActionsTimer.ElapsedMs(), false);
 	}
 	MainView.HSplitTop(MarginSmall, nullptr, &MainView);
 	{
@@ -4209,6 +4293,7 @@ void CMenus::RenderSettingsTClientProfiles(CUIRect MainView)
 	}
 
 	static CListBox s_ListBox;
+	CPerfTimer ListTimer;
 	s_ListBox.DoStart(50.0f, vProfiles.size(), MainView.w / 200.0f, 3, s_SelectedProfile, &MainView, true, IGraphics::CORNER_ALL, true);
 
 	static std::vector<int> s_vProfileItemIds;
@@ -4231,10 +4316,15 @@ void CMenus::RenderSettingsTClientProfiles(CUIRect MainView)
 	s_SelectedProfile = s_ListBox.DoEnd();
 	if(s_ListBox.WasItemActivated())
 		ApplySelectedProfile();
+	char aExtra[96];
+	str_format(aExtra, sizeof(aExtra), "profiles=%d", (int)vProfiles.size());
+	LogTClientPerfStageEx("tclient_profiles", "list", ETClientSettingsPerfStage::STATIC_LAYER, ListTimer.ElapsedMs(), false, aExtra);
+	LogTClientPerfStage("tclient_profiles_total", RenderTimer.ElapsedMs(), false);
 }
 
 void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 {
+	CPerfTimer RenderTimer;
 	// hi hello, this is a relatively self-contained mess, sorry if you're forking or need to modify this -Tater
 	// 你好, 这是一个相对独立的混乱，如果你要分叉或需要修改它，抱歉 -Tater
 	struct SIntStage
@@ -4322,8 +4412,8 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 	static int s_TcUiTagMisc = 0;
 
 	ChangesCount = s_StagedInts.size() + s_StagedStrs.size() + s_StagedCols.size();
-	// Apply Bar - 应用/清除按钮 + 更改计数
 	{
+		CPerfTimer ActionsTimer;
 		CUIRect Row = ApplyBar;
 		Row.HMargin(MarginSmall, &Row);
 		Row.h = LineSize;
@@ -4380,11 +4470,12 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 		char aBuf[64];
 		str_format(aBuf, sizeof(aBuf), Localize("Changes: %d"), (int)ChangesCount);
 		Ui()->DoLabel(&Counter, aBuf, FontSize, TEXTALIGN_ML);
+		LogTClientPerfStageEx("tclient_configs", "actions", ETClientSettingsPerfStage::INTERACTIVE_LAYER, ActionsTimer.ElapsedMs(), false, aBuf);
 	}
 
-	// Filter Bar - 搜索 + 所有筛选条件整合在一行
 	const float SearchLabelW = 50.0f;
 	{
+		CPerfTimer FilterTimer;
 		CUIRect Row = FilterBar;
 		Row.HMargin(MarginSmall, &Row);
 		Row.h = LineSize;
@@ -4429,6 +4520,7 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 			g_Config.m_TcUiCompactList ^= 1;
 		if(DoButton_CheckBox(&g_Config.m_TcUiOnlyModified, Localize("Modified"), g_Config.m_TcUiOnlyModified, &FilterModified))
 			g_Config.m_TcUiOnlyModified ^= 1;
+		LogTClientPerfStageEx("tclient_configs", "filter", ETClientSettingsPerfStage::TEXT_CACHE, FilterTimer.ElapsedMs());
 	}
 
 	// Tags Filter Bar - Row 1
@@ -4515,6 +4607,12 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 	}
 
 	const int FlagMask = CFGFLAG_CLIENT;
+	auto BuildConfigTagMask = [](const char *pScriptName) {
+		unsigned int Mask = 0;
+		for(EConfigTag Tag : ConfigTagsManager()->GetTagsForVariable(pScriptName))
+			Mask |= 1u << static_cast<unsigned int>(Tag);
+		return Mask;
+	};
 	static std::vector<const SConfigVariable *> s_vAllClientVars;
 	if(s_vAllClientVars.empty())
 	{
@@ -4546,6 +4644,13 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 				return a->m_ConfigDomain < b->m_ConfigDomain;
 			return str_comp(a->m_pScriptName, b->m_pScriptName) < 0;
 		});
+	}
+	static std::vector<unsigned int> s_vAllClientVarTagMasks;
+	if(s_vAllClientVarTagMasks.size() != s_vAllClientVars.size())
+	{
+		s_vAllClientVarTagMasks.resize(s_vAllClientVars.size());
+		for(size_t i = 0; i < s_vAllClientVars.size(); ++i)
+			s_vAllClientVarTagMasks[i] = BuildConfigTagMask(s_vAllClientVars[i]->m_pScriptName);
 	}
 
 	auto GetConfigSource = [&](const SConfigVariable *pVar) {
@@ -4618,48 +4723,70 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 		return true;
 	};
 
-	std::vector<const SConfigVariable *> vpFiltered;
-	vpFiltered.reserve(s_vAllClientVars.size());
-	for(const SConfigVariable *pVar : s_vAllClientVars)
+	unsigned int SelectedTagMask = 0;
+	for(int Tag = 1; Tag < static_cast<int>(EConfigTag::NUM_TAGS); ++Tag)
 	{
-		if(!SourceEnabled(GetConfigSource(pVar)))
-			continue;
-		if(g_Config.m_TcUiOnlyModified && IsEffectiveDefaultVar(pVar))
-			continue;
-		if(pSearch && pSearch[0])
-		{
-			const char *pName = pVar->m_pScriptName ? pVar->m_pScriptName : "";
-			const char *pHelp = pVar->m_pHelp ? pVar->m_pHelp : "";
-			if(!str_find_nocase(pName, pSearch) && !str_find_nocase(pHelp, pSearch))
-				continue;
-		}
-		// Tags filter
-		if(AnyTagEnabled)
-		{
-			std::vector<EConfigTag> vTags = ConfigTagsManager()->GetTagsForVariable(pVar->m_pScriptName);
-			bool HasEnabledTag = false;
-			for(EConfigTag Tag : vTags)
-			{
-				if(TagEnabled(Tag))
-				{
-					HasEnabledTag = true;
-					break;
-				}
-			}
-			// If variable has no tags but Misc is enabled, show it
-			if(vTags.empty() && s_TcUiTagMisc)
-				HasEnabledTag = true;
-			if(!HasEnabledTag)
-				continue;
-		}
-		vpFiltered.push_back(pVar);
+		const EConfigTag TagValue = static_cast<EConfigTag>(Tag);
+		if(TagEnabled(TagValue))
+			SelectedTagMask |= 1u << static_cast<unsigned int>(TagValue);
 	}
+	const unsigned int MiscTagMask = 1u << static_cast<unsigned int>(EConfigTag::MISC);
+	const int DomainMask = (g_Config.m_TcUiShowDDNet != 0 ? 1 : 0) |
+		(g_Config.m_TcUiShowTClient != 0 ? 2 : 0) |
+		(g_Config.m_TcUiShowQm != 0 ? 4 : 0);
+	static std::vector<const SConfigVariable *> s_vFilteredConfigs;
+	static std::string s_CachedConfigSearch;
+	static int s_CachedConfigDomainMask = -1;
+	static int s_CachedConfigChangesCount = -1;
+	static int s_CachedConfigOnlyModified = -1;
+	static unsigned int s_CachedConfigTagMask = 0;
+	static size_t s_CachedConfigVarCount = 0;
+	if(s_CachedConfigSearch != (pSearch ? pSearch : "") ||
+		s_CachedConfigDomainMask != DomainMask ||
+		s_CachedConfigChangesCount != ChangesCount ||
+		s_CachedConfigOnlyModified != g_Config.m_TcUiOnlyModified ||
+		s_CachedConfigTagMask != SelectedTagMask ||
+		s_CachedConfigVarCount != s_vAllClientVars.size())
+	{
+		s_vFilteredConfigs.clear();
+		s_vFilteredConfigs.reserve(s_vAllClientVars.size());
+		for(size_t i = 0; i < s_vAllClientVars.size(); ++i)
+		{
+			const SConfigVariable *pVar = s_vAllClientVars[i];
+			if(!SourceEnabled(GetConfigSource(pVar)))
+				continue;
+			if(g_Config.m_TcUiOnlyModified && IsEffectiveDefaultVar(pVar))
+				continue;
+			if(pSearch && pSearch[0])
+			{
+				const char *pName = pVar->m_pScriptName ? pVar->m_pScriptName : "";
+				const char *pHelp = pVar->m_pHelp ? pVar->m_pHelp : "";
+				if(!str_find_nocase(pName, pSearch) && !str_find_nocase(pHelp, pSearch))
+					continue;
+			}
+			if(AnyTagEnabled)
+			{
+				const unsigned int VarTagMask = s_vAllClientVarTagMasks[i];
+				if((VarTagMask & SelectedTagMask) == 0 && !(VarTagMask == 0 && (SelectedTagMask & MiscTagMask) != 0))
+					continue;
+			}
+			s_vFilteredConfigs.push_back(pVar);
+		}
+		s_CachedConfigSearch = pSearch ? pSearch : "";
+		s_CachedConfigDomainMask = DomainMask;
+		s_CachedConfigChangesCount = ChangesCount;
+		s_CachedConfigOnlyModified = g_Config.m_TcUiOnlyModified;
+		s_CachedConfigTagMask = SelectedTagMask;
+		s_CachedConfigVarCount = s_vAllClientVars.size();
+	}
+	const std::vector<const SConfigVariable *> &vpFiltered = s_vFilteredConfigs;
 
 	static CScrollRegion s_ScrollRegion;
 	vec2 ScrollOffset(0.0f, 0.0f);
 	CScrollRegionParams ScrollParams;
 	ScrollParams.m_ScrollUnit = 60.0f;
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
+	CPerfTimer ListTimer;
 	s_ScrollRegion.Begin(&ListArea, &ScrollOffset, &ScrollParams);
 
 	ListArea.y += ScrollOffset.y;
@@ -4894,4 +5021,8 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 	CUIRect EndPad{Content.x, Content.y, Content.w, 5.0f};
 	s_ScrollRegion.AddRect(EndPad);
 	s_ScrollRegion.End();
+	char aExtra[96];
+	str_format(aExtra, sizeof(aExtra), "filtered=%d scroll_y=%.1f", (int)vpFiltered.size(), ScrollOffset.y);
+	LogTClientPerfStageEx("tclient_configs", "list", ETClientSettingsPerfStage::STATIC_LAYER, ListTimer.ElapsedMs(), false, aExtra);
+	LogTClientPerfStage("tclient_configs_total", RenderTimer.ElapsedMs(), false);
 }
