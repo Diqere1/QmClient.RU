@@ -50,7 +50,7 @@ namespace
 	{
 		if(!AssetsPerfDebugEnabled())
 			return;
-		if(DurationMs < AssetsPerfDebugThresholdMs())
+		if(!Force && DurationMs < AssetsPerfDebugThresholdMs())
 			return;
 
 		if(pExtra != nullptr && pExtra[0] != '\0')
@@ -58,6 +58,7 @@ namespace
 		else
 			dbg_msg("perf/assets", "stage=%s duration_ms=%.3f", pStage, DurationMs);
 	}
+
 }
 
 typedef std::function<void()> TMenuAssetScanLoadedFunc;
@@ -2853,12 +2854,22 @@ bool CMenus::PrewarmSettingsAssetResources()
 				gs_NextAssetWarmupTab = Tab;
 				return false;
 			}
-			PendingMerge.m_Cursor = PendingMerge.m_vEntries.size();
+			SSettingsResourceMergeBudget MergeBudget;
+			MergeBudget.m_MaxListEntries = 64;
+			std::vector<SSettingsAssetMergeEntry> vMergeBatch;
+			vMergeBatch.reserve(MergeBudget.m_MaxListEntries);
+			const size_t MergeStartCursor = PendingMerge.m_Cursor;
+			while(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
+				vMergeBatch.push_back(PendingMerge.m_vEntries[PendingMerge.m_Cursor++]);
+			if(!vMergeBatch.empty())
+				PublishSettingsAssetMergeEntries(Tab, vMergeBatch);
+			const int MergedEntries = (int)(PendingMerge.m_Cursor - MergeStartCursor);
+			const int RemainingEntries = (int)(PendingMerge.m_vEntries.size() - PendingMerge.m_Cursor);
+			const ESettingsWarmupMissReason MergeReason = PendingMerge.m_Cursor < PendingMerge.m_vEntries.size() ? ESettingsWarmupMissReason::JOB_RESULT_PENDING : ESettingsWarmupMissReason::NONE;
 
 			if(PendingMerge.m_Cursor >= PendingMerge.m_vEntries.size())
 			{
 				const SAssetResourceCategory *pCurrentCategory = AssetResourceCategoryByTab(Tab);
-				PublishSettingsAssetMergeEntries(Tab, PendingMerge.m_vEntries);
 				switch(Tab)
 				{
 				case ASSETS_TAB_ENTITIES:
@@ -2912,6 +2923,7 @@ bool CMenus::PrewarmSettingsAssetResources()
 				m_aAssetLoadStates[Tab] = ASSET_LOAD_STATE_LOADED;
 				gs_aInitCustomList[Tab] = true;
 			}
+			LogSettingsResourcePerf(SETTINGS_ASSETS, "merge", MergedEntries, 64, RemainingEntries, MergeReason, 0.0);
 		}
 
 		gs_aAssetWarmupReady[Tab] = m_aAssetLoadStates[Tab] == ASSET_LOAD_STATE_LOADED;
@@ -3115,6 +3127,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		m_apAssetLoadJobs[s_CurCustomTab] = pJob;
 		Engine()->AddJob(m_apAssetLoadJobs[s_CurCustomTab]);
 		m_aAssetLoadStates[s_CurCustomTab] = ASSET_LOAD_STATE_LOADING;
+		LogSettingsResourcePerf(SETTINGS_ASSETS, "queued", 1, 1, 0, ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING, 0.0);
 	}
 
 	// Check if async loading completed
@@ -3137,6 +3150,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			char aExtra[128];
 			str_format(aExtra, sizeof(aExtra), "tab=%d entries=%d", s_CurCustomTab, (int)vEntries.size());
 			LogAssetsPerfStage("assets_load_job_complete", CompletedTimer.ElapsedMs(), true, aExtra);
+			LogSettingsResourcePerf(SETTINGS_ASSETS, "complete", (int)vEntries.size(), (int)vEntries.size(), 0, ESettingsWarmupMissReason::NONE, CompletedTimer.ElapsedMs());
 		}
 
 		// The list merge below can reallocate backing storage. Drop queued preview pointers
@@ -3166,20 +3180,28 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			return;
 		}
 		CPerfTimer MergeTimer;
-		PendingMerge.m_Cursor = PendingMerge.m_vEntries.size();
+		SSettingsResourceMergeBudget MergeBudget;
+		MergeBudget.m_MaxListEntries = 64;
+		std::vector<SSettingsAssetMergeEntry> vMergeBatch;
+		vMergeBatch.reserve(MergeBudget.m_MaxListEntries);
+		const size_t MergeStartCursor = PendingMerge.m_Cursor;
+		while(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
+			vMergeBatch.push_back(PendingMerge.m_vEntries[PendingMerge.m_Cursor++]);
+		if(!vMergeBatch.empty())
+			PublishSettingsAssetMergeEntries(s_CurCustomTab, vMergeBatch);
 
 		if(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size())
 		{
 			char aExtra[128];
 			str_format(aExtra, sizeof(aExtra), "tab=%d merged=%d remaining=%d reason=%s",
-				s_CurCustomTab, (int)PendingMerge.m_Cursor, (int)(PendingMerge.m_vEntries.size() - PendingMerge.m_Cursor),
+				s_CurCustomTab, (int)(PendingMerge.m_Cursor - MergeStartCursor), (int)(PendingMerge.m_vEntries.size() - PendingMerge.m_Cursor),
 				SettingsWarmupMissReasonName(ESettingsWarmupMissReason::JOB_RESULT_PENDING));
 			LogAssetsPerfStage("assets_merge_budget", MergeTimer.ElapsedMs(), true, aExtra);
+			LogSettingsResourcePerf(SETTINGS_ASSETS, "merge", (int)(PendingMerge.m_Cursor - MergeStartCursor), 64, (int)(PendingMerge.m_vEntries.size() - PendingMerge.m_Cursor), ESettingsWarmupMissReason::JOB_RESULT_PENDING, MergeTimer.ElapsedMs());
 		}
 		else
 		{
 			const SAssetResourceCategory *pCurrentCategory = AssetResourceCategoryByTab(s_CurCustomTab);
-			PublishSettingsAssetMergeEntries(s_CurCustomTab, PendingMerge.m_vEntries);
 			switch(s_CurCustomTab)
 			{
 			case ASSETS_TAB_ENTITIES:
@@ -3226,8 +3248,9 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			}
 
 			char aExtra[128];
-			str_format(aExtra, sizeof(aExtra), "tab=%d entries=%d", s_CurCustomTab, (int)PendingMerge.m_vEntries.size());
+			str_format(aExtra, sizeof(aExtra), "tab=%d merged=%d", s_CurCustomTab, (int)(PendingMerge.m_Cursor - MergeStartCursor));
 			LogAssetsPerfStage("assets_merge_results", MergeTimer.ElapsedMs(), true, aExtra);
+			LogSettingsResourcePerf(SETTINGS_ASSETS, "merge", (int)(PendingMerge.m_Cursor - MergeStartCursor), 64, 0, ESettingsWarmupMissReason::NONE, MergeTimer.ElapsedMs());
 			PendingMerge = {};
 			m_aAssetLoadStates[s_CurCustomTab] = ASSET_LOAD_STATE_LOADED;
 			gs_aAssetWarmupReady[s_CurCustomTab] = true;
@@ -3933,6 +3956,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			LogAssetsPerfStage("assets_preview_gpu_upload_batch", 0.0, true, aUploadExtra);
 			pItem->m_PreviewResized = false;
 		}
+		LogSettingsResourcePerf(SETTINGS_ASSETS, "upload", (int)UploadedBytesThisFrame, (int)MaxPreviewUploadBytesPerFrame, (int)vReadyQueue.size(), vReadyQueue.empty() ? ESettingsWarmupMissReason::NONE : ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
 		char aDrainExtra[192];
 		str_format(aDrainExtra, sizeof(aDrainExtra), "tab=%d processed=%d bytes_budget=%u queue_remaining=%d bytes_used=%u",
 			s_CurCustomTab, UploadedPreviewsThisFrame, (unsigned)MaxPreviewUploadBytesPerFrame, (int)vReadyQueue.size(),
@@ -4626,6 +4650,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			LogAssetsPerfStage("assets_workshop_thumb_upload_batch", UploadBatchTimer.ElapsedMs(), false, aExtra);
 			ResetWorkshopThumbReadyState(*pAsset);
 		}
+		LogSettingsResourcePerf(SETTINGS_ASSETS, "upload", (int)WorkshopThumbUploadedBytesThisFrame, (int)MaxWorkshopThumbUploadBytesPerFrame, (int)WorkshopState.m_vReadyThumbQueue.size(), WorkshopState.m_vReadyThumbQueue.empty() ? ESettingsWarmupMissReason::NONE : ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
 		char aWorkshopFinalizeExtra[160];
 		str_format(aWorkshopFinalizeExtra, sizeof(aWorkshopFinalizeExtra), "tab=%d finalized=%d deferred=%d ready_queue=%d",
 			s_CurCustomTab, WorkshopThumbFinalizesThisFrame, DeferredWorkshopThumbs, (int)WorkshopState.m_vReadyThumbQueue.size());

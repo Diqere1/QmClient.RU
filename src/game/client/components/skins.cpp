@@ -19,6 +19,8 @@
 #include <generated/client_data.h>
 
 #include <game/client/gameclient.h>
+#include <game/client/components/menus.h>
+#include <game/client/components/settings_runtime_cache.h>
 #include <game/localization.h>
 
 #include <algorithm>
@@ -28,6 +30,12 @@ using namespace std::chrono_literals;
 static int &SkinQueueIntervalVar(int Dummy)
 {
 	return Dummy ? g_Config.m_QmDummySkinQueueInterval : g_Config.m_QmSkinQueueInterval;
+}
+
+static void LogSkinSettingsResourcePerf(const char *pJob, int Count, int Budget, int Remaining, ESettingsWarmupMissReason Reason, double DurationMs)
+{
+	LogSettingsResourcePerf(CMenus::SETTINGS_PLAYER, pJob, Count, Budget, Remaining, Reason, DurationMs);
+	LogSettingsResourcePerf(CMenus::SETTINGS_TEE, pJob, Count, Budget, Remaining, Reason, DurationMs);
 }
 
 static int &SkinQueueLengthVar(int Dummy)
@@ -1053,6 +1061,7 @@ CSkins::ESkinProcessResult CSkins::ProcessSkinContainer(CSkinContainer *pSkinCon
 	{
 		if(!GameClient()->GpuUploadLimiter()->CanUpload())
 		{
+			LogSkinSettingsResourcePerf("upload", 0, MAX_SKINS_PER_FRAME, Stats.m_NumLoading, ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
 			return ESkinProcessResult::BREAK_GPU_LIMIT;
 		}
 
@@ -1067,6 +1076,7 @@ CSkins::ESkinProcessResult CSkins::ProcessSkinContainer(CSkinContainer *pSkinCon
 		GameClient()->OnSkinUpdate(pSkinContainer->Name());
 		pSkinContainer->m_pLoadJob = nullptr;
 		Stats.m_NumLoaded++;
+		LogSkinSettingsResourcePerf("upload", 1, MAX_SKINS_PER_FRAME, (int)Stats.m_NumLoading, ESettingsWarmupMissReason::NONE, 0.0);
 	}
 	else
 	{
@@ -1335,6 +1345,7 @@ void CSkins::QueueSkinListPlanJob()
 
 	m_pSkinListPlanJob = std::make_shared<CSkinListPlanJob>(std::move(vEntries), g_Config.m_ClSkinFilterString, ++m_SkinListPlanGeneration);
 	Engine()->AddJob(m_pSkinListPlanJob);
+	LogSkinSettingsResourcePerf("queued", 1, 1, 0, ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING, 0.0);
 }
 
 void CSkins::QueueSkinDirectoryScanJob()
@@ -1382,6 +1393,7 @@ void CSkins::ProcessSkinListPlanJob()
 	if(m_pSkinListPlanJob && m_pSkinListPlanJob->State() == IJob::STATE_DONE)
 	{
 		auto Result = m_pSkinListPlanJob->TakeResult();
+		LogSkinSettingsResourcePerf("complete", (int)Result.m_Plan.m_vNames.size(), (int)Result.m_UnfilteredCount, 0, ESettingsWarmupMissReason::NONE, 0.0);
 		if(!m_SkinList.m_NeedsUpdate && SettingsSkinListPlanGenerationMatches({Result.m_Generation, Result.m_Plan}, m_SkinListPlanGeneration))
 		{
 			m_vPendingSkinListMergeNames = std::move(Result.m_Plan.m_vNames);
@@ -1413,6 +1425,7 @@ void CSkins::ProcessSkinListPlanJob()
 
 	SSettingsResourceMergeBudget MergeBudget;
 	MergeBudget.m_MaxListEntries = 64;
+	const size_t MergeStartCursor = m_SkinListMergeCursor;
 	while(m_SkinListMergeCursor < m_vPendingSkinListMergeNames.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
 	{
 		const std::string &Name = m_vPendingSkinListMergeNames[m_SkinListMergeCursor++];
@@ -1422,6 +1435,7 @@ void CSkins::ProcessSkinListPlanJob()
 
 		m_vPendingSkinListEntries.push_back(MakeSkinListEntry(SkinIt->second.get()));
 	}
+	LogSkinSettingsResourcePerf("merge", (int)(m_SkinListMergeCursor - MergeStartCursor), 64, (int)(m_vPendingSkinListMergeNames.size() - m_SkinListMergeCursor), m_SkinListMergeCursor < m_vPendingSkinListMergeNames.size() ? ESettingsWarmupMissReason::JOB_RESULT_PENDING : ESettingsWarmupMissReason::NONE, 0.0);
 
 	if(SettingsSkinListShouldPublishMergedList(m_SkinListMergeCursor, m_vPendingSkinListMergeNames.size()))
 	{

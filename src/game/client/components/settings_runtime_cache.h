@@ -134,6 +134,9 @@ bool SettingsWarmupPlanContainsPage(const SSettingsWarmupStartupPlan &Plan, int 
 bool SettingsWarmupConsumeBudget(SSettingsWarmupFrameBudget &Budget, ESettingsWarmupCost Cost);
 const char *SettingsWarmupMissReasonName(ESettingsWarmupMissReason Reason);
 const char *SettingsTClientPerfStageName(ETClientSettingsPerfStage Stage);
+const char *SettingsInvalidationReasonName(ESettingsInvalidationReason Reason);
+bool SettingsRuntimeCacheAllowsVisibleCompactText(const char *pRenderName);
+void LogSettingsResourcePerf(int Page, const char *pJob, int Count, int Budget, int Remaining, ESettingsWarmupMissReason Reason, double DurationMs);
 bool SettingsInvalidationClearsTextPool(ESettingsInvalidationReason Reason);
 bool SettingsInvalidationClearsSectionFbo(ESettingsInvalidationReason Reason);
 bool SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason Reason);

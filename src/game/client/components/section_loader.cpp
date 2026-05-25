@@ -18,10 +18,7 @@ CSectionLoader::~CSectionLoader()
 
 bool CSectionLoader::IsVisibleSummarySectionName(const char *pName)
 {
-	return pName != nullptr &&
-	       str_find(pName, "DeferredSummary") == nullptr &&
-	       str_find(pName, "CompactSummary") == nullptr &&
-	       str_find(pName, "SummaryBlock") == nullptr;
+	return SettingsRuntimeCacheAllowsVisibleCompactText(pName);
 }
 
 CUIRect CSectionLoader::MakeRenderTargetCacheRectForTests(float Width, float Height)

@@ -14,6 +14,7 @@
 #include <engine/storage.h>
 
 #include <game/client/gameclient.h>
+#include <game/client/components/menus.h>
 #include <game/client/components/settings_runtime_cache.h>
 
 namespace
@@ -31,6 +32,12 @@ namespace
 			dbg_msg("perf/countryflags", "stage=%s %s", pStage, pExtra);
 		else
 			dbg_msg("perf/countryflags", "stage=%s", pStage);
+	}
+
+	void LogCountryFlagSettingsResourcePerf(const char *pJob, int Count, int Budget, int Remaining, ESettingsWarmupMissReason Reason, double DurationMs)
+	{
+		LogSettingsResourcePerf(CMenus::SETTINGS_LANGUAGE, pJob, Count, Budget, Remaining, Reason, DurationMs);
+		LogSettingsResourcePerf(CMenus::SETTINGS_PLAYER, pJob, Count, Budget, Remaining, Reason, DurationMs);
 	}
 }
 
@@ -154,6 +161,7 @@ void CCountryFlags::StartFlagLoadJob(int Index)
 	auto pJob = std::make_shared<CCountryFlagLoadJob>(aPath, m_vCountryFlags[Index].m_CountryCode, Storage());
 	Engine()->AddJob(pJob);
 	m_PendingJobs.push_back(pJob);
+	LogCountryFlagSettingsResourcePerf("queued", 1, 1, (int)m_PendingJobs.size(), ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING, 0.0);
 }
 
 void CCountryFlags::ProcessCompletedJobs()
@@ -171,10 +179,12 @@ void CCountryFlags::ProcessCompletedJobs()
 		if(!GameClient()->GpuUploadLimiter()->CanUpload())
 		{
 			LogCountryFlagsPerfStage("countryflags_gpu_upload_budget", SettingsWarmupMissReasonName(ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET));
+			LogCountryFlagSettingsResourcePerf("upload", 0, 1, (int)m_PendingJobs.size(), ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
 			break;
 		}
 
 		CCountryFlagLoadJob::SResult Result = pJob->GetResult();
+		LogCountryFlagSettingsResourcePerf("complete", Result.m_Success ? 1 : 0, 1, (int)m_PendingJobs.size() - 1, Result.m_Success ? ESettingsWarmupMissReason::NONE : ESettingsWarmupMissReason::JOB_RESULT_PENDING, 0.0);
 		if(Result.m_Success)
 		{
 			for(auto &Flag : m_vCountryFlags)
@@ -184,6 +194,7 @@ void CCountryFlags::ProcessCompletedJobs()
 					Flag.m_Texture = Graphics()->LoadTextureRawMove(Result.m_Image, 0, Flag.m_aCountryCodeString);
 					Flag.m_Loaded = true;
 					GameClient()->GpuUploadLimiter()->OnUploaded();
+					LogCountryFlagSettingsResourcePerf("upload", 1, 1, (int)m_PendingJobs.size() - 1, ESettingsWarmupMissReason::NONE, 0.0);
 
 					if(g_Config.m_Debug)
 					{

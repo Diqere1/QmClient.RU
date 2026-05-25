@@ -1,9 +1,11 @@
 #include "settings_runtime_cache.h"
 
+#include <base/system.h>
 #include <game/client/components/menus.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <engine/shared/config.h>
 #include <utility>
 
 static void AddUnique(std::vector<int> &vValues, int Value)
@@ -283,6 +285,38 @@ const char *SettingsTClientPerfStageName(ETClientSettingsPerfStage Stage)
 	case ETClientSettingsPerfStage::INTERACTIVE_LAYER: return "tclient_interactive_layer";
 	}
 	return "tclient_unknown";
+}
+
+const char *SettingsInvalidationReasonName(ESettingsInvalidationReason Reason)
+{
+	switch(Reason)
+	{
+	case ESettingsInvalidationReason::LANGUAGE_CHANGED: return "language_changed";
+	case ESettingsInvalidationReason::FONT_CHANGED: return "font_changed";
+	case ESettingsInvalidationReason::BACKEND_CHANGED: return "backend_changed";
+	case ESettingsInvalidationReason::WINDOW_OR_SCALE_CHANGED: return "window_or_scale_changed";
+	case ESettingsInvalidationReason::CONFIG_HASH_CHANGED: return "config_hash_changed";
+	case ESettingsInvalidationReason::SECTION_SIZE_CHANGED: return "section_size_changed";
+	case ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED: return "resource_directory_changed";
+	}
+	return "unknown";
+}
+
+bool SettingsRuntimeCacheAllowsVisibleCompactText(const char *pRenderName)
+{
+	return pRenderName != nullptr &&
+		str_find(pRenderName, "DeferredSummary") == nullptr &&
+		str_find(pRenderName, "CompactSummary") == nullptr &&
+		str_find(pRenderName, "SummaryBlock") == nullptr;
+}
+
+void LogSettingsResourcePerf(int Page, const char *pJob, int Count, int Budget, int Remaining, ESettingsWarmupMissReason Reason, double DurationMs)
+{
+	if(g_Config.m_QmPerfDebug == 0)
+		return;
+	const std::string PageName = SettingsPageCacheKey(Page, -1);
+	dbg_msg("perf/settings-resource", "page=%s job=%s count=%d budget=%d remaining=%d reason=%s cost_ms=%.3f",
+		PageName.c_str(), pJob != nullptr ? pJob : "unknown", Count, Budget, Remaining, SettingsWarmupMissReasonName(Reason), DurationMs);
 }
 
 bool SettingsInvalidationClearsTextPool(ESettingsInvalidationReason Reason)

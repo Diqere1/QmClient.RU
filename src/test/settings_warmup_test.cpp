@@ -274,6 +274,40 @@ TEST(SettingsRuntimeCache, TClientPerfStageNamesAreStable)
 	EXPECT_STREQ(SettingsTClientPerfStageName(ETClientSettingsPerfStage::INTERACTIVE_LAYER), "tclient_interactive_layer");
 }
 
+TEST(SettingsRuntimeCache, PerfReasonNamesAreStable)
+{
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::NONE), "none");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::PAGE_FBO_UNSUPPORTED), "page_fbo_unsupported");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::PAGE_FBO_NOT_READY), "page_fbo_not_ready");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::SECTION_FBO_NOT_READY), "section_fbo_not_ready");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING), "resource_plan_pending");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::JOB_RESULT_PENDING), "job_result_pending");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET), "gpu_upload_budget");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::TEXT_BUDGET), "text_budget");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::ACTIVE_ITEM), "active_item");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::INVALID_RUNTIME_KEY), "invalid_runtime_key");
+}
+
+TEST(SettingsRuntimeCache, InvalidationReasonNamesAreStable)
+{
+	EXPECT_STREQ(SettingsInvalidationReasonName(ESettingsInvalidationReason::LANGUAGE_CHANGED), "language_changed");
+	EXPECT_STREQ(SettingsInvalidationReasonName(ESettingsInvalidationReason::FONT_CHANGED), "font_changed");
+	EXPECT_STREQ(SettingsInvalidationReasonName(ESettingsInvalidationReason::BACKEND_CHANGED), "backend_changed");
+	EXPECT_STREQ(SettingsInvalidationReasonName(ESettingsInvalidationReason::WINDOW_OR_SCALE_CHANGED), "window_or_scale_changed");
+	EXPECT_STREQ(SettingsInvalidationReasonName(ESettingsInvalidationReason::CONFIG_HASH_CHANGED), "config_hash_changed");
+	EXPECT_STREQ(SettingsInvalidationReasonName(ESettingsInvalidationReason::SECTION_SIZE_CHANGED), "section_size_changed");
+	EXPECT_STREQ(SettingsInvalidationReasonName(ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED), "resource_directory_changed");
+}
+
+TEST(SettingsRuntimeCache, CompactVisibleTextIsRejected)
+{
+	EXPECT_TRUE(SettingsRuntimeCacheAllowsVisibleCompactText("TClientPetSection"));
+	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText(nullptr));
+	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText("TClientDeferredSummary"));
+	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText("TClientCompactSummary"));
+	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText("TClientSummaryBlock"));
+}
+
 TEST(SettingsRuntimeCache, RuntimeKeyInvalidatesOnLanguageFontBackendWindowScaleAndConfig)
 {
 	SSettingsRuntimeCacheKey A;
