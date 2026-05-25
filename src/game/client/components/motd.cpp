@@ -11,6 +11,7 @@
 
 #include <game/client/components/important_alert.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 
 CMotd::CMotd()
 {
@@ -70,7 +71,7 @@ void CMotd::OnRender()
 
 	if(m_RectQuadContainer == -1)
 	{
-		Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.5f);
+		Graphics()->SetColor(ui_token::color::SURFACE_ELEVATED);
 		m_RectQuadContainer = Graphics()->CreateRectQuadContainer(RectX, RectY, RectWidth, RectHeight, FontSize, IGraphics::CORNER_ALL);
 		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}

@@ -1,9 +1,18 @@
 {
   "required_files": [
     "AGENTS.md",
-    "Claude.md",
+    "CLAUDE.md",
+    ".ai/harness.md",
+    ".ai/session-lifecycle.md",
+    ".ai/ddnet-development.md",
+    ".ai/verification.md",
+    ".ai/review.md",
     ".ai/reference.md",
     ".ai/workflow-manifest.json",
+    "feature_list.json",
+    "progress.md",
+    "session-handoff.md",
+    "init.sh",
     "qmclient_scripts/gate/baseline_debt_allowlist.json",
     "qmclient_scripts/gate/check-gate.sh",
     "qmclient_scripts/gate/check-gate-workflow.md",
@@ -15,21 +24,40 @@
     ".github/workflows/governance.yml"
   ],
   "agents_root_order": [
+    ".ai/harness.md",
+    ".ai/session-lifecycle.md",
+    ".ai/ddnet-development.md",
+    ".ai/verification.md",
+    ".ai/review.md",
     ".ai/reference.md"
   ],
   "agents_required_sections": [
-    "## Project overview",
+    "## 入口原则",
+    "## 启动顺序",
+    "## 文档地图",
+    "## 全局硬约束",
+    "## 机械化入口"
+  ],
+  "agents_forbidden_snippets": [
     "## Build",
     "## Test",
-    "## Pre-commit validation (gate)",
     "## Source architecture",
-    "## Key configuration",
-    "## Document hierarchy"
+    "## Release notes"
   ],
+  "root_map_max_lines": 120,
   "claude_sync_references": [
+    ".ai/harness.md",
     ".ai/reference.md"
   ],
   "claude_sync_mode": "sync_auto",
+  "focused_ai_docs": [
+    ".ai/harness.md",
+    ".ai/session-lifecycle.md",
+    ".ai/ddnet-development.md",
+    ".ai/verification.md",
+    ".ai/review.md",
+    ".ai/reference.md"
+  ],
   "reference_required_sections": [
     "## 任务路由",
     "## 提交前验证",
@@ -37,15 +65,53 @@
     "## 文档维护原则",
     "## 发布说明模板"
   ],
+  "state_required_sections": {
+    "progress.md": [
+      "## Current State",
+      "## Status",
+      "## What's In Progress",
+      "## Evidence"
+    ],
+    "session-handoff.md": [
+      "## Current Objective",
+      "## Verification Evidence",
+      "## Blockers / Risks",
+      "## Recommended Next Step"
+    ]
+  },
+  "init_required_snippets": [
+    "QmClient Harness Initialization",
+    "check_workflow_docs.py",
+    "RUN_QUICK_GATE",
+    "RUN_BUILD",
+    "RUN_CXX_TESTS",
+    "RUN_RUST_TESTS"
+  ],
+  "feature_list_status_values": [
+    "pending",
+    "in-progress",
+    "done",
+    "blocked"
+  ],
+  "feature_list_max_in_progress": 1,
   "workflow_routes": [
     {
-      "name": "参考手册",
+      "name": "harness",
       "must_reference": [
-        ".ai/reference.md"
+        ".ai/harness.md",
+        ".ai/session-lifecycle.md"
       ]
     },
     {
-      "name": "仓库脚本",
+      "name": "development",
+      "must_reference": [
+        ".ai/ddnet-development.md",
+        ".ai/verification.md",
+        ".ai/review.md"
+      ]
+    },
+    {
+      "name": "scripts",
       "must_reference": [
         "qmclient_scripts/gate/check-gate.sh",
         "qmclient_scripts/gate/check_workflow_docs.py",
@@ -58,6 +124,11 @@
     "发布说明模板"
   ],
   "managed_governance_directories": [
+    {
+      "base": ".ai",
+      "glob": "*.md",
+      "ignored_files": []
+    },
     {
       "base": "qmclient_scripts/gate",
       "glob": "*",

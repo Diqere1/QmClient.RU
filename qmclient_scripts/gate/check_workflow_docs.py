@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-检查仓库工作流文档入口是否仍然一致。
+检查仓库 harness / workflow 文档入口是否仍然一致。
 
 目标：
-1. 防止 AGENTS / Claude / reference.md 漂移。
-2. 防止 reference.md 引用的脚本失效。
-3. 用中文输出可直接并入 check-gate 汇总。
+1. 防止 AGENTS / CLAUDE / .ai 分层文档漂移。
+2. 防止 feature_list / progress / session-handoff 状态文件失去结构。
+3. 防止 reference.md 引用的脚本失效。
+4. 用中文输出可直接并入 check-gate 汇总。
 """
 
 from __future__ import annotations
@@ -75,6 +76,12 @@ def missing_snippets(text: str, snippets: list[str]) -> list[str]:
     return [snippet for snippet in snippets if snippet not in text]
 
 
+def count_lines(text: str) -> int:
+    if not text:
+        return 0
+    return len(text.replace("\r\n", "\n").replace("\r", "\n").splitlines())
+
+
 def normalize_full_sync_text(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
@@ -82,7 +89,10 @@ def normalize_full_sync_text(text: str) -> str:
 def collect_markdown_paths(text: str) -> list[str]:
     seen: set[str] = set()
     matches: list[str] = []
-    for match in re.findall(r"`((?:\.ai|qmclient_scripts|scripts)/[^`]+?\.(?:md|ps1|py|sh|json))`", text):
+    for match in re.findall(
+        r"`((?:\.ai|qmclient_scripts|scripts|feature_list|progress|session-handoff|init)[^`]*?\.(?:md|ps1|py|sh|json)|init\.sh|feature_list\.json|progress\.md|session-handoff\.md)`",
+        text,
+    ):
         if match not in seen:
             seen.add(match)
             matches.append(match)
@@ -122,6 +132,116 @@ def discover_unmanaged_governance_files(manifest: dict, required_files: list[str
             unmanaged.add(relative_path)
 
     return sorted(unmanaged)
+
+
+def check_feature_list(manifest: dict) -> CheckResult:
+    path = REPO_ROOT / "feature_list.json"
+    if not path.exists():
+        return CheckResult(False, "feature_list.json 结构", "缺失 feature_list.json")
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        return CheckResult(False, "feature_list.json 结构", f"JSON 解析失败: {error}")
+
+    features = payload.get("features")
+    if not isinstance(features, list) or not features:
+        return CheckResult(False, "feature_list.json 结构", "features 必须是非空数组")
+
+    allowed_status = set(manifest.get("feature_list_status_values", []))
+    max_in_progress = int(manifest.get("feature_list_max_in_progress", 1))
+    problems: list[str] = []
+    seen_ids: set[str] = set()
+    in_progress_count = 0
+
+    for index, feature in enumerate(features):
+        if not isinstance(feature, dict):
+            problems.append(f"features[{index}] 不是对象")
+            continue
+        feature_id = str(feature.get("id", "")).strip()
+        name = str(feature.get("name", "")).strip()
+        description = str(feature.get("description", "")).strip()
+        status = str(feature.get("status", "")).strip()
+        dependencies = feature.get("dependencies", [])
+
+        if not feature_id:
+            problems.append(f"features[{index}] 缺少 id")
+        elif feature_id in seen_ids:
+            problems.append(f"重复 id: {feature_id}")
+        seen_ids.add(feature_id)
+
+        if not name:
+            problems.append(f"{feature_id or index} 缺少 name")
+        if not description:
+            problems.append(f"{feature_id or index} 缺少 description")
+        if status not in allowed_status:
+            problems.append(f"{feature_id or index} status 非法: {status}")
+        if status == "in-progress":
+            in_progress_count += 1
+        if not isinstance(dependencies, list):
+            problems.append(f"{feature_id or index} dependencies 必须是数组")
+
+    if in_progress_count > max_in_progress:
+        problems.append(f"in-progress 数量为 {in_progress_count}，最多允许 {max_in_progress}")
+
+    return CheckResult(
+        ok=not problems,
+        title="feature_list.json 结构",
+        detail="通过" if not problems else "; ".join(problems),
+    )
+
+
+def check_state_file_sections(manifest: dict) -> CheckResult:
+    problems: list[str] = []
+    for relative_path, sections in manifest.get("state_required_sections", {}).items():
+        path = REPO_ROOT / relative_path
+        if not path.exists():
+            problems.append(f"{relative_path} 缺失")
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing = missing_snippets(text, list(sections))
+        if missing:
+            problems.append(f"{relative_path} 缺少分节: {', '.join(missing)}")
+
+    return CheckResult(
+        ok=not problems,
+        title="状态文件结构",
+        detail="通过" if not problems else "; ".join(problems),
+    )
+
+
+def check_init_script(manifest: dict) -> CheckResult:
+    path = REPO_ROOT / "init.sh"
+    if not path.exists():
+        return CheckResult(False, "init.sh harness 入口", "缺失 init.sh")
+    text = path.read_text(encoding="utf-8")
+    missing = missing_snippets(text, manifest.get("init_required_snippets", []))
+    return CheckResult(
+        ok=not missing,
+        title="init.sh harness 入口",
+        detail="通过" if not missing else f"缺少片段: {', '.join(missing)}",
+    )
+
+
+def check_root_map_size(text: str, manifest: dict) -> CheckResult:
+    max_lines = int(manifest.get("root_map_max_lines", 0))
+    if max_lines <= 0:
+        return CheckResult(True, "AGENTS 根地图长度", "未配置限制")
+    line_count = count_lines(text)
+    return CheckResult(
+        ok=line_count <= max_lines,
+        title="AGENTS 根地图长度",
+        detail=f"通过 ({line_count}/{max_lines} 行)" if line_count <= max_lines else f"过长: {line_count}/{max_lines} 行，应把细节下沉到 .ai/",
+    )
+
+
+def check_forbidden_snippets(text: str, manifest: dict) -> CheckResult:
+    forbidden = [snippet for snippet in manifest.get("agents_forbidden_snippets", []) if snippet in text]
+    return CheckResult(
+        ok=not forbidden,
+        title="AGENTS 地图化约束",
+        detail="通过" if not forbidden else f"根入口包含应下沉的旧分节: {', '.join(forbidden)}",
+    )
 
 
 def extract_scalar_value(line: str) -> str:
@@ -291,7 +411,7 @@ def run_checks() -> list[CheckResult]:
         results.append(
             CheckResult(
                 ok=sync_exit_code == 0,
-                title="Claude / AGENTS 自动同步",
+                title="CLAUDE / AGENTS 自动同步",
                 detail="通过" if sync_exit_code == 0 else (sync_output or "自动同步失败"),
             )
         )
@@ -302,7 +422,7 @@ def run_checks() -> list[CheckResult]:
         results.append(
             CheckResult(
                 ok=sync_exit_code == 0,
-                title="Claude / AGENTS 自动同步",
+                title="CLAUDE / AGENTS 自动同步",
                 detail="通过" if sync_exit_code == 0 else (sync_output or "自动同步失败"),
             )
         )
@@ -313,7 +433,7 @@ def run_checks() -> list[CheckResult]:
         results.append(
             CheckResult(
                 ok=sync_exit_code == 0,
-                title="Claude / AGENTS 自动同步",
+                title="CLAUDE / AGENTS 自动同步",
                 detail="通过" if sync_exit_code == 0 else (sync_output or "自动同步失败"),
             )
         )
@@ -340,7 +460,7 @@ def run_checks() -> list[CheckResult]:
     )
 
     agents = read_text("AGENTS.md")
-    claude = read_text("Claude.md")
+    claude = read_text("CLAUDE.md")
     reference = read_text(".ai/reference.md")
 
     agents_order = manifest.get("agents_root_order", [])
@@ -348,9 +468,12 @@ def run_checks() -> list[CheckResult]:
         CheckResult(
             ok=ordered_contains(agents, agents_order),
             title="AGENTS 文档入口顺序",
-            detail="通过" if ordered_contains(agents, agents_order) else "未按 AGENTS -> reference.md 顺序声明入口",
+            detail="通过" if ordered_contains(agents, agents_order) else "未按 harness 地图顺序声明 .ai 入口",
         )
     )
+
+    results.append(check_root_map_size(agents, manifest))
+    results.append(check_forbidden_snippets(agents, manifest))
 
     required_agent_sections = manifest.get("agents_required_sections", [])
     missing_agent_sections = missing_snippets(agents, required_agent_sections)
@@ -367,7 +490,7 @@ def run_checks() -> list[CheckResult]:
     results.append(
         CheckResult(
             ok=not missing_claude,
-            title="Claude 文档同步入口",
+            title="CLAUDE 文档同步入口",
             detail="通过" if not missing_claude else f"缺少引用: {', '.join(missing_claude)}",
         )
     )
@@ -379,10 +502,20 @@ def run_checks() -> list[CheckResult]:
         results.append(
             CheckResult(
                 ok=agents_normalized == claude_normalized,
-                title="Claude 与 AGENTS 全文同步",
-                detail="通过" if agents_normalized == claude_normalized else "Claude.md 与 AGENTS.md 未保持 1:1 全文一致（仅允许换行差异）",
+                title="CLAUDE 与 AGENTS 全文同步",
+                detail="通过" if agents_normalized == claude_normalized else "CLAUDE.md 与 AGENTS.md 未保持 1:1 全文一致（仅允许换行差异）",
             )
         )
+
+    focused_docs = manifest.get("focused_ai_docs", [])
+    missing_focused_refs = [path for path in focused_docs if f"`{path}`" not in agents]
+    results.append(
+        CheckResult(
+            ok=not missing_focused_refs,
+            title="AGENTS 分层文档地图",
+            detail="通过" if not missing_focused_refs else f"缺少 .ai 地图引用: {', '.join(missing_focused_refs)}",
+        )
+    )
 
     referenced_paths = collect_markdown_paths(reference)
     missing_referenced = [path for path in referenced_paths if not path_exists_or_is_glob(path)]
@@ -428,6 +561,10 @@ def run_checks() -> list[CheckResult]:
             detail="通过" if not missing_release_notes else f"缺少引用: {', '.join(missing_release_notes)}",
         )
     )
+
+    results.append(check_feature_list(manifest))
+    results.append(check_state_file_sections(manifest))
+    results.append(check_init_script(manifest))
 
     governance_workflow_text = read_text(".github/workflows/governance.yml")
     governance_required_snippets = manifest.get("governance_workflow_required_snippets", [])

@@ -1,115 +1,99 @@
-# QmClient 参考手册
+# QmClient Harness Reference
 
-本文件合并了工作流路由、提交验证、PR 审查、文档维护和发布说明等内容。
+This file is the detailed routing table behind the short root map in `AGENTS.md` / `CLAUDE.md`.
 
 ## 任务路由
 
-### 推荐读取顺序
+Read the narrowest document that matches the task:
 
-1. `AGENTS.md`（包含文档入口和启动约束）
-2. `.ai/reference.md`（本文件）
+| Task | First document |
+|------|----------------|
+| Agent rules, state files, harness shape | `.ai/harness.md` |
+| Starting or ending a long session | `.ai/session-lifecycle.md` |
+| C++ implementation in DDNet/QmClient | `.ai/ddnet-development.md` |
+| Build, test, gate, visual verification | `.ai/verification.md` |
+| Code review | `.ai/review.md` |
+| Gate script semantics | `qmclient_scripts/gate/check-gate-workflow.md` |
+| Script inventory | `qmclient_scripts/脚本总览.md` |
 
-### 核心入口分类
+State files:
 
-#### 启动约束
-
-- `AGENTS.md` 的"文档入口"节
-- 本文件的"文档维护原则"节
-
-#### 仓库脚本
-
-- `qmclient_scripts/gate/check-gate.sh`：仓库级门禁总入口
-- `qmclient_scripts/gate/check_workflow_docs.py`：文档一致性检查
-- `qmclient_scripts/gate/strict-debug-check.sh`：严格调试检查
-- `qmclient_scripts/generate_release_notes.py`：发布说明生成
-
-需要查脚本分层和使用建议时，看 `qmclient_scripts/脚本总览.md`。
-
-### 目录使用原则
-
-- `AGENTS.md`：根规则
-- `.ai/reference.md`：详细参考（本文件）
-- `qmclient_scripts/`：实际执行脚本
-
-### 维护规则
-
-- 新增长期约束时，先补最合适的文档层，再补脚本引用。
-- 如果某条引用已经废弃，先更新入口文档，再清理旧引用。
+- `feature_list.json`: source of truth for feature scope, dependencies, and status.
+- `progress.md`: verified session evidence and current state.
+- `session-handoff.md`: concise restart path for the next session.
+- `init.sh`: lightweight harness health check and optional heavier gates.
 
 ## 提交前验证
 
-### 适用
+Minimum before claiming a code change is complete:
 
-在合并、发 PR、或标记任务完成前使用。
+- The relevant build passes with no new warnings.
+- Relevant tests pass.
+- If the task changes harness files, `python qmclient_scripts/gate/check_workflow_docs.py` passes.
+- If the task changes C/C++ source, run the appropriate gate from `.ai/verification.md`.
+- Evidence is recorded in `progress.md`, and `feature_list.json` is updated if status changes.
 
-### 最小要求
+Gate mapping:
 
-- 相关构建通过
-- 相关测试通过
-- 如果改动影响脚本或约束文档，先确认入口没有断链
-- 如果改动涉及 `AGENTS.md` / `Claude.md` 镜像，先跑 `qmclient_scripts/gate/sync_agents_claude.py` 再跑 `qmclient_scripts/gate/check_workflow_docs.py`
+| Need | Command |
+|------|---------|
+| Harness/document consistency | `python qmclient_scripts/gate/check_workflow_docs.py` |
+| Fast governance check | `bash qmclient_scripts/gate/check-gate.sh --mode quick --base-ref main` |
+| Daily pre-commit gate | `bash qmclient_scripts/gate/check-gate.sh --mode default --base-ref main` |
+| Full release-style gate | `bash qmclient_scripts/gate/check-gate.sh --mode full --base-ref main` |
+| Strict debug/static analysis only | `bash qmclient_scripts/gate/strict-debug-check.sh --base-ref main` |
 
-### 与 check-gate.sh 的对应
+Script facts:
 
-| 提交验证项 | check-gate.sh 模式 |
-|------------|-------------------|
-| 构建通过 | `default`（含 strict-debug-check） |
-| 测试通过 | `default`（含 run_cxx_tests） |
-| 源码卫生 | `quick`（配置变量、头文件 guard、style） |
-| 文档一致性 | `quick`（check_workflow_docs） |
-| Rust 测试 | `full`（run_rust_tests） |
-
-日常提交前跑 `--mode default --base-ref main` 即可覆盖大部分验证项。
+- `qmclient_scripts/gate/check-gate.sh`
+- `qmclient_scripts/gate/check_workflow_docs.py`
+- `qmclient_scripts/gate/strict-debug-check.sh`
+- `qmclient_scripts/generate_release_notes.py`
 
 ## PR 审查清单
 
-### 适用场景
+Use `.ai/review.md` for the full review format. At minimum, check:
 
-- 提交前 review
-- 合并前 review
-- 变更收口验收
-
-### 关注点
-
-- 行为是否符合需求
-- 验证是否覆盖关键路径
-- 是否引入不必要的范围扩大
-- 是否留下未解释的风险
-
-PR 模板参见 `.github/pull_request_template.md`。
+- Correctness against the requested behavior.
+- Undefined behavior, memory lifetime, iterator invalidation, and null/ bounds handling.
+- DDNet compatibility: protocol, demo/skin formats, map behavior, physics, prediction, snapshots, input, replay, and ranks.
+- Hot-path cost: per-frame, per-tick, per-player, per-entity work, allocations, repeated sorting, text layout, serialization, or network bandwidth.
+- API stability and whether the patch follows the existing local pattern.
+- Test and visual evidence.
 
 ## 文档维护原则
 
-### 分层
+The harness follows the `deusyu/harness-engineering` approach:
 
-- `AGENTS.md` 放根规则
-- 本文件（`reference.md`）放详细参考
-- `Claude.md` 只做 `AGENTS.md` 的镜像，优先用脚本同步，不手工双改
+- `AGENTS.md` / `CLAUDE.md` are maps, not manuals.
+- Long-lived rules live in focused `.ai/` documents.
+- Volatile state lives in `feature_list.json`, `progress.md`, and `session-handoff.md`.
+- Mechanical checks must guard drift; do not rely on human memory.
 
-### 维护原则
+When editing harness files:
 
-- 新约束先补最合适的层，不要堆在一个文件里
-- 删除旧引用前，先确认有没有新入口接住
-- 文档与脚本要一起检查，避免只修一边
-- 只要 `AGENTS.md` 或 `Claude.md` 任意一边改动，先用 `qmclient_scripts/gate/sync_agents_claude.py` 追平，再跑 `qmclient_scripts/gate/check_workflow_docs.py`
+```bash
+python qmclient_scripts/gate/sync_agents_claude.py --prefer agents
+python qmclient_scripts/gate/check_workflow_docs.py
+```
+
+Do not manually update only one of `AGENTS.md` and `CLAUDE.md`. Keep them synchronized through the script or by editing both identically.
 
 ## 发布说明模板
 
-使用 `qmclient_scripts/generate_release_notes.py` 可从 CodeStable 产物自动生成初稿。
-
-### 字段说明
-
-| 字段 | 来源 | 说明 |
-|------|------|------|
-| 本次重点 | `*-acceptance.md` | feature 验收结论 |
-| 新增 | `*-acceptance.md` | 新功能列表 |
-| 修复 | `*-fix-note.md` | bug 修复列表 |
-| 调整 | `*-acceptance.md` | 行为调整 |
-| 兼容性 | 人工补充 | 协议/格式/行为兼容性影响 |
-| Maintainer Notes | 人工补充 | 给维护者的额外说明 |
-
-### 用法
+Use the release note generator only after there is a gate report:
 
 ```bash
 python qmclient_scripts/generate_release_notes.py --gate-report tmp/check-gate-report.json
 ```
+
+Expected release note inputs:
+
+| Field | Source |
+|-------|--------|
+| Highlights | Feature acceptance notes or `progress.md` evidence |
+| Added | `FEAT` commit notes or accepted feature records |
+| Fixed | `FIX` commit notes or bugfix evidence |
+| Removed | `DEL` commit notes |
+| Compatibility | Manual notes for protocol, file format, map, physics, prediction, demo, or config impacts |
+| Maintainer notes | Manual reviewer guidance and known risks |

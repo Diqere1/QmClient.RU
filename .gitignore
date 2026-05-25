@@ -9,11 +9,6 @@ docs/dyl
 !docs/dyl/QmClient_docs
 
 # Agent workspace files
-AGENTS.md
-Agent.md
-Agents.md
-CLAUDE.md
-Claude.md
 CODEX.md
 Codex.md
 docs/superpowers/
@@ -23,14 +18,11 @@ docs/superpowers/
 .trae
 .claude
 skills/
-feature_list.json
-progress.md
-session-handoff.md
-init.sh
 
 # tmp
 tmp/
 QmClient_codeQmClienttmp_harness_repo/
+tmp_harness_deusyu/
 
 # Git worktrees
 worktrees/

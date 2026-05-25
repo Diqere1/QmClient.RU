@@ -1,0 +1,109 @@
+{
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "修复服务器浏览器表头列宽拖拽",
+      "description": "服务器浏览器 (src/game/client/components/menus_browser.cpp) 的列宽拖拽代码已存在(s_vResizeHandles / s_ResizeDragColIndex / 配置回写 m_BrColWidthGametype 等),但实际界面里全部 5 列(Gametype/Map/Friends/Players/Ping)的表头分隔条均无法拖动,鼠标悬停到分隔处也没有热区高亮和指针变化 — 提示问题大概率出在命中检测前置环节(Handle.m_Rect 计算、Headers 被上层覆盖、或拖拽循环未被执行)。需要定位失效原因并修复,使鼠标悬停表头分隔处出现拖拽热区、按住左键左右拖动改变列宽、松开后宽度持久化到 m_BrColWidth* 配置项。",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "已按 progress.md 记录完成并提交 4217bd737；后续 feat-005 已基于该修复继续实施。"
+    },
+    {
+      "id": "feat-002",
+      "name": "UI 动画系统增量扩展（spring + 曲线 token + Rect/Color 封装）",
+      "description": "调研发现现有 CUiV2AnimationRuntime 已具备中央调度器 + 状态机 + tween 全部要素，故改为增量扩展：(1) 加 spring driver (mass/stiffness/damping，半隐式欧拉+240Hz 子步) 与 tween 并存；(2) EEasing 末尾追加 EASE_OUT_QUART/EASE_OUT_BACK/EASE_IN_OUT_CUBIC/CUBIC_BEZIER，新建 QmAnimCurves.h 集中曲线/spring token；(3) 在 menus.cpp 增加 ResolveUiAnimValueRect/Color 封装。不破坏现有 ~100 处调用与 7 个 GTest。详见 plan 文件 drifting-petting-simon.md。拆 4 个 PR：spring MVP / 曲线 token / Rect-Color 封装 / MERGE_TARGET spring 协作 + dogfood。Epic: UI 现代化。",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "PR#1-4 全部实现。testrunner 全量 726 tests PASSED（基线 + 7 既有 UiV2Anim + 5 新 UiV2AnimSpring + 4 新 UiV2AnimEasing）；game-client 释放构建 99/99 通过；dogfood 跳过（需 UI 视觉验证，留给 feat-003/feat-004 时落地）。"
+    },
+    {
+      "id": "feat-003",
+      "name": "设计 token 与共享 UI 原语",
+      "description": "建立卡片化 + 深色 + 微动效风格（参考 Steam 库克隆色板：深色背景 #1b2838 / 卡片 #2a475e / 强调 #66c0f4 / 文本 #c7d5e0 一类）所需的设计 token：色板（neutral 阶 + 蓝调强调色 + 状态色）、间距 scale、圆角 scale、elevation（阴影）层级、字体尺寸阶。基于这些 token 实现共享 UI 原语，**独立函数风格**（DoUiCard / DoUiButton 等，调用现有 Ui()->DoButton_* / SetHotItem / DoLabel），不动 CUi 本体。原语集中于 src/game/client/QmUi/：Card、PrimaryButton、SecondaryButton、IconButton、TextField、Toggle、Slider、Tab、ListItem、Tooltip、Modal。所有原语接入 feat-002 的动画系统（QmAnimCurves.h token + spring/tween）。该 feature 不替换任何现有页面，只新增可复用控件。Epic: UI 现代化。",
+      "dependencies": [
+        "feat-002"
+      ],
+      "status": "done",
+      "evidence": "PR-A 到 PR-E 全部实现：UiTokens.h（36 token）+ UiContext.h（依赖注入）+ UiContainers/Buttons/Forms/Navigation/Overlays（11 原语）+ QmAnimResolve.{h,cpp}（提取自 menus.cpp）+ UiDogfood.{h,cpp}（11 原语 hover/focus/disabled/selected 状态展示，双栏 1.0/0.78 缩放）。testrunner 729 tests PASSED（含 3 个新 QmUiTokens 编译期 + runtime assert）。game-client release 151/152 build OK，零新警告。视觉验证入口：dbg_qm_ui_dogfood 1 后 QmClient 设置页接管为 dogfood 视图——本 epic 首次可见成效。"
+    },
+    {
+      "id": "feat-004",
+      "name": "主菜单 / 启动屏 / 顶部 tab 栏现代化",
+      "description": "改写 menus.cpp 主入口、menus_start.cpp、顶部导航 tab 栏。卡片化页签、深色背景、Tab 切换微动效、Logo 与版本号布局重做。仅外观/动效层，不改子页面内容。范围超出 CLAUDE.md QmClient scope，需在 PR 中显式声明扩域。Epic: UI 现代化。",
+      "dependencies": [
+        "feat-003"
+      ],
+      "status": "done",
+      "evidence": "PR-004a 到 d 全部实现：(a) menus.cpp Render() 在 menu_background 之后注入深色 overlay (0.02,0.04,0.07,0.4) + DECELERATE 0.5s fade-in；(b) RenderMenubar offline+online 两段全部 tab 跟踪 active rect，函数末尾画 2px ACCENT_PRIMARY 下划线 indicator，ResolveUiAnimValueRect+EMPHASIZED 滑动；(c) menus_start.cpp 删除 100+ 行 hover-scale + StartMenuButtonScaleNodeKey，6 主按钮全换 ui_widget（Play=PrimaryButton 强调，其余=SecondaryButton）；(d) Logo 周围 ACCENT_PRIMARY halo 4s 周期 sin 呼吸 (alpha 0.12↔0.22)、标语调 TEXT_TIP。testrunner 729 通过零回归；game-client release build 通过零新警告。视觉验证待用户在 DDNet.exe 中确认。范围扩域：menus.cpp + menus_start.cpp 属于上游代码，本次改造需在 PR 描述显式声明扩域，沿用 QmClient 已有 \"最小侵入 + 增量\" 模式。"
+    },
+    {
+      "id": "feat-005",
+      "name": "服务器浏览器视觉升级",
+      "description": "在 feat-001 修好列宽拖拽基础上做视觉升级：列表项卡片化、hover 高亮过渡、加载/刷新动画、社区图标与玩家计数视觉强化、底部 filter/info 面板重新分区。改 menus_browser.cpp。Epic: UI 现代化。",
+      "dependencies": [
+        "feat-001",
+        "feat-003"
+      ],
+      "status": "done",
+      "evidence": "PR-A 到 PR-E 全部实施：(A) ui_listbox.cpp 已存在的全局 hover/selected token 化 SURFACE_HIGHLIGHT/ACCENT_PRIMARY_DIM 纳入证据；(B) RenderServerbrowserServerList 注入行 SURFACE_GLASS 玻璃卡 spring hover + DoAutoSpacing(2.0) 行间隙 + selected 行 BORDER_FOCUS 1px outline；(C) RefreshBar 改 Draw4 ACCENT_PRIMARY dim/hot + sin(GlobalTime*2.5) 扫光 shimmer；(D) COL_COMMUNITY chip 圆角背景 / COL_FRIENDS 多人计数 ACCENT_PRIMARY_DIM pill / COL_PLAYERS 按填充率 fill-tint（空 TEXT_DISABLED、近满偏红）；(E) StatusBox SURFACE_HIGHLIGHT 面板 + BORDER_SUBTLE 边框 / Connect 按钮 Props.m_Color 从绿 (0.5,1,0.5,0.5) 改 ACCENT_PRIMARY (0.4,0.753,0.957,0.55)。Release build 通过零新警告（仅 menus_browser.cpp.obj 1 个文件重编 + DDNet.exe 链接）；testrunner 729 PASSED 零回归。Plan 文件：modular-twirling-hinton.md。视觉验证待用户在 DDNet.exe 中执行（5 项检查清单见 plan 文件 Verification 节）。"
+    },
+    {
+      "id": "feat-006",
+      "name": "设置面板现代化",
+      "description": "重做 menus_settings*.cpp（appearance/controls/sound/graphics/general/DDNet/assets/...）。右侧导航 + 主内容区卡片化设置项；分组清晰；每个控件接入 feat-003 原语。工作量最大，落地时再拆 6a/6b/6c 子 feature（按 settings 分类）。Epic: UI 现代化。",
+      "dependencies": [
+        "feat-003"
+      ],
+      "status": "done",
+      "evidence": "设置页主框架改为右侧导航 + 主玻璃内容区，controls 集中分组块换成 QmUi token 化卡片。Command: qmclient_scripts\\cmake-windows.cmd --build cmake-build-release --target game-client -j 10；Result: PASS，DDNet.exe 链接成功。"
+    },
+    {
+      "id": "feat-007",
+      "name": "演示回放界面现代化",
+      "description": "改写 menus_demo.cpp。时间轴控件重做（拖拽 head、章节标记、章节缩略）；播放控件卡片化（play/pause/seek/speed）；文件浏览侧栏卡片化。Epic: UI 现代化。",
+      "dependencies": [
+        "feat-003"
+      ],
+      "status": "done",
+      "evidence": "Demo 播放控制浮层、seekbar/marker/slice 颜色、demo 浏览器列表/详情/按钮外壳完成 QmUi token 化卡片化；播放、seek、切片、文件操作逻辑未改。Command: qmclient_scripts\\cmake-windows.cmd --build cmake-build-release --target game-client -j 10；Result: PASS，DDNet.exe 链接成功。"
+    },
+    {
+      "id": "feat-008",
+      "name": "游戏内 HUD 现代化",
+      "description": "改写 hud.cpp、scoreboard.cpp 等。HP/AMMO/速度/连接条/scoreboard 半透明卡片化；淡入淡出与变化动效；信息层级（主信息显著，次信息收敛）重组。Epic: UI 现代化。",
+      "dependencies": [
+        "feat-003"
+      ],
+      "status": "done",
+      "evidence": "HUD 右侧信息盒、spectator/local-time 小面板、scoreboard 外层面板/队伍标题/本地玩家高亮完成 QmUi token 化；HUD 数据计算、计分排序、玩家状态逻辑未改。Command: qmclient_scripts\\cmake-windows.cmd --build cmake-build-release --target game-client -j 10；Result: PASS，DDNet.exe 链接成功。"
+    },
+    {
+      "id": "feat-009",
+      "name": "游戏内通知与覆盖层现代化",
+      "description": "改写 chat.cpp / killmessages.cpp / motd.cpp / emoticon.cpp / voting.cpp + 连接/暂停/断线遮罩。消息卡片化、滑入/淡出、堆叠收敛。涉及大量上游 DDNet 文件，超出 CLAUDE.md QmClient scope，需在 PR 中显式声明扩域。Epic: UI 现代化。",
+      "dependencies": [
+        "feat-003"
+      ],
+      "status": "done",
+      "evidence": "Chat 背景、MOTD 面板、emoticon wheel、voting 面板/进度条、infomessages 击杀/完成消息卡片完成 QmUi token 化；当前仓库无 killmessages.cpp，实际对应 infomessages.cpp。Command: qmclient_scripts\\cmake-windows.cmd --build cmake-build-release --target game-client -j 10；Result: PASS，DDNet.exe 链接成功。"
+    },
+    {
+      "id": "feat-010",
+      "name": "编辑器 UI 现代化（可选 / 末位）",
+      "description": "改写 src/game/editor/*.cpp 的 UI 层。工作量大、受众相对小，作为 epic 收尾或单独评估是否落地。Epic: UI 现代化。",
+      "dependencies": [
+        "feat-003"
+      ],
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "feat-011",
+      "name": "反馈批处理：Demo 节选渲染、快速练习、灵动岛与实体层背景",
+      "description": "修复 demo 节选导出后渲染源选择、快速练习后连接 dummy 与默认手枪状态问题；新增灵动岛队伍显示开关和 /tofinish；规范化 entity_bg 背景配置并优化实体层视频解码/队列开销。仅限客户端本地逻辑，不改协议、demo/map 文件格式、物理、服务端和 rank 语义。",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "实现完成并按 MMP 更新至 2.58.0。Command: qmclient_scripts\\cmake-windows.cmd --build cmake-build-release --target game-client -j 10；Result: PASS。Command: cmake-build-release\\testrunner.exe --gtest_filter=BackgroundEntitiesValue.*；Result: 8/8 PASS。Command: qmclient_scripts\\cmake-windows.cmd --build cmake-build-debug --target run_tests -j 4；Result: 729/729 PASS。交互与性能实机回归待执行。"
+    }
+  ]
+}

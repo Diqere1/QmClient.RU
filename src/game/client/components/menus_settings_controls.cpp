@@ -14,6 +14,7 @@
 #include <game/client/components/key_binder.h>
 #include <game/client/components/menus.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/client/ui.h>
 #include <game/client/ui_scrollregion.h>
 #include <game/localization.h>
@@ -458,7 +459,12 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 	pParentRect->HSplitTop(MARGIN, nullptr, pParentRect);
 	if(m_SettingsScrollRegion.AddRect(SettingsBlock) || m_SearchMatchReveal)
 	{
-		SettingsBlock.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, pExpandButton == nullptr || Ui()->HotItem() != pExpandButton ? 0.25f : 0.3f), IGraphics::CORNER_ALL, 10.0f);
+		SettingsBlock.Draw(pExpandButton == nullptr || Ui()->HotItem() != pExpandButton ? ui_token::color::SURFACE_GLASS : ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		CUIRect TopHighlight = SettingsBlock;
+		TopHighlight.h = 1.0f;
+		TopHighlight.x += ui_token::radius::BASE;
+		TopHighlight.w -= 2.0f * ui_token::radius::BASE;
+		TopHighlight.Draw(ui_token::color::SURFACE_HIGHLIGHT, IGraphics::CORNER_T, 0.0f);
 		SettingsBlock.Margin(MARGIN, &SettingsBlock);
 
 		if(pTitle != nullptr)
@@ -485,7 +491,7 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 				if(m_SettingsScrollRegion.AddRect(ExpandButton))
 				{
 					SLabelProperties Props;
-					Props.SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.65f * Ui()->ButtonColorMul(pExpandButton)));
+					Props.SetColor(ui_token::color::TEXT_SECONDARY.WithMultipliedAlpha(Ui()->ButtonColorMul(pExpandButton)));
 					Props.m_EnableWidthCheck = false;
 					TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 					TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
@@ -497,7 +503,9 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 
 			if(m_SettingsScrollRegion.AddRect(Label))
 			{
-				Ui()->DoLabel(&Label, pTitle, HEADER_FONT_SIZE, TEXTALIGN_ML);
+				SLabelProperties Props;
+				Props.SetColor(ui_token::color::TEXT_PRIMARY);
+				Ui()->DoLabel(&Label, pTitle, HEADER_FONT_SIZE, TEXTALIGN_ML, Props);
 			}
 		}
 

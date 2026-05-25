@@ -510,6 +510,7 @@ bool CFastPractice::ApplyAnchorToCharacter(CGameWorld &World, const SAnchorData 
 	NeutralInput.m_TargetY = -1;
 	pChar->SetInput(&NeutralInput);
 	pChar->m_CanMoveInFreeze = false;
+	NormalizeDefaultPracticeWeapons(pChar, Anchor.m_HasDDNet);
 	return true;
 }
 
@@ -771,6 +772,84 @@ void CFastPractice::Enable()
 		}
 	}
 	GameClient()->m_PredictedTick = m_PracticeBaseWorld.GameTick();
+}
+
+bool CFastPractice::TryAttachDummyFromSnapshot()
+{
+	if(!m_Enabled || m_RequireDummy || !Client()->DummyConnected())
+		return false;
+
+	int CandidateDummyId = -1;
+	for(int Conn = 0; Conn < NUM_DUMMIES; Conn++)
+	{
+		const int ClientId = GameClient()->m_aLocalIds[Conn];
+		if(ClientId < 0 || ClientId >= MAX_CLIENTS || ClientId == m_EnableLocalClientId)
+			continue;
+		if(!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->m_aClients[ClientId].m_Paused)
+			continue;
+		CandidateDummyId = ClientId;
+		break;
+	}
+	if(CandidateDummyId < 0)
+		return false;
+
+	m_EnableDummyClientId = CandidateDummyId;
+	m_RequireDummy = true;
+	if(!InitPracticeWorld())
+	{
+		m_EnableDummyClientId = -1;
+		m_RequireDummy = false;
+		m_PracticeWorldInitialized = false;
+		InitPracticeWorld();
+		return false;
+	}
+
+	CaptureAnchorsFromSnapshot();
+	if(!m_MainAnchor.m_Valid || !m_HasDummyAnchor)
+	{
+		m_EnableDummyClientId = -1;
+		m_RequireDummy = false;
+		m_PracticeWorldInitialized = false;
+		InitPracticeWorld();
+		CaptureAnchorsFromSnapshot();
+		return false;
+	}
+
+	CaptureServerLockedInputs();
+	CaptureServerReleasedFireStates();
+	CapturePracticeInputFilterStates();
+	ReleaseBufferedActionInputState();
+	m_PracticeBaseWorld.m_GameTick = Client()->PredGameTick(g_Config.m_ClDummy);
+	ResetAttackTickHistory();
+	if(CCharacter *pLocal = m_PracticeBaseWorld.GetCharacterById(m_EnableLocalClientId))
+		TrackSafeRescuePosition(m_EnableLocalClientId, pLocal);
+	if(CCharacter *pDummy = m_PracticeBaseWorld.GetCharacterById(m_EnableDummyClientId))
+		TrackSafeRescuePosition(m_EnableDummyClientId, pDummy);
+
+	m_LastResolvedLocalClientId = -1;
+	m_LastResolvedDummyClientId = -1;
+	m_LastResolvedLocalInputConn = -1;
+	m_LastResolvedDummyInputConn = -1;
+	m_SuppressFireOnNextPredictTick = true;
+	m_InputSuppressTicks = std::max(m_InputSuppressTicks, 2);
+	GameClient()->m_PredictedDummyId = CurrentPracticeDummyId();
+
+	GameClient()->m_PredictedWorld.CopyWorldClean(&m_PracticeBaseWorld);
+	GameClient()->m_PrevPredictedWorld.CopyWorldClean(&m_PracticeBaseWorld);
+	if(CCharacter *pPredChar = GameClient()->m_PredictedWorld.GetCharacterById(m_EnableLocalClientId))
+	{
+		GameClient()->m_PredictedChar = pPredChar->GetCore();
+		GameClient()->m_PredictedPrevChar = pPredChar->GetCore();
+		GameClient()->m_aClients[m_EnableLocalClientId].m_Predicted = pPredChar->GetCore();
+		GameClient()->m_aClients[m_EnableLocalClientId].m_PrevPredicted = pPredChar->GetCore();
+	}
+	if(CCharacter *pPredDummy = GameClient()->m_PredictedWorld.GetCharacterById(m_EnableDummyClientId))
+	{
+		GameClient()->m_aClients[m_EnableDummyClientId].m_Predicted = pPredDummy->GetCore();
+		GameClient()->m_aClients[m_EnableDummyClientId].m_PrevPredicted = pPredDummy->GetCore();
+	}
+	GameClient()->m_PredictedTick = m_PracticeBaseWorld.GameTick();
+	return true;
 }
 
 void CFastPractice::Disable()
@@ -1085,6 +1164,8 @@ bool CFastPractice::OverridePredict()
 		GameClient()->m_PredictedDummyId = -1;
 		return false;
 	}
+	if(!m_RequireDummy)
+		TryAttachDummyFromSnapshot();
 
 	int LocalClientId = -1;
 	int DummyClientId = -1;
@@ -1576,7 +1657,11 @@ void CFastPractice::OnNewSnapshot()
 	if(GameClient()->m_Snap.m_SpecInfo.m_Active || (GameClient()->m_Snap.m_pLocalInfo && GameClient()->m_Snap.m_pLocalInfo->m_Team == TEAM_SPECTATORS))
 		GameClient()->m_PredictedDummyId = -1;
 	else
+	{
+		if(!m_RequireDummy)
+			TryAttachDummyFromSnapshot();
 		GameClient()->m_PredictedDummyId = CurrentPracticeDummyId();
+	}
 }
 
 void CFastPractice::RenderGhost(const SGhostData &Ghost, float Alpha) const
@@ -1763,6 +1848,42 @@ void CFastPractice::NormalizeCharacterAfterReset(CCharacter *pChar, bool KeepFre
 	pChar->ResetInput();
 }
 
+void CFastPractice::NormalizeDefaultPracticeWeapons(CCharacter *pChar, bool HasExplicitWeaponFlags) const
+{
+	if(!pChar)
+		return;
+
+	CCharacterCore Core = pChar->GetCore();
+	if(!HasExplicitWeaponFlags)
+	{
+		Core.m_aWeapons[WEAPON_HAMMER].m_Got = true;
+		Core.m_aWeapons[WEAPON_GUN].m_Got = true;
+	}
+	if(Core.m_aWeapons[WEAPON_HAMMER].m_Got)
+		Core.m_aWeapons[WEAPON_HAMMER].m_Ammo = -1;
+	if(Core.m_aWeapons[WEAPON_GUN].m_Got)
+		Core.m_aWeapons[WEAPON_GUN].m_Ammo = -1;
+	if(Core.m_ActiveWeapon < WEAPON_HAMMER || Core.m_ActiveWeapon >= NUM_WEAPONS || !Core.m_aWeapons[Core.m_ActiveWeapon].m_Got)
+	{
+		if(Core.m_aWeapons[WEAPON_GUN].m_Got)
+			Core.m_ActiveWeapon = WEAPON_GUN;
+		else if(Core.m_aWeapons[WEAPON_HAMMER].m_Got)
+			Core.m_ActiveWeapon = WEAPON_HAMMER;
+		else
+		{
+			for(int Weapon = WEAPON_SHOTGUN; Weapon < NUM_WEAPONS; Weapon++)
+			{
+				if(Core.m_aWeapons[Weapon].m_Got)
+				{
+					Core.m_ActiveWeapon = Weapon;
+					break;
+				}
+			}
+		}
+	}
+	pChar->SetCore(Core);
+}
+
 void CFastPractice::NormalizeWeaponSelectionInput(CCharacter *pChar) const
 {
 	if(!pChar)
@@ -1893,6 +2014,31 @@ bool CFastPractice::FindNearestSafeRescuePosition(int ClientId, const vec2 &From
 	return Found;
 }
 
+bool CFastPractice::FindFinishPosition(vec2 &OutPos) const
+{
+	if(Collision() == nullptr || Collision()->GetWidth() <= 0 || Collision()->GetHeight() <= 0)
+		return false;
+
+	const int NumTiles = Collision()->GetWidth() * Collision()->GetHeight();
+	for(int Index = 0; Index < NumTiles; Index++)
+	{
+		if(Collision()->GetTileIndex(Index) == TILE_FINISH)
+		{
+			OutPos = Collision()->GetPos(Index);
+			return true;
+		}
+	}
+	for(int Index = 0; Index < NumTiles; Index++)
+	{
+		if(Collision()->GetFrontTileIndex(Index) == TILE_FINISH)
+		{
+			OutPos = Collision()->GetPos(Index);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool CFastPractice::ExecutePracticeCommand(int Team, int LocalClientId, CCharacter *pChar, const std::vector<std::string> &vArgs, bool &WeaponsMutated)
 {
 	(void)Team;
@@ -1990,7 +2136,7 @@ bool CFastPractice::ExecutePracticeCommand(int Team, int LocalClientId, CCharact
 	}
 	if(Cmd == "practicecmdlist")
 	{
-		EchoPractice("available commands: /r /back /rescuemode /tp /teleport /tpxy /lasttp /tc /telecursor /totele /totelecp /solo /unsolo /deep /undeep /livefreeze /unlivefreeze /shotgun /grenade /laser /rifle /unshotgun /ungrenade /unlaser /unrifle /weapons /unweapons /addweapon /removeweapon /jetpack /unjetpack /infjump /uninfjump /setjumps /ninja /unninja /endless /unendless /invincible /collision /hookcollision /hitothers /practice /unpractice");
+		EchoPractice("available commands: /r /back /rescuemode /tp /teleport /tpxy /lasttp /tc /telecursor /totele /totelecp /tofinish /solo /unsolo /deep /undeep /livefreeze /unlivefreeze /shotgun /grenade /laser /rifle /unshotgun /ungrenade /unlaser /unrifle /weapons /unweapons /addweapon /removeweapon /jetpack /unjetpack /infjump /uninfjump /setjumps /ninja /unninja /endless /unendless /invincible /collision /hookcollision /hitothers /practice /unpractice");
 		return true;
 	}
 	if(Cmd == "kill")
@@ -2134,6 +2280,18 @@ bool CFastPractice::ExecutePracticeCommand(int Team, int LocalClientId, CCharact
 		}
 
 		ApplyTeleport(ClampToPlayableBounds(vec2(X, Y)));
+		return true;
+	}
+
+	if(Cmd == "tofinish")
+	{
+		vec2 FinishPos(0.0f, 0.0f);
+		if(!FindFinishPosition(FinishPos))
+		{
+			EchoPractice("there is no finish tile on the map");
+			return true;
+		}
+		ApplyTeleport(FinishPos);
 		return true;
 	}
 

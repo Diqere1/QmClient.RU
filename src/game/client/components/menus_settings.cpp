@@ -20,6 +20,9 @@
 #include <generated/protocol.h>
 
 #include <game/client/animstate.h>
+#include <game/client/QmUi/QmAnimResolve.h>
+#include <game/client/QmUi/UiContext.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/message_gradient.h>
@@ -3445,10 +3448,14 @@ void CMenus::RenderSettings(CUIRect MainView)
 
 	// render background
 	CUIRect Button, TabBar, RestartBar;
-	const float TabBarWidth = std::clamp(MainView.w * 0.14f, 108.0f, 120.0f);
+	const float TabBarWidth = std::clamp(MainView.w * 0.16f, 132.0f, 168.0f);
+	MainView.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.85f), IGraphics::CORNER_B, ui_token::radius::CARD);
+	MainView.Margin(std::clamp(MainView.w * 0.012f, 8.0f, 14.0f), &MainView);
 	MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
-	MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
-	const float ContentMargin = std::clamp(MainView.w * 0.02f, 12.0f, 20.0f);
+	MainView.VSplitRight(12.0f, &MainView, nullptr);
+	TabBar.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	MainView.Draw(ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	const float ContentMargin = std::clamp(MainView.w * 0.018f, 14.0f, 22.0f);
 	MainView.Margin(ContentMargin, &MainView);
 
 	const bool NeedRestart = m_NeedRestartGraphics || m_NeedRestartSound || m_NeedRestartUpdate;
@@ -3458,8 +3465,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 		MainView.HSplitBottom(10.0f, &MainView, nullptr);
 	}
 
-	TabBar.HSplitTop(50.0f, &Button, &TabBar);
-	Button.Draw(ms_ColorTabbarActive, IGraphics::CORNER_BR, 10.0f);
+	TabBar.Margin(10.0f, &TabBar);
+	TabBar.HSplitTop(38.0f, &Button, &TabBar);
+	Ui()->DoLabel(&Button, Localize("Settings"), ui_token::font::HEADLINE_LG, TEXTALIGN_MC);
 
 	PrepareSettingsTabLabelCache(MainView.w);
 	if(g_Config.m_UiSettingsPage != SETTINGS_LANGUAGE)
@@ -3467,14 +3475,29 @@ void CMenus::RenderSettings(CUIRect MainView)
 
 	{
 		CPerfTimer StageTimer;
+		CUiV2AnimationRuntime &AnimRuntime = GameClient()->UiRuntimeV2()->AnimRuntime();
 		for(int i = 0; i < SETTINGS_LENGTH; i++)
 		{
 			if(i == SETTINGS_PROFILES || i == SETTINGS_CONFIGS || i == SETTINGS_CONTRIBUTORS)
 				continue; // Profiles 已合并到 Tee 页面，Configs/Contributors 已并入 QmClient 顶部分页
-			TabBar.HSplitTop(10.0f, nullptr, &TabBar);
-			TabBar.HSplitTop(26.0f, &Button, &TabBar);
-			if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], g_Config.m_UiSettingsPage == i, &Button, IGraphics::CORNER_R, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
+			TabBar.HSplitTop(6.0f, nullptr, &TabBar);
+			TabBar.HSplitTop(27.0f, &Button, &TabBar);
+			const bool Active = g_Config.m_UiSettingsPage == i;
+			const bool Hovered = Ui()->HotItem() == &m_aSettingsTabButtons[i];
+			const uint64_t NodeKey = BuildUiAnimNodeKey(MakeUiScopeHash("settings_v2_nav"), reinterpret_cast<uint64_t>(&m_aSettingsTabButtons[i]));
+			const float NavStrength = std::clamp(ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::ALPHA, (Active || Hovered) ? 1.0f : 0.0f, ui_token::motion::BTN_HOVER.m_DurationSec, ui_token::motion::BTN_HOVER.m_Easing), 0.0f, 1.0f);
+			ColorRGBA DefaultColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(0.25f + NavStrength * 0.85f);
+			ColorRGBA ActiveColor = ui_token::color::ACCENT_PRIMARY_DIM.WithMultipliedAlpha(1.35f);
+			ColorRGBA HoverColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(1.35f);
+			if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], &DefaultColor, &ActiveColor, &HoverColor, ui_token::radius::BASE, nullptr, &m_aSettingsTabLabelElements[i]))
 				g_Config.m_UiSettingsPage = i;
+			if(Active)
+			{
+				CUIRect Accent = Button;
+				Accent.VSplitLeft(3.0f, &Accent, nullptr);
+				Accent.HMargin(5.0f, &Accent);
+				Accent.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_ALL, 2.0f);
+			}
 		}
 
 		char aTabBarExtra[96];
@@ -5104,6 +5127,11 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 			static SPopupMenuId s_PopupMapPickerId;
 			static CPopupMapPickerContext s_PopupMapPickerContext;
 			s_PopupMapPickerContext.m_pMenus = this;
+			s_PopupMapPickerContext.m_aCurrentMapFolder[0] = '\0';
+			str_copy(s_PopupMapPickerContext.m_aRootPath, "maps", sizeof(s_PopupMapPickerContext.m_aRootPath));
+			str_copy(s_PopupMapPickerContext.m_aFallbackRootPath, "mapres", sizeof(s_PopupMapPickerContext.m_aFallbackRootPath));
+			s_PopupMapPickerContext.m_aValuePrefix[0] = '\0';
+			str_copy(s_PopupMapPickerContext.m_aFallbackValuePrefix, "mapres", sizeof(s_PopupMapPickerContext.m_aFallbackValuePrefix));
 			s_PopupMapPickerContext.m_pTargetConfig = g_Config.m_ClBackgroundEntities;
 			s_PopupMapPickerContext.m_TargetConfigSize = sizeof(g_Config.m_ClBackgroundEntities);
 			s_PopupMapPickerContext.MapListPopulate();
@@ -5217,6 +5245,11 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 				static SPopupMenuId s_PopupMapPickerId;
 				static CPopupMapPickerContext s_PopupMapPickerContext;
 				s_PopupMapPickerContext.m_pMenus = this;
+				s_PopupMapPickerContext.m_aCurrentMapFolder[0] = '\0';
+				str_copy(s_PopupMapPickerContext.m_aRootPath, "maps", sizeof(s_PopupMapPickerContext.m_aRootPath));
+				str_copy(s_PopupMapPickerContext.m_aFallbackRootPath, "mapres", sizeof(s_PopupMapPickerContext.m_aFallbackRootPath));
+				s_PopupMapPickerContext.m_aValuePrefix[0] = '\0';
+				str_copy(s_PopupMapPickerContext.m_aFallbackValuePrefix, "mapres", sizeof(s_PopupMapPickerContext.m_aFallbackValuePrefix));
 				s_PopupMapPickerContext.m_pTargetConfig = g_Config.m_ClBackgroundEntities;
 				s_PopupMapPickerContext.m_TargetConfigSize = sizeof(g_Config.m_ClBackgroundEntities);
 				s_PopupMapPickerContext.MapListPopulate();
@@ -5353,7 +5386,10 @@ CUi::EPopupMenuFunctionResult CMenus::PopupMapPicker(void *pContext, CUIRect Vie
 		Item.m_Rect.VSplitLeft(20.0f, &Icon, &Label);
 
 		char aLabelText[IO_MAX_PATH_LENGTH];
-		str_copy(aLabelText, Map.m_aFilename);
+		if(Map.m_aValuePrefix[0] != '\0')
+			str_format(aLabelText, sizeof(aLabelText), "%s/%s", Map.m_aValuePrefix, Map.m_aFilename);
+		else
+			str_copy(aLabelText, Map.m_aFilename);
 		if(Map.m_IsDirectory)
 			str_append(aLabelText, "/", sizeof(aLabelText));
 
@@ -5401,10 +5437,16 @@ CUi::EPopupMenuFunctionResult CMenus::PopupMapPicker(void *pContext, CUIRect Vie
 		else
 		{
 			char aSelectedValue[IO_MAX_PATH_LENGTH];
+			char aRelativeValue[IO_MAX_PATH_LENGTH];
 			if(pPopupContext->m_aCurrentMapFolder[0] != '\0')
-				str_format(aSelectedValue, sizeof(aSelectedValue), "%s/%s", pPopupContext->m_aCurrentMapFolder, SelectedItem.m_aFilename);
+				str_format(aRelativeValue, sizeof(aRelativeValue), "%s/%s", pPopupContext->m_aCurrentMapFolder, SelectedItem.m_aFilename);
 			else
-				str_copy(aSelectedValue, SelectedItem.m_aFilename);
+				str_copy(aRelativeValue, SelectedItem.m_aFilename);
+			const char *pValuePrefix = SelectedItem.m_aValuePrefix[0] != '\0' ? SelectedItem.m_aValuePrefix : pPopupContext->m_aValuePrefix;
+			if(pValuePrefix[0] != '\0')
+				str_format(aSelectedValue, sizeof(aSelectedValue), "%s/%s", pValuePrefix, aRelativeValue);
+			else
+				str_copy(aSelectedValue, aRelativeValue);
 
 			char *pTargetConfig = pPopupContext->m_pTargetConfig != nullptr ? pPopupContext->m_pTargetConfig : g_Config.m_ClBackgroundEntities;
 			const int TargetConfigSize = pPopupContext->m_TargetConfigSize > 0 ? pPopupContext->m_TargetConfigSize : (int)sizeof(g_Config.m_ClBackgroundEntities);
@@ -5421,22 +5463,41 @@ CUi::EPopupMenuFunctionResult CMenus::PopupMapPicker(void *pContext, CUIRect Vie
 void CMenus::CPopupMapPickerContext::MapListPopulate()
 {
 	m_vMaps.clear();
-	char aTemp[IO_MAX_PATH_LENGTH];
-	str_format(aTemp, sizeof(aTemp), "maps/%s", m_aCurrentMapFolder);
-	m_pMenus->Storage()->ListDirectoryInfo(IStorage::TYPE_ALL, aTemp, MapListFetchCallback, this);
+	const auto ListRoot = [&](const char *pRootPath, const char *pValuePrefix) {
+		if(pRootPath == nullptr || pRootPath[0] == '\0')
+			return;
+		str_copy(m_aListingValuePrefix, pValuePrefix != nullptr ? pValuePrefix : "", sizeof(m_aListingValuePrefix));
+		char aTemp[IO_MAX_PATH_LENGTH];
+		if(m_aCurrentMapFolder[0] != '\0')
+			str_format(aTemp, sizeof(aTemp), "%s/%s", pRootPath, m_aCurrentMapFolder);
+		else
+			str_copy(aTemp, pRootPath);
+		m_pMenus->Storage()->ListDirectoryInfo(IStorage::TYPE_ALL, aTemp, MapListFetchCallback, this);
+	};
+
+	ListRoot(m_aRootPath[0] != '\0' ? m_aRootPath : "maps", m_aValuePrefix);
+	ListRoot(m_aFallbackRootPath, m_aFallbackValuePrefix);
+	m_aListingValuePrefix[0] = '\0';
 	std::stable_sort(m_vMaps.begin(), m_vMaps.end(), CompareFilenameAscending);
 	m_Selection = -1;
 }
 
 int CMenus::CPopupMapPickerContext::MapListFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser)
 {
+	(void)StorageType;
 	CPopupMapPickerContext *pRealUser = (CPopupMapPickerContext *)pUser;
 	const bool IsBackgroundFile = FindBackgroundFileExtension(pInfo->m_pName) != nullptr;
 	if((!IsDir && !IsBackgroundFile) || !str_comp(pInfo->m_pName, ".") || (!str_comp(pInfo->m_pName, "..") && (!str_comp(pRealUser->m_aCurrentMapFolder, ""))))
 		return 0;
+	for(const CMapListItem &ExistingItem : pRealUser->m_vMaps)
+	{
+		if(ExistingItem.m_IsDirectory == (bool)IsDir && str_comp(ExistingItem.m_aValuePrefix, pRealUser->m_aListingValuePrefix) == 0 && str_comp(ExistingItem.m_aFilename, pInfo->m_pName) == 0)
+			return 0;
+	}
 
 	CMapListItem Item;
 	str_copy(Item.m_aFilename, pInfo->m_pName);
+	str_copy(Item.m_aValuePrefix, pRealUser->m_aListingValuePrefix, sizeof(Item.m_aValuePrefix));
 	Item.m_IsDirectory = IsDir;
 
 	pRealUser->m_vMaps.emplace_back(Item);

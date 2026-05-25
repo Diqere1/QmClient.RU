@@ -21,6 +21,7 @@
 
 #include <game/client/components/console.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/client/ui.h>
 #include <game/client/ui_listbox.h>
 #include <game/localization.h>
@@ -377,7 +378,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		Corners |= IGraphics::CORNER_BL;
 	if(DemoControls.x < MainView.w - DemoControls.w && DemoControls.y < MainView.h - DemoControls.h)
 		Corners |= IGraphics::CORNER_BR;
-	DemoControls.Draw(ms_ColorTabbarActive, Corners, 10.0f);
+	DemoControls.Draw(ui_token::color::SURFACE_ELEVATED, Corners, ui_token::radius::CARD);
 	const CUIRect DemoControlsDragRect = DemoControls;
 
 	CUIRect SeekBar, ButtonBar, NameBar, SpeedBar;
@@ -458,13 +459,13 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 	{
 		// draw seek bar
 		const float Rounding = 5.0f;
-		SeekBar.Draw(ColorRGBA(0, 0, 0, 0.5f), IGraphics::CORNER_ALL, Rounding);
+		SeekBar.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(1.15f), IGraphics::CORNER_ALL, Rounding);
 
 		// draw filled bar
 		float Amount = CurrentTick / (float)TotalTicks;
 		CUIRect FilledBar = SeekBar;
 		FilledBar.w = 2 * Rounding + (FilledBar.w - 2 * Rounding) * Amount;
-		FilledBar.Draw(ColorRGBA(1, 1, 1, 0.5f), IGraphics::CORNER_ALL, Rounding);
+		FilledBar.Draw(ui_token::color::ACCENT_PRIMARY_DIM.WithMultipliedAlpha(1.9f), IGraphics::CORNER_ALL, Rounding);
 
 		// draw highlighting
 		for(const auto &Segment : m_vDemoCutSegments)
@@ -476,7 +477,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 				continue;
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(0.0f, 0.75f, 1.0f, 0.25f);
+			Graphics()->SetColor(ui_token::color::ACCENT_PRIMARY_DIM);
 			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * RatioBegin, SeekBar.y, Span, SeekBar.h);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
@@ -489,7 +490,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			float Span = ((SeekBar.w - 2 * Rounding) * RatioEnd) - ((SeekBar.w - 2 * Rounding) * RatioBegin);
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(1.0f, 0.0f, 0.0f, 0.25f);
+			Graphics()->SetColor(ui_token::color::DANGER.WithMultipliedAlpha(0.28f));
 			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * RatioBegin, SeekBar.y, Span, SeekBar.h);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
@@ -506,7 +507,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			Graphics()->SetColor(0.15f, 0.1f, 0.0f, 0.75f);
 			IGraphics::CQuadItem MarkerShadow(MarkerX - MarkerWidth * 0.5f + 1.0f, SeekBar.y - 3.0f, MarkerWidth, SeekBar.h + 6.0f);
 			Graphics()->QuadsDrawTL(&MarkerShadow, 1);
-			Graphics()->SetColor(1.0f, 0.82f, 0.1f, 1.0f);
+			Graphics()->SetColor(ui_token::color::WARNING);
 			IGraphics::CQuadItem MarkerLine(MarkerX - MarkerWidth * 0.5f, SeekBar.y - 3.0f, MarkerWidth, SeekBar.h + 6.0f);
 			Graphics()->QuadsDrawTL(&MarkerLine, 1);
 			IGraphics::CQuadItem MarkerHead(MarkerX - 4.0f, SeekBar.y - 8.0f, 8.0f, 6.0f);
@@ -521,7 +522,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			float Ratio = (g_Config.m_ClDemoSliceBegin - pInfo->m_FirstTick) / (float)TotalTicks;
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(1.0f, 0.0f, 0.0f, 1.0f);
+			Graphics()->SetColor(ui_token::color::DANGER);
 			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * Ratio, SeekBar.y, Ui()->PixelSize(), SeekBar.h);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
@@ -533,7 +534,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			float Ratio = (g_Config.m_ClDemoSliceEnd - pInfo->m_FirstTick) / (float)TotalTicks;
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(1.0f, 0.0f, 0.0f, 1.0f);
+			Graphics()->SetColor(ui_token::color::DANGER);
 			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * Ratio, SeekBar.y, Ui()->PixelSize(), SeekBar.h);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
@@ -1135,6 +1136,10 @@ void CMenus::RenderDemoPlayerSliceSavePopup(CUIRect MainView)
 #if defined(CONF_VIDEORECORDER)
 		if(s_RenderCut)
 		{
+			m_HasPendingDemoRenderSource = true;
+			str_copy(m_aPendingDemoRenderFolder, m_aCurrentDemoFolder, sizeof(m_aPendingDemoRenderFolder));
+			str_copy(m_aPendingDemoRenderSelectionName, m_aCurrentDemoSelectionName, sizeof(m_aPendingDemoRenderSelectionName));
+			m_PendingDemoRenderStorageType = IStorage::TYPE_SAVE;
 			m_Popup = POPUP_RENDER_DEMO;
 			m_StartPaused = false;
 			m_DemoRenderInput.Set(m_DemoSliceInput.GetString());
@@ -1754,11 +1759,17 @@ void CMenus::RenderDemoBrowser(CUIRect MainView)
 	GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_DEMOS);
 
 	CUIRect ListView, DetailsView, ButtonsView;
-	MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
-	MainView.Margin(10.0f, &MainView);
+	MainView.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.85f), IGraphics::CORNER_B, ui_token::radius::CARD);
+	MainView.Margin(12.0f, &MainView);
 	MainView.HSplitBottom(22.0f * 2.0f + 5.0f, &ListView, &ButtonsView);
 	ListView.VSplitRight(205.0f, &ListView, &DetailsView);
-	ListView.VSplitRight(5.0f, &ListView, nullptr);
+	ListView.VSplitRight(10.0f, &ListView, nullptr);
+	ListView.Draw(ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	DetailsView.Draw(ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	ButtonsView.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_ALL, ui_token::radius::BASE);
+	ListView.Margin(8.0f, &ListView);
+	DetailsView.Margin(8.0f, &DetailsView);
+	ButtonsView.Margin(7.0f, &ButtonsView);
 
 	bool WasListboxItemActivated;
 	RenderDemoBrowserList(ListView, WasListboxItemActivated);
@@ -1837,8 +1848,8 @@ void CMenus::RenderDemoBrowserList(CUIRect ListView, bool &WasListboxItemActivat
 
 	CUIRect Headers, ListBox;
 	ListView.HSplitTop(ms_ListheaderHeight, &Headers, &ListBox);
-	Headers.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f), IGraphics::CORNER_T, 5.0f);
-	ListBox.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.15f), IGraphics::CORNER_B, 5.0f);
+	Headers.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_T, ui_token::radius::BASE);
+	ListBox.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.35f), IGraphics::CORNER_B, ui_token::radius::BASE);
 
 	for(auto &Col : s_aCols)
 	{
@@ -1945,7 +1956,7 @@ void CMenus::RenderDemoBrowserList(CUIRect ListView, bool &WasListboxItemActivat
 		if(ListItem.m_Visible)
 		{
 			if(Selected && !Focused)
-				ListItem.m_Rect.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f), IGraphics::CORNER_ALL, 5.0f);
+				ListItem.m_Rect.Draw(ui_token::color::ACCENT_PRIMARY_DIM.WithMultipliedAlpha(1.35f), IGraphics::CORNER_ALL, ui_token::radius::BASE);
 
 			for(const auto &Col : s_aCols)
 			{
@@ -2065,7 +2076,7 @@ void CMenus::RenderDemoBrowserDetails(CUIRect DetailsView)
 {
 	CUIRect Contents, Header;
 	DetailsView.HSplitTop(ms_ListheaderHeight, &Header, &Contents);
-	Contents.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.15f), IGraphics::CORNER_B, 5.0f);
+	Contents.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.35f), IGraphics::CORNER_B, ui_token::radius::BASE);
 	Contents.Margin(5.0f, &Contents);
 
 	const float FontSize = 12.0f;
@@ -2079,7 +2090,7 @@ void CMenus::RenderDemoBrowserDetails(CUIRect DetailsView)
 		pItem = m_vpFilteredDemos[m_DemolistSelectedIndex];
 	}
 
-	Header.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f), IGraphics::CORNER_T, 5.0f);
+	Header.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_T, ui_token::radius::BASE);
 	const char *pHeaderLabel;
 	if(NumSelected == 0)
 		pHeaderLabel = DemoBrowserBrowsingScreenshots() ? Localize("No screenshot selected") : Localize("No demo selected");
@@ -2444,6 +2455,7 @@ void CMenus::RenderDemoBrowserButtons(CUIRect ButtonsView, bool WasListboxItemAc
 			if(DoButton_Menu(&s_RenderButton, FONT_ICON_VIDEO, 0, &RenderButton) || (Input()->KeyPress(KEY_R) && !GameClient()->m_GameConsole.IsActive() && !m_DemoSearchInput.IsActive()))
 			{
 				SetIconMode(false);
+				m_HasPendingDemoRenderSource = false;
 				m_Popup = POPUP_RENDER_DEMO;
 				m_StartPaused = false;
 				char aNameWithoutExt[IO_MAX_PATH_LENGTH];

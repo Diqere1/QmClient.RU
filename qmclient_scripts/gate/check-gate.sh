@@ -550,7 +550,7 @@ invoke_config_checks() {
 }
 
 invoke_workflow_doc_checks() {
-	invoke_python_repo_command "Claude / AGENTS 自动同步" "${REPO_ROOT}/qmclient_scripts/gate/sync_agents_claude.py"
+	invoke_python_repo_command "CLAUDE / AGENTS 自动同步" "${REPO_ROOT}/qmclient_scripts/gate/sync_agents_claude.py"
 	invoke_python_repo_command "工作流文档一致性检查" "${REPO_ROOT}/qmclient_scripts/gate/check_workflow_docs.py"
 }
 
