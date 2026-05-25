@@ -189,11 +189,29 @@ std::unique_ptr<ILogger> log_logger_collection(std::vector<std::shared_ptr<ILogg
 /**
  * @ingroup Log
  *
+ * Logger routing logs with a matching system prefix to `prefix_logger` and all
+ * other logs to `fallback_logger`.
+ */
+std::unique_ptr<ILogger> log_logger_prefix_router(std::shared_ptr<ILogger> prefix_logger, std::shared_ptr<ILogger> fallback_logger, const char *system_prefix);
+
+/**
+ * @ingroup Log
+ *
  * Logger for writing logs to the given file.
  *
  * @param file File to write to, must be opened for writing.
  */
 std::unique_ptr<ILogger> log_logger_file(IOHANDLE file);
+
+/**
+ * @ingroup Log
+ *
+ * Logger for writing logs with a matching system prefix to the given file.
+ *
+ * @param file File to write to, must be opened for writing.
+ * @param system_prefix System name prefix to include.
+ */
+std::unique_ptr<ILogger> log_logger_prefix_file(IOHANDLE file, const char *system_prefix);
 
 /**
  * @ingroup Log

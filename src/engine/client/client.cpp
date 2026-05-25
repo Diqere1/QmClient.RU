@@ -5286,6 +5286,7 @@ int main(int argc, const char **argv)
 		pStdoutLogger = std::shared_ptr<ILogger>(log_logger_stdout());
 	}
 #endif
+	std::shared_ptr<CFutureLogger> pFuturePerfFileLogger = std::make_shared<CFutureLogger>();
 	if(pStdoutLogger)
 	{
 		vpLoggers.push_back(pStdoutLogger);
@@ -5296,7 +5297,8 @@ int main(int argc, const char **argv)
 	vpLoggers.push_back(pFutureConsoleLogger);
 	std::shared_ptr<CFutureLogger> pFutureAssertionLogger = std::make_shared<CFutureLogger>();
 	vpLoggers.push_back(pFutureAssertionLogger);
-	log_set_global_logger(log_logger_collection(std::move(vpLoggers)).release());
+	std::shared_ptr<ILogger> pFallbackLogger(log_logger_collection(std::move(vpLoggers)).release());
+	log_set_global_logger(log_logger_prefix_router(pFuturePerfFileLogger, pFallbackLogger, "perf/").release());
 
 #if defined(CONF_PLATFORM_ANDROID)
 	// Initialize Android after logger is available
@@ -5350,7 +5352,7 @@ int main(int argc, const char **argv)
 	CleanerFunctions.emplace([]() { SDL_Quit(); });
 
 	CClient *pClient = CreateClient();
-	pClient->SetLoggers(pFutureFileLogger, std::move(pStdoutLogger));
+	pClient->SetLoggers(pFutureFileLogger, std::move(pStdoutLogger), pFuturePerfFileLogger);
 
 	IKernel *pKernel = IKernel::Create();
 	pKernel->RegisterInterface(pClient, false);
@@ -5597,6 +5599,31 @@ int main(int argc, const char **argv)
 	else
 	{
 		pFutureFileLogger->Set(log_logger_noop());
+	}
+
+	if(g_Config.m_QmPerfLogfile)
+	{
+		pStorage->CreateFolder("dumps", IStorage::TYPE_SAVE);
+		pStorage->CreateFolder("dumps/QmClient_Perf", IStorage::TYPE_SAVE);
+		char aDate[64];
+		str_timestamp(aDate, sizeof(aDate));
+		char aPerfLogPath[128];
+		str_format(aPerfLogPath, sizeof(aPerfLogPath), "dumps/QmClient_Perf/settings_perf_%s.log", aDate);
+		IOHANDLE PerfLogfile = pStorage->OpenFile(aPerfLogPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+		if(PerfLogfile)
+		{
+			pFuturePerfFileLogger->Set(log_logger_prefix_file(PerfLogfile, "perf/"));
+			log_info("client", "writing performance log to '%s'", aPerfLogPath);
+		}
+		else
+		{
+			log_error("client", "failed to open '%s' for performance logging", aPerfLogPath);
+			pFuturePerfFileLogger->Set(log_logger_noop());
+		}
+	}
+	else
+	{
+		pFuturePerfFileLogger->Set(log_logger_noop());
 	}
 
 	// Register protocol and file extensions
@@ -6094,8 +6121,9 @@ void CClient::GetGpuInfoString(char (&aGpuInfo)[512])
 	}
 }
 
-void CClient::SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger)
+void CClient::SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger, std::shared_ptr<ILogger> &&pPerfFileLogger)
 {
 	m_pFileLogger = pFileLogger;
 	m_pStdoutLogger = pStdoutLogger;
+	m_pPerfFileLogger = pPerfFileLogger;
 }

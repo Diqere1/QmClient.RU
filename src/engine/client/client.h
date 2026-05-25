@@ -302,6 +302,7 @@ private:
 
 	std::shared_ptr<ILogger> m_pFileLogger = nullptr;
 	std::shared_ptr<ILogger> m_pStdoutLogger = nullptr;
+	std::shared_ptr<ILogger> m_pPerfFileLogger = nullptr;
 
 	void UpdateNetStatsSnapshot() const;
 
@@ -600,7 +601,7 @@ public:
 
 	std::optional<int> ShowMessageBox(const IGraphics::CMessageBox &MessageBox) override;
 	void GetGpuInfoString(char (&aGpuInfo)[512]) override;
-	void SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger);
+	void SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger, std::shared_ptr<ILogger> &&pPerfFileLogger);
 };
 
 #endif

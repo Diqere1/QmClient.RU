@@ -209,6 +209,41 @@ std::unique_ptr<ILogger> log_logger_collection(std::vector<std::shared_ptr<ILogg
 	return std::make_unique<CLoggerCollection>(std::move(vpLoggers));
 }
 
+class CPrefixRouterLogger : public ILogger
+{
+	std::shared_ptr<ILogger> m_pPrefixLogger;
+	std::shared_ptr<ILogger> m_pFallbackLogger;
+	char m_aSystemPrefix[32];
+
+public:
+	CPrefixRouterLogger(std::shared_ptr<ILogger> pPrefixLogger, std::shared_ptr<ILogger> pFallbackLogger, const char *pSystemPrefix) :
+		m_pPrefixLogger(std::move(pPrefixLogger)),
+		m_pFallbackLogger(std::move(pFallbackLogger))
+	{
+		str_copy(m_aSystemPrefix, pSystemPrefix);
+	}
+	void Log(const CLogMessage *pMessage) override
+	{
+		if(m_Filter.Filters(pMessage))
+			return;
+		ILogger *pLogger = str_startswith(pMessage->m_aSystem, m_aSystemPrefix) ? m_pPrefixLogger.get() : m_pFallbackLogger.get();
+		if(pLogger)
+			pLogger->Log(pMessage);
+	}
+	void GlobalFinish() override
+	{
+		if(m_pPrefixLogger)
+			m_pPrefixLogger->GlobalFinish();
+		if(m_pFallbackLogger)
+			m_pFallbackLogger->GlobalFinish();
+	}
+};
+
+std::unique_ptr<ILogger> log_logger_prefix_router(std::shared_ptr<ILogger> pPrefixLogger, std::shared_ptr<ILogger> pFallbackLogger, const char *pSystemPrefix)
+{
+	return std::make_unique<CPrefixRouterLogger>(std::move(pPrefixLogger), std::move(pFallbackLogger), pSystemPrefix);
+}
+
 class CLoggerAsync : public ILogger
 {
 	ASYNCIO *m_pAio;
@@ -271,6 +306,38 @@ public:
 std::unique_ptr<ILogger> log_logger_file(IOHANDLE logfile)
 {
 	return std::make_unique<CLoggerAsync>(logfile, false, true);
+}
+
+class CPrefixLogger : public ILogger
+{
+	std::unique_ptr<ILogger> m_pLogger;
+	char m_aSystemPrefix[32];
+
+public:
+	CPrefixLogger(std::unique_ptr<ILogger> pLogger, const char *pSystemPrefix) :
+		m_pLogger(std::move(pLogger))
+	{
+		str_copy(m_aSystemPrefix, pSystemPrefix);
+	}
+	void Log(const CLogMessage *pMessage) override
+	{
+		if(m_Filter.Filters(pMessage) || !str_startswith(pMessage->m_aSystem, m_aSystemPrefix))
+			return;
+		m_pLogger->Log(pMessage);
+	}
+	void GlobalFinish() override
+	{
+		m_pLogger->GlobalFinish();
+	}
+	void OnFilterChange() override
+	{
+		m_pLogger->SetFilter(m_Filter);
+	}
+};
+
+std::unique_ptr<ILogger> log_logger_prefix_file(IOHANDLE logfile, const char *pSystemPrefix)
+{
+	return std::make_unique<CPrefixLogger>(log_logger_file(logfile), pSystemPrefix);
 }
 
 #if defined(CONF_FAMILY_WINDOWS)

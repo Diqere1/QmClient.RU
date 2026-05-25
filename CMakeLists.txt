@@ -3421,6 +3421,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     json_test.cpp
     jsonwriter_test.cpp
     keyword_reply_rules_test.cpp
+    logger_test.cpp
     linereader_test.cpp
     mapbugs_test.cpp
     mapitems_test.cpp
