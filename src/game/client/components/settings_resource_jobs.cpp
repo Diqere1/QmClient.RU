@@ -55,6 +55,47 @@ bool SettingsResourceConsumeGpuUpload(SSettingsResourceMergeBudget &Budget)
 	return true;
 }
 
+bool SettingsResourceConsumeMergeEntry(SSettingsResourceMergeBudget &Budget, SSettingsWarmupFrameBudget *pFrameBudget)
+{
+	if(pFrameBudget != nullptr && !Budget.m_FrameMergeBudgetConsumed)
+	{
+		if(!SettingsWarmupConsumeBudget(*pFrameBudget, ESettingsWarmupCost::JOB_RESULT_MERGE))
+		{
+			Budget.m_StopReason = pFrameBudget->m_StopReason;
+			return false;
+		}
+		Budget.m_FrameMergeBudgetConsumed = true;
+	}
+	if(!SettingsResourceConsumeMergeEntry(Budget))
+		return false;
+	return true;
+}
+
+bool SettingsResourceConsumeGpuUpload(SSettingsResourceMergeBudget &Budget, SSettingsWarmupFrameBudget *pFrameBudget)
+{
+	if(!SettingsResourceConsumeGpuUpload(Budget))
+		return false;
+	if(pFrameBudget == nullptr)
+		return true;
+	if(SettingsWarmupConsumeBudget(*pFrameBudget, ESettingsWarmupCost::GPU_UPLOAD))
+		return true;
+	Budget.m_StopReason = pFrameBudget->m_StopReason;
+	++Budget.m_MaxGpuUploads;
+	return false;
+}
+
+bool SettingsResourceConsumeGpuUploads(SSettingsResourceMergeBudget &Budget, SSettingsWarmupFrameBudget *pFrameBudget, int Count)
+{
+	if(Count <= 0)
+		return true;
+	for(int Upload = 0; Upload < Count; ++Upload)
+	{
+		if(!SettingsResourceConsumeGpuUpload(Budget, pFrameBudget))
+			return false;
+	}
+	return true;
+}
+
 bool SettingsSkinListPlanGenerationMatches(const SSettingsSkinListPlanResult &Result, int CurrentGeneration)
 {
 	return Result.m_Generation == CurrentGeneration;
@@ -96,6 +137,11 @@ bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibl
 	return FirstVisibleIndex >= 0 && LastVisibleIndex >= FirstVisibleIndex && Index >= FirstVisibleIndex && Index <= LastVisibleIndex;
 }
 
+bool SettingsWorkshopThumbShouldStartHighPriority(int VisibleDownloadableIndex, int FirstVisibleDownloadableIndex, int LastVisibleDownloadableIndex)
+{
+	return SettingsAssetPreviewShouldPrioritizeVisibleRange(VisibleDownloadableIndex, FirstVisibleDownloadableIndex, LastVisibleDownloadableIndex);
+}
+
 bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord)
 {
 	return CacheMatches && RenderTargetValid && ResourcesReadyAtRecord;
@@ -103,7 +149,21 @@ bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTarg
 
 bool SettingsPageCanUsePageFbo(int Page, int AssetsPage)
 {
-	return Page != AssetsPage;
+	return Page >= 0 && Page != AssetsPage;
+}
+
+const char *SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason StopReason)
+{
+	switch(StopReason)
+	{
+	case ESettingsWarmupStopReason::NONE: return "none";
+	case ESettingsWarmupStopReason::TEXT_BUDGET: return "text_budget";
+	case ESettingsWarmupStopReason::FBO_BUDGET: return "fbo_budget";
+	case ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET: return "gpu_upload_budget";
+	case ESettingsWarmupStopReason::MERGE_BUDGET: return "merge_budget";
+	case ESettingsWarmupStopReason::ACTIVE_ITEM: return "active_item";
+	}
+	return "unknown";
 }
 
 bool SettingsAssetWarmupAllTabsReady(const bool *pReadyTabs, int TabCount)

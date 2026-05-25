@@ -261,6 +261,15 @@ namespace
 			PageName.c_str(), Tab, pPageFbo, pSectionFbo, SettingsWarmupMissReasonName(Reason), DurationMs);
 	}
 
+	void LogSettingsWarmupPerfName(int Page, int Tab, const char *pPageFbo, const char *pSectionFbo, const char *pReason, double DurationMs)
+	{
+		if(!PerfDebugEnabled())
+			return;
+		const std::string PageName = SettingsPageCacheKey(Page, -1);
+		dbg_msg("perf/settings-warmup", "page=%s tab=%d page_fbo=%s section_fbo=%s reason=%s cost_ms=%.3f",
+			PageName.c_str(), Tab, pPageFbo, pSectionFbo, pReason, DurationMs);
+	}
+
 	void LogSettingsInvalidatePerf(ESettingsInvalidationReason Reason, bool ClearsText, bool ClearsSection, bool ClearsPage, bool ClearsResource)
 	{
 		if(!PerfDebugEnabled())
@@ -710,6 +719,8 @@ void CMenus::PrepareSettingsTabLabelCache(float MainViewWidth)
 		if(RectEl.m_UITextContainer.Valid() && !ColorChanged && !TextChanged && !SizeChanged)
 			continue;
 
+		if(!ConsumeSettingsFrameBudget(ESettingsWarmupCost::TEXT_CONTAINER, -1, -1, "n/a", "n/a"))
+			return;
 		TextRender()->DeleteTextContainer(RectEl.m_UITextContainer);
 		RectEl.m_X = Label.x;
 		RectEl.m_Y = Label.y;
@@ -3186,6 +3197,15 @@ void CMenus::SetActive(bool Active)
 	}
 }
 
+bool CMenus::IsSettingsPageActive() const
+{
+	if(!IsActive())
+		return false;
+	if(Client()->State() == IClient::STATE_ONLINE)
+		return m_GamePage == PAGE_SETTINGS;
+	return m_MenuPage == PAGE_SETTINGS;
+}
+
 void CMenus::OnReset()
 {
 	ResetReportScan();
@@ -3382,6 +3402,8 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	}
 	if(Page == SETTINGS_TCLIENT)
 		Tab = CanonicalizeTClientCacheTab(Tab);
+	else if(Page == SETTINGS_ASSETS)
+		Tab = CurrentSettingsAssetsTab();
 
 	SSettingsPageRuntimeCache *pCache = GetSettingsPageRuntimeCache(Page, Tab);
 	if(pCache == nullptr)
@@ -3420,6 +3442,13 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 		LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", ESettingsWarmupMissReason::PAGE_FBO_UNSUPPORTED, PerfDebugElapsedMs(PerfStartTime));
 		return false;
 	}
+	if(!ResourcesReady)
+	{
+		LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING, PerfDebugElapsedMs(PerfStartTime));
+		return false;
+	}
+	if(!ConsumeSettingsFrameBudget(ESettingsWarmupCost::RENDER_TARGET_RECORD, Page, Tab, "miss", "n/a"))
+		return false;
 
 	float ScreenTLX = 0.0f;
 	float ScreenTLY = 0.0f;
@@ -3458,7 +3487,9 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	else if(Page == SETTINGS_DDNET)
 		RenderSettingsDDNet(CacheView);
 	else if(Page == SETTINGS_ASSETS)
+	{
 		RenderSettingsCustom(CacheView);
+	}
 	else if(Page == SETTINGS_TCLIENT)
 	{
 		const int SavedTab = m_TClientSettingsTab;
@@ -3547,6 +3578,8 @@ bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab
 	}
 	if(Page == SETTINGS_TCLIENT)
 		Tab = CanonicalizeTClientCacheTab(Tab);
+	else if(Page == SETTINGS_ASSETS)
+		Tab = CurrentSettingsAssetsTab();
 	SSettingsPageRuntimeCache *pCache = GetSettingsPageRuntimeCache(Page, Tab);
 	if(pCache == nullptr)
 	{
@@ -3576,10 +3609,33 @@ bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab
 	return true;
 }
 
+bool CMenus::ConsumeSettingsFrameBudget(ESettingsWarmupCost Cost, int Page, int Tab, const char *pPageFbo, const char *pSectionFbo)
+{
+	if(SettingsWarmupConsumeBudget(m_SettingsFrameBudget, Cost))
+		return true;
+	LogSettingsWarmupPerfName(Page, Tab, pPageFbo, pSectionFbo, SettingsWarmupBudgetStopMissReasonName(m_SettingsFrameBudget.m_StopReason), 0.0);
+	return false;
+}
+
 void CMenus::InvalidateSettingsPageRuntimeCache(int Page, int Tab)
 {
 	if(Page == SETTINGS_TCLIENT)
 		Tab = CanonicalizeTClientCacheTab(Tab);
+	if(Page == SETTINGS_ASSETS && Tab < 0)
+	{
+		m_aSettingsPageRuntimeCaches[SettingsPageRuntimeCacheSlot(SETTINGS_ASSETS, -1)].m_State = {};
+		m_aSettingsPagePrewarmed[SettingsPageRuntimeCacheSlot(SETTINGS_ASSETS, -1)] = false;
+		for(int AssetTab = ASSETS_TAB_ENTITIES; AssetTab < NUMBER_OF_ASSETS_TABS; ++AssetTab)
+		{
+			const int AssetSlot = SettingsPageRuntimeCacheSlot(SETTINGS_ASSETS, AssetTab);
+			if(AssetSlot >= 0 && AssetSlot < SETTINGS_PAGE_RUNTIME_CACHE_SLOTS)
+			{
+				m_aSettingsPageRuntimeCaches[AssetSlot].m_State = {};
+				m_aSettingsPagePrewarmed[AssetSlot] = false;
+			}
+		}
+		return;
+	}
 	const int Slot = SettingsPageRuntimeCacheSlot(Page, Tab);
 	if(Slot < 0 || Slot >= SETTINGS_PAGE_RUNTIME_CACHE_SLOTS)
 		return;
@@ -3745,6 +3801,7 @@ void CMenus::OnWindowResize()
 void CMenus::OnRender()
 {
 	CPerfTimer FrameTimer;
+	m_SettingsFrameBudget = {};
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		SetActive(true);
 

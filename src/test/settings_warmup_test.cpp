@@ -253,6 +253,22 @@ TEST(SettingsRuntimeCache, BudgetStopsEveryMainThreadCost)
 	EXPECT_EQ(Budget.m_StopReason, ESettingsWarmupStopReason::MERGE_BUDGET);
 }
 
+TEST(SettingsRuntimeCache, DefaultGpuBudgetAllowsOneSkinUploadBatch)
+{
+	SSettingsWarmupFrameBudget Budget;
+	for(int Upload = 0; Upload < 14; ++Upload)
+		EXPECT_TRUE(SettingsWarmupConsumeBudget(Budget, ESettingsWarmupCost::GPU_UPLOAD));
+	EXPECT_FALSE(SettingsWarmupConsumeBudget(Budget, ESettingsWarmupCost::GPU_UPLOAD));
+	EXPECT_EQ(Budget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
+}
+
+TEST(SettingsRuntimeCache, BudgetStopReasonsMapToProductionMissReasons)
+{
+	EXPECT_STREQ(SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason::TEXT_BUDGET), "text_budget");
+	EXPECT_STREQ(SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason::FBO_BUDGET), "fbo_budget");
+	EXPECT_STREQ(SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason::NONE), "none");
+}
+
 TEST(SettingsRuntimeCache, PageCacheSlotsExistForEveryRegisteredPage)
 {
 	const SSettingsPageRuntimeRegistry Registry = BuildSettingsPageRuntimeRegistry();
@@ -262,6 +278,7 @@ TEST(SettingsRuntimeCache, PageCacheSlotsExistForEveryRegisteredPage)
 		EXPECT_GE(SettingsPageRuntimeCacheSlot(Page, Tab), 0) << Page;
 	}
 	EXPECT_NE(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_TCLIENT, 0), SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_TCLIENT, 1));
+	EXPECT_NE(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_ASSETS, ASSETS_TAB_ENTITIES), SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_ASSETS, ASSETS_TAB_ENTITY_BG));
 }
 
 TEST(SettingsRuntimeCache, TClientPerfStageNamesAreStable)
@@ -393,6 +410,8 @@ TEST(SettingsRuntimeCache, PageCacheSlotsRejectInvalidPersistedTabs)
 	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_TCLIENT, 99), -1);
 	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_QMCLIENT, -1), 16);
 	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_QMCLIENT, CMenus::NUMBER_OF_QMCLIENT_SETTINGS_TABS), -1);
+	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_ASSETS, -1), 9);
+	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_ASSETS, NUMBER_OF_ASSETS_TABS), -1);
 }
 
 TEST(SettingsRuntimeCache, SectionRegistryCoversComplexPages)
@@ -435,8 +454,12 @@ TEST(SettingsRuntimeCache, SectionRegistryRequiresBothLayersForStaticFbo)
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_CONTROLS, -1, "weapons"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_CONTROLS, -1, "voting"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_ASSETS, -1, "resource-list"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_ASSETS, -1, "preview"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_LANGUAGE, -1, "language-list"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_LANGUAGE, -1, "credits"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_PLAYER, -1, "skin-list"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_PLAYER, -1, "identity"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TEE, -1, "skin-list"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TEE, -1, "identity"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_GENERAL, -1, "body"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "missing"));
@@ -511,6 +534,66 @@ TEST(SettingsResourceJobs, ResourceMergeBudgetStopsBatchWork)
 	EXPECT_EQ(Budget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
 }
 
+TEST(SettingsResourceJobs, ResourceMergeBudgetHonorsUnifiedFrameBudget)
+{
+	SSettingsResourceMergeBudget ResourceBudget;
+	ResourceBudget.m_MaxListEntries = 8;
+	SSettingsWarmupFrameBudget FrameBudget;
+	FrameBudget.m_MaxJobResultMerges = 1;
+
+	EXPECT_TRUE(SettingsResourceConsumeMergeEntry(ResourceBudget, &FrameBudget));
+	EXPECT_TRUE(SettingsResourceConsumeMergeEntry(ResourceBudget, &FrameBudget));
+	EXPECT_EQ(ResourceBudget.m_MaxListEntries, 6);
+	EXPECT_EQ(ResourceBudget.m_StopReason, ESettingsWarmupStopReason::NONE);
+
+	SSettingsResourceMergeBudget NextBatchBudget;
+	NextBatchBudget.m_MaxListEntries = 8;
+	EXPECT_FALSE(SettingsResourceConsumeMergeEntry(NextBatchBudget, &FrameBudget));
+	EXPECT_EQ(NextBatchBudget.m_MaxListEntries, 8);
+	EXPECT_EQ(NextBatchBudget.m_StopReason, ESettingsWarmupStopReason::MERGE_BUDGET);
+	EXPECT_EQ(FrameBudget.m_StopReason, ESettingsWarmupStopReason::MERGE_BUDGET);
+}
+
+TEST(SettingsResourceJobs, ResourceGpuUploadBudgetHonorsUnifiedFrameBudget)
+{
+	SSettingsResourceMergeBudget ResourceBudget;
+	ResourceBudget.m_MaxGpuUploads = 8;
+	SSettingsWarmupFrameBudget FrameBudget;
+	FrameBudget.m_MaxGpuUploads = 1;
+
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(ResourceBudget, &FrameBudget));
+	EXPECT_FALSE(SettingsResourceConsumeGpuUpload(ResourceBudget, &FrameBudget));
+	EXPECT_EQ(ResourceBudget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
+	EXPECT_EQ(FrameBudget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
+	EXPECT_EQ(ResourceBudget.m_MaxGpuUploads, 7);
+}
+
+TEST(SettingsResourceJobs, ResourceGpuUploadBudgetCanReserveMultipleUploads)
+{
+	SSettingsResourceMergeBudget ResourceBudget;
+	ResourceBudget.m_MaxGpuUploads = 8;
+	SSettingsWarmupFrameBudget FrameBudget;
+	FrameBudget.m_MaxGpuUploads = 3;
+
+	EXPECT_TRUE(SettingsResourceConsumeGpuUploads(ResourceBudget, &FrameBudget, 3));
+	EXPECT_EQ(ResourceBudget.m_MaxGpuUploads, 5);
+	EXPECT_FALSE(SettingsResourceConsumeGpuUploads(ResourceBudget, &FrameBudget, 1));
+	EXPECT_EQ(ResourceBudget.m_MaxGpuUploads, 5);
+	EXPECT_EQ(FrameBudget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
+}
+
+TEST(SettingsResourceJobs, DefaultSettingsGpuBudgetAllowsOneSkinUploadBatch)
+{
+	SSettingsResourceMergeBudget ResourceBudget;
+	ResourceBudget.m_MaxGpuUploads = 42;
+	SSettingsWarmupFrameBudget FrameBudget;
+
+	EXPECT_TRUE(SettingsResourceConsumeGpuUploads(ResourceBudget, &FrameBudget, 14));
+	EXPECT_FALSE(SettingsResourceConsumeGpuUploads(ResourceBudget, &FrameBudget, 14));
+	EXPECT_EQ(ResourceBudget.m_MaxGpuUploads, 28);
+	EXPECT_EQ(FrameBudget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
+}
+
 TEST(SettingsResourceJobs, AssetListLoadingDoesNotBlockVisibleEntries)
 {
 	EXPECT_TRUE(SettingsAssetListShouldShowBlockingLoading(true, 0));
@@ -544,6 +627,14 @@ TEST(SettingsResourceJobs, AssetPreviewPrioritizesCurrentVisibleRange)
 	EXPECT_FALSE(SettingsAssetPreviewShouldPrioritizeVisibleRange(10, -1, 20));
 }
 
+TEST(SettingsResourceJobs, WorkshopThumbDecodePrioritizesVisibleDownloadableItems)
+{
+	EXPECT_TRUE(SettingsWorkshopThumbShouldStartHighPriority(0, 0, 3));
+	EXPECT_TRUE(SettingsWorkshopThumbShouldStartHighPriority(3, 0, 3));
+	EXPECT_FALSE(SettingsWorkshopThumbShouldStartHighPriority(4, 0, 3));
+	EXPECT_FALSE(SettingsWorkshopThumbShouldStartHighPriority(0, -1, 3));
+}
+
 TEST(SettingsResourceJobs, PageCacheRejectsRecordedFrameWithoutReadyResources)
 {
 	EXPECT_FALSE(SettingsPageCacheCanUseRecordedResources(true, true, false));
@@ -552,7 +643,7 @@ TEST(SettingsResourceJobs, PageCacheRejectsRecordedFrameWithoutReadyResources)
 	EXPECT_TRUE(SettingsPageCacheCanUseRecordedResources(true, true, true));
 }
 
-TEST(SettingsResourceJobs, AssetsPageDoesNotUsePageFboUntilPreviewReadinessIsModeled)
+TEST(SettingsResourceJobs, AssetsPageRejectsWholePageFbo)
 {
 	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_ASSETS, CMenus::SETTINGS_ASSETS));
 	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_TCLIENT, CMenus::SETTINGS_ASSETS));

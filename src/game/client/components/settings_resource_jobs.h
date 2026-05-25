@@ -29,12 +29,16 @@ struct SSettingsResourceMergeBudget
 	int m_MaxListEntries = 64;
 	int m_MaxGpuUploads = 1;
 	ESettingsWarmupStopReason m_StopReason = ESettingsWarmupStopReason::NONE;
+	bool m_FrameMergeBudgetConsumed = false;
 };
 
 SSettingsSkinListPlan BuildSettingsSkinListPlan(std::vector<SSettingsSkinListEntry> vEntries);
 std::vector<int> BuildSettingsCountryFlagWarmupPlan(const std::vector<int> &vCountryCodes);
 bool SettingsResourceConsumeMergeEntry(SSettingsResourceMergeBudget &Budget);
 bool SettingsResourceConsumeGpuUpload(SSettingsResourceMergeBudget &Budget);
+bool SettingsResourceConsumeMergeEntry(SSettingsResourceMergeBudget &Budget, SSettingsWarmupFrameBudget *pFrameBudget);
+bool SettingsResourceConsumeGpuUpload(SSettingsResourceMergeBudget &Budget, SSettingsWarmupFrameBudget *pFrameBudget);
+bool SettingsResourceConsumeGpuUploads(SSettingsResourceMergeBudget &Budget, SSettingsWarmupFrameBudget *pFrameBudget, int Count);
 bool SettingsSkinListPlanGenerationMatches(const SSettingsSkinListPlanResult &Result, int CurrentGeneration);
 bool SettingsAssetListJobGenerationMatches(int JobGeneration, int CurrentGeneration);
 bool SettingsSkinListShouldPublishMergedList(size_t Cursor, size_t Total);
@@ -43,8 +47,10 @@ bool SettingsAssetListShouldShowBlockingLoading(bool Loading, int VisibleEntries
 bool SettingsAssetListCanStartPreviewDecode(bool Loading, bool Merging, bool Loaded);
 bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double ElapsedMs, int MaxFinalizesPerFrame, double MaxFinalizeMsPerFrame);
 bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex);
+bool SettingsWorkshopThumbShouldStartHighPriority(int VisibleDownloadableIndex, int FirstVisibleDownloadableIndex, int LastVisibleDownloadableIndex);
 bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord);
 bool SettingsPageCanUsePageFbo(int Page, int AssetsPage);
+const char *SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason StopReason);
 bool SettingsAssetWarmupAllTabsReady(const bool *pReadyTabs, int TabCount);
 int SettingsAssetWarmupNextTab(int CurrentTab, int TabCount);
 

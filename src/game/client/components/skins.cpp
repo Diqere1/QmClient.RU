@@ -38,6 +38,29 @@ static void LogSkinSettingsResourcePerf(const char *pJob, int Count, int Budget,
 	LogSettingsResourcePerf(CMenus::SETTINGS_TEE, pJob, Count, Budget, Remaining, Reason, DurationMs);
 }
 
+static ESettingsWarmupMissReason SettingsResourceMissReason(ESettingsWarmupStopReason StopReason)
+{
+	switch(StopReason)
+	{
+	case ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET: return ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
+	case ESettingsWarmupStopReason::MERGE_BUDGET: return ESettingsWarmupMissReason::JOB_RESULT_PENDING;
+	case ESettingsWarmupStopReason::TEXT_BUDGET: return ESettingsWarmupMissReason::TEXT_BUDGET;
+	case ESettingsWarmupStopReason::ACTIVE_ITEM: return ESettingsWarmupMissReason::ACTIVE_ITEM;
+	case ESettingsWarmupStopReason::FBO_BUDGET:
+	case ESettingsWarmupStopReason::NONE: return ESettingsWarmupMissReason::NONE;
+	}
+	return ESettingsWarmupMissReason::NONE;
+}
+
+static SSettingsWarmupFrameBudget *SettingsFrameBudgetOrNull(CGameClient *pGameClient)
+{
+	if(pGameClient == nullptr || !pGameClient->m_Menus.IsSettingsPageActive())
+		return nullptr;
+	return pGameClient->m_Menus.SettingsFrameBudget();
+}
+
+static constexpr int SETTINGS_SKIN_GPU_UPLOAD_UNITS = 14;
+
 static int &SkinQueueLengthVar(int Dummy)
 {
 	return Dummy ? g_Config.m_QmDummySkinQueueLength : g_Config.m_QmSkinQueueLength;
@@ -409,84 +432,46 @@ int CSkins::SkinScan(const char *pName, int IsDir, int StorageType, void *pUser)
 	return 0;
 }
 
-static void CheckMetrics(CSkin::CSkinMetricVariable &Metrics, const uint8_t *pImg, int ImgWidth, int ImgX, int ImgY, int CheckWidth, int CheckHeight)
+bool CSkins::PrepareSkinData(const char *pName, CSkinLoadData &Data)
 {
-	int MaxY = -1;
-	int MinY = CheckHeight + 1;
-	int MaxX = -1;
-	int MinX = CheckWidth + 1;
-
-	for(int y = 0; y < CheckHeight; y++)
+	const SSkinSpriteSpec Body{
+		g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridx,
+		g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridy,
+		g_pData->m_aSprites[SPRITE_TEE_BODY].m_X,
+		g_pData->m_aSprites[SPRITE_TEE_BODY].m_Y,
+		g_pData->m_aSprites[SPRITE_TEE_BODY].m_W,
+		g_pData->m_aSprites[SPRITE_TEE_BODY].m_H};
+	const SSkinSpriteSpec BodyOutline{
+		g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_pSet->m_Gridx,
+		g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_pSet->m_Gridy,
+		g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_X,
+		g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_Y,
+		g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_W,
+		g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_H};
+	const SSkinSpriteSpec Feet{
+		g_pData->m_aSprites[SPRITE_TEE_FOOT].m_pSet->m_Gridx,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT].m_pSet->m_Gridy,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT].m_X,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT].m_Y,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT].m_W,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT].m_H};
+	const SSkinSpriteSpec FeetOutline{
+		g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_pSet->m_Gridx,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_pSet->m_Gridy,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_X,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_Y,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_W,
+		g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_H};
+	SSkinDataPlan Plan;
+	if(!BuildSkinDataPlan(Data.m_Info, Body, BodyOutline, Feet, FeetOutline, Plan))
 	{
-		for(int x = 0; x < CheckWidth; x++)
-		{
-			int OffsetAlpha = (y + ImgY) * ImgWidth + (x + ImgX) * 4 + 3;
-			uint8_t AlphaValue = pImg[OffsetAlpha];
-			if(AlphaValue > 0)
-			{
-				if(MaxY < y)
-					MaxY = y;
-				if(MinY > y)
-					MinY = y;
-				if(MaxX < x)
-					MaxX = x;
-				if(MinX > x)
-					MinX = x;
-			}
-		}
-	}
-
-	Metrics.m_Width = std::clamp((MaxX - MinX) + 1, 1, CheckWidth);
-	Metrics.m_Height = std::clamp((MaxY - MinY) + 1, 1, CheckHeight);
-	Metrics.m_OffsetX = std::clamp(MinX, 0, CheckWidth - 1);
-	Metrics.m_OffsetY = std::clamp(MinY, 0, CheckHeight - 1);
-	Metrics.m_MaxWidth = CheckWidth;
-	Metrics.m_MaxHeight = CheckHeight;
-}
-
-bool CSkins::LoadSkinData(const char *pName, CSkinLoadData &Data) const
-{
-	if(!Graphics()->CheckImageDivisibility(pName, Data.m_Info, g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridx, g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridy, true))
-	{
-		log_error("skins", "Skin failed image divisibility: %s", pName);
-		Data.m_Info.Free();
-		return false;
-	}
-	if(!Graphics()->IsImageFormatRgba(pName, Data.m_Info))
-	{
-		log_error("skins", "Skin format is not RGBA: %s", pName);
-		Data.m_Info.Free();
-		return false;
-	}
-	const size_t BodyWidth = g_pData->m_aSprites[SPRITE_TEE_BODY].m_W * (Data.m_Info.m_Width / g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridx);
-	const size_t BodyHeight = g_pData->m_aSprites[SPRITE_TEE_BODY].m_H * (Data.m_Info.m_Height / g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridy);
-	if(BodyWidth > Data.m_Info.m_Width || BodyHeight > Data.m_Info.m_Height)
-	{
-		log_error("skins", "Skin size unsupported (w=%" PRIzu ", h=%" PRIzu "): %s", Data.m_Info.m_Width, Data.m_Info.m_Height, pName);
+		log_error("skins", "Skin data is invalid (w=%" PRIzu ", h=%" PRIzu ", format=%s): %s", Data.m_Info.m_Width, Data.m_Info.m_Height, Data.m_Info.FormatName(), pName);
 		Data.m_Info.Free();
 		return false;
 	}
 
-	int FeetGridPixelsWidth = Data.m_Info.m_Width / g_pData->m_aSprites[SPRITE_TEE_FOOT].m_pSet->m_Gridx;
-	int FeetGridPixelsHeight = Data.m_Info.m_Height / g_pData->m_aSprites[SPRITE_TEE_FOOT].m_pSet->m_Gridy;
-	int FeetWidth = g_pData->m_aSprites[SPRITE_TEE_FOOT].m_W * FeetGridPixelsWidth;
-	int FeetHeight = g_pData->m_aSprites[SPRITE_TEE_FOOT].m_H * FeetGridPixelsHeight;
-	int FeetOffsetX = g_pData->m_aSprites[SPRITE_TEE_FOOT].m_X * FeetGridPixelsWidth;
-	int FeetOffsetY = g_pData->m_aSprites[SPRITE_TEE_FOOT].m_Y * FeetGridPixelsHeight;
-
-	int FeetOutlineGridPixelsWidth = Data.m_Info.m_Width / g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_pSet->m_Gridx;
-	int FeetOutlineGridPixelsHeight = Data.m_Info.m_Height / g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_pSet->m_Gridy;
-	int FeetOutlineWidth = g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_W * FeetOutlineGridPixelsWidth;
-	int FeetOutlineHeight = g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_H * FeetOutlineGridPixelsHeight;
-	int FeetOutlineOffsetX = g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_X * FeetOutlineGridPixelsWidth;
-	int FeetOutlineOffsetY = g_pData->m_aSprites[SPRITE_TEE_FOOT_OUTLINE].m_Y * FeetOutlineGridPixelsHeight;
-
-	int BodyOutlineGridPixelsWidth = Data.m_Info.m_Width / g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_pSet->m_Gridx;
-	int BodyOutlineGridPixelsHeight = Data.m_Info.m_Height / g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_pSet->m_Gridy;
-	int BodyOutlineWidth = g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_W * BodyOutlineGridPixelsWidth;
-	int BodyOutlineHeight = g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_H * BodyOutlineGridPixelsHeight;
-	int BodyOutlineOffsetX = g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_X * BodyOutlineGridPixelsWidth;
-	int BodyOutlineOffsetY = g_pData->m_aSprites[SPRITE_TEE_BODY_OUTLINE].m_Y * BodyOutlineGridPixelsHeight;
+	const size_t BodyWidth = Body.m_W * (Data.m_Info.m_Width / Body.m_GridX);
+	const size_t BodyHeight = Body.m_H * (Data.m_Info.m_Height / Body.m_GridY);
 
 	const size_t PixelStep = Data.m_Info.PixelSize();
 	const size_t Pitch = Data.m_Info.m_Width * PixelStep;
@@ -512,10 +497,18 @@ bool CSkins::LoadSkinData(const char *pName, CSkinLoadData &Data) const
 		Data.m_BloodColor = ColorRGBA(NormalizedColor.x, NormalizedColor.y, NormalizedColor.z);
 	}
 
-	CheckMetrics(Data.m_Metrics.m_Body, Data.m_Info.m_pData, Pitch, 0, 0, BodyWidth, BodyHeight);
-	CheckMetrics(Data.m_Metrics.m_Body, Data.m_Info.m_pData, Pitch, BodyOutlineOffsetX, BodyOutlineOffsetY, BodyOutlineWidth, BodyOutlineHeight);
-	CheckMetrics(Data.m_Metrics.m_Feet, Data.m_Info.m_pData, Pitch, FeetOffsetX, FeetOffsetY, FeetWidth, FeetHeight);
-	CheckMetrics(Data.m_Metrics.m_Feet, Data.m_Info.m_pData, Pitch, FeetOutlineOffsetX, FeetOutlineOffsetY, FeetOutlineWidth, FeetOutlineHeight);
+	Data.m_Metrics.m_Body.m_Width = Plan.m_Body.m_Width;
+	Data.m_Metrics.m_Body.m_Height = Plan.m_Body.m_Height;
+	Data.m_Metrics.m_Body.m_OffsetX = Plan.m_Body.m_OffsetX;
+	Data.m_Metrics.m_Body.m_OffsetY = Plan.m_Body.m_OffsetY;
+	Data.m_Metrics.m_Body.m_MaxWidth = Plan.m_Body.m_MaxWidth;
+	Data.m_Metrics.m_Body.m_MaxHeight = Plan.m_Body.m_MaxHeight;
+	Data.m_Metrics.m_Feet.m_Width = Plan.m_Feet.m_Width;
+	Data.m_Metrics.m_Feet.m_Height = Plan.m_Feet.m_Height;
+	Data.m_Metrics.m_Feet.m_OffsetX = Plan.m_Feet.m_OffsetX;
+	Data.m_Metrics.m_Feet.m_OffsetY = Plan.m_Feet.m_OffsetY;
+	Data.m_Metrics.m_Feet.m_MaxWidth = Plan.m_Feet.m_MaxWidth;
+	Data.m_Metrics.m_Feet.m_MaxHeight = Plan.m_Feet.m_MaxHeight;
 
 	Data.m_InfoGrayscale = Data.m_Info.DeepCopy();
 	ConvertToGrayscale(Data.m_InfoGrayscale);
@@ -629,7 +622,7 @@ void CSkins::LoadSkinDirect(const char *pName)
 		log_error("skins", "Failed to load PNG of skin '%s' from '%s'", pName, aPath);
 		SkinIt->second->SetState(CSkinContainer::EState::ERROR);
 	}
-	else if(LoadSkinData(pName, DefaultSkinData))
+	else if(PrepareSkinData(pName, DefaultSkinData))
 	{
 		LoadSkinFinish(SkinIt->second.get(), DefaultSkinData);
 	}
@@ -1064,12 +1057,19 @@ CSkins::ESkinProcessResult CSkins::ProcessSkinContainer(CSkinContainer *pSkinCon
 			LogSkinSettingsResourcePerf("upload", 0, MAX_SKINS_PER_FRAME, Stats.m_NumLoading, ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
 			return ESkinProcessResult::BREAK_GPU_LIMIT;
 		}
+		SSettingsResourceMergeBudget UploadBudget;
+		UploadBudget.m_MaxGpuUploads = SETTINGS_SKIN_GPU_UPLOAD_UNITS;
+		if(!SettingsResourceConsumeGpuUploads(UploadBudget, SettingsFrameBudgetOrNull(GameClient()), SETTINGS_SKIN_GPU_UPLOAD_UNITS))
+		{
+			LogSkinSettingsResourcePerf("upload", 0, MAX_SKINS_PER_FRAME, Stats.m_NumLoading, SettingsResourceMissReason(UploadBudget.m_StopReason), 0.0);
+			return ESkinProcessResult::BREAK_GPU_LIMIT;
+		}
 
 		Stats.m_NumLoading--;
 		SkinsProcessedThisFrame++;
 
 		LoadSkinFinish(pSkinContainer, pSkinContainer->m_pLoadJob->m_Data);
-		for(int i = 0; i < 14 && GameClient()->GpuUploadLimiter()->CanUpload(); ++i)
+		for(int i = 0; i < SETTINGS_SKIN_GPU_UPLOAD_UNITS && GameClient()->GpuUploadLimiter()->CanUpload(); ++i)
 		{
 			GameClient()->GpuUploadLimiter()->OnUploaded();
 		}
@@ -1368,7 +1368,7 @@ void CSkins::ProcessSkinDirectoryScanJob()
 
 	SSettingsResourceMergeBudget MergeBudget;
 	MergeBudget.m_MaxListEntries = 64;
-	while(m_SkinDirectoryMergeCursor < m_vPendingSkinDirectoryEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
+	while(m_SkinDirectoryMergeCursor < m_vPendingSkinDirectoryEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget, SettingsFrameBudgetOrNull(GameClient())))
 	{
 		const auto &[Name, StorageType] = m_vPendingSkinDirectoryEntries[m_SkinDirectoryMergeCursor++];
 		if(m_Skins.contains(Name))
@@ -1426,7 +1426,7 @@ void CSkins::ProcessSkinListPlanJob()
 	SSettingsResourceMergeBudget MergeBudget;
 	MergeBudget.m_MaxListEntries = 64;
 	const size_t MergeStartCursor = m_SkinListMergeCursor;
-	while(m_SkinListMergeCursor < m_vPendingSkinListMergeNames.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
+	while(m_SkinListMergeCursor < m_vPendingSkinListMergeNames.size() && SettingsResourceConsumeMergeEntry(MergeBudget, SettingsFrameBudgetOrNull(GameClient())))
 	{
 		const std::string &Name = m_vPendingSkinListMergeNames[m_SkinListMergeCursor++];
 		const auto SkinIt = m_Skins.find(Name);
@@ -1878,7 +1878,7 @@ void CSkins::CSkinLoadJob::Run()
 	{
 		return;
 	}
-	m_pSkins->LoadSkinData(m_aName, m_Data);
+	PrepareSkinData(m_aName, m_Data);
 }
 
 CSkins::CSkinDownloadJob::CSkinDownloadJob(CSkins *pSkins, const char *pName) :
@@ -1942,7 +1942,7 @@ void CSkins::CSkinDownloadJob::Run()
 				{
 					return;
 				}
-				m_pSkins->LoadSkinData(m_aName, m_Data);
+				PrepareSkinData(m_aName, m_Data);
 			}
 			free(pPngData);
 		}
@@ -2005,7 +2005,7 @@ void CSkins::CSkinDownloadJob::Run()
 		{
 			return;
 		}
-		m_pSkins->LoadSkinData(m_aName, m_Data);
+		PrepareSkinData(m_aName, m_Data);
 	}
 	else
 	{

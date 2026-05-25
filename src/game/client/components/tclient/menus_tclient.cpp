@@ -865,7 +865,7 @@ void CMenus::RenderSettingsTClient(CUIRect MainView, bool PrewarmOnly)
 	else if(m_TClientSettingsTab != s_PrevCustomTab)
 	{
 		s_CustomTabTransitionDirection = m_TClientSettingsTab > s_PrevCustomTab ? 1.0f : -1.0f;
-		TriggerUiSwitchAnimation(TClientTabSwitchNode, 0.18f);
+		TriggerUiSwitchAnimation(TClientTabSwitchNode, 0.0f);
 		s_PrevCustomTab = m_TClientSettingsTab;
 	}
 
@@ -3440,11 +3440,12 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 
 	const int QmClientTab = CanonicalizePersistedQmClientTab(m_SettingsRuntimeMetadata.m_LastQmTab >= 0 ? m_SettingsRuntimeMetadata.m_LastQmTab : m_QmClientSettingsTab);
 	const int TClientTab = CanonicalizePersistedTClientTab(m_SettingsRuntimeMetadata.m_LastTClientTab >= 0 ? m_SettingsRuntimeMetadata.m_LastTClientTab : m_TClientSettingsTab);
+	const int AssetsTab = CurrentSettingsAssetsTab();
 	if(m_SettingsStartupWarmupCursor < m_SettingsStartupWarmupPlan.m_vPageJobs.size())
 	{
 		const SSettingsWarmupPageJob &Job = m_SettingsStartupWarmupPlan.m_vPageJobs[m_SettingsStartupWarmupCursor];
 		const int JobPage = Job.m_Page;
-		const int PageTab = JobPage == SETTINGS_TCLIENT ? TClientTab : (JobPage == SETTINGS_QMCLIENT ? QmClientTab : Job.m_Tab);
+		const int PageTab = JobPage == SETTINGS_TCLIENT ? TClientTab : (JobPage == SETTINGS_QMCLIENT ? QmClientTab : (JobPage == SETTINGS_ASSETS ? AssetsTab : Job.m_Tab));
 		const int Slot = SettingsPageRuntimeCacheSlot(JobPage, PageTab);
 		if(Slot < 0 || m_aSettingsPagePrewarmed[Slot])
 		{
@@ -3487,7 +3488,7 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 	const int GraphicsSlot = SettingsPageRuntimeCacheSlot(SETTINGS_GRAPHICS, -1);
 	const int SoundSlot = SettingsPageRuntimeCacheSlot(SETTINGS_SOUND, -1);
 	const int DdnetSlot = SettingsPageRuntimeCacheSlot(SETTINGS_DDNET, -1);
-	const int AssetsSlot = SettingsPageRuntimeCacheSlot(SETTINGS_ASSETS, -1);
+	const int AssetsSlot = SettingsPageRuntimeCacheSlot(SETTINGS_ASSETS, AssetsTab);
 	const int TClientSlot = SettingsPageRuntimeCacheSlot(SETTINGS_TCLIENT, TClientTab);
 	const int QmClientSlot = SettingsPageRuntimeCacheSlot(SETTINGS_QMCLIENT, QmClientTab);
 	return m_aSettingsPagePrewarmed[LanguageSlot] &&

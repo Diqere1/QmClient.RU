@@ -167,7 +167,12 @@ int SettingsPageRuntimeCacheSlot(int Page, int Tab)
 	case CMenus::SETTINGS_GRAPHICS: return 6;
 	case CMenus::SETTINGS_SOUND: return 7;
 	case CMenus::SETTINGS_DDNET: return 8;
-	case CMenus::SETTINGS_ASSETS: return 9;
+	case CMenus::SETTINGS_ASSETS:
+		if(Tab < 0)
+			return 9;
+		if(Tab >= NUMBER_OF_ASSETS_TABS)
+			return -1;
+		return 22 + Tab;
 	case CMenus::SETTINGS_TCLIENT:
 		if(Tab < 0)
 			return 10;

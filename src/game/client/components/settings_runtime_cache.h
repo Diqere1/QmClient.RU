@@ -62,7 +62,7 @@ struct SSettingsWarmupFrameBudget
 {
 	int m_MaxTextContainers = 8;
 	int m_MaxRenderTargetRecords = 1;
-	int m_MaxGpuUploads = 1;
+	int m_MaxGpuUploads = 14;
 	int m_MaxJobResultMerges = 1;
 	ESettingsWarmupStopReason m_StopReason = ESettingsWarmupStopReason::NONE;
 };

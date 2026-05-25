@@ -5601,14 +5601,14 @@ int main(int argc, const char **argv)
 		pFutureFileLogger->Set(log_logger_noop());
 	}
 
-	if(g_Config.m_QmPerfLogfile)
+	if(g_Config.m_QmPerfLogfile || g_Config.m_QmPerfDebug)
 	{
 		pStorage->CreateFolder("dumps", IStorage::TYPE_SAVE);
 		pStorage->CreateFolder("dumps/QmClient_Perf", IStorage::TYPE_SAVE);
 		char aDate[64];
 		str_timestamp(aDate, sizeof(aDate));
 		char aPerfLogPath[128];
-		str_format(aPerfLogPath, sizeof(aPerfLogPath), "dumps/QmClient_Perf/settings_perf_%s.log", aDate);
+		str_format(aPerfLogPath, sizeof(aPerfLogPath), "dumps/QmClient_Perf/qm_perf_%s.log", aDate);
 		IOHANDLE PerfLogfile = pStorage->OpenFile(aPerfLogPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
 		if(PerfLogfile)
 		{

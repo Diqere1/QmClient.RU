@@ -6,6 +6,7 @@
 #include <base/lock.h>
 
 #include <engine/client/enums.h>
+#include <engine/gfx/image_manipulation.h>
 #include <engine/shared/config.h>
 #include <engine/shared/jobs.h>
 
@@ -13,9 +14,11 @@
 #include <game/client/components/settings_resource_jobs.h>
 #include <game/client/skin.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <list>
+#include <limits>
 #include <optional>
 #include <set>
 #include <string>
@@ -58,6 +61,32 @@ private:
 	};
 
 public:
+	struct SSkinSpriteSpec
+	{
+		int m_GridX;
+		int m_GridY;
+		int m_X;
+		int m_Y;
+		int m_W;
+		int m_H;
+	};
+
+	struct SSkinMetricPlan
+	{
+		int m_Width = 0;
+		int m_Height = 0;
+		int m_OffsetX = 0;
+		int m_OffsetY = 0;
+		int m_MaxWidth = 0;
+		int m_MaxHeight = 0;
+	};
+
+	struct SSkinDataPlan
+	{
+		SSkinMetricPlan m_Body;
+		SSkinMetricPlan m_Feet;
+	};
+
 	/**
 	 * Container for a skin, its loading state, job and various meta data.
 	 */
@@ -250,6 +279,29 @@ public:
 
 	CSkins();
 
+	static bool BuildSkinDataPlan(CImageInfo &Image, const SSkinSpriteSpec &Body, const SSkinSpriteSpec &BodyOutline, const SSkinSpriteSpec &Feet, const SSkinSpriteSpec &FeetOutline, SSkinDataPlan &Plan)
+	{
+		if(!PrepareSkinImage(Image, Body.m_GridX, Body.m_GridY))
+		{
+			return false;
+		}
+		if(Image.m_Format != CImageInfo::FORMAT_RGBA)
+		{
+			return false;
+		}
+		if((size_t)Body.m_W * (Image.m_Width / Body.m_GridX) > Image.m_Width ||
+			(size_t)Body.m_H * (Image.m_Height / Body.m_GridY) > Image.m_Height)
+		{
+			return false;
+		}
+
+		MeasureSkinSprite(Plan.m_Body, Image, Body);
+		MeasureSkinSprite(Plan.m_Body, Image, BodyOutline);
+		MeasureSkinSprite(Plan.m_Feet, Image, Feet);
+		MeasureSkinSprite(Plan.m_Feet, Image, FeetOutline);
+		return true;
+	}
+
 	typedef std::function<void()> TSkinLoadedCallback;
 
 	int Sizeof() const override { return sizeof(*this); }
@@ -322,6 +374,71 @@ public:
 
 private:
 	static bool IsVanillaSkin(const char *pName);
+	static bool PrepareSkinImage(CImageInfo &Image, int DivX, int DivY)
+	{
+		dbg_assert(DivX != 0 && DivY != 0, "Passing 0 to this function is not allowed.");
+		const bool WidthBroken = Image.m_Width == 0 || (Image.m_Width % DivX) != 0;
+		const bool HeightBroken = Image.m_Height == 0 || (Image.m_Height % DivY) != 0;
+		if(!WidthBroken && !HeightBroken)
+		{
+			return true;
+		}
+		if(Image.m_Width == 0 || Image.m_Height == 0)
+		{
+			return false;
+		}
+
+		int NewWidth = DivX;
+		int NewHeight = DivY;
+		if(WidthBroken)
+		{
+			NewWidth = maximum<int>(HighestBit(Image.m_Width), DivX);
+			NewHeight = (NewWidth / DivX) * DivY;
+		}
+		else
+		{
+			NewHeight = maximum<int>(HighestBit(Image.m_Height), DivY);
+			NewWidth = (NewHeight / DivY) * DivX;
+		}
+		ResizeImage(Image, NewWidth, NewHeight);
+		return true;
+	}
+	static void MeasureSkinSprite(SSkinMetricPlan &Plan, const CImageInfo &Image, const SSkinSpriteSpec &Sprite)
+	{
+		const int GridPixelsWidth = Image.m_Width / Sprite.m_GridX;
+		const int GridPixelsHeight = Image.m_Height / Sprite.m_GridY;
+		const int CheckWidth = Sprite.m_W * GridPixelsWidth;
+		const int CheckHeight = Sprite.m_H * GridPixelsHeight;
+		const int ImgX = Sprite.m_X * GridPixelsWidth;
+		const int ImgY = Sprite.m_Y * GridPixelsHeight;
+		const size_t Pitch = Image.m_Width * Image.PixelSize();
+		int MaxY = -1;
+		int MinY = CheckHeight + 1;
+		int MaxX = -1;
+		int MinX = CheckWidth + 1;
+
+		for(int y = 0; y < CheckHeight; y++)
+		{
+			for(int x = 0; x < CheckWidth; x++)
+			{
+				const size_t OffsetAlpha = (y + ImgY) * Pitch + (x + ImgX) * Image.PixelSize() + 3;
+				if(Image.m_pData[OffsetAlpha] > 0)
+				{
+					MaxY = maximum(MaxY, y);
+					MinY = minimum(MinY, y);
+					MaxX = maximum(MaxX, x);
+					MinX = minimum(MinX, x);
+				}
+			}
+		}
+
+		Plan.m_Width = std::clamp((MaxX - MinX) + 1, 1, CheckWidth);
+		Plan.m_Height = std::clamp((MaxY - MinY) + 1, 1, CheckHeight);
+		Plan.m_OffsetX = std::clamp(MinX, 0, CheckWidth - 1);
+		Plan.m_OffsetY = std::clamp(MinY, 0, CheckHeight - 1);
+		Plan.m_MaxWidth = CheckWidth;
+		Plan.m_MaxHeight = CheckHeight;
+	}
 
 	/**
 	 * Names of all vanilla and special skins.
@@ -461,7 +578,7 @@ private:
 		int &SkinsProcessedThisFrame, std::chrono::nanoseconds StartTime,
 		std::chrono::nanoseconds MaxTime);
 
-	bool LoadSkinData(const char *pName, CSkinLoadData &Data) const;
+	static bool PrepareSkinData(const char *pName, CSkinLoadData &Data);
 	void LoadSkinFinish(CSkinContainer *pSkinContainer, const CSkinLoadData &Data);
 	void LoadSkinDirect(const char *pName);
 	const CSkinContainer *FindContainerImpl(const char *pName);

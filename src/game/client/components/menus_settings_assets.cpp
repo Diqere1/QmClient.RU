@@ -2859,7 +2859,7 @@ bool CMenus::PrewarmSettingsAssetResources()
 			std::vector<SSettingsAssetMergeEntry> vMergeBatch;
 			vMergeBatch.reserve(MergeBudget.m_MaxListEntries);
 			const size_t MergeStartCursor = PendingMerge.m_Cursor;
-			while(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
+			while(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget, SettingsFrameBudget()))
 				vMergeBatch.push_back(PendingMerge.m_vEntries[PendingMerge.m_Cursor++]);
 			if(!vMergeBatch.empty())
 				PublishSettingsAssetMergeEntries(Tab, vMergeBatch);
@@ -3185,7 +3185,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		std::vector<SSettingsAssetMergeEntry> vMergeBatch;
 		vMergeBatch.reserve(MergeBudget.m_MaxListEntries);
 		const size_t MergeStartCursor = PendingMerge.m_Cursor;
-		while(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget))
+		while(PendingMerge.m_Cursor < PendingMerge.m_vEntries.size() && SettingsResourceConsumeMergeEntry(MergeBudget, SettingsFrameBudget()))
 			vMergeBatch.push_back(PendingMerge.m_vEntries[PendingMerge.m_Cursor++]);
 		if(!vMergeBatch.empty())
 			PublishSettingsAssetMergeEntries(s_CurCustomTab, vMergeBatch);
@@ -3913,6 +3913,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		LogAssetsPerfStage("assets_preview_decode_finalize_total", DecodeFinalizeTimer.ElapsedMs(), false, aFinalizeTotalExtra);
 
 		size_t UploadedBytesThisFrame = 0;
+		SSettingsResourceMergeBudget UploadBudget;
+		UploadBudget.m_MaxGpuUploads = MaxPreviewUploadsPerFrame - UploadedPreviewsThisFrame;
 		while(!vReadyQueue.empty() && UploadedPreviewsThisFrame < MaxPreviewUploadsPerFrame && GameClient()->GpuUploadLimiter()->CanUpload())
 		{
 			SCustomItem *pItem = vReadyQueue.front();
@@ -3932,6 +3934,12 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			{
 				ResetCustomItemPreviewState(*pItem);
 				continue;
+			}
+			if(!SettingsResourceConsumeGpuUpload(UploadBudget, SettingsFrameBudget()))
+			{
+				vReadyQueue.push_front(pItem);
+				vReadyQueued.insert(pItem);
+				break;
 			}
 
 			CPerfTimer UploadBatchTimer;
@@ -4614,6 +4622,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 				}
 			}
 		}
+		SSettingsResourceMergeBudget UploadBudget;
+		UploadBudget.m_MaxGpuUploads = MaxWorkshopThumbUploadsPerFrame - WorkshopGpuUploadsThisFrame;
 		while(!WorkshopState.m_vReadyThumbQueue.empty() && WorkshopGpuUploadsThisFrame < MaxWorkshopThumbUploadsPerFrame && GameClient()->GpuUploadLimiter()->CanUpload())
 		{
 			const std::string ReadyAssetId = WorkshopState.m_vReadyThumbQueue.front();
@@ -4634,6 +4644,12 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			CPerfTimer UploadBatchTimer;
 			const size_t AssetBytes = pAsset->m_ThumbBytes;
 			if(WorkshopGpuUploadsThisFrame > 0 && WorkshopThumbUploadedBytesThisFrame + AssetBytes > MaxWorkshopThumbUploadBytesPerFrame)
+			{
+				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
+				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+				break;
+			}
+			if(!SettingsResourceConsumeGpuUpload(UploadBudget, SettingsFrameBudget()))
 			{
 				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
 				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
@@ -4778,6 +4794,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			CPerfTimer WorkshopCardsTimer;
 			int FirstVisibleLocalIndex = -1;
 			int LastVisibleLocalIndex = -1;
+			int FirstVisibleDownloadableIndex = -1;
+			int LastVisibleDownloadableIndex = -1;
 			auto StartWorkshopThumb = [&](SWorkshopHudAsset &Asset, bool HighPriority) {
 				if(Asset.m_ThumbTexture.IsValid())
 					return false;
@@ -5016,7 +5034,11 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					if(!Item.m_Visible)
 						continue;
 
-					StartWorkshopThumb(Asset, true);
+					const int VisibleDownloadableIndex = static_cast<int>(DownloadableIndex);
+					if(FirstVisibleDownloadableIndex < 0)
+						FirstVisibleDownloadableIndex = VisibleDownloadableIndex;
+					LastVisibleDownloadableIndex = VisibleDownloadableIndex;
+					StartWorkshopThumb(Asset, SettingsWorkshopThumbShouldStartHighPriority(VisibleDownloadableIndex, FirstVisibleDownloadableIndex, LastVisibleDownloadableIndex));
 
 					const CUIRect CardRect = ItemRect;
 					const bool Downloading = Asset.m_pDownloadTask && !Asset.m_pDownloadTask->Done();
@@ -5513,4 +5535,8 @@ void CMenus::ConchainAssetExtras(IConsole::IResult *pResult, void *pUserData, IC
 	}
 
 	pfnCallback(pResult, pCallbackUserData);
+}
+int CMenus::CurrentSettingsAssetsTab() const
+{
+	return std::clamp(s_CurCustomTab, (int)ASSETS_TAB_ENTITIES, NUMBER_OF_ASSETS_TABS - 1);
 }

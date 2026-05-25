@@ -172,6 +172,7 @@ private:
 	int m_aAssetLoadGenerations[NUMBER_OF_ASSETS_TABS] = {};
 	void PublishSettingsAssetMergeEntries(int Tab, const std::vector<SSettingsAssetMergeEntry> &vEntries);
 	void InvalidateSettingsAssetResourcePlan();
+	int CurrentSettingsAssetsTab() const;
 
 public:
 	struct SCustomItem
@@ -1555,6 +1556,7 @@ public:
 	bool IsInit() const { return m_IsInit; }
 
 	bool IsActive() const { return m_MenuActive; }
+	bool IsSettingsPageActive() const;
 	void SetActive(bool Active);
 
 	void OnInterfacesInit(CGameClient *pClient) override;
@@ -1769,6 +1771,7 @@ public:
 	CUIElement &SettingsTextElement(int Page, int Tab, const char *pTextId);
 	void InvalidateSettingsTextPool();
 	void InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason Reason);
+	SSettingsWarmupFrameBudget *SettingsFrameBudget() { return &m_SettingsFrameBudget; }
 
 private:
 	struct SSettingsTextPoolEntry
@@ -1792,6 +1795,7 @@ private:
 
 	SSettingsRuntimeCacheMetadata m_SettingsRuntimeMetadata;
 	SSettingsWarmupStartupPlan m_SettingsStartupWarmupPlan;
+	SSettingsWarmupFrameBudget m_SettingsFrameBudget;
 	size_t m_SettingsStartupWarmupCursor = 0;
 	float m_SettingsTClientCurrentScrollY = 0.0f;
 	bool m_SettingsTClientScrollRestorePending = false;
@@ -1851,6 +1855,7 @@ private:
 	bool PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView);
 	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f, bool ResourcesReady = true);
 	bool DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
+	bool ConsumeSettingsFrameBudget(ESettingsWarmupCost Cost, int Page, int Tab, const char *pPageFbo, const char *pSectionFbo);
 	void InvalidateSettingsPageRuntimeCache(int Page, int Tab);
 	void InvalidateTClientSettingsRuntimeCacheSections(ESettingsCacheDirtyReason Reason = ESettingsCacheDirtyReason::CONFIG);
 	bool PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
