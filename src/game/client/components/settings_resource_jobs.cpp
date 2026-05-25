@@ -8,6 +8,21 @@ float SettingsSkinPreviewSize(float RowHeight, float PreviewWidth, float Request
 	return std::clamp(RequestedSize, 0.0f, MaxSize);
 }
 
+float SettingsSkinPreviewSize(float RowHeight, float PreviewWidth, float RequestedSize, float RenderedWidthAtRequestedSize, float RenderedHeightAtRequestedSize)
+{
+	const float MaxWidth = std::max(0.0f, PreviewWidth - 10.0f);
+	const float MaxHeight = std::max(0.0f, RowHeight - 10.0f);
+	if(RenderedWidthAtRequestedSize <= 0.0f || RenderedHeightAtRequestedSize <= 0.0f)
+		return SettingsSkinPreviewSize(RowHeight, PreviewWidth, RequestedSize);
+	const float Scale = std::min({1.0f, MaxWidth / RenderedWidthAtRequestedSize, MaxHeight / RenderedHeightAtRequestedSize});
+	return std::clamp(RequestedSize * Scale, 0.0f, RequestedSize);
+}
+
+float SettingsSkinPreviewCenterOffset(float RenderedMin, float RenderedMax)
+{
+	return -(RenderedMin + RenderedMax) * 0.5f;
+}
+
 SSettingsSkinListPlan BuildSettingsSkinListPlan(std::vector<SSettingsSkinListEntry> vEntries)
 {
 	std::stable_sort(vEntries.begin(), vEntries.end(), [](const SSettingsSkinListEntry &A, const SSettingsSkinListEntry &B) {

@@ -45,6 +45,47 @@ using namespace std::chrono_literals;
 
 namespace
 {
+	void GetSettingsTeePreviewBounds(const CAnimState *pAnim, const CTeeRenderInfo &Info, float &MinX, float &MinY, float &MaxX, float &MaxY)
+	{
+		if(Info.m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_BODY).IsValid())
+		{
+			MinX = -Info.m_Size * 0.5f;
+			MaxX = Info.m_Size * 0.5f;
+			MinY = -Info.m_Size * 0.5f;
+			MaxY = Info.m_Size * 0.74f;
+			return;
+		}
+
+		float AnimScale, BaseSize;
+		CRenderTools::GetRenderTeeAnimScaleAndBaseSize(&Info, AnimScale, BaseSize);
+		const float AssumedScale = BaseSize / 64.0f;
+		const vec2 BodyPos = vec2(pAnim->GetBody()->m_X, pAnim->GetBody()->m_Y) * AnimScale;
+
+		vec2 BodyOffset;
+		float BodyWidth, BodyHeight;
+		CRenderTools::GetRenderTeeBodySize(pAnim, &Info, BodyOffset, BodyWidth, BodyHeight);
+		MinX = -32.0f * AssumedScale + BodyPos.x + BodyOffset.x;
+		MinY = -32.0f * AssumedScale + BodyPos.y + BodyOffset.y;
+		MaxX = MinX + BodyWidth;
+		MaxY = MinY + BodyHeight;
+
+		const CAnimKeyframe *apFeet[] = {pAnim->GetFrontFoot(), pAnim->GetBackFoot()};
+		for(const CAnimKeyframe *pFoot : apFeet)
+		{
+			const vec2 FootPos = vec2(pFoot->m_X * AnimScale, pFoot->m_Y * AnimScale);
+			vec2 FeetOffset;
+			float FeetWidth, FeetHeight;
+			CRenderTools::GetRenderTeeFeetSize(pAnim, &Info, FeetOffset, FeetWidth, FeetHeight);
+			const float FeetMinX = -32.0f * AssumedScale + FootPos.x + FeetOffset.x;
+			const float FeetMinY = -16.0f * AssumedScale + FootPos.y + FeetOffset.y;
+			MinX = minimum(MinX, FeetMinX);
+			MinY = minimum(MinY, FeetMinY);
+			MaxX = maximum(MaxX, FeetMinX + FeetWidth);
+			MaxY = maximum(MaxY, FeetMinY + FeetHeight);
+		}
+
+	}
+
 	bool PerfDebugEnabled()
 	{
 		return g_Config.m_QmPerfDebug != 0 || g_Config.m_QmPerfLogfile != 0;
@@ -1683,13 +1724,18 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 
 		{
 			CTeeRenderInfo Info = OwnSkinInfo;
-			Info.m_Size = SettingsSkinPreviewSize(Item.m_Rect.h, Button.w, 50.0f);
 			Info.Apply(pSkin);
+			Info.m_Size = 50.0f;
+			float PreviewMinX, PreviewMinY, PreviewMaxX, PreviewMaxY;
+			GetSettingsTeePreviewBounds(CAnimState::GetIdle(), Info, PreviewMinX, PreviewMinY, PreviewMaxX, PreviewMaxY);
+			Info.m_Size = SettingsSkinPreviewSize(Item.m_Rect.h, Button.w, 50.0f, PreviewMaxX - PreviewMinX, PreviewMaxY - PreviewMinY);
 			vec2 OffsetToMid;
 			CRenderTools::GetRenderTeeOffsetToRenderedTee(CAnimState::GetIdle(), &Info, OffsetToMid);
+			const float PreviewScale = Info.m_Size / 50.0f;
+			const float PreviewCenterOffsetX = SettingsSkinPreviewCenterOffset(PreviewMinX, PreviewMaxX) * PreviewScale;
 			CUIRect TeeClip = Button;
 			TeeClip.Margin(3.0f, &TeeClip);
-			const vec2 TeeRenderPos = vec2(TeeClip.x + TeeClip.w / 2.0f, TeeClip.y + TeeClip.h / 2.0f + OffsetToMid.y);
+			const vec2 TeeRenderPos = vec2(TeeClip.x + TeeClip.w / 2.0f + PreviewCenterOffsetX, TeeClip.y + TeeClip.h / 2.0f + OffsetToMid.y);
 			Ui()->ClipEnable(&TeeClip);
 			RenderTools()->RenderTee(CAnimState::GetIdle(), &Info, *pEmote, vec2(1.0f, 0.0f), TeeRenderPos);
 			Ui()->ClipDisable();

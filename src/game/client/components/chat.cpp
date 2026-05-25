@@ -25,6 +25,7 @@
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/localization.h>
 
 #include <algorithm>
@@ -2371,7 +2372,8 @@ void CChat::OnRender()
 	const bool IsScoreBoardOpen = GameClient()->m_Scoreboard.IsActive();
 	float HeightLimit = IsScoreBoardOpen ? 180.0f : (m_PrevShowChat ? 50.0f : 200.0f);
 	int OffsetType = IsScoreBoardOpen ? 1 : 0;
-	const ColorRGBA BackgroundBaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClChatBackgroundColor, true));
+	const ColorRGBA ConfigBackgroundColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClChatBackgroundColor, true));
+	const ColorRGBA BackgroundBaseColor = g_Config.m_ClChatOld ? ConfigBackgroundColor : ConfigBackgroundColor.Multiply(ColorRGBA(0.78f, 0.86f, 1.0f, 1.0f));
 	const ColorRGBA DefaultTextColor = TextRender()->DefaultTextColor();
 	const ColorRGBA DefaultTextOutlineColor = TextRender()->DefaultTextOutlineColor();
 	const CAnimState *pIdleState = CAnimState::GetIdle();

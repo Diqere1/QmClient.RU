@@ -12,6 +12,7 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/localization.h>
 
 namespace
@@ -596,7 +597,7 @@ void CVoting::Render()
 
 	CUIRect View = {0.0f, 60.0f, 120.0f, 38.0f};
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::Voting, View);
-	View.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_R, 3.0f);
+	View.Draw(ui_token::color::SURFACE_GLASS, IGraphics::CORNER_R, ui_token::radius::BASE);
 	View.Margin(3.0f, &View);
 
 	SLabelProperties Props;
@@ -666,11 +667,11 @@ void CVoting::Render()
 
 void CVoting::RenderBars(CUIRect Bars) const
 {
-	Bars.Draw(ColorRGBA(0.8f, 0.8f, 0.8f, 0.5f), IGraphics::CORNER_ALL, Bars.h / 2.0f);
+	Bars.Draw(ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(2.0f), IGraphics::CORNER_ALL, Bars.h / 2.0f);
 
 	CUIRect Splitter;
 	Bars.VMargin((Bars.w - 2.0f) / 2.0f, &Splitter);
-	Splitter.Draw(ColorRGBA(0.4f, 0.4f, 0.4f, 0.5f), IGraphics::CORNER_NONE, 0.0f);
+	Splitter.Draw(ui_token::color::BORDER_SUBTLE.WithMultipliedAlpha(2.0f), IGraphics::CORNER_NONE, 0.0f);
 
 	if(m_Total)
 	{
@@ -678,14 +679,14 @@ void CVoting::RenderBars(CUIRect Bars) const
 		{
 			CUIRect YesArea;
 			Bars.VSplitLeft(Bars.w * m_Yes / m_Total, &YesArea, nullptr);
-			YesArea.Draw(ColorRGBA(0.2f, 0.9f, 0.2f, 0.85f), IGraphics::CORNER_ALL, YesArea.h / 2.0f);
+			YesArea.Draw(ui_token::color::SUCCESS.WithMultipliedAlpha(0.85f), IGraphics::CORNER_ALL, YesArea.h / 2.0f);
 		}
 
 		if(m_No)
 		{
 			CUIRect NoArea;
 			Bars.VSplitRight(Bars.w * m_No / m_Total, nullptr, &NoArea);
-			NoArea.Draw(ColorRGBA(0.9f, 0.2f, 0.2f, 0.85f), IGraphics::CORNER_ALL, NoArea.h / 2.0f);
+			NoArea.Draw(ui_token::color::DANGER.WithMultipliedAlpha(0.85f), IGraphics::CORNER_ALL, NoArea.h / 2.0f);
 		}
 	}
 }

@@ -33,6 +33,8 @@ struct SSettingsResourceMergeBudget
 };
 
 float SettingsSkinPreviewSize(float RowHeight, float PreviewWidth, float RequestedSize);
+float SettingsSkinPreviewSize(float RowHeight, float PreviewWidth, float RequestedSize, float RenderedWidthAtRequestedSize, float RenderedHeightAtRequestedSize);
+float SettingsSkinPreviewCenterOffset(float RenderedMin, float RenderedMax);
 SSettingsSkinListPlan BuildSettingsSkinListPlan(std::vector<SSettingsSkinListEntry> vEntries);
 std::vector<int> BuildSettingsCountryFlagWarmupPlan(const std::vector<int> &vCountryCodes);
 bool SettingsResourceConsumeMergeEntry(SSettingsResourceMergeBudget &Budget);

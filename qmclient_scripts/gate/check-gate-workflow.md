@@ -101,7 +101,7 @@
 
 - `check_config_variables.py`
 - `qmclient_scripts/gate/check_workflow_docs.py`
-  - 规则来源：`.codestable/reference/workflow-manifest.json`
+  - 规则来源：`.ai/workflow-manifest.json`
 - `check_header_guards.py`
 - `check_standard_headers.py`
 - `fix_style.py -n`
