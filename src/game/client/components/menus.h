@@ -1448,6 +1448,14 @@ protected:
 		bool m_New;
 	};
 	static CUi::EPopupMenuFunctionResult PopupCountrySelection(void *pContext, CUIRect View, bool Active);
+	struct SPopupSettingsCountrySelectionContext
+	{
+		CMenus *m_pMenus;
+		int *m_pCountry;
+		int m_Selection;
+		bool m_New;
+	};
+	static CUi::EPopupMenuFunctionResult PopupSettingsCountrySelection(void *pContext, CUIRect View, bool Active);
 	void RenderServerbrowserInfo(CUIRect View);
 	void RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *pSelectedServer);
 	void RenderServerbrowserFriends(CUIRect View);
@@ -1479,6 +1487,7 @@ protected:
 	void RenderThemeSelection(CUIRect MainView);
 	void RenderSettingsGeneral(CUIRect MainView);
 	void RenderSettingsPlayer(CUIRect MainView);
+	void RenderSettingsTeeIdentity(CUIRect MainView, CUIRect *pFlagButton);
 	void RenderSettingsTee(CUIRect MainView);
 	void RenderSettingsTee7(CUIRect MainView);
 	void RenderSettingsTeeCustom7(CUIRect MainView);

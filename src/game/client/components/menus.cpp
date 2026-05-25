@@ -150,7 +150,7 @@ namespace
 
 	bool PerfDebugEnabled()
 	{
-		return g_Config.m_QmPerfDebug != 0;
+		return g_Config.m_QmPerfDebug != 0 || g_Config.m_QmPerfLogfile != 0;
 	}
 
 	double PerfDebugThresholdMs()
@@ -639,7 +639,7 @@ void CMenus::PrepareSettingsTabLabelCache(float MainViewWidth)
 
 	for(int i = 0; i < SETTINGS_LENGTH; i++)
 	{
-		if(i == SETTINGS_PROFILES || i == SETTINGS_CONFIGS || i == SETTINGS_CONTRIBUTORS)
+		if(!SettingsPageVisibleInRightTabBar(i))
 			continue;
 
 		CUIElement::SUIElementRect &RectEl = *m_aSettingsTabLabelElements[i].Rect(0);
@@ -3406,6 +3406,7 @@ CMenus::SSettingsPageRuntimeCache *CMenus::GetSettingsPageRuntimeCache(int Page,
 
 bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY, bool ResourcesReady)
 {
+	Page = SettingsCanonicalPage(Page);
 	const int64_t PerfStartTime = PerfDebugStartTime();
 	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 	{
@@ -3485,12 +3486,8 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	Graphics()->MapScreen(0.0f, 0.0f, (float)Width, (float)Height);
 	CUIRect CacheView{0.0f, 0.0f, ContentView.w, ContentView.h};
 	CUiRenderOnlyScope RenderOnlyScope(Ui());
-	if(Page == SETTINGS_LANGUAGE)
-		RenderLanguageSettings(CacheView);
-	else if(Page == SETTINGS_GENERAL)
+	if(Page == SETTINGS_GENERAL)
 		RenderSettingsGeneral(CacheView);
-	else if(Page == SETTINGS_PLAYER)
-		RenderSettingsPlayer(CacheView);
 	else if(Page == SETTINGS_TEE)
 	{
 		if(Client()->IsSixup())
@@ -3546,7 +3543,8 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
 {
 	constexpr int ResourceWarmRows = 12;
-	if(Page == SETTINGS_LANGUAGE)
+	Page = SettingsCanonicalPage(Page);
+	if(Page == SETTINGS_GENERAL)
 	{
 		std::vector<int> vCountryCodes;
 		const int NumLanguages = (int)g_Localization.Languages().size();
@@ -3564,19 +3562,16 @@ bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
 			vCountryCodes.push_back(g_Localization.Languages()[i].m_CountryCode);
 		return GameClient()->m_CountryFlags.PrewarmByCountryCodesReady(BuildSettingsCountryFlagWarmupPlan(vCountryCodes));
 	}
-	else if(Page == SETTINGS_PLAYER)
+	else if(Page == SETTINGS_TEE)
 	{
 		std::vector<int> vIndices;
 		vIndices.reserve(GameClient()->m_CountryFlags.Num());
 		for(int i = 0; i < (int)GameClient()->m_CountryFlags.Num(); ++i)
 			vIndices.push_back(i);
-		return GameClient()->m_CountryFlags.PrewarmByIndicesReady(vIndices);
-	}
-	else if(Page == SETTINGS_TEE)
-	{
+		const bool FlagsReady = GameClient()->m_CountryFlags.PrewarmByIndicesReady(vIndices);
 		const bool PlayerReady = GameClient()->m_Skins.PrewarmPlayerPreviewReady(0, ResourceWarmRows);
 		const bool DummyReady = GameClient()->m_Skins.PrewarmPlayerPreviewReady(1, ResourceWarmRows);
-		return PlayerReady && DummyReady;
+		return FlagsReady && PlayerReady && DummyReady;
 	}
 	else if(Page == SETTINGS_ASSETS)
 	{

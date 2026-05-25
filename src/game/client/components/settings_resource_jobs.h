@@ -32,6 +32,7 @@ struct SSettingsResourceMergeBudget
 	bool m_FrameMergeBudgetConsumed = false;
 };
 
+float SettingsSkinPreviewSize(float RowHeight, float PreviewWidth, float RequestedSize);
 SSettingsSkinListPlan BuildSettingsSkinListPlan(std::vector<SSettingsSkinListEntry> vEntries);
 std::vector<int> BuildSettingsCountryFlagWarmupPlan(const std::vector<int> &vCountryCodes);
 bool SettingsResourceConsumeMergeEntry(SSettingsResourceMergeBudget &Budget);
@@ -48,6 +49,7 @@ bool SettingsAssetListCanStartPreviewDecode(bool Loading, bool Merging, bool Loa
 bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double ElapsedMs, int MaxFinalizesPerFrame, double MaxFinalizeMsPerFrame);
 bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex);
 bool SettingsWorkshopThumbShouldStartHighPriority(int VisibleDownloadableIndex, int FirstVisibleDownloadableIndex, int LastVisibleDownloadableIndex);
+bool SettingsResourceCanUseHighPriorityBudget(int StartedThisFrame, int NormalBudget, int HighPriorityBudget, bool HighPriority);
 bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord);
 bool SettingsPageCanUsePageFbo(int Page, int AssetsPage);
 const char *SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason StopReason);

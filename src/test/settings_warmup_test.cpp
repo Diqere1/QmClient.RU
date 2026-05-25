@@ -200,8 +200,8 @@ TEST(SettingsRuntimeCache, RegistersAllSettingsPages)
 {
 	const SSettingsPageRuntimeRegistry Registry = BuildSettingsPageRuntimeRegistry();
 
-	EXPECT_TRUE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_LANGUAGE));
-	EXPECT_TRUE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_PLAYER));
+	EXPECT_FALSE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_LANGUAGE));
+	EXPECT_FALSE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_PLAYER));
 	EXPECT_TRUE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_TEE));
 	EXPECT_TRUE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_GENERAL));
 	EXPECT_TRUE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_CONTROLS));
@@ -215,6 +215,21 @@ TEST(SettingsRuntimeCache, RegistersAllSettingsPages)
 	EXPECT_FALSE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_PROFILES));
 	EXPECT_FALSE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_CONFIGS));
 	EXPECT_FALSE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_CONTRIBUTORS));
+}
+
+TEST(SettingsRuntimeCache, CanonicalizesMergedSettingsPages)
+{
+	EXPECT_EQ(SettingsCanonicalPage(CMenus::SETTINGS_LANGUAGE), CMenus::SETTINGS_GENERAL);
+	EXPECT_EQ(SettingsCanonicalPage(CMenus::SETTINGS_PLAYER), CMenus::SETTINGS_TEE);
+	EXPECT_EQ(SettingsCanonicalPage(CMenus::SETTINGS_CONFIGS), CMenus::SETTINGS_QMCLIENT);
+	EXPECT_EQ(SettingsCanonicalPage(CMenus::SETTINGS_CONTRIBUTORS), CMenus::SETTINGS_QMCLIENT);
+	EXPECT_EQ(SettingsCanonicalPage(CMenus::SETTINGS_ASSETS), CMenus::SETTINGS_ASSETS);
+
+	EXPECT_FALSE(SettingsPageVisibleInRightTabBar(CMenus::SETTINGS_LANGUAGE));
+	EXPECT_FALSE(SettingsPageVisibleInRightTabBar(CMenus::SETTINGS_PLAYER));
+	EXPECT_FALSE(SettingsPageVisibleInRightTabBar(CMenus::SETTINGS_PROFILES));
+	EXPECT_TRUE(SettingsPageVisibleInRightTabBar(CMenus::SETTINGS_GENERAL));
+	EXPECT_TRUE(SettingsPageVisibleInRightTabBar(CMenus::SETTINGS_ASSETS));
 }
 
 TEST(SettingsRuntimeCache, BuildsStableKeysForPageSectionTextAndResource)
@@ -414,6 +429,12 @@ TEST(SettingsRuntimeCache, PageCacheSlotsRejectInvalidPersistedTabs)
 	EXPECT_EQ(SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_ASSETS, NUMBER_OF_ASSETS_TABS), -1);
 }
 
+TEST(SettingsRuntimeCache, MergedPageRuntimeCacheSlotsAreCanonical)
+{
+	EXPECT_EQ(SettingsPageRuntimeCacheSlot(SettingsCanonicalPage(CMenus::SETTINGS_LANGUAGE), -1), SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_GENERAL, -1));
+	EXPECT_EQ(SettingsPageRuntimeCacheSlot(SettingsCanonicalPage(CMenus::SETTINGS_PLAYER), -1), SettingsPageRuntimeCacheSlot(CMenus::SETTINGS_TEE, -1));
+}
+
 TEST(SettingsRuntimeCache, SectionRegistryCoversComplexPages)
 {
 	SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
@@ -422,8 +443,11 @@ TEST(SettingsRuntimeCache, SectionRegistryCoversComplexPages)
 	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_QMCLIENT, "general"));
 	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_CONTROLS, "movement"));
 	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_ASSETS, "resource-list"));
-	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_LANGUAGE, "language-list"));
-	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_PLAYER, "skin-list"));
+	EXPECT_FALSE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_LANGUAGE, "language-list"));
+	EXPECT_FALSE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_PLAYER, "skin-list"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_GENERAL, "language-list"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_TEE, "country-list"));
+	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_TEE, "skin-list"));
 	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_GENERAL, "body"));
 	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_APPEARANCE, "body"));
 	EXPECT_TRUE(SettingsSectionRegistryContains(Registry, CMenus::SETTINGS_GRAPHICS, "body"));
@@ -455,10 +479,8 @@ TEST(SettingsRuntimeCache, SectionRegistryRequiresBothLayersForStaticFbo)
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_CONTROLS, -1, "voting"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_ASSETS, -1, "resource-list"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_ASSETS, -1, "preview"));
-	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_LANGUAGE, -1, "language-list"));
-	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_LANGUAGE, -1, "credits"));
-	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_PLAYER, -1, "skin-list"));
-	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_PLAYER, -1, "identity"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_GENERAL, -1, "language-list"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TEE, -1, "country-list"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TEE, -1, "skin-list"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TEE, -1, "identity"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_GENERAL, -1, "body"));
@@ -506,6 +528,13 @@ TEST(SettingsResourceJobs, SkinPlanKeepsSelectedFavoritesThenSorted)
 	EXPECT_EQ(Plan.m_vNames[0], "selected");
 	EXPECT_EQ(Plan.m_vNames[1], "alpha");
 	EXPECT_EQ(Plan.m_vNames[2], "zeta");
+}
+
+TEST(SettingsResourceJobs, SkinPreviewFitsInsideListRow)
+{
+	EXPECT_FLOAT_EQ(SettingsSkinPreviewSize(50.0f, 60.0f, 50.0f), 40.0f);
+	EXPECT_FLOAT_EQ(SettingsSkinPreviewSize(34.0f, 60.0f, 50.0f), 24.0f);
+	EXPECT_FLOAT_EQ(SettingsSkinPreviewSize(50.0f, 24.0f, 50.0f), 14.0f);
 }
 
 TEST(SettingsResourceJobs, CountryFlagPlanDeduplicatesAndKeepsOrder)
@@ -633,6 +662,14 @@ TEST(SettingsResourceJobs, WorkshopThumbDecodePrioritizesVisibleDownloadableItem
 	EXPECT_TRUE(SettingsWorkshopThumbShouldStartHighPriority(3, 0, 3));
 	EXPECT_FALSE(SettingsWorkshopThumbShouldStartHighPriority(4, 0, 3));
 	EXPECT_FALSE(SettingsWorkshopThumbShouldStartHighPriority(0, -1, 3));
+}
+
+TEST(SettingsResourceJobs, VisibleResourceStartsCanUsePriorityBudget)
+{
+	EXPECT_TRUE(SettingsResourceCanUseHighPriorityBudget(5, 6, 12, false));
+	EXPECT_FALSE(SettingsResourceCanUseHighPriorityBudget(6, 6, 12, false));
+	EXPECT_TRUE(SettingsResourceCanUseHighPriorityBudget(6, 6, 12, true));
+	EXPECT_FALSE(SettingsResourceCanUseHighPriorityBudget(12, 6, 12, true));
 }
 
 TEST(SettingsResourceJobs, PageCacheRejectsRecordedFrameWithoutReadyResources)

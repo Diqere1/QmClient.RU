@@ -3458,6 +3458,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	constexpr int MaxPreviewUploadsPerFrame = 2;
 	constexpr size_t MaxPreviewUploadBytesPerFrame = 4 * 1024 * 1024;
 	constexpr int MaxPreviewDecodeStartsPerFrame = 6;
+	constexpr int MaxPreviewHighPriorityDecodeStartsPerFrame = 12;
 	constexpr int MaxPreviewDecodeFinalizesPerFrame = 2;
 	constexpr double MaxPreviewDecodeFinalizeMsPerFrame = 4.0;
 	constexpr int PreviewPrefetchRows = 2;
@@ -3504,7 +3505,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			   m_aAssetLoadStates[CurTab] == ASSET_LOAD_STATE_LOADED))
 			return;
 		SCustomItem *pItem = GetCustomItemMutable(CurTab, Index);
-		if(pItem == nullptr || PreviewDecodeStartsThisFrame >= MaxPreviewDecodeStartsPerFrame)
+		if(pItem == nullptr || !SettingsResourceCanUseHighPriorityBudget(PreviewDecodeStartsThisFrame, MaxPreviewDecodeStartsPerFrame, MaxPreviewHighPriorityDecodeStartsPerFrame, HighPriority))
 			return;
 		if(CurTab == ASSETS_TAB_ENTITY_BG && static_cast<SCustomEntityBg *>(pItem)->m_IsDirectory)
 			return;
@@ -3599,7 +3600,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	auto SchedulePreviewRange = [&](int FirstIndex, int LastIndex, int ItemsPerRow) {
 		if(SearchListSize == 0 || FirstIndex < 0 || LastIndex < 0)
 			return;
-		for(int Index = FirstIndex; Index <= LastIndex && PreviewDecodeStartsThisFrame < MaxPreviewDecodeStartsPerFrame; ++Index)
+		for(int Index = FirstIndex; Index <= LastIndex && PreviewDecodeStartsThisFrame < MaxPreviewHighPriorityDecodeStartsPerFrame; ++Index)
 			StartPreviewDecode((size_t)Index, SettingsAssetPreviewShouldPrioritizeVisibleRange(Index, FirstIndex, LastIndex));
 
 		const int PrefetchItems = maximum(1, ItemsPerRow) * PreviewPrefetchRows;
@@ -4524,7 +4525,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 
 		bool RefreshLocalList = false;
 
-		constexpr int MaxWorkshopThumbDecodeFinalizesPerFrame = 1;
+		constexpr int MaxWorkshopThumbDecodeFinalizesPerFrame = 2;
 		constexpr int MaxWorkshopThumbUploadsPerFrame = 2;
 		constexpr size_t MaxWorkshopThumbUploadBytesPerFrame = 4 * 1024 * 1024;
 		int WorkshopGpuUploadsThisFrame = 0;
@@ -4782,6 +4783,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			static CUi::SConfirmPopupContext s_WorkshopDownloadConfirmPopup;
 
 			constexpr int MaxThumbStartsPerFrame = 16;
+			constexpr int MaxHighPriorityThumbStartsPerFrame = 32;
 			int ThumbStartsThisFrame = 0;
 			int OldCombinedSelected = -1;
 			bool DeleteLocalRequested = false;
@@ -4808,7 +4810,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 				}
 				if(Asset.m_pDecodeJob || Asset.m_pThumbTask)
 					return false;
-				if(ThumbStartsThisFrame >= MaxThumbStartsPerFrame)
+				if(!SettingsResourceCanUseHighPriorityBudget(ThumbStartsThisFrame, MaxThumbStartsPerFrame, MaxHighPriorityThumbStartsPerFrame, HighPriority))
 					return false;
 
 				const bool HasUsableInstalledThumb = Asset.m_Installed && !Asset.m_ThumbCacheFailed;

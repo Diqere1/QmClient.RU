@@ -2,6 +2,12 @@
 
 #include <algorithm>
 
+float SettingsSkinPreviewSize(float RowHeight, float PreviewWidth, float RequestedSize)
+{
+	const float MaxSize = std::max(0.0f, std::min(RowHeight, PreviewWidth) - 10.0f);
+	return std::clamp(RequestedSize, 0.0f, MaxSize);
+}
+
 SSettingsSkinListPlan BuildSettingsSkinListPlan(std::vector<SSettingsSkinListEntry> vEntries)
 {
 	std::stable_sort(vEntries.begin(), vEntries.end(), [](const SSettingsSkinListEntry &A, const SSettingsSkinListEntry &B) {
@@ -140,6 +146,13 @@ bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibl
 bool SettingsWorkshopThumbShouldStartHighPriority(int VisibleDownloadableIndex, int FirstVisibleDownloadableIndex, int LastVisibleDownloadableIndex)
 {
 	return SettingsAssetPreviewShouldPrioritizeVisibleRange(VisibleDownloadableIndex, FirstVisibleDownloadableIndex, LastVisibleDownloadableIndex);
+}
+
+bool SettingsResourceCanUseHighPriorityBudget(int StartedThisFrame, int NormalBudget, int HighPriorityBudget, bool HighPriority)
+{
+	if(StartedThisFrame < NormalBudget)
+		return true;
+	return HighPriority && StartedThisFrame < HighPriorityBudget;
 }
 
 bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord)

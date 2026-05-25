@@ -16,7 +16,7 @@ namespace
 {
 bool PerfDebugEnabled()
 {
-	return g_Config.m_QmPerfDebug != 0;
+	return g_Config.m_QmPerfDebug != 0 || g_Config.m_QmPerfLogfile != 0;
 }
 
 double PerfDebugThresholdMs()

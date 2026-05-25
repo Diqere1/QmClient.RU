@@ -35,7 +35,7 @@ using namespace FontIcons;
 
 void CMenus::RenderSettingsTee7(CUIRect MainView)
 {
-	CUIRect SkinPreview, NormalSkinPreview, RedTeamSkinPreview, BlueTeamSkinPreview, Buttons, QuickSearch, DirectoryButton, RefreshButton, SaveDeleteButton, EditTextureButton, TabBars, TabBar, LeftTab, RightTab;
+	CUIRect SkinPreview, NormalSkinPreview, RedTeamSkinPreview, BlueTeamSkinPreview, Buttons, QuickSearch, DirectoryButton, RefreshButton, SaveDeleteButton, EditTextureButton, TabBars, TabBar, LeftTab, RightTab, InfoRow;
 	static bool s_Tee7TransitionInitialized = false;
 	static bool s_PrevTee7Dummy = false;
 	static bool s_PrevTee7Custom = false;
@@ -106,6 +106,10 @@ void CMenus::RenderSettingsTee7(CUIRect MainView)
 			}
 		}
 	}
+
+	TabBars.HSplitTop(8.0f, nullptr, &TabBars);
+	TabBars.HSplitTop(28.0f, &InfoRow, &TabBars);
+	RenderSettingsTeeIdentity(InfoRow, nullptr);
 
 	if(!s_Tee7TransitionInitialized)
 	{

@@ -3479,9 +3479,7 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 	bool QmClientSiblingsReady = true;
 	for(int Tab = 0; Tab < NUMBER_OF_QMCLIENT_SETTINGS_TABS; ++Tab)
 		QmClientSiblingsReady = QmClientSiblingsReady && m_aSettingsQmClientSiblingPrewarmed[Tab];
-	const int LanguageSlot = SettingsPageRuntimeCacheSlot(SETTINGS_LANGUAGE, -1);
 	const int GeneralSlot = SettingsPageRuntimeCacheSlot(SETTINGS_GENERAL, -1);
-	const int PlayerSlot = SettingsPageRuntimeCacheSlot(SETTINGS_PLAYER, -1);
 	const int TeeSlot = SettingsPageRuntimeCacheSlot(SETTINGS_TEE, -1);
 	const int AppearanceSlot = SettingsPageRuntimeCacheSlot(SETTINGS_APPEARANCE, -1);
 	const int ControlsSlot = SettingsPageRuntimeCacheSlot(SETTINGS_CONTROLS, -1);
@@ -3491,9 +3489,7 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 	const int AssetsSlot = SettingsPageRuntimeCacheSlot(SETTINGS_ASSETS, AssetsTab);
 	const int TClientSlot = SettingsPageRuntimeCacheSlot(SETTINGS_TCLIENT, TClientTab);
 	const int QmClientSlot = SettingsPageRuntimeCacheSlot(SETTINGS_QMCLIENT, QmClientTab);
-	return m_aSettingsPagePrewarmed[LanguageSlot] &&
-		m_aSettingsPagePrewarmed[GeneralSlot] &&
-		m_aSettingsPagePrewarmed[PlayerSlot] &&
+	return m_aSettingsPagePrewarmed[GeneralSlot] &&
 		m_aSettingsPagePrewarmed[TeeSlot] &&
 		m_aSettingsPagePrewarmed[AppearanceSlot] &&
 		m_aSettingsPagePrewarmed[ControlsSlot] &&

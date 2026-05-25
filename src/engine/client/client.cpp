@@ -74,7 +74,7 @@ namespace
 {
 	bool PerfDebugEnabled()
 	{
-		return g_Config.m_QmPerfDebug != 0;
+		return g_Config.m_QmPerfDebug != 0 || g_Config.m_QmPerfLogfile != 0;
 	}
 
 	double PerfDebugThresholdMs()
@@ -5609,15 +5609,17 @@ int main(int argc, const char **argv)
 		str_timestamp(aDate, sizeof(aDate));
 		char aPerfLogPath[128];
 		str_format(aPerfLogPath, sizeof(aPerfLogPath), "dumps/QmClient_Perf/qm_perf_%s.log", aDate);
+		char aPerfLogCompletePath[IO_MAX_PATH_LENGTH];
+		pStorage->GetCompletePath(IStorage::TYPE_SAVE, aPerfLogPath, aPerfLogCompletePath, sizeof(aPerfLogCompletePath));
 		IOHANDLE PerfLogfile = pStorage->OpenFile(aPerfLogPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
 		if(PerfLogfile)
 		{
 			pFuturePerfFileLogger->Set(log_logger_prefix_file(PerfLogfile, "perf/"));
-			log_info("client", "writing performance log to '%s'", aPerfLogPath);
+			log_info("client", "writing performance log to '%s'", aPerfLogCompletePath);
 		}
 		else
 		{
-			log_error("client", "failed to open '%s' for performance logging", aPerfLogPath);
+			log_error("client", "failed to open '%s' for performance logging", aPerfLogCompletePath);
 			pFuturePerfFileLogger->Set(log_logger_noop());
 		}
 	}

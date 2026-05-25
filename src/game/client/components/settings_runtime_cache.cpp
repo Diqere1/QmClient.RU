@@ -57,9 +57,7 @@ static int SettingsWarmupPageTab(const SSettingsRuntimeCacheMetadata &Metadata, 
 
 static int CanonicalizeSettingsWarmupPage(int Page)
 {
-	if(Page == CMenus::SETTINGS_CONFIGS || Page == CMenus::SETTINGS_CONTRIBUTORS)
-		return CMenus::SETTINGS_QMCLIENT;
-	return Page;
+	return SettingsCanonicalPage(Page);
 }
 
 static void AddWarmupPageJob(std::vector<SSettingsWarmupPageJob> &vJobs, const SSettingsRuntimeCacheMetadata &Metadata, int Page, bool UseScroll)
@@ -80,24 +78,51 @@ static void AddWarmupPageJob(std::vector<SSettingsWarmupPageJob> &vJobs, const S
 SSettingsPageRuntimeRegistry BuildSettingsPageRuntimeRegistry()
 {
 	SSettingsPageRuntimeRegistry Registry;
-	AddUnique(Registry.m_vPages, CMenus::SETTINGS_LANGUAGE);
-	AddUnique(Registry.m_vPages, CMenus::SETTINGS_PLAYER);
-	AddUnique(Registry.m_vPages, CMenus::SETTINGS_TEE);
 	AddUnique(Registry.m_vPages, CMenus::SETTINGS_GENERAL);
+	AddUnique(Registry.m_vPages, CMenus::SETTINGS_TEE);
 	AddUnique(Registry.m_vPages, CMenus::SETTINGS_CONTROLS);
 	AddUnique(Registry.m_vPages, CMenus::SETTINGS_GRAPHICS);
 	AddUnique(Registry.m_vPages, CMenus::SETTINGS_SOUND);
-	AddUnique(Registry.m_vPages, CMenus::SETTINGS_DDNET);
+	AddUnique(Registry.m_vPages, CMenus::SETTINGS_ASSETS);
 	AddUnique(Registry.m_vPages, CMenus::SETTINGS_TCLIENT);
 	AddUnique(Registry.m_vPages, CMenus::SETTINGS_QMCLIENT);
 	AddUnique(Registry.m_vPages, CMenus::SETTINGS_APPEARANCE);
-	AddUnique(Registry.m_vPages, CMenus::SETTINGS_ASSETS);
+	AddUnique(Registry.m_vPages, CMenus::SETTINGS_DDNET);
 	return Registry;
 }
 
 bool SettingsPageRuntimeRegistryContains(const SSettingsPageRuntimeRegistry &Registry, int Page)
 {
 	return std::find(Registry.m_vPages.begin(), Registry.m_vPages.end(), Page) != Registry.m_vPages.end();
+}
+
+int SettingsCanonicalPage(int Page)
+{
+	switch(Page)
+	{
+	case CMenus::SETTINGS_LANGUAGE: return CMenus::SETTINGS_GENERAL;
+	case CMenus::SETTINGS_PLAYER: return CMenus::SETTINGS_TEE;
+	case CMenus::SETTINGS_CONFIGS:
+	case CMenus::SETTINGS_CONTRIBUTORS:
+		return CMenus::SETTINGS_QMCLIENT;
+	default:
+		return Page;
+	}
+}
+
+bool SettingsPageVisibleInRightTabBar(int Page)
+{
+	switch(Page)
+	{
+	case CMenus::SETTINGS_LANGUAGE:
+	case CMenus::SETTINGS_PLAYER:
+	case CMenus::SETTINGS_PROFILES:
+	case CMenus::SETTINGS_CONFIGS:
+	case CMenus::SETTINGS_CONTRIBUTORS:
+		return false;
+	default:
+		return Page >= 0 && Page < CMenus::SETTINGS_LENGTH;
+	}
 }
 
 SSettingsSectionRegistry BuildSettingsSectionRegistry()
@@ -116,12 +141,10 @@ SSettingsSectionRegistry BuildSettingsSectionRegistry()
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_CONTROLS, -1, "voting", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_ASSETS, -1, "resource-list", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_ASSETS, -1, "preview", false, false);
-	AddSection(Registry.m_vSections, CMenus::SETTINGS_LANGUAGE, -1, "language-list", false, false);
-	AddSection(Registry.m_vSections, CMenus::SETTINGS_LANGUAGE, -1, "credits", false, false);
-	AddSection(Registry.m_vSections, CMenus::SETTINGS_PLAYER, -1, "skin-list", false, false);
-	AddSection(Registry.m_vSections, CMenus::SETTINGS_PLAYER, -1, "identity", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_GENERAL, -1, "language-list", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_TEE, -1, "skin-list", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_TEE, -1, "identity", false, false);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TEE, -1, "country-list", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_GENERAL, -1, "header", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_GENERAL, -1, "body", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_APPEARANCE, -1, "header", false, false);

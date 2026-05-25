@@ -123,6 +123,8 @@ constexpr int SETTINGS_PAGE_RUNTIME_CACHE_SLOTS = 32;
 
 SSettingsPageRuntimeRegistry BuildSettingsPageRuntimeRegistry();
 bool SettingsPageRuntimeRegistryContains(const SSettingsPageRuntimeRegistry &Registry, int Page);
+int SettingsCanonicalPage(int Page);
+bool SettingsPageVisibleInRightTabBar(int Page);
 SSettingsSectionRegistry BuildSettingsSectionRegistry();
 bool SettingsSectionRegistryContains(const SSettingsSectionRegistry &Registry, int Page, const char *pSection);
 bool SettingsSectionCanRecordStaticFbo(const SSettingsSectionRegistry &Registry, int Page, int Tab, const char *pSection);
