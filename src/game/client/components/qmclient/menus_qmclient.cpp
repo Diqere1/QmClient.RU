@@ -18,6 +18,8 @@
 #include <engine/storage.h>
 #include <engine/textrender.h>
 
+#include <game/client/QmUi/UiContext.h>
+#include <game/client/QmUi/UiDogfood.h>
 #include <game/client/animstate.h>
 #include <game/client/components/binds.h>
 #include <game/client/components/chat.h>
@@ -669,6 +671,22 @@ void CMenus::RenderSettingsQmClientOverview(CUIRect MainView)
 
 void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 {
+	// feat-003 dogfood: when dbg_qm_ui_dogfood is on, take over the QmClient
+	// settings panel and render the widget gallery. First visible verification
+	// of feat-002 (animation runtime) + feat-003 (tokens + 11 widgets).
+	if(g_Config.m_DbgQmUiDogfood != 0)
+	{
+		IUiContext Ctx;
+		Ctx.m_pUi = Ui();
+		Ctx.m_pMenus = this;
+		Ctx.m_pTextRender = TextRender();
+		Ctx.m_pTooltips = &GameClient()->m_Tooltips;
+		Ctx.m_pAnim = &GameClient()->UiRuntimeV2()->AnimRuntime();
+		Ctx.m_ScopeHash = MakeUiScopeHash("qm_ui_dogfood");
+		RenderQmUiDogfood(Ctx, MainView);
+		return;
+	}
+
 	CPerfTimer RenderTimer;
 	bool TabTransitionActive = false;
 	float TabTransitionAlpha = 0.0f;

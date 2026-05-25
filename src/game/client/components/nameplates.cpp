@@ -121,81 +121,6 @@ static float ResolveChatBubbleAnimValue(
 	return AnimRuntime.GetValue(NodeKey, Property, Target);
 }
 
-static bool ParseNameplateCoreRowKey(const char *pKey, ENameplateCoreRow &OutRow)
-{
-	if(str_comp_nocase(pKey, "name") == 0)
-	{
-		OutRow = ENameplateCoreRow::NAME;
-		return true;
-	}
-	if(str_comp_nocase(pKey, "clan") == 0)
-	{
-		OutRow = ENameplateCoreRow::CLAN;
-		return true;
-	}
-	if(str_comp_nocase(pKey, "hook") == 0)
-	{
-		OutRow = ENameplateCoreRow::HOOK;
-		return true;
-	}
-	if(str_comp_nocase(pKey, "coords") == 0)
-	{
-		OutRow = ENameplateCoreRow::COORDS;
-		return true;
-	}
-	if(str_comp_nocase(pKey, "keys") == 0)
-	{
-		OutRow = ENameplateCoreRow::KEYS;
-		return true;
-	}
-	return false;
-}
-
-static std::array<ENameplateCoreRow, kNameplateCoreRowCount> ParseNameplateCoreRowOrderTopToBottom(const char *pConfigValue)
-{
-	std::array<ENameplateCoreRow, kNameplateCoreRowCount> Result = s_aDefaultNameplateCoreRowsTopToBottom;
-	if(!pConfigValue || pConfigValue[0] == '\0')
-		return Result;
-
-	std::array<ENameplateCoreRow, kNameplateCoreRowCount> ParsedRows = {};
-	bool aUsedRows[kNameplateCoreRowCount] = {};
-	int ParsedCount = 0;
-
-	char aToken[32];
-	const char *pToken = pConfigValue;
-	while((pToken = str_next_token(pToken, ",", aToken, sizeof(aToken))))
-	{
-		if(aToken[0] == '\0')
-			continue;
-
-		ENameplateCoreRow Row;
-		if(!ParseNameplateCoreRowKey(aToken, Row))
-			continue;
-
-		const int RowIndex = static_cast<int>(Row);
-		if(aUsedRows[RowIndex])
-			continue;
-
-		ParsedRows[ParsedCount++] = Row;
-		aUsedRows[RowIndex] = true;
-		if(ParsedCount == static_cast<int>(kNameplateCoreRowCount))
-			break;
-	}
-
-	int OutIndex = 0;
-	for(int i = 0; i < ParsedCount; ++i)
-		Result[OutIndex++] = ParsedRows[i];
-	for(const ENameplateCoreRow Row : s_aDefaultNameplateCoreRowsTopToBottom)
-	{
-		const int RowIndex = static_cast<int>(Row);
-		if(aUsedRows[RowIndex])
-			continue;
-		Result[OutIndex++] = Row;
-	}
-
-	return Result;
-}
-
 static constexpr int NAMEPLATE_FREE_MOVE_OFFSET_MIN = -300;
 static constexpr int NAMEPLATE_FREE_MOVE_OFFSET_MAX = 300;
 
@@ -1073,7 +998,6 @@ private:
 
 	bool m_Inited = false;
 	bool m_InGame = false;
-	char m_aCoreRowOrderConfigCache[sizeof(g_Config.m_QmNameplateRowOrder)] = {};
 	PartsVector m_vpParts;
 	std::vector<SCoreRowParts> m_vCoreRows;
 	void RenderLine(CGameClient &This,
@@ -1291,8 +1215,7 @@ private:
 		m_vpParts.clear();
 		m_vCoreRows.clear();
 
-		const auto CoreRowsTopToBottom = ParseNameplateCoreRowOrderTopToBottom(g_Config.m_QmNameplateRowOrder);
-		for(auto It = CoreRowsTopToBottom.rbegin(); It != CoreRowsTopToBottom.rend(); ++It)
+		for(auto It = s_aDefaultNameplateCoreRowsTopToBottom.rbegin(); It != s_aDefaultNameplateCoreRowsTopToBottom.rend(); ++It)
 		{
 			const size_t StartIndex = m_vpParts.size();
 			AddCoreRowModule(This, *It);
@@ -1302,12 +1225,10 @@ private:
 
 	void Init(CGameClient &This)
 	{
-		const bool NeedLayoutSync = !m_Inited || str_comp(m_aCoreRowOrderConfigCache, g_Config.m_QmNameplateRowOrder) != 0;
-		if(!NeedLayoutSync)
+		if(m_Inited)
 			return;
 
 		RebuildPartLayout(This);
-		str_copy(m_aCoreRowOrderConfigCache, g_Config.m_QmNameplateRowOrder, sizeof(m_aCoreRowOrderConfigCache));
 		m_Inited = true;
 	}
 
