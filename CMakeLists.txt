@@ -2549,6 +2549,20 @@ if(CLIENT)
     QmUi/QmAnim.cpp
     QmUi/QmAnim.h
     QmUi/QmAnimCurves.h
+    QmUi/QmAnimResolve.cpp
+    QmUi/QmAnimResolve.h
+    QmUi/UiButtons.cpp
+    QmUi/UiButtons.h
+    QmUi/UiContainers.h
+    QmUi/UiContext.h
+    QmUi/UiDogfood.cpp
+    QmUi/UiDogfood.h
+    QmUi/UiForms.cpp
+    QmUi/UiForms.h
+    QmUi/UiNavigation.cpp
+    QmUi/UiNavigation.h
+    QmUi/UiOverlays.h
+    QmUi/UiTokens.h
     QmUi/QmLayout.cpp
     QmUi/QmLayout.h
     QmUi/QmLegacy.cpp
@@ -3437,6 +3451,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     qm_chat_interactions_test.cpp
     qm_hud_notifications_test.cpp
     qm_modes_test.cpp
+    QmUiTokensTest.cpp
     qmclient_monitoring_test.cpp
     score_test.cpp
     section_loader_test.cpp
