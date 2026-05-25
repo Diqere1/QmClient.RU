@@ -2579,6 +2579,7 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
 		if(DoButton_Menu(&s_ButtonAbort, Localize("Abort"), 0, &Abort) || Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE))
 		{
 			m_DemoRenderInput.Clear();
+			m_HasPendingDemoRenderSource = false;
 			m_Popup = POPUP_NONE;
 		}
 
@@ -3075,13 +3076,17 @@ void CMenus::PopupConfirmDemoReplaceVideo()
 {
 	char aBuf[IO_MAX_PATH_LENGTH];
 	char aDemoFilename[IO_MAX_PATH_LENGTH];
-	str_copy(aDemoFilename, m_aCurrentDemoSelectionName);
+	const char *pDemoFolder = m_HasPendingDemoRenderSource ? m_aPendingDemoRenderFolder : m_aCurrentDemoFolder;
+	const char *pDemoSelectionName = m_HasPendingDemoRenderSource ? m_aPendingDemoRenderSelectionName : m_aCurrentDemoSelectionName;
+	const int DemoStorageType = m_HasPendingDemoRenderSource ? m_PendingDemoRenderStorageType : m_DemolistStorageType;
+	str_copy(aDemoFilename, pDemoSelectionName);
 	if(str_endswith_nocase(aDemoFilename, ".demo") == nullptr)
 		str_append(aDemoFilename, ".demo", sizeof(aDemoFilename));
-	str_format(aBuf, sizeof(aBuf), "%s/%s", m_aCurrentDemoFolder, aDemoFilename);
+	str_format(aBuf, sizeof(aBuf), "%s/%s", pDemoFolder, aDemoFilename);
 	char aVideoName[IO_MAX_PATH_LENGTH];
 	str_copy(aVideoName, m_DemoRenderInput.GetString());
-	const char *pError = Client()->DemoPlayer_Render(aBuf, m_DemolistStorageType, aVideoName, m_Speed, m_StartPaused);
+	const char *pError = Client()->DemoPlayer_Render(aBuf, DemoStorageType, aVideoName, m_Speed, m_StartPaused);
+	m_HasPendingDemoRenderSource = false;
 	m_vDemoCutSegments.clear();
 	g_Config.m_ClDemoSliceBegin = -1;
 	g_Config.m_ClDemoSliceEnd = -1;

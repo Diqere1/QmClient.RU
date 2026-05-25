@@ -11,11 +11,6 @@ docs/html
 .ruff_cache
 
 # Agent workspace files
-AGENTS.md
-Agent.md
-Agents.md
-CLAUDE.md
-Claude.md
 CODEX.md
 Codex.md
 docs/superpowers/
@@ -25,9 +20,12 @@ docs/superpowers/
 .superpowers
 .trae
 .claude
+skills/
 
 # tmp
 tmp/
+QmClient_codeQmClienttmp_harness_repo/
+tmp_harness_deusyu/
 
 # Git worktrees
 worktrees/

@@ -12,6 +12,7 @@
 #include <engine/friends.h>
 #include <engine/image.h>
 #include <engine/serverbrowser.h>
+#include <engine/storage.h>
 #include <engine/shared/config.h>
 #include <engine/shared/jobs.h>
 #include <engine/textrender.h>
@@ -1146,6 +1147,10 @@ protected:
 	CLineInputBuffered<IO_MAX_PATH_LENGTH> m_DemoSearchInput;
 #if defined(CONF_VIDEORECORDER)
 	CLineInputBuffered<IO_MAX_PATH_LENGTH> m_DemoRenderInput;
+	bool m_HasPendingDemoRenderSource = false;
+	char m_aPendingDemoRenderFolder[IO_MAX_PATH_LENGTH] = "";
+	char m_aPendingDemoRenderSelectionName[IO_MAX_PATH_LENGTH] = "";
+	int m_PendingDemoRenderStorageType = IStorage::TYPE_SAVE;
 #endif
 	int m_DemolistSelectedIndex;
 	bool m_DemolistSelectedReveal = false;
@@ -1521,6 +1526,7 @@ protected:
 	{
 	public:
 		char m_aFilename[IO_MAX_PATH_LENGTH];
+		char m_aValuePrefix[IO_MAX_PATH_LENGTH] = "";
 		bool m_IsDirectory;
 	};
 	class CPopupMapPickerContext
@@ -1528,6 +1534,11 @@ protected:
 	public:
 		std::vector<CMapListItem> m_vMaps;
 		char m_aCurrentMapFolder[IO_MAX_PATH_LENGTH] = "";
+		char m_aRootPath[IO_MAX_PATH_LENGTH] = "maps";
+		char m_aFallbackRootPath[IO_MAX_PATH_LENGTH] = "";
+		char m_aValuePrefix[IO_MAX_PATH_LENGTH] = "";
+		char m_aFallbackValuePrefix[IO_MAX_PATH_LENGTH] = "";
+		char m_aListingValuePrefix[IO_MAX_PATH_LENGTH] = "";
 		char *m_pTargetConfig = nullptr;
 		int m_TargetConfigSize = 0;
 		static int MapListFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser);

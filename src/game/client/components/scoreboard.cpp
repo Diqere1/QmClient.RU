@@ -20,6 +20,7 @@
 #include <game/client/components/qmclient/modes.h>
 #include <game/client/components/statboard.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/client/ui.h>
 #include <game/localization.h>
 
@@ -1053,7 +1054,7 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
 				(GameClient()->m_Snap.m_SpecInfo.m_SpectatorId == SPEC_FREEVIEW && pInfo->m_Local) ||
 				(GameClient()->m_Snap.m_SpecInfo.m_Active && pInfo->m_ClientId == GameClient()->m_Snap.m_SpecInfo.m_SpectatorId))
 			{
-				Row.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f * ItemAlpha), IGraphics::CORNER_ALL, RoundRadius);
+				Row.Draw(ui_token::color::ACCENT_PRIMARY_DIM.WithMultipliedAlpha(ItemAlpha * 1.45f), IGraphics::CORNER_ALL, RoundRadius);
 			}
 
 			const int ClientId = pInfo->m_ClientId;
@@ -1558,10 +1559,10 @@ void CScoreboard::OnRender()
 			SortButton = CUiV2LegacyAdapter::ToCUIRect(vTitleChildren[1].m_Box);
 		}
 
-		RedTitle.Draw(ColorRGBA(0.975f, 0.17f, 0.17f, 0.5f * BackgroundAlphaFinal), IGraphics::CORNER_T, 7.5f);
-		BlueTitleBackground.Draw(ColorRGBA(0.17f, 0.46f, 0.975f, 0.5f * BackgroundAlphaFinal), IGraphics::CORNER_T, 7.5f);
-		RedScoreboard.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f * BackgroundAlphaFinal), IGraphics::CORNER_B, 7.5f);
-		BlueScoreboard.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f * BackgroundAlphaFinal), IGraphics::CORNER_B, 7.5f);
+		RedTitle.Draw(ui_token::color::DANGER.WithMultipliedAlpha(0.45f * BackgroundAlphaFinal), IGraphics::CORNER_T, ui_token::radius::CARD);
+		BlueTitleBackground.Draw(ui_token::color::ACCENT_PRIMARY_DIM.WithMultipliedAlpha(2.1f * BackgroundAlphaFinal), IGraphics::CORNER_T, ui_token::radius::CARD);
+		RedScoreboard.Draw(ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(BackgroundAlphaFinal), IGraphics::CORNER_B, ui_token::radius::CARD);
+		BlueScoreboard.Draw(ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(BackgroundAlphaFinal), IGraphics::CORNER_B, ui_token::radius::CARD);
 
 		RenderTitle(RedTitleContent, TEAM_RED, pRedTeamName == nullptr ? Localize("Red team") : pRedTeamName);
 		RenderTitle(BlueTitleContent, TEAM_BLUE, pBlueTeamName == nullptr ? Localize("Blue team") : pBlueTeamName);
@@ -1571,7 +1572,7 @@ void CScoreboard::OnRender()
 	}
 	else
 	{
-		Scoreboard.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f * BackgroundAlphaFinal), IGraphics::CORNER_ALL, 7.5f);
+		Scoreboard.Draw(ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(BackgroundAlphaFinal), IGraphics::CORNER_ALL, ui_token::radius::CARD);
 
 		const char *pTitle;
 		if(pGameInfoObj && (pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_GAMEOVER))

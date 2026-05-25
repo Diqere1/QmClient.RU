@@ -162,10 +162,13 @@ private:
 	void StoreLastTeleport(int ClientId, const vec2 &Pos);
 	void StoreLastDeathPosition(int ClientId, const vec2 &Pos);
 	void CaptureServerLockedInputs();
+	bool TryAttachDummyFromSnapshot();
 	bool IsSafeRescueTile(int Tile) const;
 	bool IsSafeRescuePosition(const vec2 &Pos, float ProximityRadius) const;
 	void TrackSafeRescuePosition(int ClientId, CCharacter *pChar);
 	bool FindNearestSafeRescuePosition(int ClientId, const vec2 &From, vec2 &OutPos) const;
+	bool FindFinishPosition(vec2 &OutPos) const;
+	void NormalizeDefaultPracticeWeapons(CCharacter *pChar, bool HasExplicitWeaponFlags) const;
 	bool ExecutePracticeCommand(int Team, int LocalClientId, CCharacter *pChar, const std::vector<std::string> &vArgs, bool &WeaponsMutated);
 };
 

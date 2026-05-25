@@ -75,6 +75,7 @@ namespace
 					"assets",
 					"assets/emoticons",
 					"assets/entities",
+					"assets/entity_bg",
 					"assets/extras",
 					"assets/game",
 					"assets/hud",

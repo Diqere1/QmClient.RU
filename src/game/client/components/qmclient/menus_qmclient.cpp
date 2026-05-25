@@ -6249,6 +6249,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudIslandUseOriginalStyle, Localize("使用原始样式"), &g_Config.m_QmHudIslandUseOriginalStyle, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudIslandShowTeam, Localize("显示队伍"), &g_Config.m_QmHudIslandShowTeam, &Row, LG_LineHeight);
+				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
 				if(g_Config.m_QmHudIslandUseOriginalStyle)
 				{
 				}
