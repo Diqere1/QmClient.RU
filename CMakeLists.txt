@@ -3443,6 +3443,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     serverbrowser_test.cpp
     serverinfo_test.cpp
     settings_warmup_test.cpp
+    skins_test.cpp
     render_target_test.cpp
     shell_execute_test.cpp
     snapshot_test.cpp

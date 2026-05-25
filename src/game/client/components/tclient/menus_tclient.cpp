@@ -922,6 +922,585 @@ void CMenus::RenderSettingsTClient(CUIRect MainView, bool PrewarmOnly)
 	}
 }
 
+void CMenus::DrawTClientCacheSectionBox(CUIRect BoxRect)
+{
+	const float Padding = MarginBetweenViews * 0.6666f;
+	BoxRect.w += Padding;
+	BoxRect.h += Padding;
+	BoxRect.x -= Padding * 0.5f;
+	BoxRect.y -= Padding * 0.5f;
+	BoxRect.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f), IGraphics::CORNER_ALL, 10.0f);
+}
+
+float CMenus::RenderTClientCacheSectionFallback(CUIRect &CurrentColumn, float TopMargin, float (CMenus::*pLayoutSection)(CUIRect &, bool))
+{
+	const float SavedY = CurrentColumn.y;
+	CUIRect MeasuredColumn = CurrentColumn;
+	const float Height = (this->*pLayoutSection)(MeasuredColumn, false);
+	DrawTClientCacheSectionBox({CurrentColumn.x, CurrentColumn.y + TopMargin, CurrentColumn.w, Height - TopMargin});
+	(this->*pLayoutSection)(CurrentColumn, true);
+	return CurrentColumn.y - SavedY;
+}
+
+void CMenus::ConfigureSplitCachedStaticLayer(SSettingsSection &Section, const char *pTitle, std::function<float(CUIRect &)> MeasureSection, std::function<float(CUIRect &)> RenderInteractiveSection, float TopMargin)
+{
+	Section.m_bCanCacheStaticLayer = true;
+	Section.m_bKeepCachedHeightStable = true;
+	Section.m_StaticCachePadding = MarginBetweenViews * 0.6666f;
+	Section.m_RenderStaticLayerFn = [this, pTitle, MeasureSection = std::move(MeasureSection), TopMargin](CUIRect &Col) -> float {
+		CUIRect Label;
+		const float SavedY = Col.y;
+		CUIRect MeasuredColumn = Col;
+		const float Height = MeasureSection(MeasuredColumn);
+		DrawTClientCacheSectionBox({Col.x, Col.y + TopMargin, Col.w, Height - TopMargin});
+		Col.HSplitTop(TopMargin, nullptr, &Col);
+		Col.HSplitTop(HeadlineHeight, &Label, &Col);
+		Ui()->DoLabel(&Label, Localize(pTitle), HeadlineFontSize, TEXTALIGN_ML);
+		Col.HSplitTop(MarginSmall, nullptr, &Col);
+		Col.y = SavedY + Height;
+		return Height;
+	};
+	Section.m_RenderInteractiveLayerFn = [RenderInteractiveSection = std::move(RenderInteractiveSection), TopMargin](CUIRect &Col) -> float {
+		const float SavedY = Col.y;
+		Col.HSplitTop(TopMargin, nullptr, &Col);
+		Col.HSplitTop(HeadlineHeight, nullptr, &Col);
+		Col.HSplitTop(MarginSmall, nullptr, &Col);
+		RenderInteractiveSection(Col);
+		return Col.y - SavedY;
+	};
+}
+
+float CMenus::LayoutTClientThemeCacheSection(CUIRect &CurrentColumn, bool Render)
+{
+	CUIRect Label, Button, TmpLabel;
+	const float SavedY = CurrentColumn.y;
+	CUIRect BoxRect = CurrentColumn;
+	CurrentColumn.HSplitTop(MarginBetweenSections, nullptr, &CurrentColumn);
+	BoxRect = CurrentColumn;
+	CurrentColumn.HSplitTop(HeadlineHeight, Render ? &Label : &TmpLabel, &CurrentColumn);
+	if(Render)
+		Ui()->DoLabel(&Label, Localize("Visual: Font & Cursor"), HeadlineFontSize, TEXTALIGN_ML);
+	CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
+
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(Render)
+	{
+		Button.VSplitLeft(100.0f, &Label, &Button);
+		Ui()->DoLabel(&Label, Localize("Custom Font: "), FontSize, TEXTALIGN_ML);
+		static std::vector<std::string> s_FontDropDownNamesOwned;
+		static std::vector<const char *> s_FontDropDownNames;
+		static CUi::SDropDownState s_FontDropDownState;
+		static CScrollRegion s_FontDropDownScrollRegion;
+		s_FontDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_FontDropDownScrollRegion;
+		s_FontDropDownState.m_SelectionPopupContext.m_SpecialFontRenderMode = true;
+		const auto &CustomFaces = *TextRender()->GetCustomFaces();
+		if(s_FontDropDownNamesOwned != CustomFaces)
+		{
+			s_FontDropDownNamesOwned = CustomFaces;
+			s_FontDropDownNames.clear();
+			s_FontDropDownNames.reserve(s_FontDropDownNamesOwned.size());
+			for(const auto &FaceName : s_FontDropDownNamesOwned)
+				s_FontDropDownNames.push_back(FaceName.c_str());
+		}
+		int FontSelectedOld = -1;
+		for(size_t i = 0; i < CustomFaces.size(); ++i)
+		{
+			if(str_find_nocase(g_Config.m_TcCustomFont, CustomFaces[i].c_str()))
+				FontSelectedOld = (int)i;
+		}
+		CUIRect FontDirectory;
+		Button.VSplitRight(20.0f, &Button, &FontDirectory);
+		Button.VSplitRight(MarginSmall, &Button, nullptr);
+		const int FontSelectedNew = Ui()->DoDropDown(&Button, FontSelectedOld, s_FontDropDownNames.data(), s_FontDropDownNames.size(), s_FontDropDownState);
+		if(FontSelectedOld != FontSelectedNew && FontSelectedNew >= 0 && (size_t)FontSelectedNew < s_FontDropDownNames.size())
+		{
+			str_copy(g_Config.m_TcCustomFont, s_FontDropDownNames[FontSelectedNew]);
+			s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
+			s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
+			TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
+			TextRender()->OnPreWindowResize();
+			GameClient()->OnWindowResize();
+			GameClient()->Editor()->OnWindowResize();
+			TextRender()->OnWindowResize();
+			GameClient()->m_MapImages.SetTextureScale(101);
+			GameClient()->m_MapImages.SetTextureScale(g_Config.m_ClTextEntitiesSize);
+		}
+		static CButtonContainer s_FontDirectoryId;
+		if(Ui()->DoButton_FontIcon(&s_FontDirectoryId, FONT_ICON_FOLDER, 0, &FontDirectory, IGraphics::CORNER_ALL))
+		{
+			Storage()->CreateFolder("qmclient", IStorage::TYPE_SAVE);
+			Storage()->CreateFolder("qmclient/fonts", IStorage::TYPE_SAVE);
+			char aBuf[IO_MAX_PATH_LENGTH];
+			Storage()->GetCompletePath(IStorage::TYPE_SAVE, "qmclient/fonts", aBuf, sizeof(aBuf));
+			Client()->ViewFile(aBuf);
+		}
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(Render)
+	{
+		Button.VSplitLeft(120.0f, &Label, &Button);
+		Ui()->DoLabel(&Label, Localize("Hammer Mode: "), FontSize, TEXTALIGN_ML);
+		static std::vector<const char *> s_DropDownNames;
+		s_DropDownNames = {Localize("Normal", "Hammer Mode"), Localize("Rotate with cursor", "Hammer Mode"), Localize("Rotate with cursor like gun", "Hammer Mode")};
+		static CUi::SDropDownState s_DropDownState;
+		static CScrollRegion s_DropDownScrollRegion;
+		s_DropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_DropDownScrollRegion;
+		g_Config.m_TcHammerRotatesWithCursor = Ui()->DoDropDown(&Button, g_Config.m_TcHammerRotatesWithCursor, s_DropDownNames.data(), s_DropDownNames.size(), s_DropDownState);
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(Render)
+		Ui()->DoScrollbarOption(&g_Config.m_TcCursorScale, &g_Config.m_TcCursorScale, &Button, Localize("Ingame cursor scale"), 0, 500, &CUi::ms_LinearScrollbarScale, 0, "%");
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(Render)
+	{
+		if(g_Config.m_TcAnimateWheelTime > 0)
+			Ui()->DoScrollbarOption(&g_Config.m_TcAnimateWheelTime, &g_Config.m_TcAnimateWheelTime, &Button, Localize("Wheel animate"), 0, 1000, &CUi::ms_LinearScrollbarScale, 0, "ms");
+		else
+			Ui()->DoScrollbarOption(&g_Config.m_TcAnimateWheelTime, &g_Config.m_TcAnimateWheelTime, &Button, Localize("Wheel animate"), 0, 1000, &CUi::ms_LinearScrollbarScale, 0, "ms (off)");
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+
+	BoxRect.h = CurrentColumn.y - BoxRect.y;
+	return CurrentColumn.y - SavedY;
+}
+
+float CMenus::RenderTClientThemeInteractiveLayer(CUIRect &CurrentColumn)
+{
+	const float SavedY = CurrentColumn.y;
+	CUIRect Label, Button;
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	Button.VSplitLeft(100.0f, &Label, &Button);
+	Ui()->DoLabel(&Label, Localize("Custom Font: "), FontSize, TEXTALIGN_ML);
+	static std::vector<std::string> s_FontDropDownNamesOwned;
+	static std::vector<const char *> s_FontDropDownNames;
+	static CUi::SDropDownState s_FontDropDownState;
+	static CScrollRegion s_FontDropDownScrollRegion;
+	s_FontDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_FontDropDownScrollRegion;
+	s_FontDropDownState.m_SelectionPopupContext.m_SpecialFontRenderMode = true;
+	const auto &CustomFaces = *TextRender()->GetCustomFaces();
+	if(s_FontDropDownNamesOwned != CustomFaces)
+	{
+		s_FontDropDownNamesOwned = CustomFaces;
+		s_FontDropDownNames.clear();
+		s_FontDropDownNames.reserve(s_FontDropDownNamesOwned.size());
+		for(const auto &FaceName : s_FontDropDownNamesOwned)
+			s_FontDropDownNames.push_back(FaceName.c_str());
+	}
+	int FontSelectedOld = -1;
+	for(size_t i = 0; i < CustomFaces.size(); ++i)
+	{
+		if(str_find_nocase(g_Config.m_TcCustomFont, CustomFaces[i].c_str()))
+			FontSelectedOld = (int)i;
+	}
+	CUIRect FontDirectory;
+	Button.VSplitRight(20.0f, &Button, &FontDirectory);
+	Button.VSplitRight(MarginSmall, &Button, nullptr);
+	const int FontSelectedNew = Ui()->DoDropDown(&Button, FontSelectedOld, s_FontDropDownNames.data(), s_FontDropDownNames.size(), s_FontDropDownState);
+	if(FontSelectedOld != FontSelectedNew && FontSelectedNew >= 0 && (size_t)FontSelectedNew < s_FontDropDownNames.size())
+	{
+		str_copy(g_Config.m_TcCustomFont, s_FontDropDownNames[FontSelectedNew]);
+		s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
+		s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
+		TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
+		TextRender()->OnPreWindowResize();
+		GameClient()->OnWindowResize();
+		GameClient()->Editor()->OnWindowResize();
+		TextRender()->OnWindowResize();
+		GameClient()->m_MapImages.SetTextureScale(101);
+		GameClient()->m_MapImages.SetTextureScale(g_Config.m_ClTextEntitiesSize);
+	}
+	static CButtonContainer s_FontDirectoryId;
+	if(Ui()->DoButton_FontIcon(&s_FontDirectoryId, FONT_ICON_FOLDER, 0, &FontDirectory, IGraphics::CORNER_ALL))
+	{
+		Storage()->CreateFolder("qmclient", IStorage::TYPE_SAVE);
+		Storage()->CreateFolder("qmclient/fonts", IStorage::TYPE_SAVE);
+		char aBuf[IO_MAX_PATH_LENGTH];
+		Storage()->GetCompletePath(IStorage::TYPE_SAVE, "qmclient/fonts", aBuf, sizeof(aBuf));
+		Client()->ViewFile(aBuf);
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	Button.VSplitLeft(120.0f, &Label, &Button);
+	Ui()->DoLabel(&Label, Localize("Hammer Mode: "), FontSize, TEXTALIGN_ML);
+	static std::vector<const char *> s_DropDownNames;
+	s_DropDownNames = {Localize("Normal", "Hammer Mode"), Localize("Rotate with cursor", "Hammer Mode"), Localize("Rotate with cursor like gun", "Hammer Mode")};
+	static CUi::SDropDownState s_HammerDropDownState;
+	static CScrollRegion s_HammerDropDownScrollRegion;
+	s_HammerDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_HammerDropDownScrollRegion;
+	g_Config.m_TcHammerRotatesWithCursor = Ui()->DoDropDown(&Button, g_Config.m_TcHammerRotatesWithCursor, s_DropDownNames.data(), s_DropDownNames.size(), s_HammerDropDownState);
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	Ui()->DoScrollbarOption(&g_Config.m_TcCursorScale, &g_Config.m_TcCursorScale, &Button, Localize("Ingame cursor scale"), 0, 500, &CUi::ms_LinearScrollbarScale, 0, "%");
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(g_Config.m_TcAnimateWheelTime > 0)
+		Ui()->DoScrollbarOption(&g_Config.m_TcAnimateWheelTime, &g_Config.m_TcAnimateWheelTime, &Button, Localize("Wheel animate"), 0, 1000, &CUi::ms_LinearScrollbarScale, 0, "ms");
+	else
+		Ui()->DoScrollbarOption(&g_Config.m_TcAnimateWheelTime, &g_Config.m_TcAnimateWheelTime, &Button, Localize("Wheel animate"), 0, 1000, &CUi::ms_LinearScrollbarScale, 0, "ms (off)");
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	return CurrentColumn.y - SavedY;
+}
+
+float CMenus::LayoutTClientAutoReplyCacheSection(CUIRect &CurrentColumn, bool Render)
+{
+	CUIRect Label, ReplyRect, TmpRect;
+	CUIRect BoxRect;
+	CurrentColumn.HSplitTop(MarginBetweenSections, nullptr, &CurrentColumn);
+	BoxRect = CurrentColumn;
+	CurrentColumn.HSplitTop(HeadlineHeight, Render ? &Label : &TmpRect, &CurrentColumn);
+	if(Render)
+		Ui()->DoLabel(&Label, Localize("Auto reply"), HeadlineFontSize, TEXTALIGN_ML);
+	CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
+
+	if(Render)
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAutoReplyMuted, Localize("Automatically reply to muted players"), &g_Config.m_TcAutoReplyMuted, &CurrentColumn, LineSize);
+	else
+		CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &ReplyRect, &CurrentColumn);
+	if(Render && g_Config.m_TcAutoReplyMuted)
+	{
+		ReplyRect.HSplitTop(MarginExtraSmall, nullptr, &ReplyRect);
+		static CLineInput s_MutedReply(g_Config.m_TcAutoReplyMutedMessage, sizeof(g_Config.m_TcAutoReplyMutedMessage));
+		s_MutedReply.SetEmptyText(Localize("I muted you"));
+		Ui()->DoEditBox(&s_MutedReply, &ReplyRect, EditBoxFontSize);
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	if(Render)
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAutoReplyMinimized, Localize("Automatically reply while the window is unfocused"), &g_Config.m_TcAutoReplyMinimized, &CurrentColumn, LineSize);
+	else
+		CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &ReplyRect, &CurrentColumn);
+	if(Render && g_Config.m_TcAutoReplyMinimized)
+	{
+		ReplyRect.HSplitTop(MarginExtraSmall, nullptr, &ReplyRect);
+		static CLineInput s_MinimizedReply(g_Config.m_TcAutoReplyMinimizedMessage, sizeof(g_Config.m_TcAutoReplyMinimizedMessage));
+		s_MinimizedReply.SetEmptyText(Localize("I am away from the game window"));
+		Ui()->DoEditBox(&s_MinimizedReply, &ReplyRect, EditBoxFontSize);
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	return CurrentColumn.y - BoxRect.y;
+}
+
+float CMenus::RenderTClientAutoReplyInteractiveLayer(CUIRect &CurrentColumn)
+{
+	const float SavedY = CurrentColumn.y;
+	CUIRect ReplyRect;
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAutoReplyMuted, Localize("Automatically reply to muted players"), &g_Config.m_TcAutoReplyMuted, &CurrentColumn, LineSize);
+	CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &ReplyRect, &CurrentColumn);
+	if(g_Config.m_TcAutoReplyMuted)
+	{
+		ReplyRect.HSplitTop(MarginExtraSmall, nullptr, &ReplyRect);
+		static CLineInput s_MutedReply(g_Config.m_TcAutoReplyMutedMessage, sizeof(g_Config.m_TcAutoReplyMutedMessage));
+		s_MutedReply.SetEmptyText(Localize("I muted you"));
+		Ui()->DoEditBox(&s_MutedReply, &ReplyRect, EditBoxFontSize);
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAutoReplyMinimized, Localize("Automatically reply while the window is unfocused"), &g_Config.m_TcAutoReplyMinimized, &CurrentColumn, LineSize);
+	CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &ReplyRect, &CurrentColumn);
+	if(g_Config.m_TcAutoReplyMinimized)
+	{
+		ReplyRect.HSplitTop(MarginExtraSmall, nullptr, &ReplyRect);
+		static CLineInput s_MinimizedReply(g_Config.m_TcAutoReplyMinimizedMessage, sizeof(g_Config.m_TcAutoReplyMinimizedMessage));
+		s_MinimizedReply.SetEmptyText(Localize("I am away from the game window"));
+		Ui()->DoEditBox(&s_MinimizedReply, &ReplyRect, EditBoxFontSize);
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	return CurrentColumn.y - SavedY;
+}
+
+float CMenus::LayoutTClientPetCacheSection(CUIRect &CurrentColumn, bool Render)
+{
+	CUIRect Label, Button, TmpRect, PetSkinBox;
+	CUIRect BoxRect;
+	CurrentColumn.HSplitTop(MarginBetweenSections, nullptr, &CurrentColumn);
+	BoxRect = CurrentColumn;
+	CurrentColumn.HSplitTop(HeadlineHeight, Render ? &Label : &TmpRect, &CurrentColumn);
+	if(Render)
+		Ui()->DoLabel(&Label, Localize("Pet"), HeadlineFontSize, TEXTALIGN_ML);
+	CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
+	if(Render)
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcPetShow, Localize("Show the pet"), &g_Config.m_TcPetShow, &CurrentColumn, LineSize);
+	else
+		CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(Render)
+		Ui()->DoScrollbarOption(&g_Config.m_TcPetSize, &g_Config.m_TcPetSize, &Button, Localize("Pet size"), 10, 500, &CUi::ms_LinearScrollbarScale, 0, "%");
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(Render)
+		Ui()->DoScrollbarOption(&g_Config.m_TcPetAlpha, &g_Config.m_TcPetAlpha, &Button, Localize("Pet alpha"), 10, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+	CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &PetSkinBox, &CurrentColumn);
+	if(Render)
+	{
+		PetSkinBox.VSplitMid(&Label, &Button);
+		Ui()->DoLabel(&Label, Localize("Pet Skin:"), FontSize, TEXTALIGN_ML);
+		static CLineInput s_PetSkin(g_Config.m_TcPetSkin, sizeof(g_Config.m_TcPetSkin));
+		Ui()->DoEditBox(&s_PetSkin, &Button, EditBoxFontSize);
+	}
+	return CurrentColumn.y - BoxRect.y;
+}
+
+float CMenus::RenderTClientPetInteractiveLayer(CUIRect &CurrentColumn)
+{
+	const float SavedY = CurrentColumn.y;
+	CUIRect Button, Label, PetSkinBox;
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcPetShow, Localize("Show the pet"), &g_Config.m_TcPetShow, &CurrentColumn, LineSize);
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	Ui()->DoScrollbarOption(&g_Config.m_TcPetSize, &g_Config.m_TcPetSize, &Button, Localize("Pet size"), 10, 500, &CUi::ms_LinearScrollbarScale, 0, "%");
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	Ui()->DoScrollbarOption(&g_Config.m_TcPetAlpha, &g_Config.m_TcPetAlpha, &Button, Localize("Pet alpha"), 10, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+	CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &PetSkinBox, &CurrentColumn);
+	PetSkinBox.VSplitMid(&Label, &Button);
+	Ui()->DoLabel(&Label, Localize("Pet Skin:"), FontSize, TEXTALIGN_ML);
+	static CLineInput s_PetSkin(g_Config.m_TcPetSkin, sizeof(g_Config.m_TcPetSkin));
+	Ui()->DoEditBox(&s_PetSkin, &Button, EditBoxFontSize);
+	return CurrentColumn.y - SavedY;
+}
+
+float CMenus::LayoutTClientHudCacheSection(CUIRect &CurrentColumn, bool Render)
+{
+	CUIRect Label, Button, NotificationConfig, TmpRect;
+	CUIRect BoxRect;
+	CurrentColumn.HSplitTop(Margin, nullptr, &CurrentColumn);
+	BoxRect = CurrentColumn;
+	CurrentColumn.HSplitTop(HeadlineHeight, Render ? &Label : &TmpRect, &CurrentColumn);
+	if(Render)
+		Ui()->DoLabel(&Label, Localize("HUD"), HeadlineFontSize, TEXTALIGN_ML);
+	CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
+	if(Render)
+	{
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcMiniVoteHud, Localize("Show compact vote HUD"), &g_Config.m_TcMiniVoteHud, &CurrentColumn, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcMiniDebug, Localize("Show position and angle (mini debug)"), &g_Config.m_TcMiniDebug, &CurrentColumn, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcRenderCursorSpec, Localize("Show the cursor while free spectating"), &g_Config.m_TcRenderCursorSpec, &CurrentColumn, LineSize);
+	}
+	else
+	{
+		CurrentColumn.HSplitTop(LineSize * 3.0f, nullptr, &CurrentColumn);
+	}
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(Render && g_Config.m_TcRenderCursorSpec)
+		Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+	if(Render)
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcNotifyWhenLast, Localize("Notify when only one tee is still alive:"), &g_Config.m_TcNotifyWhenLast, &CurrentColumn, LineSize);
+	else
+		CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize + MarginSmall, &NotificationConfig, &CurrentColumn);
+	if(Render && g_Config.m_TcNotifyWhenLast)
+	{
+		NotificationConfig.VSplitMid(&Button, &NotificationConfig);
+		static CLineInput s_LastInput(g_Config.m_TcNotifyWhenLastText, sizeof(g_Config.m_TcNotifyWhenLastText));
+		s_LastInput.SetEmptyText(Localize("You're the last one!"));
+		Button.HSplitTop(MarginSmall, nullptr, &Button);
+		Ui()->DoEditBox(&s_LastInput, &Button, EditBoxFontSize);
+		static CButtonContainer s_ClientNotifyWhenLastColor;
+		DoLine_ColorPicker(&s_ClientNotifyWhenLastColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &NotificationConfig, "", &g_Config.m_TcNotifyWhenLastColor, ColorRGBA(1.0f, 1.0f, 1.0f), false);
+		CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+		Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastX, &g_Config.m_TcNotifyWhenLastX, &Button, Localize("Horizontal position"), 1, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+		CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+		Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastY, &g_Config.m_TcNotifyWhenLastY, &Button, Localize("Vertical position"), 1, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+		CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+		Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastSize, &g_Config.m_TcNotifyWhenLastSize, &Button, Localize("Font size"), 1, 50);
+	}
+	else
+	{
+		CurrentColumn.HSplitTop(LineSize * 3.0f, nullptr, &CurrentColumn);
+	}
+	if(Render)
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcShowCenter, Localize("Show the screen center line"), &g_Config.m_TcShowCenter, &CurrentColumn, LineSize);
+	else
+		CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+	CurrentColumn.HSplitTop(LineSize + MarginSmall, &Button, &CurrentColumn);
+	if(Render && g_Config.m_TcShowCenter)
+	{
+		static CButtonContainer s_ShowCenterLineColor;
+		DoLine_ColorPicker(&s_ShowCenterLineColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &Button, Localize("Screen center line color"), &g_Config.m_TcShowCenterColor, CConfig::ms_TcShowCenterColor, false, nullptr, true);
+		CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+		Ui()->DoScrollbarOption(&g_Config.m_TcShowCenterWidth, &g_Config.m_TcShowCenterWidth, &Button, Localize("Screen center line width"), 0, 20);
+	}
+	else
+	{
+		CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	return CurrentColumn.y - BoxRect.y;
+}
+
+float CMenus::RenderTClientHudInteractiveLayer(CUIRect &CurrentColumn)
+{
+	const float SavedY = CurrentColumn.y;
+	CUIRect Button, NotificationConfig;
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcMiniVoteHud, Localize("Show compact vote HUD"), &g_Config.m_TcMiniVoteHud, &CurrentColumn, LineSize);
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcMiniDebug, Localize("Show position and angle (mini debug)"), &g_Config.m_TcMiniDebug, &CurrentColumn, LineSize);
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcRenderCursorSpec, Localize("Show the cursor while free spectating"), &g_Config.m_TcRenderCursorSpec, &CurrentColumn, LineSize);
+	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+	if(g_Config.m_TcRenderCursorSpec)
+		Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcNotifyWhenLast, Localize("Notify when only one tee is still alive:"), &g_Config.m_TcNotifyWhenLast, &CurrentColumn, LineSize);
+	CurrentColumn.HSplitTop(LineSize + MarginSmall, &NotificationConfig, &CurrentColumn);
+	if(g_Config.m_TcNotifyWhenLast)
+	{
+		NotificationConfig.VSplitMid(&Button, &NotificationConfig);
+		static CLineInput s_LastInput(g_Config.m_TcNotifyWhenLastText, sizeof(g_Config.m_TcNotifyWhenLastText));
+		s_LastInput.SetEmptyText(Localize("You're the last one!"));
+		Button.HSplitTop(MarginSmall, nullptr, &Button);
+		Ui()->DoEditBox(&s_LastInput, &Button, EditBoxFontSize);
+		static CButtonContainer s_ClientNotifyWhenLastColor;
+		DoLine_ColorPicker(&s_ClientNotifyWhenLastColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &NotificationConfig, "", &g_Config.m_TcNotifyWhenLastColor, ColorRGBA(1.0f, 1.0f, 1.0f), false);
+		CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+		Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastX, &g_Config.m_TcNotifyWhenLastX, &Button, Localize("Horizontal position"), 1, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+		CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+		Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastY, &g_Config.m_TcNotifyWhenLastY, &Button, Localize("Vertical position"), 1, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+		CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+		Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastSize, &g_Config.m_TcNotifyWhenLastSize, &Button, Localize("Font size"), 1, 50);
+	}
+	else
+	{
+		CurrentColumn.HSplitTop(LineSize * 3.0f, nullptr, &CurrentColumn);
+	}
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcShowCenter, Localize("Show the screen center line"), &g_Config.m_TcShowCenter, &CurrentColumn, LineSize);
+	CurrentColumn.HSplitTop(LineSize + MarginSmall, &Button, &CurrentColumn);
+	if(g_Config.m_TcShowCenter)
+	{
+		static CButtonContainer s_ShowCenterLineColor;
+		DoLine_ColorPicker(&s_ShowCenterLineColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &Button, Localize("Screen center line color"), &g_Config.m_TcShowCenterColor, CConfig::ms_TcShowCenterColor, false, nullptr, true);
+		CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+		Ui()->DoScrollbarOption(&g_Config.m_TcShowCenterWidth, &g_Config.m_TcShowCenterWidth, &Button, Localize("Screen center line width"), 0, 20);
+	}
+	else
+	{
+		CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+	}
+	CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+	return CurrentColumn.y - SavedY;
+}
+
+SSettingsSection CMenus::BuildTClientThemeCacheSection()
+{
+	SSettingsSection S;
+	S.m_pName = "Visual: Font & Cursor";
+	S.m_MeasureFn = [this](CUIRect &Col) -> float { return LayoutTClientThemeCacheSection(Col, false); };
+	S.m_RenderCompactFn = [this](CUIRect &Col) -> float {
+		return RenderTClientCacheSectionFallback(Col, MarginBetweenSections, &CMenus::LayoutTClientThemeCacheSection);
+	};
+	S.m_RenderFullFn = S.m_RenderCompactFn;
+	ConfigureSplitCachedStaticLayer(S, "Visual: Font & Cursor",
+		[this](CUIRect &Col) -> float { return LayoutTClientThemeCacheSection(Col, false); },
+		[this](CUIRect &Col) -> float { return RenderTClientThemeInteractiveLayer(Col); }, MarginBetweenSections);
+	S.m_DependencyConfigInts = {&g_Config.m_TcCursorScale, &g_Config.m_TcAnimateWheelTime, &g_Config.m_TcHammerRotatesWithCursor};
+	return S;
+}
+
+SSettingsSection CMenus::BuildTClientAutoReplyCacheSection()
+{
+	SSettingsSection S;
+	S.m_pName = "自动回复";
+	S.m_MeasureFn = [this](CUIRect &Col) -> float { return LayoutTClientAutoReplyCacheSection(Col, false); };
+	S.m_RenderCompactFn = [this](CUIRect &Col) -> float {
+		return RenderTClientCacheSectionFallback(Col, MarginBetweenSections, &CMenus::LayoutTClientAutoReplyCacheSection);
+	};
+	S.m_RenderFullFn = S.m_RenderCompactFn;
+	ConfigureSplitCachedStaticLayer(S, "Auto reply",
+		[this](CUIRect &Col) -> float { return LayoutTClientAutoReplyCacheSection(Col, false); },
+		[this](CUIRect &Col) -> float { return RenderTClientAutoReplyInteractiveLayer(Col); }, MarginBetweenSections);
+	S.m_DependencyConfigInts = {&g_Config.m_TcAutoReplyMuted, &g_Config.m_TcAutoReplyMinimized};
+	return S;
+}
+
+SSettingsSection CMenus::BuildTClientPetCacheSection()
+{
+	SSettingsSection S;
+	S.m_pName = "宠物";
+	S.m_MeasureFn = [this](CUIRect &Col) -> float { return LayoutTClientPetCacheSection(Col, false); };
+	S.m_RenderCompactFn = [this](CUIRect &Col) -> float {
+		return RenderTClientCacheSectionFallback(Col, MarginBetweenSections, &CMenus::LayoutTClientPetCacheSection);
+	};
+	S.m_RenderFullFn = S.m_RenderCompactFn;
+	ConfigureSplitCachedStaticLayer(S, "Pet",
+		[this](CUIRect &Col) -> float { return LayoutTClientPetCacheSection(Col, false); },
+		[this](CUIRect &Col) -> float { return RenderTClientPetInteractiveLayer(Col); }, MarginBetweenSections);
+	S.m_DependencyConfigInts = {&g_Config.m_TcPetShow, &g_Config.m_TcPetSize, &g_Config.m_TcPetAlpha};
+	return S;
+}
+
+SSettingsSection CMenus::BuildTClientHudCacheSection()
+{
+	SSettingsSection S;
+	S.m_pName = "HUD";
+	S.m_MeasureFn = [this](CUIRect &Col) -> float { return LayoutTClientHudCacheSection(Col, false); };
+	S.m_RenderCompactFn = [this](CUIRect &Col) -> float {
+		return RenderTClientCacheSectionFallback(Col, Margin, &CMenus::LayoutTClientHudCacheSection);
+	};
+	S.m_RenderFullFn = S.m_RenderCompactFn;
+	ConfigureSplitCachedStaticLayer(S, "HUD",
+		[this](CUIRect &Col) -> float { return LayoutTClientHudCacheSection(Col, false); },
+		[this](CUIRect &Col) -> float { return RenderTClientHudInteractiveLayer(Col); }, Margin);
+	S.m_DependencyConfigInts = {
+		&g_Config.m_TcMiniVoteHud,
+		&g_Config.m_TcMiniDebug,
+		&g_Config.m_TcRenderCursorSpec,
+		&g_Config.m_TcNotifyWhenLast,
+		&g_Config.m_TcNotifyWhenLastX,
+		&g_Config.m_TcNotifyWhenLastY,
+		&g_Config.m_TcNotifyWhenLastSize,
+		&g_Config.m_TcShowCenter,
+		&g_Config.m_TcShowCenterWidth,
+	};
+	S.m_DependencyConfigCols = {&g_Config.m_TcNotifyWhenLastColor, &g_Config.m_TcShowCenterColor};
+	return S;
+}
+
+std::vector<SSettingsSection> CMenus::BuildTClientLeftCacheSections()
+{
+	std::vector<SSettingsSection> vSections;
+	vSections.push_back(BuildTClientThemeCacheSection());
+	vSections.push_back(BuildTClientAutoReplyCacheSection());
+	vSections.push_back(BuildTClientPetCacheSection());
+	return vSections;
+}
+
+std::vector<SSettingsSection> CMenus::BuildTClientRightCacheSections()
+{
+	std::vector<SSettingsSection> vSections;
+	vSections.push_back(BuildTClientHudCacheSection());
+	return vSections;
+}
+
+bool CMenus::PrepareTClientSettingsRuntimeCacheSection(CUIRect SectionView, const char *pSectionId, CSectionLoader *&pLoader, const char *&pLoaderSectionName, bool ConfigureRuntimeState)
+{
+	pLoader = nullptr;
+	pLoaderSectionName = nullptr;
+	if(str_comp(pSectionId, "theme") == 0 || str_comp(pSectionId, "auto-reply") == 0 || str_comp(pSectionId, "pet") == 0)
+	{
+		pLoader = &s_VisualFontLoader;
+		pLoaderSectionName = str_comp(pSectionId, "theme") == 0 ? "Visual: Font & Cursor" :
+			str_comp(pSectionId, "auto-reply") == 0 ? "自动回复" : "宠物";
+		s_VisualFontLoader.Register(BuildTClientLeftCacheSections());
+		if(ConfigureRuntimeState)
+		{
+			s_VisualFontLoader.SetGraphicsForCache(Graphics());
+			s_VisualFontLoader.SetRuntimeKey(MakeSettingsSectionRuntimeKey(SectionView, Graphics()));
+			s_VisualFontLoader.SetProgressiveEnabled(false);
+			s_VisualFontLoader.SetLiveStaticCacheRecordingEnabled(false);
+		}
+		return true;
+	}
+	if(str_comp(pSectionId, "misc") == 0)
+	{
+		pLoader = &s_RightSectionLoader;
+		pLoaderSectionName = "HUD";
+		s_RightSectionLoader.Register(BuildTClientRightCacheSections());
+		if(ConfigureRuntimeState)
+		{
+			s_RightSectionLoader.SetGraphicsForCache(Graphics());
+			s_RightSectionLoader.SetRuntimeKey(MakeSettingsSectionRuntimeKey(SectionView, Graphics()));
+			s_RightSectionLoader.SetProgressiveEnabled(false);
+			s_RightSectionLoader.SetLiveStaticCacheRecordingEnabled(false);
+		}
+		return true;
+	}
+	return false;
+}
+
 void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 {
 	CPerfTimer RenderTimer;
@@ -966,7 +1545,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 	const SSectionCullContext CullContext{
 		Viewport.y,
 		Viewport.y + Viewport.h,
-		120.0f,
+		720.0f,
 	};
 	auto ShouldRenderSection = [&](const CUIRect &CurrentColumn, float TopPadding, float EstimatedHeight) {
 		CUIRect SectionRect = CurrentColumn;
@@ -995,6 +1574,32 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 		LayoutSection(Col, true);
 		return Col.y - SavedY;
 	};
+	auto FillSplitCachedStaticLayer = [&](SSettingsSection &Section, const char *pTitle, auto &&MeasureSection, auto &&RenderInteractiveSection, float TopMargin) {
+		Section.m_bCanCacheStaticLayer = true;
+		Section.m_bKeepCachedHeightStable = true;
+		Section.m_StaticCachePadding = MarginBetweenViews * 0.6666f;
+		Section.m_RenderStaticLayerFn = [&, pTitle, TopMargin](CUIRect &Col) -> float {
+			const float SavedY = Col.y;
+			CUIRect MeasuredColumn = Col;
+			const float Height = MeasureSection(MeasuredColumn);
+			CUIRect BoxRect = {Col.x, Col.y + TopMargin, Col.w, Height - TopMargin};
+			DrawSectionBox(BoxRect);
+			Col.HSplitTop(TopMargin, nullptr, &Col);
+			Col.HSplitTop(HeadlineHeight, &Label, &Col);
+			Ui()->DoLabel(&Label, Localize(pTitle), HeadlineFontSize, TEXTALIGN_ML);
+			Col.HSplitTop(MarginSmall, nullptr, &Col);
+			Col.y = SavedY + Height;
+			return Height;
+		};
+		Section.m_RenderInteractiveLayerFn = [&, TopMargin](CUIRect &Col) -> float {
+			const float SavedY = Col.y;
+			Col.HSplitTop(TopMargin, nullptr, &Col);
+			Col.HSplitTop(HeadlineHeight, nullptr, &Col);
+			Col.HSplitTop(MarginSmall, nullptr, &Col);
+			RenderInteractiveSection(Col);
+			return Col.y - SavedY;
+		};
+	};
 	auto FillCachedStaticLayer = [&](SSettingsSection &Section, auto &LayoutSection) {
 		Section.m_bCanCacheStaticLayer = true;
 		Section.m_StaticCachePadding = MarginBetweenViews * 0.6666f;
@@ -1012,15 +1617,6 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			float SavedY = Col.y;
 			LayoutSection(Col, true);
 			return Col.y - SavedY;
-		};
-		Section.m_ShouldRenderInteractiveLayerFn = [this](const CUIRect &Rect) {
-			if(Ui()->MouseInside(&Rect))
-				return true;
-			if(Ui()->ActiveItem() == nullptr)
-				return false;
-			const vec2 MousePos = Ui()->MousePos();
-			return MousePos.x >= Rect.x && MousePos.x <= Rect.x + Rect.w &&
-			       MousePos.y >= Rect.y && MousePos.y <= Rect.y + Rect.h;
 		};
 	};
 	[[maybe_unused]] auto CalcHudSectionHeight = [&]() {
@@ -1207,6 +1803,111 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
 			return BoxRect;
+		};
+		auto MeasureVisualFontSection = [&](CUIRect &CurrentColumn) -> float {
+			const float SavedY = CurrentColumn.y;
+			LayoutVisualFontSection(CurrentColumn, false);
+			return CurrentColumn.y - SavedY;
+		};
+		auto RenderVisualFontInteractiveSection = [&](CUIRect &CurrentColumn) {
+			CUIRect TmpRect;
+			const bool RenderFontDropdown = ShouldRenderSection(CurrentColumn, 0.0f, LineSize);
+			if(RenderFontDropdown)
+			{
+				CUIRect FontDropDownRect;
+				CurrentColumn.HSplitTop(LineSize, &FontDropDownRect, &CurrentColumn);
+				FontDropDownRect.VSplitLeft(100.0f, &Label, &FontDropDownRect);
+				Ui()->DoLabel(&Label, Localize("Custom Font: "), FontSize, TEXTALIGN_ML);
+				static std::vector<std::string> s_FontDropDownNamesOwned;
+				static std::vector<const char *> s_FontDropDownNames;
+				static CUi::SDropDownState s_FontDropDownState;
+				static CScrollRegion s_FontDropDownScrollRegion;
+				s_FontDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_FontDropDownScrollRegion;
+				s_FontDropDownState.m_SelectionPopupContext.m_SpecialFontRenderMode = true;
+				const auto &CustomFaces = *TextRender()->GetCustomFaces();
+				const bool FacesChanged = s_FontDropDownNamesOwned != CustomFaces;
+				if(FacesChanged)
+				{
+					s_FontDropDownNamesOwned = CustomFaces;
+					s_FontDropDownNames.clear();
+					s_FontDropDownNames.reserve(s_FontDropDownNamesOwned.size());
+					for(const auto &FaceName : s_FontDropDownNamesOwned)
+						s_FontDropDownNames.push_back(FaceName.c_str());
+				}
+				int FontSelectedOld = -1;
+				for(size_t i = 0; i < CustomFaces.size(); ++i)
+				{
+					if(str_find_nocase(g_Config.m_TcCustomFont, CustomFaces[i].c_str()))
+						FontSelectedOld = i;
+				}
+				CUIRect FontDirectory;
+				FontDropDownRect.VSplitRight(20.0f, &FontDropDownRect, &FontDirectory);
+				FontDropDownRect.VSplitRight(MarginSmall, &FontDropDownRect, nullptr);
+				const int FontSelectedNew = Ui()->DoDropDown(&FontDropDownRect, FontSelectedOld, s_FontDropDownNames.data(), s_FontDropDownNames.size(), s_FontDropDownState);
+				if(FontSelectedOld != FontSelectedNew && FontSelectedNew >= 0 && (size_t)FontSelectedNew < s_FontDropDownNames.size())
+				{
+					str_copy(g_Config.m_TcCustomFont, s_FontDropDownNames[FontSelectedNew]);
+					s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
+					s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
+					TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
+					TextRender()->OnPreWindowResize();
+					GameClient()->OnWindowResize();
+					GameClient()->Editor()->OnWindowResize();
+					TextRender()->OnWindowResize();
+					GameClient()->m_MapImages.SetTextureScale(101);
+					GameClient()->m_MapImages.SetTextureScale(g_Config.m_ClTextEntitiesSize);
+				}
+				static CButtonContainer s_FontDirectoryId;
+				if(Ui()->DoButton_FontIcon(&s_FontDirectoryId, FONT_ICON_FOLDER, 0, &FontDirectory, IGraphics::CORNER_ALL))
+				{
+					Storage()->CreateFolder("qmclient", IStorage::TYPE_SAVE);
+					Storage()->CreateFolder("qmclient/fonts", IStorage::TYPE_SAVE);
+					char aBuf[IO_MAX_PATH_LENGTH];
+					Storage()->GetCompletePath(IStorage::TYPE_SAVE, "qmclient/fonts", aBuf, sizeof(aBuf));
+					Client()->ViewFile(aBuf);
+				}
+			}
+			else
+			{
+				SkipSection(CurrentColumn, 0.0f, LineSize);
+			}
+
+			const bool RenderHammerBlock = ShouldRenderSection(CurrentColumn, 0.0f, MarginExtraSmall * 2.0f + LineSize);
+			if(RenderHammerBlock)
+			{
+				CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+				CUIRect DropDownRect;
+				CurrentColumn.HSplitTop(LineSize, &DropDownRect, &CurrentColumn);
+				DropDownRect.VSplitLeft(120.0f, &Label, &DropDownRect);
+				Ui()->DoLabel(&Label, Localize("Hammer Mode: "), FontSize, TEXTALIGN_ML);
+				static std::vector<const char *> s_DropDownNames;
+				s_DropDownNames = {Localize("Normal", "Hammer Mode"), Localize("Rotate with cursor", "Hammer Mode"), Localize("Rotate with cursor like gun", "Hammer Mode")};
+				static CUi::SDropDownState s_DropDownState;
+				static CScrollRegion s_DropDownScrollRegion;
+				s_DropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_DropDownScrollRegion;
+				g_Config.m_TcHammerRotatesWithCursor = Ui()->DoDropDown(&DropDownRect, g_Config.m_TcHammerRotatesWithCursor, s_DropDownNames.data(), s_DropDownNames.size(), s_DropDownState);
+				CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+			}
+			else
+			{
+				SkipSection(CurrentColumn, 0.0f, MarginExtraSmall * 2.0f + LineSize);
+			}
+
+			if(ShouldRenderSection(CurrentColumn, 0.0f, LineSize * 2.0f))
+			{
+				CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+				Ui()->DoScrollbarOption(&g_Config.m_TcCursorScale, &g_Config.m_TcCursorScale, &Button, Localize("Ingame cursor scale"), 0, 500, &CUi::ms_LinearScrollbarScale, 0, "%");
+				CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+				if(g_Config.m_TcAnimateWheelTime > 0)
+					Ui()->DoScrollbarOption(&g_Config.m_TcAnimateWheelTime, &g_Config.m_TcAnimateWheelTime, &Button, Localize("Wheel animate"), 0, 1000, &CUi::ms_LinearScrollbarScale, 0, "ms");
+				else
+					Ui()->DoScrollbarOption(&g_Config.m_TcAnimateWheelTime, &g_Config.m_TcAnimateWheelTime, &Button, Localize("Wheel animate"), 0, 1000, &CUi::ms_LinearScrollbarScale, 0, "ms (off)");
+			}
+			else
+			{
+				SkipSection(CurrentColumn, 0.0f, LineSize * 2.0f);
+			}
+			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 		};
 
 		auto LayoutVisualNameplateSection = [&](CUIRect &CurrentColumn, bool Render) {
@@ -1559,6 +2260,25 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
 			return BoxRect;
 		};
+		auto MeasurePetSection = [&](CUIRect &CurrentColumn) -> float {
+			const float SavedY = CurrentColumn.y;
+			LayoutPetSection(CurrentColumn, false);
+			return CurrentColumn.y - SavedY;
+		};
+		auto RenderPetInteractiveSection = [&](CUIRect &CurrentColumn) {
+			CUIRect TmpRect;
+			CUIRect PetSkinBox;
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcPetShow, Localize("Show the pet"), &g_Config.m_TcPetShow, &CurrentColumn, LineSize);
+			CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+			Ui()->DoScrollbarOption(&g_Config.m_TcPetSize, &g_Config.m_TcPetSize, &Button, Localize("Pet size"), 10, 500, &CUi::ms_LinearScrollbarScale, 0, "%");
+			CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+			Ui()->DoScrollbarOption(&g_Config.m_TcPetAlpha, &g_Config.m_TcPetAlpha, &Button, Localize("Pet alpha"), 10, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+			CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &PetSkinBox, &CurrentColumn);
+			PetSkinBox.VSplitMid(&Label, &Button);
+			Ui()->DoLabel(&Label, Localize("Pet Skin:"), FontSize, TEXTALIGN_ML);
+			static CLineInput s_PetSkin(g_Config.m_TcPetSkin, sizeof(g_Config.m_TcPetSkin));
+			Ui()->DoEditBox(&s_PetSkin, &Button, EditBoxFontSize);
+		};
 		auto LayoutAutoReplySection = [&](CUIRect &CurrentColumn, bool Render) {
 			CUIRect BoxRect;
 			CUIRect TmpRect;
@@ -1614,6 +2334,35 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
 			return BoxRect;
+		};
+		auto MeasureAutoReplySection = [&](CUIRect &CurrentColumn) -> float {
+			const float SavedY = CurrentColumn.y;
+			LayoutAutoReplySection(CurrentColumn, false);
+			return CurrentColumn.y - SavedY;
+		};
+		auto RenderAutoReplyInteractiveSection = [&](CUIRect &CurrentColumn) {
+			CUIRect ReplyRect;
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAutoReplyMuted, Localize("Automatically reply to muted players"), &g_Config.m_TcAutoReplyMuted, &CurrentColumn, LineSize);
+			CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &ReplyRect, &CurrentColumn);
+			if(g_Config.m_TcAutoReplyMuted)
+			{
+				ReplyRect.HSplitTop(MarginExtraSmall, nullptr, &ReplyRect);
+				static CLineInput s_MutedReply(g_Config.m_TcAutoReplyMutedMessage, sizeof(g_Config.m_TcAutoReplyMutedMessage));
+				s_MutedReply.SetEmptyText(Localize("I muted you"));
+				Ui()->DoEditBox(&s_MutedReply, &ReplyRect, EditBoxFontSize);
+			}
+			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
+
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAutoReplyMinimized, Localize("Automatically reply while the window is unfocused"), &g_Config.m_TcAutoReplyMinimized, &CurrentColumn, LineSize);
+			CurrentColumn.HSplitTop(LineSize + MarginExtraSmall, &ReplyRect, &CurrentColumn);
+			if(g_Config.m_TcAutoReplyMinimized)
+			{
+				ReplyRect.HSplitTop(MarginExtraSmall, nullptr, &ReplyRect);
+				static CLineInput s_MinimizedReply(g_Config.m_TcAutoReplyMinimizedMessage, sizeof(g_Config.m_TcAutoReplyMinimizedMessage));
+				s_MinimizedReply.SetEmptyText(Localize("I am away from the game window"));
+				Ui()->DoEditBox(&s_MinimizedReply, &ReplyRect, EditBoxFontSize);
+			}
+			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 		};
 		auto LayoutPlayerIndicatorSection = [&](CUIRect &CurrentColumn, bool Render) {
 			CUIRect BoxRect;
@@ -1714,21 +2463,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			SSettingsSection S;
 
 			// -- Visual: Font & Cursor --
-			S.m_pName = "Visual: Font & Cursor";
-			S.m_MeasureFn = [&LayoutVisualFontSection](CUIRect &Col) -> float {
-				float SavedY = Col.y;
-				LayoutVisualFontSection(Col, false);
-				return Col.y - SavedY;
-			};
-			S.m_RenderCompactFn = [&LayoutVisualFontSection, &RenderBoxedFullSection](CUIRect &Col) -> float {
-				return RenderBoxedFullSection(LayoutVisualFontSection, Col);
-			};
-			S.m_RenderFullFn = [&LayoutVisualFontSection, &RenderBoxedFullSection](CUIRect &Col) -> float {
-				return RenderBoxedFullSection(LayoutVisualFontSection, Col);
-			};
-			FillCachedStaticLayer(S, LayoutVisualFontSection);
-			S.m_DependencyConfigInts = {&g_Config.m_TcCursorScale, &g_Config.m_TcAnimateWheelTime, &g_Config.m_TcHammerRotatesWithCursor};
-			vLeftSections.push_back(S);
+			vLeftSections.push_back(BuildTClientThemeCacheSection());
 
 			// -- Visual: Nameplates --
 			S = SSettingsSection{};
@@ -1856,22 +2591,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			vLeftSections.push_back(S);
 
 			// -- 自动回复 --
-			S = SSettingsSection{};
-			S.m_pName = "自动回复";
-			S.m_MeasureFn = [&LayoutAutoReplySection](CUIRect &Col) -> float {
-				float SavedY = Col.y;
-				LayoutAutoReplySection(Col, false);
-				return Col.y - SavedY;
-			};
-			S.m_RenderCompactFn = [&LayoutAutoReplySection, &RenderBoxedFullSection](CUIRect &Col) -> float {
-				return RenderBoxedFullSection(LayoutAutoReplySection, Col);
-			};
-			S.m_RenderFullFn = [&LayoutAutoReplySection, &RenderBoxedFullSection](CUIRect &Col) -> float {
-				return RenderBoxedFullSection(LayoutAutoReplySection, Col);
-			};
-			FillCachedStaticLayer(S, LayoutAutoReplySection);
-			S.m_DependencyConfigInts = {&g_Config.m_TcAutoReplyMuted, &g_Config.m_TcAutoReplyMinimized};
-			vLeftSections.push_back(S);
+			vLeftSections.push_back(BuildTClientAutoReplyCacheSection());
 
 			// -- Player Indicator --
 			S = SSettingsSection{};
@@ -1892,22 +2612,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			vLeftSections.push_back(S);
 
 			// -- 宠物 --
-			S = SSettingsSection{};
-			S.m_pName = "宠物";
-			S.m_MeasureFn = [&LayoutPetSection](CUIRect &Col) -> float {
-				float SavedY = Col.y;
-				LayoutPetSection(Col, false);
-				return Col.y - SavedY;
-			};
-			S.m_RenderCompactFn = [&LayoutPetSection, &RenderBoxedFullSection](CUIRect &Col) -> float {
-				return RenderBoxedFullSection(LayoutPetSection, Col);
-			};
-			S.m_RenderFullFn = [&LayoutPetSection, &RenderBoxedFullSection](CUIRect &Col) -> float {
-				return RenderBoxedFullSection(LayoutPetSection, Col);
-			};
-			FillCachedStaticLayer(S, LayoutPetSection);
-			S.m_DependencyConfigInts = {&g_Config.m_TcPetShow, &g_Config.m_TcPetSize, &g_Config.m_TcPetAlpha};
-			vLeftSections.push_back(S);
+			vLeftSections.push_back(BuildTClientPetCacheSection());
 			s_VisualFontLoader.Register(std::move(vLeftSections));
 		}
 
@@ -2035,6 +2740,59 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 			BoxRect.h = CurrentColumn.y - BoxRect.y;
 			return BoxRect;
+		};
+		auto MeasureHudSection = [&](CUIRect &CurrentColumn) -> float {
+			const float SavedY = CurrentColumn.y;
+			LayoutHudSection(CurrentColumn, false);
+			return CurrentColumn.y - SavedY;
+		};
+		auto RenderHudInteractiveSection = [&](CUIRect &CurrentColumn) {
+			CUIRect TmpRect;
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcMiniVoteHud, Localize("Show compact vote HUD"), &g_Config.m_TcMiniVoteHud, &CurrentColumn, LineSize);
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcMiniDebug, Localize("Show position and angle (mini debug)"), &g_Config.m_TcMiniDebug, &CurrentColumn, LineSize);
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcRenderCursorSpec, Localize("Show the cursor while free spectating"), &g_Config.m_TcRenderCursorSpec, &CurrentColumn, LineSize);
+			CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+			if(g_Config.m_TcRenderCursorSpec)
+				Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcNotifyWhenLast, Localize("Notify when only one tee is still alive:"), &g_Config.m_TcNotifyWhenLast, &CurrentColumn, LineSize);
+			CUIRect NotificationConfig;
+			CurrentColumn.HSplitTop(LineSize + MarginSmall, &NotificationConfig, &CurrentColumn);
+			if(g_Config.m_TcNotifyWhenLast)
+			{
+				NotificationConfig.VSplitMid(&Button, &NotificationConfig);
+				static CLineInput s_LastInput(g_Config.m_TcNotifyWhenLastText, sizeof(g_Config.m_TcNotifyWhenLastText));
+				s_LastInput.SetEmptyText(Localize("You're the last one!"));
+				Button.HSplitTop(MarginSmall, nullptr, &Button);
+				Ui()->DoEditBox(&s_LastInput, &Button, EditBoxFontSize);
+				static CButtonContainer s_ClientNotifyWhenLastColor;
+				DoLine_ColorPicker(&s_ClientNotifyWhenLastColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &NotificationConfig, "", &g_Config.m_TcNotifyWhenLastColor, ColorRGBA(1.0f, 1.0f, 1.0f), false);
+				CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+				Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastX, &g_Config.m_TcNotifyWhenLastX, &Button, Localize("Horizontal position"), 1, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+				CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+				Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastY, &g_Config.m_TcNotifyWhenLastY, &Button, Localize("Vertical position"), 1, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
+				CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+				Ui()->DoScrollbarOption(&g_Config.m_TcNotifyWhenLastSize, &g_Config.m_TcNotifyWhenLastSize, &Button, Localize("Font size"), 1, 50);
+			}
+			else
+			{
+				CurrentColumn.HSplitTop(LineSize * 3.0f, nullptr, &CurrentColumn);
+			}
+
+			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcShowCenter, Localize("Show the screen center line"), &g_Config.m_TcShowCenter, &CurrentColumn, LineSize);
+			CurrentColumn.HSplitTop(LineSize + MarginSmall, &Button, &CurrentColumn);
+			if(g_Config.m_TcShowCenter)
+			{
+				static CButtonContainer s_ShowCenterLineColor;
+				DoLine_ColorPicker(&s_ShowCenterLineColor, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &Button, Localize("Screen center line color"), &g_Config.m_TcShowCenterColor, CConfig::ms_TcShowCenterColor, false, nullptr, true);
+				CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
+				Ui()->DoScrollbarOption(&g_Config.m_TcShowCenterWidth, &g_Config.m_TcShowCenterWidth, &Button, Localize("Screen center line width"), 0, 20);
+			}
+			else
+			{
+				CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+			}
+			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 		};
 		auto LayoutTeeStatusBarSection = [&](CUIRect &CurrentColumn, bool Render) {
 			CUIRect BoxRect;
@@ -2422,21 +3180,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			SSettingsSection S;
 
 			// -- HUD --
-			S.m_pName = "HUD";
-			S.m_MeasureFn = [&LayoutHudSection](CUIRect &Col) -> float {
-				float SavedY = Col.y;
-				LayoutHudSection(Col, false);
-				return Col.y - SavedY;
-			};
-			S.m_RenderCompactFn = [&LayoutHudSection, &RenderBoxedFullSection](CUIRect &Col) -> float {
-				return RenderBoxedFullSection(LayoutHudSection, Col);
-			};
-			S.m_RenderFullFn = [&LayoutHudSection, &RenderBoxedFullSection](CUIRect &Col) -> float {
-				return RenderBoxedFullSection(LayoutHudSection, Col);
-			};
-			FillCachedStaticLayer(S, LayoutHudSection);
-			S.m_DependencyConfigInts = {&g_Config.m_TcMiniVoteHud, &g_Config.m_TcMiniDebug, &g_Config.m_TcRenderCursorSpec};
-			vRightSections.push_back(S);
+			vRightSections.push_back(BuildTClientHudCacheSection());
 
 			// -- Tee status bar --
 			S = SSettingsSection{};
@@ -2707,7 +3451,7 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		else
 		{
 			const bool ResourcesReady = PrewarmSettingsPageResources(JobPage, PageTab);
-			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, Job.m_ScrollY);
+			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, Job.m_ScrollY, ResourcesReady);
 			m_aSettingsPagePrewarmed[Slot] = ResourcesReady && PageReady;
 			if(m_aSettingsPagePrewarmed[Slot])
 				++m_SettingsStartupWarmupCursor;

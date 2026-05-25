@@ -122,6 +122,25 @@ public:
 		bool IsAlwaysLoaded() const { return m_AlwaysLoaded; }
 		EState State() const { return m_State; }
 		const std::unique_ptr<CSkin> &Skin() const { return m_pSkin; }
+		struct SUsageTrackingUpdate
+		{
+			bool m_ShouldTouch = false;
+			bool m_ShouldErase = false;
+		};
+		static bool TracksUsage(EState State, bool AlwaysLoaded)
+		{
+			return !AlwaysLoaded &&
+				(State == EState::PENDING || State == EState::LOADING || State == EState::LOADED);
+		}
+		static SUsageTrackingUpdate UsageTrackingUpdate(EState State, bool AlwaysLoaded, bool HasUsageEntry)
+		{
+			const bool ShouldTrack = TracksUsage(State, AlwaysLoaded);
+			return {ShouldTrack && !HasUsageEntry, !ShouldTrack && HasUsageEntry};
+		}
+		static bool ShouldDiscardUsageEntryBeforeUnload(bool ExistsInSkinMap, EState State, bool AlwaysLoaded)
+		{
+			return !ExistsInSkinMap || !TracksUsage(State, AlwaysLoaded);
+		}
 
 		/**
 		 * Request that this skin should be loaded and should stay loaded.
@@ -214,7 +233,7 @@ public:
 
 	private:
 		std::vector<CSkinListEntry> m_vSkins;
-		int m_UnfilteredCount;
+		int m_UnfilteredCount = 0;
 		bool m_NeedsUpdate = true;
 	};
 
@@ -364,7 +383,7 @@ private:
 			std::string m_Filter;
 		};
 
-		const SResult &Result() const { return m_Result; }
+		SResult TakeResult() { return std::move(m_Result); }
 
 	protected:
 		void Run() override;
@@ -385,7 +404,7 @@ private:
 			std::vector<std::pair<std::string, int>> m_vEntries;
 		};
 
-		const SResult &Result() const { return m_Result; }
+		SResult TakeResult() { return std::move(m_Result); }
 
 	protected:
 		void Run() override;
@@ -409,6 +428,7 @@ private:
 	std::shared_ptr<CSkinDirectoryScanJob> m_pSkinDirectoryScanJob;
 	std::shared_ptr<CSkinListPlanJob> m_pSkinListPlanJob;
 	std::vector<std::string> m_vPendingSkinListMergeNames;
+	std::vector<CSkinListEntry> m_vPendingSkinListEntries;
 	size_t m_SkinListMergeCursor = 0;
 	int m_PendingSkinListUnfilteredCount = 0;
 	int m_SkinListPlanGeneration = 0;
@@ -454,6 +474,8 @@ private:
 	void ProcessSkinDirectoryScanJob();
 	void QueueSkinListPlanJob();
 	void ProcessSkinListPlanJob();
+	CSkinListEntry MakeSkinListEntry(const CSkinContainer *pSkinContainer) const;
+	void SeedVisibleSkinListIfEmpty();
 
 	static void ConAddFavoriteSkin(IConsole::IResult *pResult, void *pUserData);
 	static void ConRemFavoriteSkin(IConsole::IResult *pResult, void *pUserData);

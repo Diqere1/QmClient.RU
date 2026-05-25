@@ -260,7 +260,17 @@ void CCountryFlags::PrewarmByIndices(const std::vector<int> &vIndices)
 
 bool CCountryFlags::PrewarmByCountryCodesReady(const std::vector<int> &vCountryCodes)
 {
-	PrewarmByCountryCodes(vCountryCodes);
+	constexpr int MaxStartsPerCall = 16;
+	int StartsThisCall = 0;
+	for(int CountryCode : vCountryCodes)
+	{
+		size_t Index = m_aCodeIndexLUT[maximum(0, (CountryCode - CODE_LB) % CODE_RANGE)];
+		if(Index >= m_vCountryFlags.size() || m_vLoadTriggered[Index])
+			continue;
+		StartFlagLoadJob((int)Index);
+		if(++StartsThisCall >= MaxStartsPerCall)
+			break;
+	}
 	ProcessCompletedJobs();
 	for(int CountryCode : vCountryCodes)
 	{
@@ -273,7 +283,16 @@ bool CCountryFlags::PrewarmByCountryCodesReady(const std::vector<int> &vCountryC
 
 bool CCountryFlags::PrewarmByIndicesReady(const std::vector<int> &vIndices)
 {
-	PrewarmByIndices(vIndices);
+	constexpr int MaxStartsPerCall = 16;
+	int StartsThisCall = 0;
+	for(int Index : vIndices)
+	{
+		if(Index < 0 || Index >= (int)m_vCountryFlags.size() || m_vLoadTriggered[Index])
+			continue;
+		StartFlagLoadJob(Index);
+		if(++StartsThisCall >= MaxStartsPerCall)
+			break;
+	}
 	ProcessCompletedJobs();
 	for(int Index : vIndices)
 	{

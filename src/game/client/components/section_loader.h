@@ -62,6 +62,7 @@ struct SSettingsSection
 	uint64_t m_LastConfigHash = 0;
 	bool m_bDirty = true; // force render on first frame
 	bool m_bCanCacheStaticLayer = false;
+	bool m_bKeepCachedHeightStable = false;
 	bool m_bCacheValid = false;
 	ESettingsCacheDirtyReason m_DirtyReason = ESettingsCacheDirtyReason::CONFIG;
 	SSettingsSectionCacheRuntimeKey m_CacheRuntimeKey;
@@ -172,6 +173,9 @@ public:
 	void SetRenderTargetSupportedForTests(bool Supported);
 	void MarkCacheValidForTests(const char *pName);
 	bool IsCacheValidForTests(const char *pName) const;
+	void InvalidateSectionByName(const char *pName, ESettingsCacheDirtyReason Reason = ESettingsCacheDirtyReason::CONFIG);
+	bool PrewarmSectionByName(const char *pName, CUIRect MainView, float ScrollY);
+	bool DrawCachedSectionByName(const char *pName, CUIRect MainView, float ScrollY);
 
 	// -- State exposed for the rendering loop (updated externally) --
 

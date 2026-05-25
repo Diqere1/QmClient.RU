@@ -127,6 +127,7 @@ SSettingsSectionCacheRuntimeKey MakeSettingsPageRuntimeKey(CUIRect View, IGraphi
 	}
 	return RuntimeKey;
 }
+
 }
 
 using namespace FontIcons;
@@ -1926,6 +1927,17 @@ void CMenus::Render()
 			}
 
 			CPerfTimer ContentTimer;
+			const bool CanPrewarmSettings = g_Config.m_QmSettingsPrewarm != 0 &&
+				Ui()->ActiveItem() == nullptr &&
+				Ui()->HotItem() == nullptr &&
+				!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
+				!Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) &&
+				!Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) &&
+				!Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT) &&
+				!m_SettingsPageSwitchActive &&
+				!m_SettingsScrollActive;
+			if(CanPrewarmSettings)
+				(void)PrewarmSettingsRuntimeCaches(MainView);
 			if(m_MenuPage == PAGE_NEWS)
 			{
 				RenderNews(MainView);
@@ -1945,16 +1957,6 @@ void CMenus::Render()
 			else if(m_MenuPage == PAGE_SETTINGS)
 			{
 				RenderSettings(MainView);
-				if(g_Config.m_QmSettingsPrewarm != 0 &&
-					Ui()->ActiveItem() == nullptr &&
-					Ui()->HotItem() == nullptr &&
-					!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
-					!Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) &&
-					!Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) &&
-					!Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT) &&
-					!m_SettingsPageSwitchActive &&
-					!m_SettingsScrollActive)
-					(void)PrewarmSettingsRuntimeCaches(MainView);
 			}
 			else
 			{
@@ -2007,6 +2009,17 @@ void CMenus::Render()
 			}
 
 			CPerfTimer ContentTimer;
+			const bool CanPrewarmSettings = g_Config.m_QmSettingsPrewarm != 0 &&
+				Ui()->ActiveItem() == nullptr &&
+				Ui()->HotItem() == nullptr &&
+				!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
+				!Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) &&
+				!Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) &&
+				!Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT) &&
+				!m_SettingsPageSwitchActive &&
+				!m_SettingsScrollActive;
+			if(CanPrewarmSettings)
+				(void)PrewarmSettingsRuntimeCaches(MainView);
 			if(m_GamePage == PAGE_GAME)
 			{
 				RenderGame(MainView);
@@ -2043,16 +2056,6 @@ void CMenus::Render()
 			else if(m_GamePage == PAGE_SETTINGS)
 			{
 				RenderSettings(MainView);
-				if(g_Config.m_QmSettingsPrewarm != 0 &&
-					Ui()->ActiveItem() == nullptr &&
-					Ui()->HotItem() == nullptr &&
-					!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
-					!Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) &&
-					!Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) &&
-					!Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT) &&
-					!m_SettingsPageSwitchActive &&
-					!m_SettingsScrollActive)
-					(void)PrewarmSettingsRuntimeCaches(MainView);
 			}
 			else
 			{
@@ -3187,6 +3190,69 @@ void CMenus::DestroySettingsPageRuntimeCaches()
 		Prewarmed = false;
 	m_SettingsStartupWarmupCursor = 0;
 	m_SettingsRuntimePrewarmCursor = 0;
+	m_SettingsGenericSectionCaches.clear();
+}
+
+static const char *SettingsGenericSectionPageName(int Page)
+{
+	switch(Page)
+	{
+	case CMenus::SETTINGS_LANGUAGE: return "language";
+	case CMenus::SETTINGS_PLAYER: return "player";
+	case CMenus::SETTINGS_TEE: return "tee";
+	case CMenus::SETTINGS_GENERAL: return "general";
+	case CMenus::SETTINGS_CONTROLS: return "controls";
+	case CMenus::SETTINGS_GRAPHICS: return "graphics";
+	case CMenus::SETTINGS_SOUND: return "sound";
+	case CMenus::SETTINGS_DDNET: return "ddnet";
+	case CMenus::SETTINGS_QMCLIENT: return "qmclient";
+	case CMenus::SETTINGS_APPEARANCE: return "appearance";
+	case CMenus::SETTINGS_ASSETS: return "assets";
+	default: return "unknown";
+	}
+}
+
+bool CMenus::PrepareGenericSettingsRuntimeCacheSection(CUIRect SectionView, int Page, int Tab, const char *pSectionId, CSectionLoader *&pLoader, const char *&pLoaderSectionName, bool ConfigureRuntimeState)
+{
+	pLoader = nullptr;
+	pLoaderSectionName = nullptr;
+	if(pSectionId == nullptr || (Page == SETTINGS_TCLIENT && Tab == 0))
+		return false;
+
+	const std::string CacheKey = SettingsSectionCacheKey(Page, Tab, pSectionId);
+	auto &pCache = m_SettingsGenericSectionCaches[CacheKey];
+	if(!pCache)
+	{
+		pCache = std::make_unique<SSettingsGenericSectionCache>();
+		pCache->m_SectionName = SettingsGenericSectionPageName(Page) + std::string(":") + pSectionId;
+	}
+
+	SSettingsSection Section;
+	Section.m_pName = pCache->m_SectionName.c_str();
+	Section.m_CachedHeight = maximum(1.0f, SectionView.h);
+	Section.m_bCanCacheStaticLayer = false;
+	Section.m_StaticCachePadding = 2.0f;
+	Section.m_MeasureFn = [Height = SectionView.h](CUIRect &) -> float {
+		return maximum(1.0f, Height);
+	};
+	Section.m_RenderStaticLayerFn = [](CUIRect &Rect) -> float {
+		return maximum(1.0f, Rect.h);
+	};
+	Section.m_RenderInteractiveLayerFn = [](CUIRect &Rect) -> float {
+		return maximum(1.0f, Rect.h);
+	};
+
+	pLoader = &pCache->m_Loader;
+	pLoaderSectionName = pCache->m_SectionName.c_str();
+	pLoader->Register({Section});
+	if(ConfigureRuntimeState)
+	{
+		pLoader->SetGraphicsForCache(Graphics());
+		pLoader->SetRuntimeKey(MakeSettingsPageRuntimeKey(SectionView, Graphics(), Page, Tab, 0.0f));
+		pLoader->SetProgressiveEnabled(false);
+		pLoader->SetLiveStaticCacheRecordingEnabled(false);
+	}
+	return true;
 }
 
 CUIElement &CMenus::SettingsTextElement(int Page, int Tab, const char *pTextId)
@@ -3227,9 +3293,11 @@ CMenus::SSettingsPageRuntimeCache *CMenus::GetSettingsPageRuntimeCache(int Page,
 	return &m_aSettingsPageRuntimeCaches[Slot];
 }
 
-bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY)
+bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY, bool ResourcesReady)
 {
 	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+		return false;
+	if(!SettingsPageCanUsePageFbo(Page, SETTINGS_ASSETS))
 		return false;
 	if(!Graphics()->IsRenderTargetSupported())
 		return false;
@@ -3244,7 +3312,12 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	const int Width = std::max(1, (int)ContentView.w);
 	const int Height = std::max(1, (int)ContentView.h);
 	if(SettingsPageRuntimeCacheMatches(pCache->m_State, Page, Tab, Width, Height, RuntimeKey))
-		return true;
+	{
+		if(pCache->m_State.m_ResourcesReadyAtRecord)
+			return true;
+		if(!ResourcesReady)
+			return false;
+	}
 
 	if(pCache->m_RenderTarget.IsValid() && (pCache->m_RenderTargetWidth != Width || pCache->m_RenderTargetHeight != Height))
 		Graphics()->DestroyRenderTarget(&pCache->m_RenderTarget);
@@ -3318,6 +3391,7 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	pCache->m_State.m_Height = Height;
 	pCache->m_State.m_Valid = true;
 	pCache->m_State.m_DrawnOnce = false;
+	pCache->m_State.m_ResourcesReadyAtRecord = ResourcesReady;
 	return true;
 }
 
@@ -3328,7 +3402,7 @@ bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
 	{
 		std::vector<int> vCountryCodes;
 		const int NumLanguages = (int)g_Localization.Languages().size();
-		vCountryCodes.reserve(minimum(NumLanguages, ResourceWarmRows) + 1);
+		vCountryCodes.reserve(NumLanguages);
 		for(int i = 0; i < NumLanguages; ++i)
 		{
 			const auto &Language = g_Localization.Languages()[i];
@@ -3338,15 +3412,15 @@ bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
 				break;
 			}
 		}
-		for(int i = 0; i < minimum(NumLanguages, ResourceWarmRows); ++i)
+		for(int i = 0; i < NumLanguages; ++i)
 			vCountryCodes.push_back(g_Localization.Languages()[i].m_CountryCode);
 		return GameClient()->m_CountryFlags.PrewarmByCountryCodesReady(BuildSettingsCountryFlagWarmupPlan(vCountryCodes));
 	}
 	else if(Page == SETTINGS_PLAYER)
 	{
 		std::vector<int> vIndices;
-		vIndices.reserve(ResourceWarmRows + 1);
-		for(int i = 0; i < minimum((int)GameClient()->m_CountryFlags.Num(), ResourceWarmRows); ++i)
+		vIndices.reserve(GameClient()->m_CountryFlags.Num());
+		for(int i = 0; i < (int)GameClient()->m_CountryFlags.Num(); ++i)
 			vIndices.push_back(i);
 		return GameClient()->m_CountryFlags.PrewarmByIndicesReady(vIndices);
 	}
@@ -3356,12 +3430,18 @@ bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
 		const bool DummyReady = GameClient()->m_Skins.PrewarmPlayerPreviewReady(1, ResourceWarmRows);
 		return PlayerReady && DummyReady;
 	}
+	else if(Page == SETTINGS_ASSETS)
+	{
+		return PrewarmSettingsAssetResources();
+	}
 	return true;
 }
 
 bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY)
 {
 	if(g_Config.m_QmSettingsFboCache == 0)
+		return false;
+	if(!SettingsPageCanUsePageFbo(Page, SETTINGS_ASSETS))
 		return false;
 	if(Page == SETTINGS_TCLIENT)
 		Tab = CanonicalizeTClientCacheTab(Tab);
@@ -3374,7 +3454,8 @@ bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab
 	if(pCache->m_State.m_DrawnOnce)
 		return false;
 	const SSettingsSectionCacheRuntimeKey RuntimeKey = MakeSettingsPageRuntimeKey(ContentView, Graphics(), Page, Tab, ScrollY);
-	if(!pCache->m_RenderTarget.IsValid() || !SettingsPageRuntimeCacheMatches(pCache->m_State, Page, Tab, Width, Height, RuntimeKey))
+	const bool CacheMatches = SettingsPageRuntimeCacheMatches(pCache->m_State, Page, Tab, Width, Height, RuntimeKey);
+	if(!SettingsPageCacheCanUseRecordedResources(CacheMatches, pCache->m_RenderTarget.IsValid(), pCache->m_State.m_ResourcesReadyAtRecord))
 		return false;
 
 	Graphics()->DrawRenderTarget(pCache->m_RenderTarget, ContentView.x, ContentView.y, ContentView.w, ContentView.h);
@@ -3382,9 +3463,20 @@ bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab
 	return true;
 }
 
+void CMenus::InvalidateSettingsPageRuntimeCache(int Page, int Tab)
+{
+	if(Page == SETTINGS_TCLIENT)
+		Tab = CanonicalizeTClientCacheTab(Tab);
+	const int Slot = SettingsPageRuntimeCacheSlot(Page, Tab);
+	if(Slot < 0 || Slot >= SETTINGS_PAGE_RUNTIME_CACHE_SLOTS)
+		return;
+
+	m_aSettingsPageRuntimeCaches[Slot].m_State = {};
+	m_aSettingsPagePrewarmed[Slot] = false;
+}
+
 bool CMenus::PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId)
 {
-	(void)SectionView;
 	const SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
 	if(!SettingsSectionCanRecordStaticFbo(Registry, Page, Tab, pSectionId))
 		return false;
@@ -3392,23 +3484,45 @@ bool CMenus::PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, i
 		return false;
 	if(Ui()->ActiveItem() != nullptr)
 		return false;
-	return false;
+
+	CSectionLoader *pLoader = nullptr;
+	const char *pLoaderSectionName = nullptr;
+	const bool Prepared = Page == SETTINGS_TCLIENT && Tab == 0 ?
+		PrepareTClientSettingsRuntimeCacheSection(SectionView, pSectionId, pLoader, pLoaderSectionName) :
+		PrepareGenericSettingsRuntimeCacheSection(SectionView, Page, Tab, pSectionId, pLoader, pLoaderSectionName);
+	if(!Prepared || pLoader == nullptr || pLoaderSectionName == nullptr)
+		return false;
+	return pLoader->PrewarmSectionByName(pLoaderSectionName, SectionView, 0.0f);
 }
 
 bool CMenus::DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId)
 {
-	(void)SectionView;
 	const SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
 	if(!SettingsSectionCanRecordStaticFbo(Registry, Page, Tab, pSectionId))
 		return false;
-	return false;
+
+	CSectionLoader *pLoader = nullptr;
+	const char *pLoaderSectionName = nullptr;
+	const bool Prepared = Page == SETTINGS_TCLIENT && Tab == 0 ?
+		PrepareTClientSettingsRuntimeCacheSection(SectionView, pSectionId, pLoader, pLoaderSectionName) :
+		PrepareGenericSettingsRuntimeCacheSection(SectionView, Page, Tab, pSectionId, pLoader, pLoaderSectionName);
+	if(!Prepared || pLoader == nullptr || pLoaderSectionName == nullptr)
+		return false;
+	return pLoader->DrawCachedSectionByName(pLoaderSectionName, SectionView, 0.0f);
 }
 
 void CMenus::InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char *pSectionId)
 {
-	(void)Page;
-	(void)Tab;
-	(void)pSectionId;
+	if(pSectionId == nullptr)
+		return;
+	CSectionLoader *pLoader = nullptr;
+	const char *pLoaderSectionName = nullptr;
+	const bool Prepared = Page == SETTINGS_TCLIENT && Tab == 0 ?
+		PrepareTClientSettingsRuntimeCacheSection(CUIRect{}, pSectionId, pLoader, pLoaderSectionName, false) :
+		PrepareGenericSettingsRuntimeCacheSection(CUIRect{}, Page, Tab, pSectionId, pLoader, pLoaderSectionName, false);
+	if(!Prepared || pLoader == nullptr || pLoaderSectionName == nullptr)
+		return;
+	pLoader->InvalidateSectionByName(pLoaderSectionName);
 }
 
 bool CMenus::OnCursorMove(float x, float y, IInput::ECursorType CursorType)

@@ -161,6 +161,15 @@ TEST(SettingsWarmup, PageRuntimeCacheRejectsMismatchedRuntimeKey)
 	EXPECT_FALSE(Cache.m_DrawnOnce);
 }
 
+TEST(SettingsWarmup, PageRuntimeCacheTracksWhetherResourcesWereReadyAtRecord)
+{
+	SSettingsPageRuntimeCacheState Cache;
+	EXPECT_TRUE(Cache.m_ResourcesReadyAtRecord);
+
+	Cache.m_ResourcesReadyAtRecord = false;
+	EXPECT_FALSE(Cache.m_ResourcesReadyAtRecord);
+}
+
 TEST(SettingsWarmup, RuntimeFboWarmupRunsBeforeTextOnlyFallback)
 {
 	CSettingsWarmupScheduler Scheduler;
@@ -380,7 +389,22 @@ TEST(SettingsRuntimeCache, SectionRegistryRequiresBothLayersForStaticFbo)
 {
 	const SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 3, "binds"));
-	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "binds"));
+	EXPECT_TRUE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "auto-reply"));
+	EXPECT_TRUE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "pet"));
+	EXPECT_TRUE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "theme"));
+	EXPECT_TRUE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "misc"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 1, "auto-reply"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_VISUAL, "general"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_CONFIG, "config"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_CONTRIBUTORS, "contributors"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_CONTROLS, -1, "movement"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_CONTROLS, -1, "weapons"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_CONTROLS, -1, "voting"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_ASSETS, -1, "resource-list"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_LANGUAGE, -1, "language-list"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_PLAYER, -1, "skin-list"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TEE, -1, "identity"));
+	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_GENERAL, -1, "body"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "missing"));
 }
 
@@ -425,12 +449,88 @@ TEST(SettingsResourceJobs, ResourceMergeBudgetStopsBatchWork)
 	EXPECT_EQ(Budget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
 }
 
+TEST(SettingsResourceJobs, AssetListLoadingDoesNotBlockVisibleEntries)
+{
+	EXPECT_TRUE(SettingsAssetListShouldShowBlockingLoading(true, 0));
+	EXPECT_FALSE(SettingsAssetListShouldShowBlockingLoading(true, 1));
+	EXPECT_FALSE(SettingsAssetListShouldShowBlockingLoading(false, 0));
+}
+
+TEST(SettingsResourceJobs, AssetPreviewDecodeCanStartWhileMerging)
+{
+	EXPECT_FALSE(SettingsAssetListCanStartPreviewDecode(true, false, false));
+	EXPECT_FALSE(SettingsAssetListCanStartPreviewDecode(false, true, false));
+	EXPECT_TRUE(SettingsAssetListCanStartPreviewDecode(false, false, true));
+	EXPECT_FALSE(SettingsAssetListCanStartPreviewDecode(false, false, false));
+}
+
+TEST(SettingsResourceJobs, AssetPreviewFinalizeBudgetDefersAfterLimit)
+{
+	EXPECT_FALSE(SettingsAssetPreviewShouldDeferFinalize(0, 10.0, 2, 4.0));
+	EXPECT_FALSE(SettingsAssetPreviewShouldDeferFinalize(1, 3.5, 2, 4.0));
+	EXPECT_TRUE(SettingsAssetPreviewShouldDeferFinalize(1, 4.0, 2, 4.0));
+	EXPECT_TRUE(SettingsAssetPreviewShouldDeferFinalize(2, 0.0, 2, 4.0));
+}
+
+TEST(SettingsResourceJobs, AssetPreviewPrioritizesCurrentVisibleRange)
+{
+	EXPECT_FALSE(SettingsAssetPreviewShouldPrioritizeVisibleRange(9, 10, 20));
+	EXPECT_TRUE(SettingsAssetPreviewShouldPrioritizeVisibleRange(10, 10, 20));
+	EXPECT_TRUE(SettingsAssetPreviewShouldPrioritizeVisibleRange(15, 10, 20));
+	EXPECT_TRUE(SettingsAssetPreviewShouldPrioritizeVisibleRange(20, 10, 20));
+	EXPECT_FALSE(SettingsAssetPreviewShouldPrioritizeVisibleRange(21, 10, 20));
+	EXPECT_FALSE(SettingsAssetPreviewShouldPrioritizeVisibleRange(10, -1, 20));
+}
+
+TEST(SettingsResourceJobs, PageCacheRejectsRecordedFrameWithoutReadyResources)
+{
+	EXPECT_FALSE(SettingsPageCacheCanUseRecordedResources(true, true, false));
+	EXPECT_FALSE(SettingsPageCacheCanUseRecordedResources(true, false, true));
+	EXPECT_FALSE(SettingsPageCacheCanUseRecordedResources(false, true, true));
+	EXPECT_TRUE(SettingsPageCacheCanUseRecordedResources(true, true, true));
+}
+
+TEST(SettingsResourceJobs, AssetsPageDoesNotUsePageFboUntilPreviewReadinessIsModeled)
+{
+	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_ASSETS, CMenus::SETTINGS_ASSETS));
+	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_TCLIENT, CMenus::SETTINGS_ASSETS));
+	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_LANGUAGE, CMenus::SETTINGS_ASSETS));
+}
+
+TEST(SettingsResourceJobs, AssetWarmupTracksAllTabsAndCycles)
+{
+	bool aReadyTabs[] = {true, false, true};
+	EXPECT_FALSE(SettingsAssetWarmupAllTabsReady(aReadyTabs, 3));
+	aReadyTabs[1] = true;
+	EXPECT_TRUE(SettingsAssetWarmupAllTabsReady(aReadyTabs, 3));
+	EXPECT_TRUE(SettingsAssetWarmupAllTabsReady(nullptr, 0));
+
+	EXPECT_EQ(SettingsAssetWarmupNextTab(-1, 3), 0);
+	EXPECT_EQ(SettingsAssetWarmupNextTab(0, 3), 1);
+	EXPECT_EQ(SettingsAssetWarmupNextTab(2, 3), 0);
+	EXPECT_EQ(SettingsAssetWarmupNextTab(0, 0), -1);
+}
+
 TEST(SettingsResourceJobs, SkinSnapshotRejectsStaleGeneration)
 {
 	SSettingsSkinListPlanResult Result;
 	Result.m_Generation = 7;
 	EXPECT_TRUE(SettingsSkinListPlanGenerationMatches(Result, 7));
 	EXPECT_FALSE(SettingsSkinListPlanGenerationMatches(Result, 8));
+}
+
+TEST(SettingsResourceJobs, SkinListPublishesOnlyCompleteMergedList)
+{
+	EXPECT_FALSE(SettingsSkinListShouldPublishMergedList(0, 3));
+	EXPECT_FALSE(SettingsSkinListShouldPublishMergedList(2, 3));
+	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(3, 3));
+	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(4, 3));
+}
+
+TEST(SettingsResourceJobs, VisibleSkinListEntriesRequestImmediateLoad)
+{
+	EXPECT_TRUE(SettingsSkinListShouldRequestImmediateLoad(true));
+	EXPECT_FALSE(SettingsSkinListShouldRequestImmediateLoad(false));
 }
 
 TEST(SettingsResourceJobs, CountryFlagPlanHandlesEmptyInput)

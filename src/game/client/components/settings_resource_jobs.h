@@ -36,5 +36,15 @@ std::vector<int> BuildSettingsCountryFlagWarmupPlan(const std::vector<int> &vCou
 bool SettingsResourceConsumeMergeEntry(SSettingsResourceMergeBudget &Budget);
 bool SettingsResourceConsumeGpuUpload(SSettingsResourceMergeBudget &Budget);
 bool SettingsSkinListPlanGenerationMatches(const SSettingsSkinListPlanResult &Result, int CurrentGeneration);
+bool SettingsSkinListShouldPublishMergedList(size_t Cursor, size_t Total);
+bool SettingsSkinListShouldRequestImmediateLoad(bool Visible);
+bool SettingsAssetListShouldShowBlockingLoading(bool Loading, int VisibleEntries);
+bool SettingsAssetListCanStartPreviewDecode(bool Loading, bool Merging, bool Loaded);
+bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double ElapsedMs, int MaxFinalizesPerFrame, double MaxFinalizeMsPerFrame);
+bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex);
+bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord);
+bool SettingsPageCanUsePageFbo(int Page, int AssetsPage);
+bool SettingsAssetWarmupAllTabsReady(const bool *pReadyTabs, int TabCount);
+int SettingsAssetWarmupNextTab(int CurrentTab, int TabCount);
 
 #endif // GAME_CLIENT_COMPONENTS_SETTINGS_RESOURCE_JOBS_H

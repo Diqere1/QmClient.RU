@@ -144,6 +144,111 @@ bool CSectionLoader::IsCacheValidForTests(const char *pName) const
 	return false;
 }
 
+void CSectionLoader::InvalidateSectionByName(const char *pName, ESettingsCacheDirtyReason Reason)
+{
+	for(auto &Section : m_vSections)
+	{
+		if(str_comp(Section.m_pName, pName) != 0)
+			continue;
+		Section.m_bDirty = true;
+		Section.m_bCacheValid = false;
+		Section.m_DirtyReason = Reason;
+		return;
+	}
+}
+
+bool CSectionLoader::PrewarmSectionByName(const char *pName, CUIRect MainView, float ScrollY)
+{
+	if(!m_bRenderTargetSupportedForTests)
+	{
+		ClearSectionCallbacks(m_vSections);
+		return false;
+	}
+
+	m_MainView = MainView;
+	m_ScrollY = ScrollY;
+	CUIRect RunningColumn = MainView;
+	for(SSettingsSection &Section : m_vSections)
+	{
+		if(Section.m_MeasureFn)
+		{
+			CUIRect MeasureColumn = RunningColumn;
+			Section.m_CachedHeight = Section.m_MeasureFn(MeasureColumn);
+		}
+		if(Section.m_CachedHeight <= 0.0f)
+			continue;
+
+		const CUIRect SectionRect{RunningColumn.x, RunningColumn.y, RunningColumn.w, Section.m_CachedHeight};
+		RunningColumn.y += Section.m_CachedHeight;
+		RunningColumn.h = maximum(0.0f, RunningColumn.h - Section.m_CachedHeight);
+
+		if(str_comp(Section.m_pName, pName) != 0)
+			continue;
+		if(!Section.m_bCanCacheStaticLayer)
+		{
+			ClearSectionCallbacks(m_vSections);
+			return false;
+		}
+
+		const int Priority = ComputeViewportPriority(SectionRect);
+		if(Priority > 1)
+		{
+			ClearSectionCallbacks(m_vSections);
+			return false;
+		}
+
+		const int Padding = std::max(0, (int)std::ceil(Section.m_StaticCachePadding));
+		const int Width = std::max(1, (int)MainView.w + Padding * 2);
+		const int Height = std::max(1, (int)Section.m_CachedHeight + Padding * 2);
+		const bool Recorded = RecordStaticRenderTarget(Section, Width, Height);
+		if(Recorded)
+		{
+			Section.m_LastConfigHash = ComputeConfigHash(Section);
+			Section.m_CacheRuntimeKey = m_RuntimeKey;
+			Section.m_bDirty = false;
+			Section.m_bCacheValid = true;
+			Section.m_DirtyReason = ESettingsCacheDirtyReason::NONE;
+		}
+		ClearSectionCallbacks(m_vSections);
+		return Recorded;
+	}
+
+	ClearSectionCallbacks(m_vSections);
+	return false;
+}
+
+bool CSectionLoader::DrawCachedSectionByName(const char *pName, CUIRect MainView, float ScrollY)
+{
+	m_MainView = MainView;
+	m_ScrollY = ScrollY;
+	m_RunningColumn = MainView;
+
+	for(SSettingsSection &Section : m_vSections)
+	{
+		if(Section.m_MeasureFn)
+		{
+			CUIRect MeasureColumn = m_RunningColumn;
+			Section.m_CachedHeight = Section.m_MeasureFn(MeasureColumn);
+		}
+		if(Section.m_CachedHeight <= 0.0f)
+			continue;
+
+		if(str_comp(Section.m_pName, pName) != 0)
+		{
+			m_RunningColumn.y += Section.m_CachedHeight;
+			m_RunningColumn.h = maximum(0.0f, m_RunningColumn.h - Section.m_CachedHeight);
+			continue;
+		}
+
+		const bool Drawn = TryRenderCachedSection(Section);
+		ClearSectionCallbacks(m_vSections);
+		return Drawn;
+	}
+
+	ClearSectionCallbacks(m_vSections);
+	return false;
+}
+
 void CSectionLoader::Begin(CUIRect MainView, float TimeBudgetMs)
 {
 	m_MainView = MainView;
@@ -624,12 +729,28 @@ bool CSectionLoader::TryRenderCachedSection(SSettingsSection &Section)
 	{
 		if(!Section.m_bCacheValid || Section.m_bDirty)
 			return false;
-		const CUIRect SectionRect{m_RunningColumn.x, m_RunningColumn.y, m_RunningColumn.w, Section.m_CachedHeight};
-		const bool RenderInteractiveLayer = Section.m_RenderInteractiveLayerFn &&
-						    (!Section.m_ShouldRenderInteractiveLayerFn ||
-							    Section.m_ShouldRenderInteractiveLayerFn(SectionRect));
-		if(RenderInteractiveLayer)
-			Section.m_CachedHeight = Section.m_RenderInteractiveLayerFn(m_RunningColumn);
+		if(Section.m_RenderInteractiveLayerFn)
+		{
+			if(Section.m_bKeepCachedHeightStable)
+			{
+				CUIRect InteractiveColumn = m_RunningColumn;
+				const float CachedHeight = Section.m_CachedHeight;
+				const float InteractiveHeight = Section.m_RenderInteractiveLayerFn(InteractiveColumn);
+				if(InteractiveHeight > CachedHeight + 0.5f)
+				{
+					Section.m_CachedHeight = InteractiveHeight;
+					Section.m_bCacheValid = false;
+					Section.m_bDirty = true;
+					Section.m_DirtyReason = ESettingsCacheDirtyReason::WINDOW_SIZE;
+					return false;
+				}
+				const float ConsumedHeight = maximum(CachedHeight, InteractiveHeight);
+				m_RunningColumn.y += ConsumedHeight;
+				m_RunningColumn.h = maximum(0.0f, m_RunningColumn.h - ConsumedHeight);
+			}
+			else
+				Section.m_CachedHeight = Section.m_RenderInteractiveLayerFn(m_RunningColumn);
+		}
 		else
 			m_RunningColumn.y += Section.m_CachedHeight;
 		return true;
@@ -682,15 +803,34 @@ bool CSectionLoader::TryRenderCachedSection(SSettingsSection &Section)
 		CacheHit = true;
 	}
 
+	const CUIRect CachedColumn = m_RunningColumn;
 	m_pGraphics->DrawRenderTarget(Section.m_RenderTarget, m_RunningColumn.x - Padding, m_RunningColumn.y - Padding, m_RunningColumn.w + Padding * 2, Section.m_CachedHeight + Padding * 2);
-	const CUIRect SectionRect{m_RunningColumn.x, m_RunningColumn.y, m_RunningColumn.w, Section.m_CachedHeight};
-	const bool RenderInteractiveLayer = Section.m_RenderInteractiveLayerFn &&
-					    (!Section.m_ShouldRenderInteractiveLayerFn ||
-						    Section.m_ShouldRenderInteractiveLayerFn(SectionRect));
-	if(RenderInteractiveLayer)
+	if(Section.m_RenderInteractiveLayerFn)
 	{
-		Section.m_CachedHeight = Section.m_RenderInteractiveLayerFn(m_RunningColumn);
-		Section.m_bCacheValid = Section.m_RenderTargetHeight == std::max(1, (int)Section.m_CachedHeight + Padding * 2);
+		if(Section.m_bKeepCachedHeightStable)
+		{
+			CUIRect InteractiveColumn = m_RunningColumn;
+			const float CachedHeight = Section.m_CachedHeight;
+			const float InteractiveHeight = Section.m_RenderInteractiveLayerFn(InteractiveColumn);
+			if(InteractiveHeight > CachedHeight + 0.5f)
+			{
+				Section.m_CachedHeight = InteractiveHeight;
+				Section.m_bCacheValid = false;
+				Section.m_bDirty = true;
+				Section.m_DirtyReason = ESettingsCacheDirtyReason::WINDOW_SIZE;
+				DestroyRenderTarget(Section);
+				m_RunningColumn = CachedColumn;
+				return false;
+			}
+			const float ConsumedHeight = maximum(CachedHeight, InteractiveHeight);
+			m_RunningColumn.y += ConsumedHeight;
+			m_RunningColumn.h = maximum(0.0f, m_RunningColumn.h - ConsumedHeight);
+		}
+		else
+		{
+			Section.m_CachedHeight = Section.m_RenderInteractiveLayerFn(m_RunningColumn);
+			Section.m_bCacheValid = Section.m_RenderTargetHeight == std::max(1, (int)Section.m_CachedHeight + Padding * 2);
+		}
 	}
 	else
 		m_RunningColumn.y += Section.m_CachedHeight;

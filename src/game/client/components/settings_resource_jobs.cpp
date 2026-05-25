@@ -59,3 +59,65 @@ bool SettingsSkinListPlanGenerationMatches(const SSettingsSkinListPlanResult &Re
 {
 	return Result.m_Generation == CurrentGeneration;
 }
+
+bool SettingsSkinListShouldPublishMergedList(size_t Cursor, size_t Total)
+{
+	return Cursor >= Total;
+}
+
+bool SettingsSkinListShouldRequestImmediateLoad(bool Visible)
+{
+	return Visible;
+}
+
+bool SettingsAssetListShouldShowBlockingLoading(bool Loading, int VisibleEntries)
+{
+	return Loading && VisibleEntries <= 0;
+}
+
+bool SettingsAssetListCanStartPreviewDecode(bool Loading, bool Merging, bool Loaded)
+{
+	return !Loading && !Merging && Loaded;
+}
+
+bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double ElapsedMs, int MaxFinalizesPerFrame, double MaxFinalizeMsPerFrame)
+{
+	return FinalizedThisFrame >= MaxFinalizesPerFrame ||
+	       (FinalizedThisFrame > 0 && ElapsedMs >= MaxFinalizeMsPerFrame);
+}
+
+bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex)
+{
+	return FirstVisibleIndex >= 0 && LastVisibleIndex >= FirstVisibleIndex && Index >= FirstVisibleIndex && Index <= LastVisibleIndex;
+}
+
+bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord)
+{
+	return CacheMatches && RenderTargetValid && ResourcesReadyAtRecord;
+}
+
+bool SettingsPageCanUsePageFbo(int Page, int AssetsPage)
+{
+	return Page != AssetsPage;
+}
+
+bool SettingsAssetWarmupAllTabsReady(const bool *pReadyTabs, int TabCount)
+{
+	if(pReadyTabs == nullptr || TabCount <= 0)
+		return true;
+	for(int Tab = 0; Tab < TabCount; ++Tab)
+	{
+		if(!pReadyTabs[Tab])
+			return false;
+	}
+	return true;
+}
+
+int SettingsAssetWarmupNextTab(int CurrentTab, int TabCount)
+{
+	if(TabCount <= 0)
+		return -1;
+	if(CurrentTab < 0 || CurrentTab >= TabCount)
+		return 0;
+	return (CurrentTab + 1) % TabCount;
+}

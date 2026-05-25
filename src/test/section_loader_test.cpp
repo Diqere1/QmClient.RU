@@ -281,6 +281,34 @@ TEST(SectionLoader, FarCachedInteractiveLayerRunsAfterScrollingIntoView)
 	EXPECT_EQ(InteractiveRenderCount, 1);
 }
 
+TEST(SectionLoader, CachedInteractiveLayerInvalidatesWhenInteractiveExceedsMeasuredHeight)
+{
+	CSectionLoader Loader;
+	int InteractiveRenderCount = 0;
+	int FullRenderCount = 0;
+
+	SSettingsSection Section = MakeTestSection("Stable Cached Interactive", 50.0f);
+	Section.m_bCanCacheStaticLayer = true;
+	Section.m_bKeepCachedHeightStable = true;
+	Section.m_RenderFullFn = [&FullRenderCount](CUIRect &Rect) -> float {
+		++FullRenderCount;
+		return ConsumeHeight(Rect, 50.0f);
+	};
+	Section.m_RenderInteractiveLayerFn = [&InteractiveRenderCount](CUIRect &Rect) -> float {
+		++InteractiveRenderCount;
+		return ConsumeHeight(Rect, 70.0f);
+	};
+
+	Loader.SetProgressiveEnabled(false);
+	Loader.Register({Section});
+	Loader.MarkCacheValidForTests("Stable Cached Interactive");
+	Loader.Begin(CUIRect{0, 0, 400, 240}, 100.0f);
+	EXPECT_FALSE(Loader.Process());
+	EXPECT_EQ(InteractiveRenderCount, 1);
+	EXPECT_EQ(FullRenderCount, 1);
+	EXPECT_FLOAT_EQ(Loader.GetRunningColumn().y, 50.0f);
+}
+
 TEST(SectionLoader, FullSectionsAfterUnfinishedSectionStillRender)
 {
 	CSectionLoader Loader;
@@ -704,13 +732,13 @@ TEST(SectionLoader, CachedInteractiveLayerUpdatesSectionHeight)
 	EXPECT_FLOAT_EQ(Loader.GetRunningColumn().y, 60.0f);
 }
 
-TEST(SectionLoader, CachedInteractiveLayerCanBeSkippedWhenNotNeeded)
+TEST(SectionLoader, CachedInteractiveLayerStaysVisibleWhenPredicateRejects)
 {
 	CSectionLoader Loader;
 	int FullRenderCount = 0;
 	int InteractiveRenderCount = 0;
 
-	SSettingsSection S = MakeTestSection("CachedStaticOnly", 40.0f);
+	SSettingsSection S = MakeTestSection("CachedInteractiveAlwaysVisible", 40.0f);
 	S.m_bCanCacheStaticLayer = true;
 	S.m_RenderFullFn = [&FullRenderCount](CUIRect &Rect) -> float {
 		++FullRenderCount;
@@ -728,11 +756,11 @@ TEST(SectionLoader, CachedInteractiveLayerCanBeSkippedWhenNotNeeded)
 	RunRegisteredFrames(Loader, MainView, [&]() { return std::vector<SSettingsSection>{S}; });
 	EXPECT_EQ(FullRenderCount, 1);
 
-	Loader.MarkCacheValidForTests("CachedStaticOnly");
+	Loader.MarkCacheValidForTests("CachedInteractiveAlwaysVisible");
 	RunRegisteredFrames(Loader, MainView, [&]() { return std::vector<SSettingsSection>{S}; });
 
 	EXPECT_EQ(FullRenderCount, 1);
-	EXPECT_EQ(InteractiveRenderCount, 0);
+	EXPECT_EQ(InteractiveRenderCount, 1);
 	EXPECT_FLOAT_EQ(Loader.GetRunningColumn().y, 40.0f);
 }
 
@@ -1002,4 +1030,145 @@ TEST(SectionLoader, PaddedPrewarmedStaticRenderTargetKeepsSectionHeight)
 	EXPECT_FALSE(Loader.Process());
 	EXPECT_FLOAT_EQ(Loader.GetRunningColumn().y, 120.0f);
 	EXPECT_TRUE(Loader.IsCacheValidForTests("TClient:Padded"));
+}
+
+TEST(SectionLoader, PrewarmSectionByNameOnlyBuildsTargetCache)
+{
+	CSectionLoader Loader;
+	int StaticRenderedFirst = 0;
+	int StaticRenderedSecond = 0;
+
+	SSettingsSection First;
+	First.m_pName = "TClient:First";
+	First.m_MeasureFn = [](CUIRect &Col) {
+		return ConsumeHeight(Col, 120.0f);
+	};
+	First.m_RenderStaticLayerFn = [&](CUIRect &Col) {
+		++StaticRenderedFirst;
+		return ConsumeHeight(Col, 120.0f);
+	};
+	First.m_bCanCacheStaticLayer = true;
+
+	SSettingsSection Second;
+	Second.m_pName = "TClient:Second";
+	Second.m_MeasureFn = [](CUIRect &Col) {
+		return ConsumeHeight(Col, 80.0f);
+	};
+	Second.m_RenderStaticLayerFn = [&](CUIRect &Col) {
+		++StaticRenderedSecond;
+		return ConsumeHeight(Col, 80.0f);
+	};
+	Second.m_bCanCacheStaticLayer = true;
+
+	Loader.Register({First, Second});
+
+	EXPECT_TRUE(Loader.PrewarmSectionByName("TClient:Second", CSectionLoader::MakeRenderTargetCacheRectForTests(320.0f, 240.0f), 0.0f));
+	EXPECT_EQ(StaticRenderedFirst, 0);
+	EXPECT_EQ(StaticRenderedSecond, 1);
+	EXPECT_FALSE(Loader.IsCacheValidForTests("TClient:First"));
+	EXPECT_TRUE(Loader.IsCacheValidForTests("TClient:Second"));
+}
+
+TEST(SectionLoader, DrawCachedSectionByNameRunsInteractiveLayer)
+{
+	CSectionLoader Loader;
+	int InteractiveRenderCount = 0;
+
+	SSettingsSection Section;
+	Section.m_pName = "TClient:Interactive";
+	Section.m_MeasureFn = [](CUIRect &Col) {
+		return ConsumeHeight(Col, 40.0f);
+	};
+	Section.m_RenderStaticLayerFn = [](CUIRect &Col) {
+		return ConsumeHeight(Col, 40.0f);
+	};
+	Section.m_RenderInteractiveLayerFn = [&](CUIRect &Col) {
+		++InteractiveRenderCount;
+		return ConsumeHeight(Col, 45.0f);
+	};
+	Section.m_ShouldRenderInteractiveLayerFn = [](const CUIRect &) {
+		return true;
+	};
+	Section.m_bCanCacheStaticLayer = true;
+
+	Loader.Register({Section});
+	Loader.MarkCacheValidForTests("TClient:Interactive");
+
+	EXPECT_TRUE(Loader.DrawCachedSectionByName("TClient:Interactive", CSectionLoader::MakeRenderTargetCacheRectForTests(320.0f, 240.0f), 0.0f));
+	EXPECT_EQ(InteractiveRenderCount, 1);
+	EXPECT_FLOAT_EQ(Loader.GetRunningColumn().y, 45.0f);
+}
+
+TEST(SectionLoader, DrawCachedSectionByNameKeepsInteractiveLayerVisible)
+{
+	CSectionLoader Loader;
+	int InteractiveRenderCount = 0;
+
+	SSettingsSection Section;
+	Section.m_pName = "TClient:Interactive";
+	Section.m_MeasureFn = [](CUIRect &Col) {
+		return ConsumeHeight(Col, 40.0f);
+	};
+	Section.m_RenderStaticLayerFn = [](CUIRect &Col) {
+		return ConsumeHeight(Col, 40.0f);
+	};
+	Section.m_RenderInteractiveLayerFn = [&](CUIRect &Col) {
+		++InteractiveRenderCount;
+		return ConsumeHeight(Col, 45.0f);
+	};
+	Section.m_ShouldRenderInteractiveLayerFn = [](const CUIRect &) {
+		return false;
+	};
+	Section.m_bCanCacheStaticLayer = true;
+
+	Loader.Register({Section});
+	Loader.MarkCacheValidForTests("TClient:Interactive");
+
+	EXPECT_TRUE(Loader.DrawCachedSectionByName("TClient:Interactive", CSectionLoader::MakeRenderTargetCacheRectForTests(320.0f, 240.0f), 0.0f));
+	EXPECT_EQ(InteractiveRenderCount, 1);
+	EXPECT_FLOAT_EQ(Loader.GetRunningColumn().y, 45.0f);
+}
+
+TEST(SectionLoader, InvalidateSectionByNameClearsOnlyTargetCache)
+{
+	CSectionLoader Loader;
+
+	SSettingsSection First = MakeTestSection("TClient:First", 40.0f);
+	First.m_bCanCacheStaticLayer = true;
+	SSettingsSection Second = MakeTestSection("TClient:Second", 40.0f);
+	Second.m_bCanCacheStaticLayer = true;
+
+	Loader.Register({First, Second});
+	Loader.MarkCacheValidForTests("TClient:First");
+	Loader.MarkCacheValidForTests("TClient:Second");
+
+	Loader.InvalidateSectionByName("TClient:Second");
+
+	EXPECT_TRUE(Loader.IsCacheValidForTests("TClient:First"));
+	EXPECT_FALSE(Loader.IsCacheValidForTests("TClient:Second"));
+}
+
+TEST(SectionLoader, RegisterPreservesSiblingCachesWithStableSectionSet)
+{
+	CSectionLoader Loader;
+	SSettingsSection First = MakeTestSection("TClient:First", 40.0f);
+	First.m_bCanCacheStaticLayer = true;
+	First.m_RenderStaticLayerFn = [](CUIRect &Col) {
+		return ConsumeHeight(Col, 40.0f);
+	};
+	SSettingsSection Second = MakeTestSection("TClient:Second", 40.0f);
+	Second.m_bCanCacheStaticLayer = true;
+	Second.m_RenderStaticLayerFn = [](CUIRect &Col) {
+		return ConsumeHeight(Col, 40.0f);
+	};
+
+	Loader.Register({First, Second});
+	EXPECT_TRUE(Loader.PrewarmSectionByName("TClient:First", CSectionLoader::MakeRenderTargetCacheRectForTests(320.0f, 240.0f), 0.0f));
+	EXPECT_TRUE(Loader.IsCacheValidForTests("TClient:First"));
+	EXPECT_FALSE(Loader.IsCacheValidForTests("TClient:Second"));
+
+	Loader.Register({First, Second});
+	EXPECT_TRUE(Loader.PrewarmSectionByName("TClient:Second", CSectionLoader::MakeRenderTargetCacheRectForTests(320.0f, 240.0f), 0.0f));
+	EXPECT_TRUE(Loader.IsCacheValidForTests("TClient:First"));
+	EXPECT_TRUE(Loader.IsCacheValidForTests("TClient:Second"));
 }

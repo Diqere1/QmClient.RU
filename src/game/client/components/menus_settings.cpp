@@ -1542,9 +1542,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			continue;
 		}
 
-		// Keep the selected preview responsive via FindContainerImpl(), but let the list itself
-		// ramp visible skins in gradually so opening settings doesn't burst-load textures.
-		SkinListEntry.RequestLoad(false);
+		SkinListEntry.RequestLoad(SettingsSkinListShouldRequestImmediateLoad(Item.m_Visible));
 		const CSkin *pSkin = pSkinContainer->State() == CSkins::CSkinContainer::EState::LOADED ? pSkinContainer->Skin().get() : pDefaultSkin;
 
 		Item.m_Rect.VSplitLeft(60.0f, &Button, &Label);
@@ -3453,9 +3451,14 @@ void CMenus::RenderSettings(CUIRect MainView)
 
 	{
 		CPerfTimer StageTimer;
+		auto DrawOrPrewarmSection = [&](int Page, int Tab, const char *pSectionId) {
+			if(!DrawSettingsSectionRuntimeCache(ContentView, Page, Tab, pSectionId))
+				(void)PrewarmSettingsSectionRuntimeCache(ContentView, Page, Tab, pSectionId);
+		};
 		if(g_Config.m_UiSettingsPage == SETTINGS_LANGUAGE)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_LANGUAGE);
+			DrawOrPrewarmSection(SETTINGS_LANGUAGE, -1, "language-list");
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_LANGUAGE, -1);
 			if(!RuntimeCacheHit)
 				RenderLanguageSettings(ContentView);
@@ -3470,6 +3473,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_PLAYER)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_PLAYER);
+			DrawOrPrewarmSection(SETTINGS_PLAYER, -1, "skin-list");
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_PLAYER, -1);
 			if(!RuntimeCacheHit)
 				RenderSettingsPlayer(ContentView);
@@ -3477,6 +3481,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_TEE)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_TEE);
+			DrawOrPrewarmSection(SETTINGS_TEE, -1, "identity");
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_TEE, -1);
 			if(!RuntimeCacheHit)
 			{
@@ -3496,6 +3501,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_CONTROLS)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CONTROLS);
+			DrawOrPrewarmSection(SETTINGS_CONTROLS, -1, "movement");
+			DrawOrPrewarmSection(SETTINGS_CONTROLS, -1, "weapons");
+			DrawOrPrewarmSection(SETTINGS_CONTROLS, -1, "voting");
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_CONTROLS, -1);
 			if(!RuntimeCacheHit)
 				m_MenusSettingsControls.Render(ContentView);
@@ -3524,6 +3532,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_ASSETS)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_ASSETS);
+			DrawOrPrewarmSection(SETTINGS_ASSETS, -1, "resource-list");
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_ASSETS, -1);
 			if(!RuntimeCacheHit)
 				RenderSettingsCustom(ContentView);
@@ -3540,6 +3549,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 		else if(g_Config.m_UiSettingsPage == SETTINGS_QMCLIENT)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(15);
+			const char *pQmSection = m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONFIG ? "config" :
+				(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONTRIBUTORS ? "contributors" : "general");
+			DrawOrPrewarmSection(SETTINGS_QMCLIENT, m_QmClientSettingsTab, pQmSection);
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_QMCLIENT, m_QmClientSettingsTab);
 			if(!RuntimeCacheHit)
 				RenderSettingsQmClient(ContentView);

@@ -170,6 +170,7 @@ private:
 	std::shared_ptr<IJob> m_apAssetLoadJobs[NUMBER_OF_ASSETS_TABS];
 	SSettingsAssetPendingMerge m_aAssetPendingMerges[NUMBER_OF_ASSETS_TABS];
 	int m_aAssetLoadGenerations[NUMBER_OF_ASSETS_TABS] = {};
+	void PublishSettingsAssetMergeEntries(int Tab, const std::vector<SSettingsAssetMergeEntry> &vEntries);
 
 public:
 	struct SCustomItem
@@ -193,6 +194,7 @@ public:
 		unsigned m_PreviewEpoch = 0;
 		size_t m_PreviewBytes = 0;
 		bool m_PreviewResized = false;
+		bool m_PreviewHighPriority = false;
 
 		SCustomItem() = default;
 
@@ -202,7 +204,8 @@ public:
 			m_PreviewState(Other.m_PreviewState),
 			m_PreviewEpoch(Other.m_PreviewEpoch),
 			m_PreviewBytes(Other.m_PreviewBytes),
-			m_PreviewResized(Other.m_PreviewResized)
+			m_PreviewResized(Other.m_PreviewResized),
+			m_PreviewHighPriority(Other.m_PreviewHighPriority)
 		{
 			str_copy(m_aName, Other.m_aName);
 			str_copy(m_aDisplayName, Other.m_aDisplayName);
@@ -226,6 +229,7 @@ public:
 			m_PreviewEpoch = Other.m_PreviewEpoch;
 			m_PreviewBytes = Other.m_PreviewBytes;
 			m_PreviewResized = Other.m_PreviewResized;
+			m_PreviewHighPriority = Other.m_PreviewHighPriority;
 			return *this;
 		}
 
@@ -1770,6 +1774,12 @@ private:
 		CUIElement m_Element;
 	};
 
+	struct SSettingsGenericSectionCache
+	{
+		CSectionLoader m_Loader;
+		std::string m_SectionName;
+	};
+
 	struct SSettingsPageRuntimeCache
 	{
 		SSettingsPageRuntimeCacheState m_State;
@@ -1791,6 +1801,7 @@ private:
 	bool m_aSettingsQmClientSiblingPrewarmed[NUMBER_OF_QMCLIENT_SETTINGS_TABS] = {};
 	int m_SettingsRuntimePrewarmCursor = 0;
 	std::unordered_map<std::string, SSettingsTextPoolEntry> m_SettingsTextPool;
+	std::unordered_map<std::string, std::unique_ptr<SSettingsGenericSectionCache>> m_SettingsGenericSectionCaches;
 	uint64_t m_SettingsTextPoolLanguageHash = 0;
 	uint64_t m_SettingsTextPoolFontHash = 0;
 
@@ -1814,16 +1825,37 @@ private:
 	// found in menus_qmclient.cpp
 	void RenderSettingsTClient(CUIRect MainView, bool PrewarmOnly = false);
 	void RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly = false);
+	SSettingsSection BuildTClientThemeCacheSection();
+	SSettingsSection BuildTClientAutoReplyCacheSection();
+	SSettingsSection BuildTClientPetCacheSection();
+	SSettingsSection BuildTClientHudCacheSection();
+	std::vector<SSettingsSection> BuildTClientLeftCacheSections();
+	std::vector<SSettingsSection> BuildTClientRightCacheSections();
+	void DrawTClientCacheSectionBox(CUIRect BoxRect);
+	float RenderTClientCacheSectionFallback(CUIRect &CurrentColumn, float TopMargin, float (CMenus::*pLayoutSection)(CUIRect &, bool));
+	void ConfigureSplitCachedStaticLayer(SSettingsSection &Section, const char *pTitle, std::function<float(CUIRect &)> MeasureSection, std::function<float(CUIRect &)> RenderInteractiveSection, float TopMargin);
+	bool PrepareTClientSettingsRuntimeCacheSection(CUIRect SectionView, const char *pSectionId, CSectionLoader *&pLoader, const char *&pLoaderSectionName, bool ConfigureRuntimeState = true);
+	bool PrepareGenericSettingsRuntimeCacheSection(CUIRect SectionView, int Page, int Tab, const char *pSectionId, CSectionLoader *&pLoader, const char *&pLoaderSectionName, bool ConfigureRuntimeState = true);
+	float LayoutTClientThemeCacheSection(CUIRect &CurrentColumn, bool Render);
+	float RenderTClientThemeInteractiveLayer(CUIRect &CurrentColumn);
+	float LayoutTClientAutoReplyCacheSection(CUIRect &CurrentColumn, bool Render);
+	float RenderTClientAutoReplyInteractiveLayer(CUIRect &CurrentColumn);
+	float LayoutTClientPetCacheSection(CUIRect &CurrentColumn, bool Render);
+	float RenderTClientPetInteractiveLayer(CUIRect &CurrentColumn);
+	float LayoutTClientHudCacheSection(CUIRect &CurrentColumn, bool Render);
+	float RenderTClientHudInteractiveLayer(CUIRect &CurrentColumn);
 	void PrewarmSettingsTClient(CUIRect MainView);
 	bool PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView);
 	bool PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView);
-	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
+	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f, bool ResourcesReady = true);
 	bool DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
+	void InvalidateSettingsPageRuntimeCache(int Page, int Tab);
 	bool PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
 	bool DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
 	void InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char *pSectionId);
 	void DestroySettingsPageRuntimeCaches();
 	bool PrewarmSettingsPageResources(int Page, int Tab);
+	bool PrewarmSettingsAssetResources();
 	SSettingsPageRuntimeCache *GetSettingsPageRuntimeCache(int Page, int Tab);
 	void RenderSettingsTClientBindWheel(CUIRect MainView);
 	void RenderSettingsTClientChatBinds(CUIRect MainView);
