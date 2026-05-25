@@ -150,7 +150,7 @@ class CUIElement
 {
 	friend class CUi;
 
-	CUi *m_pUI;
+	CUi *m_pUI = nullptr;
 
 	CUIElement(CUi *pUI, int RequestedRectCount) { Init(pUI, RequestedRectCount); }
 
@@ -192,6 +192,11 @@ protected:
 
 public:
 	CUIElement() = default;
+	CUIElement(const CUIElement &) = delete;
+	CUIElement &operator=(const CUIElement &) = delete;
+	CUIElement(CUIElement &&) = delete;
+	CUIElement &operator=(CUIElement &&) = delete;
+	~CUIElement();
 
 	void Init(CUi *pUI, int RequestedRectCount);
 
@@ -204,6 +209,8 @@ public:
 	{
 		return !m_vUIRects.empty();
 	}
+
+	bool IsRegistered() const { return m_pUI != nullptr; }
 
 	void InitRects(int RequestedRectCount);
 };
@@ -490,6 +497,7 @@ public:
 	CUIElement *GetNewUIElement(int RequestedRectCount);
 
 	void AddUIElement(CUIElement *pElement);
+	void RemoveUIElement(CUIElement *pElement);
 	void OnElementsReset();
 	void OnWindowResize();
 	void OnCursorMove(float X, float Y);
@@ -619,7 +627,7 @@ public:
 	CLabelResult DoLabel_AutoLineSize(const char *pText, float FontSize, int Align, CUIRect *pRect, float LineSize, const SLabelProperties &LabelProps = {}) const;
 
 	void DoLabel(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps = {}, int StrLen = -1, const CTextCursor *pReadCursor = nullptr) const;
-	void DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps = {}, int StrLen = -1, const CTextCursor *pReadCursor = nullptr) const;
+	void DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps = {}, int StrLen = -1, const CTextCursor *pReadCursor = nullptr, bool Render = true) const;
 
 	/**
 	 * Creates an input field.

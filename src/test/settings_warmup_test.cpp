@@ -236,7 +236,8 @@ TEST(SettingsRuntimeCache, BuildsStableKeysForPageSectionTextAndResource)
 {
 	EXPECT_EQ(SettingsPageCacheKey(CMenus::SETTINGS_TCLIENT, 2), "settings:tclient:tab:2");
 	EXPECT_EQ(SettingsSectionCacheKey(CMenus::SETTINGS_TCLIENT, 2, "binds"), "settings:tclient:tab:2:section:binds");
-	EXPECT_EQ(SettingsTextCacheKey(CMenus::SETTINGS_LANGUAGE, -1, "credits"), "settings:language:text:credits");
+	EXPECT_EQ(SettingsTextCacheKey(CMenus::SETTINGS_LANGUAGE, -1, "simplified_chinese.txt"), "settings:language:text:simplified_chinese.txt");
+	EXPECT_NE(SettingsTextCacheKey(CMenus::SETTINGS_LANGUAGE, -1, "simplified_chinese.txt"), SettingsTextCacheKey(CMenus::SETTINGS_GENERAL, -1, "language-title"));
 	EXPECT_EQ(SettingsResourceCacheKey(CMenus::SETTINGS_ASSETS, "entity_bg"), "settings:assets:resource:entity_bg");
 }
 

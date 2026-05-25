@@ -16,16 +16,25 @@
 
 #include <game/localization.h>
 
+#include <algorithm>
 #include <limits>
 
 using namespace FontIcons;
 
 void CUIElement::Init(CUi *pUI, int RequestedRectCount)
 {
+	dbg_assert(m_pUI == nullptr, "UI element can only be registered once.");
 	m_pUI = pUI;
 	pUI->AddUIElement(this);
-	if(RequestedRectCount > 0)
+	if(RequestedRectCount > 0 && !AreRectsInit())
 		InitRects(RequestedRectCount);
+	dbg_assert(RequestedRectCount <= 0 || m_vUIRects.size() == (size_t)RequestedRectCount, "UI element rect count changed.");
+}
+
+CUIElement::~CUIElement()
+{
+	if(m_pUI != nullptr)
+		m_pUI->RemoveUIElement(this);
 }
 
 void CUIElement::InitRects(int RequestedRectCount)
@@ -127,6 +136,13 @@ CUi::CUi()
 
 CUi::~CUi()
 {
+	for(CUIElement *pEl : m_vpUIElements)
+	{
+		if(pEl != nullptr)
+			pEl->m_pUI = nullptr;
+	}
+	m_vpUIElements.clear();
+
 	for(CUIElement *&pEl : m_vpOwnUIElements)
 	{
 		delete pEl;
@@ -146,6 +162,12 @@ CUIElement *CUi::GetNewUIElement(int RequestedRectCount)
 void CUi::AddUIElement(CUIElement *pElement)
 {
 	m_vpUIElements.push_back(pElement);
+}
+
+void CUi::RemoveUIElement(CUIElement *pElement)
+{
+	m_vpUIElements.erase(std::remove(m_vpUIElements.begin(), m_vpUIElements.end(), pElement), m_vpUIElements.end());
+	pElement->m_pUI = nullptr;
 }
 
 void CUi::ResetUIElement(CUIElement &UIElement) const
@@ -858,7 +880,7 @@ void CUi::DoLabel(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, cons
 	RectEl.m_Cursor = Cursor;
 }
 
-void CUi::DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps, int StrLen, const CTextCursor *pReadCursor) const
+void CUi::DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps, int StrLen, const CTextCursor *pReadCursor, bool Render) const
 {
 	const int ReadCursorGlyphCount = pReadCursor == nullptr ? -1 : pReadCursor->m_GlyphCount;
 	bool NeedsRecreate = false;
@@ -907,7 +929,7 @@ void CUi::DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRe
 		DoLabel(RectEl, &TmpRect, pText, Size, TEXTALIGN_TL, LabelProps, StrLen, pReadCursor);
 	}
 
-	if(RectEl.m_UITextContainer.Valid())
+	if(Render && RectEl.m_UITextContainer.Valid())
 	{
 		const vec2 CursorPos = CalcAlignedCursorPos(pRect, vec2(RectEl.m_Cursor.m_LongestLineWidth, RectEl.m_Cursor.Height()), Align);
 		TextRender()->RenderTextContainer(RectEl.m_UITextContainer, RectEl.m_TextColor, RectEl.m_TextOutlineColor, CursorPos.x, CursorPos.y);

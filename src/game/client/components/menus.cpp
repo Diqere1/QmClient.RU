@@ -3340,9 +3340,8 @@ CUIElement &CMenus::SettingsTextElement(int Page, int Tab, const char *pTextId)
 	auto It = m_SettingsTextPool.find(Key);
 	if(It == m_SettingsTextPool.end())
 	{
-		SSettingsTextPoolEntry Entry;
-		Entry.m_Element.Init(Ui(), 1);
-		It = m_SettingsTextPool.emplace(Key, std::move(Entry)).first;
+		It = m_SettingsTextPool.try_emplace(Key).first;
+		It->second.m_Element.Init(Ui(), 1);
 	}
 	return It->second.m_Element;
 }
