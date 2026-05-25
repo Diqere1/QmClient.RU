@@ -36,6 +36,7 @@
 #include "components/qmclient/modes.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
+#include "components/settings_runtime_cache.h"
 #include "components/skins.h"
 #include "components/skins7.h"
 #include "components/sounds.h"
@@ -697,7 +698,7 @@ void CGameClient::OnInit()
 
 void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption)
 {
-	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return;
 
 	Ui()->MapScreen();
@@ -2144,6 +2145,7 @@ void CGameClient::HandleLanguageChanged()
 	g_Localization.Load(aBuf, Storage(), Console(), false);
 
 	TextRender()->SetFontLanguageVariant(g_Config.m_ClLanguagefile);
+	m_Menus.InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::LANGUAGE_CHANGED);
 
 	// Clear all text containers
 	Client()->OnWindowResize();

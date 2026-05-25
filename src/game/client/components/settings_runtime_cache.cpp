@@ -285,6 +285,73 @@ const char *SettingsTClientPerfStageName(ETClientSettingsPerfStage Stage)
 	return "tclient_unknown";
 }
 
+bool SettingsInvalidationClearsTextPool(ESettingsInvalidationReason Reason)
+{
+	switch(Reason)
+	{
+	case ESettingsInvalidationReason::LANGUAGE_CHANGED:
+	case ESettingsInvalidationReason::FONT_CHANGED:
+	case ESettingsInvalidationReason::BACKEND_CHANGED:
+	case ESettingsInvalidationReason::WINDOW_OR_SCALE_CHANGED:
+	case ESettingsInvalidationReason::CONFIG_HASH_CHANGED:
+		return true;
+	case ESettingsInvalidationReason::SECTION_SIZE_CHANGED:
+	case ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED:
+		return false;
+	}
+	return true;
+}
+
+bool SettingsInvalidationClearsSectionFbo(ESettingsInvalidationReason Reason)
+{
+	switch(Reason)
+	{
+	case ESettingsInvalidationReason::LANGUAGE_CHANGED:
+	case ESettingsInvalidationReason::FONT_CHANGED:
+	case ESettingsInvalidationReason::BACKEND_CHANGED:
+	case ESettingsInvalidationReason::WINDOW_OR_SCALE_CHANGED:
+	case ESettingsInvalidationReason::CONFIG_HASH_CHANGED:
+	case ESettingsInvalidationReason::SECTION_SIZE_CHANGED:
+	case ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED:
+		return true;
+	}
+	return true;
+}
+
+bool SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason Reason)
+{
+	switch(Reason)
+	{
+	case ESettingsInvalidationReason::LANGUAGE_CHANGED:
+	case ESettingsInvalidationReason::FONT_CHANGED:
+	case ESettingsInvalidationReason::BACKEND_CHANGED:
+	case ESettingsInvalidationReason::WINDOW_OR_SCALE_CHANGED:
+	case ESettingsInvalidationReason::CONFIG_HASH_CHANGED:
+		return true;
+	case ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED:
+	case ESettingsInvalidationReason::SECTION_SIZE_CHANGED:
+		return false;
+	}
+	return true;
+}
+
+bool SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason Reason, int Page, int AssetsPage)
+{
+	if(Reason == ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED)
+		return Page == AssetsPage;
+	return SettingsInvalidationClearsPageFbo(Reason);
+}
+
+bool SettingsInvalidationClearsResourcePlan(ESettingsInvalidationReason Reason)
+{
+	return Reason == ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED;
+}
+
+bool SettingsWarmupEnabled(int PrewarmConfig, int FboConfig)
+{
+	return PrewarmConfig != 0 && FboConfig != 0;
+}
+
 static std::string SettingsRuntimePageName(int Page)
 {
 	switch(Page)

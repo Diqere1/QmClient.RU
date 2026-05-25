@@ -171,6 +171,7 @@ private:
 	SSettingsAssetPendingMerge m_aAssetPendingMerges[NUMBER_OF_ASSETS_TABS];
 	int m_aAssetLoadGenerations[NUMBER_OF_ASSETS_TABS] = {};
 	void PublishSettingsAssetMergeEntries(int Tab, const std::vector<SSettingsAssetMergeEntry> &vEntries);
+	void InvalidateSettingsAssetResourcePlan();
 
 public:
 	struct SCustomItem
@@ -1767,6 +1768,7 @@ public:
 	void SaveSettingsRuntimeCacheMetadata();
 	CUIElement &SettingsTextElement(int Page, int Tab, const char *pTextId);
 	void InvalidateSettingsTextPool();
+	void InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason Reason);
 
 private:
 	struct SSettingsTextPoolEntry
@@ -1850,6 +1852,7 @@ private:
 	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f, bool ResourcesReady = true);
 	bool DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
 	void InvalidateSettingsPageRuntimeCache(int Page, int Tab);
+	void InvalidateTClientSettingsRuntimeCacheSections(ESettingsCacheDirtyReason Reason = ESettingsCacheDirtyReason::CONFIG);
 	bool PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
 	bool DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
 	void InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char *pSectionId);

@@ -47,6 +47,17 @@ enum class ETClientSettingsPerfStage
 	INTERACTIVE_LAYER,
 };
 
+enum class ESettingsInvalidationReason
+{
+	LANGUAGE_CHANGED,
+	FONT_CHANGED,
+	BACKEND_CHANGED,
+	WINDOW_OR_SCALE_CHANGED,
+	CONFIG_HASH_CHANGED,
+	SECTION_SIZE_CHANGED,
+	RESOURCE_DIRECTORY_CHANGED,
+};
+
 struct SSettingsWarmupFrameBudget
 {
 	int m_MaxTextContainers = 8;
@@ -123,6 +134,12 @@ bool SettingsWarmupPlanContainsPage(const SSettingsWarmupStartupPlan &Plan, int 
 bool SettingsWarmupConsumeBudget(SSettingsWarmupFrameBudget &Budget, ESettingsWarmupCost Cost);
 const char *SettingsWarmupMissReasonName(ESettingsWarmupMissReason Reason);
 const char *SettingsTClientPerfStageName(ETClientSettingsPerfStage Stage);
+bool SettingsInvalidationClearsTextPool(ESettingsInvalidationReason Reason);
+bool SettingsInvalidationClearsSectionFbo(ESettingsInvalidationReason Reason);
+bool SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason Reason);
+bool SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason Reason, int Page, int AssetsPage);
+bool SettingsInvalidationClearsResourcePlan(ESettingsInvalidationReason Reason);
+bool SettingsWarmupEnabled(int PrewarmConfig, int FboConfig);
 std::string SettingsPageCacheKey(int Page, int Tab);
 std::string SettingsSectionCacheKey(int Page, int Tab, const char *pSection);
 std::string SettingsTextCacheKey(int Page, int Tab, const char *pTextId);

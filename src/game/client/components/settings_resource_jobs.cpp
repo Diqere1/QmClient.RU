@@ -60,6 +60,11 @@ bool SettingsSkinListPlanGenerationMatches(const SSettingsSkinListPlanResult &Re
 	return Result.m_Generation == CurrentGeneration;
 }
 
+bool SettingsAssetListJobGenerationMatches(int JobGeneration, int CurrentGeneration)
+{
+	return JobGeneration == CurrentGeneration;
+}
+
 bool SettingsSkinListShouldPublishMergedList(size_t Cursor, size_t Total)
 {
 	return Cursor >= Total;

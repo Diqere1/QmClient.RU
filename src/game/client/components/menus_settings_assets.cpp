@@ -369,6 +369,7 @@ private:
 	mutable CLock m_Lock;
 	std::vector<SAssetEntry> m_vEntries;
 	mutable bool m_Completed = false;
+	int m_Generation = 0;
 
 	static int ScanCallback(const char *pName, int IsDir, int DirType, void *pUser)
 	{
@@ -603,6 +604,11 @@ public:
 	{
 	}
 
+	void SetGeneration(int Generation)
+	{
+		m_Generation = Generation;
+	}
+
 	bool IsCompleted() const REQUIRES(!m_Lock)
 	{
 		const CLockScope Lock(m_Lock);
@@ -616,6 +622,7 @@ public:
 	}
 
 	EAssetType GetType() const { return m_Type; }
+	int Generation() const { return m_Generation; }
 };
 
 static bool LoadFileToBuffer(IStorage *pStorage, const char *pFilename, int StorageType, std::vector<uint8_t> &vBuffer)
@@ -2565,6 +2572,78 @@ void CMenus::ClearCustomItems(int CurTab)
 	gs_aInitCustomList[CurTab] = true;
 }
 
+void CMenus::InvalidateSettingsAssetResourcePlan()
+{
+	for(int Tab = ASSETS_TAB_ENTITIES; Tab < NUMBER_OF_ASSETS_TABS; ++Tab)
+	{
+		switch(Tab)
+		{
+		case ASSETS_TAB_ENTITIES:
+			for(auto &Entity : m_vEntitiesList)
+			{
+				ResetCustomItemPreviewState(Entity);
+				for(auto &Image : Entity.m_aImages)
+					Graphics()->UnloadTexture(&Image.m_Texture);
+			}
+			m_vEntitiesList.clear();
+			gs_vpSearchEntitiesList.clear();
+			break;
+		case ASSETS_TAB_GAME:
+			ClearAssetList(m_vGameList, Graphics());
+			gs_vpSearchGamesList.clear();
+			break;
+		case ASSETS_TAB_EMOTICONS:
+			ClearAssetList(m_vEmoticonList, Graphics());
+			gs_vpSearchEmoticonsList.clear();
+			break;
+		case ASSETS_TAB_PARTICLES:
+			ClearAssetList(m_vParticlesList, Graphics());
+			gs_vpSearchParticlesList.clear();
+			break;
+		case ASSETS_TAB_HUD:
+			ClearAssetList(m_vHudList, Graphics());
+			gs_vpSearchHudList.clear();
+			break;
+		case ASSETS_TAB_GUI_CURSOR:
+			ClearAssetList(m_vGuiCursorList, Graphics());
+			gs_vpSearchGuiCursorList.clear();
+			break;
+		case ASSETS_TAB_ARROW:
+			ClearAssetList(m_vArrowList, Graphics());
+			gs_vpSearchArrowList.clear();
+			break;
+		case ASSETS_TAB_STRONG_WEAK:
+			ClearAssetList(m_vStrongWeakList, Graphics());
+			gs_vpSearchStrongWeakList.clear();
+			break;
+		case ASSETS_TAB_ENTITY_BG:
+			ClearAssetList(m_vEntityBgList, Graphics());
+			m_vEntityBgSourceNames.clear();
+			m_vEntityBgSourceKinds.clear();
+			m_aEntityBgCurrentFolder[0] = '\0';
+			gs_vpSearchEntityBgList.clear();
+			break;
+		case ASSETS_TAB_EXTRAS:
+			ClearAssetList(m_vExtrasList, Graphics());
+			gs_vpSearchExtrasList.clear();
+			break;
+		default:
+			break;
+		}
+		m_aAssetPendingMerges[Tab] = {};
+		++m_aAssetLoadGenerations[Tab];
+		++m_aCustomPreviewEpoch[Tab];
+		m_aaCustomPreviewDecodeQueue[Tab].clear();
+		m_aaCustomPreviewReadyQueue[Tab].clear();
+		m_aaCustomPreviewReadyQueued[Tab].clear();
+		m_apAssetLoadJobs[Tab].reset();
+		gs_aAssetWarmupReady[Tab] = false;
+		m_aAssetLoadStates[Tab] = ASSET_LOAD_STATE_UNLOADED;
+		gs_aInitCustomList[Tab] = true;
+	}
+	gs_NextAssetWarmupTab = ASSETS_TAB_ENTITIES;
+}
+
 void CMenus::PublishSettingsAssetMergeEntries(int Tab, const std::vector<SSettingsAssetMergeEntry> &vEntries)
 {
 	switch(Tab)
@@ -2728,8 +2807,10 @@ bool CMenus::PrewarmSettingsAssetResources()
 				break;
 			}
 
-			m_apAssetLoadJobs[Tab] = std::make_shared<CAssetListLoadJob>(
+			auto pJob = std::make_shared<CAssetListLoadJob>(
 				static_cast<CAssetListLoadJob::EAssetType>(Tab), Storage());
+			pJob->SetGeneration(m_aAssetLoadGenerations[Tab]);
+			m_apAssetLoadJobs[Tab] = pJob;
 			Engine()->AddJob(m_apAssetLoadJobs[Tab]);
 			m_aAssetLoadStates[Tab] = ASSET_LOAD_STATE_LOADING;
 		}
@@ -2739,6 +2820,14 @@ bool CMenus::PrewarmSettingsAssetResources()
 			std::static_pointer_cast<CAssetListLoadJob>(m_apAssetLoadJobs[Tab])->IsCompleted())
 		{
 			auto pJob = std::static_pointer_cast<CAssetListLoadJob>(m_apAssetLoadJobs[Tab]);
+			if(!SettingsAssetListJobGenerationMatches(pJob->Generation(), m_aAssetLoadGenerations[Tab]))
+			{
+				m_apAssetLoadJobs[Tab].reset();
+				m_aAssetLoadStates[Tab] = ASSET_LOAD_STATE_UNLOADED;
+				gs_aAssetWarmupReady[Tab] = false;
+				gs_NextAssetWarmupTab = Tab;
+				return false;
+			}
 			std::vector<CAssetListLoadJob::SAssetEntry> vEntries = pJob->TakeEntries();
 			++m_aCustomPreviewEpoch[Tab];
 			m_aaCustomPreviewDecodeQueue[Tab].clear();
@@ -3020,8 +3109,10 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		}
 
 		// Start async loading job
-		m_apAssetLoadJobs[s_CurCustomTab] = std::make_shared<CAssetListLoadJob>(
+		auto pJob = std::make_shared<CAssetListLoadJob>(
 			static_cast<CAssetListLoadJob::EAssetType>(s_CurCustomTab), Storage());
+		pJob->SetGeneration(m_aAssetLoadGenerations[s_CurCustomTab]);
+		m_apAssetLoadJobs[s_CurCustomTab] = pJob;
 		Engine()->AddJob(m_apAssetLoadJobs[s_CurCustomTab]);
 		m_aAssetLoadStates[s_CurCustomTab] = ASSET_LOAD_STATE_LOADING;
 	}
@@ -3033,6 +3124,14 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	{
 		CPerfTimer CompletedTimer;
 		auto pJob = std::static_pointer_cast<CAssetListLoadJob>(m_apAssetLoadJobs[s_CurCustomTab]);
+		if(!SettingsAssetListJobGenerationMatches(pJob->Generation(), m_aAssetLoadGenerations[s_CurCustomTab]))
+		{
+			m_apAssetLoadJobs[s_CurCustomTab].reset();
+			m_aAssetLoadStates[s_CurCustomTab] = ASSET_LOAD_STATE_UNLOADED;
+			gs_aAssetWarmupReady[s_CurCustomTab] = false;
+			gs_NextAssetWarmupTab = s_CurCustomTab;
+			return;
+		}
 		std::vector<CAssetListLoadJob::SAssetEntry> vEntries = pJob->TakeEntries();
 		{
 			char aExtra[128];
@@ -5286,6 +5385,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		ClearCustomItems(s_CurCustomTab);
 		if(SWorkshopHudState *pWorkshopState = WorkshopStateByTab(s_CurCustomTab))
 			ResetWorkshopState(*pWorkshopState, Graphics(), true);
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED);
 	}
 	TextRender()->SetRenderFlags(0);
 	TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);

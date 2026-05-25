@@ -4,6 +4,7 @@
 #include <base/system.h>
 #include <engine/shared/config.h>
 #include <engine/storage.h>
+#include <game/client/components/settings_runtime_cache.h>
 
 #include <cstdlib>
 
@@ -755,7 +756,7 @@ bool CSectionLoader::TryRenderCachedSection(SSettingsSection &Section)
 			m_RunningColumn.y += Section.m_CachedHeight;
 		return true;
 	}
-	if(!g_Config.m_QmSettingsFboCache)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return false;
 	if(!m_pGraphics->IsRenderTargetSupported())
 		return false;
@@ -859,7 +860,7 @@ bool CSectionLoader::RecordStaticRenderTarget(SSettingsSection &Section, int Wid
 		Section.m_CacheRuntimeKey = m_RuntimeKey;
 		return true;
 	}
-	if(!g_Config.m_QmSettingsFboCache)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return false;
 	if(!m_pGraphics->IsRenderTargetSupported())
 		return false;

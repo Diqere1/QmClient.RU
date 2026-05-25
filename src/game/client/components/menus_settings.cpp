@@ -2041,6 +2041,7 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 
 				CheckSettings = true;
 				s_GfxBackendChanged = s_SelectedOldBackend != NewBackend;
+				InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::BACKEND_CHANGED);
 			}
 	}
 

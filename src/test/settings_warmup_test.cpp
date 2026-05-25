@@ -408,6 +408,34 @@ TEST(SettingsRuntimeCache, SectionRegistryRequiresBothLayersForStaticFbo)
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "missing"));
 }
 
+TEST(SettingsRuntimeCache, InvalidationReasonTargetsExpectedCaches)
+{
+	EXPECT_TRUE(SettingsInvalidationClearsTextPool(ESettingsInvalidationReason::LANGUAGE_CHANGED));
+	EXPECT_TRUE(SettingsInvalidationClearsSectionFbo(ESettingsInvalidationReason::LANGUAGE_CHANGED));
+	EXPECT_TRUE(SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason::LANGUAGE_CHANGED));
+
+	EXPECT_FALSE(SettingsInvalidationClearsTextPool(ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED));
+	EXPECT_TRUE(SettingsInvalidationClearsResourcePlan(ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED));
+	EXPECT_TRUE(SettingsInvalidationClearsSectionFbo(ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED));
+	EXPECT_FALSE(SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED));
+	EXPECT_TRUE(SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED, CMenus::SETTINGS_ASSETS, CMenus::SETTINGS_ASSETS));
+	EXPECT_FALSE(SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED, CMenus::SETTINGS_TCLIENT, CMenus::SETTINGS_ASSETS));
+
+	EXPECT_TRUE(SettingsInvalidationClearsTextPool(ESettingsInvalidationReason::FONT_CHANGED));
+	EXPECT_FALSE(SettingsInvalidationClearsResourcePlan(ESettingsInvalidationReason::FONT_CHANGED));
+	EXPECT_TRUE(SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason::WINDOW_OR_SCALE_CHANGED));
+	EXPECT_FALSE(SettingsInvalidationClearsTextPool(ESettingsInvalidationReason::SECTION_SIZE_CHANGED));
+	EXPECT_TRUE(SettingsInvalidationClearsSectionFbo(ESettingsInvalidationReason::SECTION_SIZE_CHANGED));
+}
+
+TEST(SettingsRuntimeCache, DisabledConfigBypassesWarmupAndFbo)
+{
+	EXPECT_FALSE(SettingsWarmupEnabled(0, 1));
+	EXPECT_FALSE(SettingsWarmupEnabled(1, 0));
+	EXPECT_FALSE(SettingsWarmupEnabled(0, 0));
+	EXPECT_TRUE(SettingsWarmupEnabled(1, 1));
+}
+
 TEST(SettingsResourceJobs, SkinPlanKeepsSelectedFavoritesThenSorted)
 {
 	std::vector<SSettingsSkinListEntry> vEntries = {
@@ -517,6 +545,12 @@ TEST(SettingsResourceJobs, SkinSnapshotRejectsStaleGeneration)
 	Result.m_Generation = 7;
 	EXPECT_TRUE(SettingsSkinListPlanGenerationMatches(Result, 7));
 	EXPECT_FALSE(SettingsSkinListPlanGenerationMatches(Result, 8));
+}
+
+TEST(SettingsResourceJobs, AssetListRejectsStaleJobGeneration)
+{
+	EXPECT_TRUE(SettingsAssetListJobGenerationMatches(4, 4));
+	EXPECT_FALSE(SettingsAssetListJobGenerationMatches(4, 5));
 }
 
 TEST(SettingsResourceJobs, SkinListPublishesOnlyCompleteMergedList)

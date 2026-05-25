@@ -36,6 +36,7 @@ std::vector<int> BuildSettingsCountryFlagWarmupPlan(const std::vector<int> &vCou
 bool SettingsResourceConsumeMergeEntry(SSettingsResourceMergeBudget &Budget);
 bool SettingsResourceConsumeGpuUpload(SSettingsResourceMergeBudget &Budget);
 bool SettingsSkinListPlanGenerationMatches(const SSettingsSkinListPlanResult &Result, int CurrentGeneration);
+bool SettingsAssetListJobGenerationMatches(int JobGeneration, int CurrentGeneration);
 bool SettingsSkinListShouldPublishMergedList(size_t Cursor, size_t Total);
 bool SettingsSkinListShouldRequestImmediateLoad(bool Visible);
 bool SettingsAssetListShouldShowBlockingLoading(bool Loading, int VisibleEntries);

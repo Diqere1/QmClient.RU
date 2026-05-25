@@ -1018,6 +1018,7 @@ float CMenus::LayoutTClientThemeCacheSection(CUIRect &CurrentColumn, bool Render
 			s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
 			s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
 			TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
+			InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::FONT_CHANGED);
 			TextRender()->OnPreWindowResize();
 			GameClient()->OnWindowResize();
 			GameClient()->Editor()->OnWindowResize();
@@ -1104,6 +1105,7 @@ float CMenus::RenderTClientThemeInteractiveLayer(CUIRect &CurrentColumn)
 		s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
 		s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
 		TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::FONT_CHANGED);
 		TextRender()->OnPreWindowResize();
 		GameClient()->OnWindowResize();
 		GameClient()->Editor()->OnWindowResize();
@@ -1501,6 +1503,12 @@ bool CMenus::PrepareTClientSettingsRuntimeCacheSection(CUIRect SectionView, cons
 	return false;
 }
 
+void CMenus::InvalidateTClientSettingsRuntimeCacheSections(ESettingsCacheDirtyReason Reason)
+{
+	s_VisualFontLoader.InvalidateCache(Reason);
+	s_RightSectionLoader.InvalidateCache(Reason);
+}
+
 void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 {
 	CPerfTimer RenderTimer;
@@ -1739,6 +1747,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 							s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
 							s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
 							TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
+							InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::FONT_CHANGED);
 							TextRender()->OnPreWindowResize();
 							GameClient()->OnWindowResize();
 						GameClient()->Editor()->OnWindowResize();
@@ -1850,6 +1859,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 					s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
 					s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
 					TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
+					InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::FONT_CHANGED);
 					TextRender()->OnPreWindowResize();
 					GameClient()->OnWindowResize();
 					GameClient()->Editor()->OnWindowResize();
@@ -3337,14 +3347,14 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 
 void CMenus::PrewarmSettingsTClient(CUIRect MainView)
 {
-	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return;
 	RenderSettingsTClientSettings(TClientSettingsContentView(MainView), true);
 }
 
 bool CMenus::PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView)
 {
-	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return true;
 	static int s_NextTClientRuntimeCachePrewarmTab = TCLIENT_TAB_SETTINGS;
 	for(int Attempt = 0; Attempt < NUMBER_OF_TCLIENT_TABS; ++Attempt)
@@ -3377,7 +3387,7 @@ bool CMenus::PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView)
 
 bool CMenus::PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView)
 {
-	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return true;
 	static int s_NextQmClientRuntimeCachePrewarmTab = QMCLIENT_SETTINGS_TAB_VISUAL;
 	for(int Attempt = 0; Attempt < NUMBER_OF_QMCLIENT_SETTINGS_TABS; ++Attempt)
@@ -3409,7 +3419,7 @@ void CMenus::PrepareSettingsRuntimeWarmupPlan()
 
 bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 {
-	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return true;
 	CUIRect ContentView = MainView;
 	const float TabBarWidth = std::clamp(ContentView.w * 0.14f, 108.0f, 120.0f);

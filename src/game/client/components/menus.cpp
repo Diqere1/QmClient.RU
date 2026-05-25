@@ -1927,7 +1927,7 @@ void CMenus::Render()
 			}
 
 			CPerfTimer ContentTimer;
-			const bool CanPrewarmSettings = g_Config.m_QmSettingsPrewarm != 0 &&
+			const bool CanPrewarmSettings = SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache) &&
 				Ui()->ActiveItem() == nullptr &&
 				Ui()->HotItem() == nullptr &&
 				!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
@@ -2009,7 +2009,7 @@ void CMenus::Render()
 			}
 
 			CPerfTimer ContentTimer;
-			const bool CanPrewarmSettings = g_Config.m_QmSettingsPrewarm != 0 &&
+			const bool CanPrewarmSettings = SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache) &&
 				Ui()->ActiveItem() == nullptr &&
 				Ui()->HotItem() == nullptr &&
 				!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
@@ -3162,7 +3162,7 @@ void CMenus::OnReset()
 	ResetReportScan();
 	ResetDemoScreenshotPreview();
 	ClearQmClientSettingsSearchInputs();
-	InvalidateSettingsTextPool();
+	InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
 }
 
 void CMenus::OnShutdown()
@@ -3285,6 +3285,40 @@ void CMenus::InvalidateSettingsTextPool()
 	m_SettingsTextPoolFontHash = 0;
 }
 
+void CMenus::InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason Reason)
+{
+	if(SettingsInvalidationClearsTextPool(Reason))
+		InvalidateSettingsTextPool();
+
+	if(Reason == ESettingsInvalidationReason::RESOURCE_DIRECTORY_CHANGED)
+	{
+		InvalidateSettingsPageRuntimeCache(SETTINGS_ASSETS, -1);
+		InvalidateSettingsSectionRuntimeCache(SETTINGS_ASSETS, -1, "resource-list");
+		InvalidateSettingsSectionRuntimeCache(SETTINGS_ASSETS, -1, "preview");
+	}
+	else if(SettingsInvalidationClearsPageFbo(Reason))
+		DestroySettingsPageRuntimeCaches();
+	else if(SettingsInvalidationClearsSectionFbo(Reason))
+	{
+		for(auto &[Key, pCache] : m_SettingsGenericSectionCaches)
+		{
+			if(pCache)
+				pCache->m_Loader.InvalidateCache(ESettingsCacheDirtyReason::CONFIG);
+		}
+		InvalidateTClientSettingsRuntimeCacheSections(ESettingsCacheDirtyReason::CONFIG);
+		for(bool &Prewarmed : m_aSettingsTClientSiblingPrewarmed)
+			Prewarmed = false;
+		for(bool &Prewarmed : m_aSettingsQmClientSiblingPrewarmed)
+			Prewarmed = false;
+	}
+
+	if(SettingsInvalidationClearsResourcePlan(Reason))
+		InvalidateSettingsAssetResourcePlan();
+
+	m_SettingsStartupWarmupCursor = 0;
+	m_SettingsRuntimePrewarmCursor = 0;
+}
+
 CMenus::SSettingsPageRuntimeCache *CMenus::GetSettingsPageRuntimeCache(int Page, int Tab)
 {
 	const int Slot = SettingsPageRuntimeCacheSlot(Page, Tab);
@@ -3295,7 +3329,7 @@ CMenus::SSettingsPageRuntimeCache *CMenus::GetSettingsPageRuntimeCache(int Page,
 
 bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY, bool ResourcesReady)
 {
-	if(g_Config.m_QmSettingsPrewarm == 0 || g_Config.m_QmSettingsFboCache == 0)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return false;
 	if(!SettingsPageCanUsePageFbo(Page, SETTINGS_ASSETS))
 		return false;
@@ -3439,7 +3473,7 @@ bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
 
 bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY)
 {
-	if(g_Config.m_QmSettingsFboCache == 0)
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return false;
 	if(!SettingsPageCanUsePageFbo(Page, SETTINGS_ASSETS))
 		return false;
@@ -3480,7 +3514,7 @@ bool CMenus::PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, i
 	const SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
 	if(!SettingsSectionCanRecordStaticFbo(Registry, Page, Tab, pSectionId))
 		return false;
-	if(g_Config.m_QmSettingsFboCache == 0 || !Graphics()->IsRenderTargetSupported())
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache) || !Graphics()->IsRenderTargetSupported())
 		return false;
 	if(Ui()->ActiveItem() != nullptr)
 		return false;
@@ -3497,6 +3531,8 @@ bool CMenus::PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, i
 
 bool CMenus::DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId)
 {
+	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+		return false;
 	const SSettingsSectionRegistry Registry = BuildSettingsSectionRegistry();
 	if(!SettingsSectionCanRecordStaticFbo(Registry, Page, Tab, pSectionId))
 		return false;
@@ -3597,7 +3633,7 @@ void CMenus::OnStateChange(int NewState, int OldState)
 void CMenus::OnWindowResize()
 {
 	TextRender()->DeleteTextContainer(m_MotdTextContainerIndex);
-	InvalidateSettingsTextPool();
+	InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::WINDOW_OR_SCALE_CHANGED);
 }
 
 void CMenus::OnRender()
