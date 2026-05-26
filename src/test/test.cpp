@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <functional>
 
 CTestInfo::CTestInfo()
 {
@@ -129,6 +130,29 @@ void TestDeleteTestStorageFiles(const char *pPath)
 	}
 }
 
+static void WriteTestFileOrDir(const char *pBasePath, const char *pRelativePath, bool Directory)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	str_format(aPath, sizeof(aPath), "%s/%s", pBasePath, pRelativePath);
+	if(Directory)
+	{
+		ASSERT_FALSE(fs_makedir(aPath));
+		return;
+	}
+
+	IOHANDLE File = io_open(aPath, IOFLAG_WRITE);
+	ASSERT_TRUE(File != nullptr);
+	static const char *pContents = "tmp";
+	io_write(File, pContents, str_length(pContents));
+	io_close(File);
+}
+
+static void CreateScopedTestStorageFixture(const std::function<void(CTestInfo &)> &Body)
+{
+	CTestInfo Info;
+	Body(Info);
+}
+
 CTestInfo::~CTestInfo()
 {
 	if(!::testing::Test::HasFailure() && m_DeleteTestStorageFilesOnSuccess)
@@ -180,4 +204,59 @@ TEST(TestInfo, DeletesTestStorageOnSuccessByDefault)
 {
 	CTestInfo Info;
 	EXPECT_TRUE(Info.m_DeleteTestStorageFilesOnSuccess);
+}
+
+TEST(TestInfo, SuccessfulScopedStorageIsDeletedRecursively)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	CreateScopedTestStorageFixture([&](CTestInfo &Info) {
+		str_copy(aPath, Info.m_aFilename, sizeof(aPath));
+		ASSERT_FALSE(fs_makedir(Info.m_aFilename));
+		WriteTestFileOrDir(Info.m_aFilename, "root.txt", false);
+		WriteTestFileOrDir(Info.m_aFilename, "nested", true);
+		WriteTestFileOrDir(Info.m_aFilename, "nested/child.txt", false);
+		EXPECT_TRUE(fs_is_dir(Info.m_aFilename));
+	});
+
+	EXPECT_FALSE(fs_is_dir(aPath));
+	EXPECT_FALSE(fs_is_file(aPath));
+}
+
+TEST(TestInfo, CreateTestStorageCleansCreatedSaveFilesOnSuccess)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	CreateScopedTestStorageFixture([&](CTestInfo &Info) {
+		str_copy(aPath, Info.m_aFilename, sizeof(aPath));
+		std::unique_ptr<IStorage> pStorage = Info.CreateTestStorage();
+		ASSERT_NE(pStorage, nullptr);
+
+		char aSavePath[IO_MAX_PATH_LENGTH];
+		pStorage->GetCompletePath(IStorage::TYPE_SAVE, "cleanup.txt", aSavePath, sizeof(aSavePath));
+		IOHANDLE File = io_open(aSavePath, IOFLAG_WRITE);
+		ASSERT_TRUE(File != nullptr);
+		static const char *pContents = "cleanup";
+		io_write(File, pContents, str_length(pContents));
+		io_close(File);
+
+		EXPECT_TRUE(fs_is_file(aSavePath));
+	});
+
+	EXPECT_FALSE(fs_is_dir(aPath));
+}
+
+TEST(TestInfo, DisabledCleanupPreservesFilesForInspection)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	CreateScopedTestStorageFixture([&](CTestInfo &Info) {
+		Info.m_DeleteTestStorageFilesOnSuccess = false;
+		str_copy(aPath, Info.m_aFilename, sizeof(aPath));
+		ASSERT_FALSE(fs_makedir(Info.m_aFilename));
+		WriteTestFileOrDir(Info.m_aFilename, "keep.txt", false);
+	});
+
+	EXPECT_TRUE(fs_is_dir(aPath));
+	char aFile[IO_MAX_PATH_LENGTH];
+	str_format(aFile, sizeof(aFile), "%s/keep.txt", aPath);
+	EXPECT_TRUE(fs_is_file(aFile));
+	TestDeleteTestStorageFiles(aPath);
 }

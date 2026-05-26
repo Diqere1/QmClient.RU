@@ -778,6 +778,12 @@ TEST(SettingsResourceJobs, VisibleSkinFinalizeDefersBackgroundSweepsAfterPriorit
 	EXPECT_FALSE(SettingsSkinFinalizeShouldDeferBackgroundSweep(true, 2, 2));
 }
 
+TEST(SettingsResourceJobs, VisibleSkinFinalizeAllowsBackgroundSweepOnNextFrame)
+{
+	EXPECT_TRUE(SettingsSkinFinalizeShouldDeferBackgroundSweep(true, 1, 12));
+	EXPECT_FALSE(SettingsSkinFinalizeShouldDeferBackgroundSweep(false, 0, 12));
+}
+
 TEST(SettingsResourceJobs, CountryFlagPlanHandlesEmptyInput)
 {
 	const std::vector<int> vPlan = BuildSettingsCountryFlagWarmupPlan({});
