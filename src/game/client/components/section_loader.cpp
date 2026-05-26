@@ -8,6 +8,17 @@
 
 #include <cstdlib>
 
+static uint64_t ParseSessionCacheU64(const char *pValue)
+{
+	if(pValue == nullptr || pValue[0] == '\0')
+		return 0;
+#if defined(CONF_FAMILY_WINDOWS)
+	return _strtoui64(pValue, nullptr, 10);
+#else
+	return strtoull(pValue, nullptr, 10);
+#endif
+}
+
 CSectionLoader::CSectionLoader() = default;
 
 CSectionLoader::~CSectionLoader()
@@ -18,7 +29,10 @@ CSectionLoader::~CSectionLoader()
 
 bool CSectionLoader::IsVisibleSummarySectionName(const char *pName)
 {
-	return SettingsRuntimeCacheAllowsVisibleCompactText(pName);
+	return pName != nullptr &&
+		str_find(pName, "DeferredSummary") == nullptr &&
+		str_find(pName, "CompactSummary") == nullptr &&
+		str_find(pName, "SummaryBlock") == nullptr;
 }
 
 CUIRect CSectionLoader::MakeRenderTargetCacheRectForTests(float Width, float Height)
@@ -653,6 +667,22 @@ bool CSectionLoader::LoadSessionCache(SSessionUiCache &Cache, const char *pFilen
 			Cache.m_LastQmTab = atoi(pVal);
 		else if(KeyLen == 8 && strncmp(p, "scroll_y", 8) == 0)
 			Cache.m_LastScrollY = (float)atof(pVal);
+		else if(KeyLen == 14 && strncmp(p, "viewport_width", 14) == 0)
+			Cache.m_RuntimeKey.m_ViewportWidth = atoi(pVal);
+		else if(KeyLen == 15 && strncmp(p, "viewport_height", 15) == 0)
+			Cache.m_RuntimeKey.m_ViewportHeight = atoi(pVal);
+		else if(KeyLen == 8 && strncmp(p, "ui_scale", 8) == 0)
+			Cache.m_RuntimeKey.m_UiScale = atoi(pVal);
+		else if(KeyLen == 11 && strncmp(p, "config_hash", 11) == 0)
+			Cache.m_RuntimeKey.m_ConfigHash = ParseSessionCacheU64(pVal);
+		else if(KeyLen == 13 && strncmp(p, "language_hash", 13) == 0)
+			Cache.m_RuntimeKey.m_LanguageHash = ParseSessionCacheU64(pVal);
+		else if(KeyLen == 9 && strncmp(p, "font_hash", 9) == 0)
+			Cache.m_RuntimeKey.m_FontHash = ParseSessionCacheU64(pVal);
+		else if(KeyLen == 12 && strncmp(p, "backend_hash", 12) == 0)
+			Cache.m_RuntimeKey.m_BackendHash = ParseSessionCacheU64(pVal);
+		else if(KeyLen == 11 && strncmp(p, "window_hash", 11) == 0)
+			Cache.m_RuntimeKey.m_WindowHash = ParseSessionCacheU64(pVal);
 
 		p = pValEnd;
 		if(*p == '\n')
@@ -686,6 +716,30 @@ void CSectionLoader::SaveSessionCache(const SSessionUiCache &Cache, const char *
 	io_write(File, aLine, (unsigned)Len);
 
 	Len = str_format(aLine, sizeof(aLine), "scroll_y=%f\n", Cache.m_LastScrollY);
+	io_write(File, aLine, (unsigned)Len);
+
+	Len = str_format(aLine, sizeof(aLine), "viewport_width=%d\n", Cache.m_RuntimeKey.m_ViewportWidth);
+	io_write(File, aLine, (unsigned)Len);
+
+	Len = str_format(aLine, sizeof(aLine), "viewport_height=%d\n", Cache.m_RuntimeKey.m_ViewportHeight);
+	io_write(File, aLine, (unsigned)Len);
+
+	Len = str_format(aLine, sizeof(aLine), "ui_scale=%d\n", Cache.m_RuntimeKey.m_UiScale);
+	io_write(File, aLine, (unsigned)Len);
+
+	Len = str_format(aLine, sizeof(aLine), "config_hash=%llu\n", (unsigned long long)Cache.m_RuntimeKey.m_ConfigHash);
+	io_write(File, aLine, (unsigned)Len);
+
+	Len = str_format(aLine, sizeof(aLine), "language_hash=%llu\n", (unsigned long long)Cache.m_RuntimeKey.m_LanguageHash);
+	io_write(File, aLine, (unsigned)Len);
+
+	Len = str_format(aLine, sizeof(aLine), "font_hash=%llu\n", (unsigned long long)Cache.m_RuntimeKey.m_FontHash);
+	io_write(File, aLine, (unsigned)Len);
+
+	Len = str_format(aLine, sizeof(aLine), "backend_hash=%llu\n", (unsigned long long)Cache.m_RuntimeKey.m_BackendHash);
+	io_write(File, aLine, (unsigned)Len);
+
+	Len = str_format(aLine, sizeof(aLine), "window_hash=%llu\n", (unsigned long long)Cache.m_RuntimeKey.m_WindowHash);
 	io_write(File, aLine, (unsigned)Len);
 
 	io_close(File);

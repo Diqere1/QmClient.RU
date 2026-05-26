@@ -84,6 +84,7 @@ struct SSessionUiCache
 	int m_LastTClientTab = -1;
 	int m_LastQmTab = -1;
 	float m_LastScrollY = 0.0f;
+	SSettingsSectionCacheRuntimeKey m_RuntimeKey;
 	bool m_bValid = false;
 };
 

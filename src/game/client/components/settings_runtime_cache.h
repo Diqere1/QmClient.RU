@@ -104,6 +104,7 @@ struct SSettingsRuntimeCacheMetadata
 	int m_LastQmTab = 0;
 	int m_LastScrollPage = -1;
 	float m_LastScrollY = 0.0f;
+	SSettingsRuntimeCacheKey m_RuntimeKey;
 	bool m_Valid = false;
 };
 

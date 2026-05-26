@@ -46,10 +46,12 @@ bool SettingsSkinListPlanGenerationMatches(const SSettingsSkinListPlanResult &Re
 bool SettingsAssetListJobGenerationMatches(int JobGeneration, int CurrentGeneration);
 bool SettingsSkinListShouldPublishMergedList(size_t Cursor, size_t Total);
 bool SettingsSkinListShouldRequestImmediateLoad(bool Visible);
+bool SettingsSkinFinalizeShouldDeferBackgroundSweep(bool ProcessedHighPrioritySkin, int ProcessedThisFrame, int MaxPerFrame);
 bool SettingsAssetListShouldShowBlockingLoading(bool Loading, int VisibleEntries);
 bool SettingsAssetListCanStartPreviewDecode(bool Loading, bool Merging, bool Loaded);
 bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double ElapsedMs, int MaxFinalizesPerFrame, double MaxFinalizeMsPerFrame);
 bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex);
+bool SettingsAssetPreviewShouldUploadHighPriorityFirst(bool CurrentHighPriority, bool CandidateHighPriority);
 bool SettingsWorkshopThumbShouldStartHighPriority(int VisibleDownloadableIndex, int FirstVisibleDownloadableIndex, int LastVisibleDownloadableIndex);
 bool SettingsResourceCanUseHighPriorityBudget(int StartedThisFrame, int NormalBudget, int HighPriorityBudget, bool HighPriority);
 bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord);

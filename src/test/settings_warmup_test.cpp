@@ -137,8 +137,8 @@ TEST(SettingsWarmup, PageRuntimeCacheShortCircuitsOnlyFirstMatchingDraw)
 	Cache.m_Valid = true;
 
 	EXPECT_TRUE(SettingsPageRuntimeCacheShouldShortCircuit(Cache, 8, 2, 900, 620, RuntimeKey));
-	EXPECT_TRUE(Cache.m_DrawnOnce);
-	EXPECT_FALSE(SettingsPageRuntimeCacheShouldShortCircuit(Cache, 8, 2, 900, 620, RuntimeKey));
+	EXPECT_FALSE(Cache.m_DrawnOnce);
+	EXPECT_TRUE(SettingsPageRuntimeCacheShouldShortCircuit(Cache, 8, 2, 900, 620, RuntimeKey));
 }
 
 TEST(SettingsWarmup, PageRuntimeCacheRejectsMismatchedRuntimeKey)
@@ -334,7 +334,8 @@ TEST(SettingsRuntimeCache, InvalidationReasonNamesAreStable)
 
 TEST(SettingsRuntimeCache, CompactVisibleTextIsRejected)
 {
-	EXPECT_TRUE(SettingsRuntimeCacheAllowsVisibleCompactText("TClientPetSection"));
+	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText("TClientPetSection"));
+	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText("Controls:Mouse"));
 	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText(nullptr));
 	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText("TClientDeferredSummary"));
 	EXPECT_FALSE(SettingsRuntimeCacheAllowsVisibleCompactText("TClientCompactSummary"));
@@ -418,6 +419,32 @@ TEST(SettingsRuntimeCache, StartupPlanCoversLastPageAndAllRegisteredPages)
 	EXPECT_EQ(Plan.m_vPageJobs[0].m_Page, CMenus::SETTINGS_ASSETS);
 	for(int Page : BuildSettingsPageRuntimeRegistry().m_vPages)
 		EXPECT_TRUE(SettingsWarmupPlanContainsPage(Plan, Page));
+}
+
+TEST(SettingsRuntimeCache, RuntimeMetadataCarriesRuntimeKeyAlongsideWarmupContext)
+{
+	SSettingsRuntimeCacheMetadata Metadata;
+	Metadata.m_LastPage = CMenus::SETTINGS_TCLIENT;
+	Metadata.m_LastTClientTab = 2;
+	Metadata.m_LastScrollPage = CMenus::SETTINGS_TCLIENT;
+	Metadata.m_LastScrollY = 64.0f;
+	Metadata.m_RuntimeKey.m_LanguageHash = 11;
+	Metadata.m_RuntimeKey.m_FontGeneration = 22;
+	Metadata.m_RuntimeKey.m_BackendGeneration = 33;
+	Metadata.m_RuntimeKey.m_WindowWidth = 1600;
+	Metadata.m_RuntimeKey.m_WindowHeight = 900;
+	Metadata.m_RuntimeKey.m_UiScale = 100;
+	Metadata.m_RuntimeKey.m_ConfigHash = 44;
+	Metadata.m_Valid = true;
+
+	const SSettingsWarmupStartupPlan Plan = BuildSettingsWarmupStartupPlan(Metadata, BuildSettingsPageRuntimeRegistry());
+
+	ASSERT_FALSE(Plan.m_vPageJobs.empty());
+	EXPECT_EQ(Plan.m_vPageJobs.front().m_Page, CMenus::SETTINGS_TCLIENT);
+	EXPECT_EQ(Plan.m_vPageJobs.front().m_Tab, 2);
+	EXPECT_FLOAT_EQ(Plan.m_vPageJobs.front().m_ScrollY, 64.0f);
+	EXPECT_EQ(Metadata.m_RuntimeKey.m_WindowWidth, 1600);
+	EXPECT_EQ(Metadata.m_RuntimeKey.m_ConfigHash, 44u);
 }
 
 TEST(SettingsRuntimeCache, PageCacheSlotsRejectInvalidPersistedTabs)
@@ -677,6 +704,15 @@ TEST(SettingsResourceJobs, VisibleResourceStartsCanUsePriorityBudget)
 	EXPECT_FALSE(SettingsResourceCanUseHighPriorityBudget(12, 6, 12, true));
 }
 
+TEST(SettingsResourceJobs, VisibleReadyPreviewKeepsUploadPriority)
+{
+	EXPECT_TRUE(SettingsAssetPreviewShouldPrioritizeVisibleRange(3, 3, 5));
+	EXPECT_FALSE(SettingsAssetPreviewShouldPrioritizeVisibleRange(2, 3, 5));
+	EXPECT_TRUE(SettingsAssetPreviewShouldUploadHighPriorityFirst(false, true));
+	EXPECT_FALSE(SettingsAssetPreviewShouldUploadHighPriorityFirst(true, false));
+	EXPECT_FALSE(SettingsAssetPreviewShouldUploadHighPriorityFirst(false, false));
+}
+
 TEST(SettingsResourceJobs, PageCacheRejectsRecordedFrameWithoutReadyResources)
 {
 	EXPECT_FALSE(SettingsPageCacheCanUseRecordedResources(true, true, false));
@@ -732,6 +768,14 @@ TEST(SettingsResourceJobs, VisibleSkinListEntriesRequestImmediateLoad)
 {
 	EXPECT_TRUE(SettingsSkinListShouldRequestImmediateLoad(true));
 	EXPECT_FALSE(SettingsSkinListShouldRequestImmediateLoad(false));
+}
+
+TEST(SettingsResourceJobs, VisibleSkinFinalizeDefersBackgroundSweepsAfterPriorityWork)
+{
+	EXPECT_TRUE(SettingsSkinFinalizeShouldDeferBackgroundSweep(true, 1, 2));
+	EXPECT_FALSE(SettingsSkinFinalizeShouldDeferBackgroundSweep(false, 1, 2));
+	EXPECT_FALSE(SettingsSkinFinalizeShouldDeferBackgroundSweep(true, 0, 2));
+	EXPECT_FALSE(SettingsSkinFinalizeShouldDeferBackgroundSweep(true, 2, 2));
 }
 
 TEST(SettingsResourceJobs, CountryFlagPlanHandlesEmptyInput)

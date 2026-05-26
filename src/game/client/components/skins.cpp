@@ -1107,6 +1107,7 @@ CSkins::ESkinProcessResult CSkins::ProcessSkinContainer(CSkinContainer *pSkinCon
 void CSkins::UpdateFinishLoading(CSkinLoadingStats &Stats, std::chrono::nanoseconds StartTime, std::chrono::nanoseconds MaxTime)
 {
 	int SkinsProcessedThisFrame = 0;
+	bool ProcessedHighPrioritySkin = false;
 	std::vector<std::string> vUsageSnapshot;
 	vUsageSnapshot.reserve(m_SkinsUsageList.size());
 	for(const std::string &SkinName : m_SkinsUsageList)
@@ -1134,6 +1135,15 @@ void CSkins::UpdateFinishLoading(CSkinLoadingStats &Stats, std::chrono::nanoseco
 		{
 			break;
 		}
+		if(Result == ESkinProcessResult::CONTINUE && It->second->m_State == CSkinContainer::EState::LOADED)
+		{
+			ProcessedHighPrioritySkin = true;
+		}
+	}
+
+	if(SettingsSkinFinalizeShouldDeferBackgroundSweep(ProcessedHighPrioritySkin, SkinsProcessedThisFrame, MAX_SKINS_PER_FRAME))
+	{
+		return;
 	}
 
 	// Process remaining loading skins that are not in the usage list

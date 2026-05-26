@@ -175,3 +175,9 @@ TEST(TestInfo, Sort)
 	EXPECT_TRUE(vEntries[2].m_IsDirectory);
 	EXPECT_EQ(str_comp(vEntries[2].m_aData, aBasePath), 0);
 }
+
+TEST(TestInfo, DeletesTestStorageOnSuccessByDefault)
+{
+	CTestInfo Info;
+	EXPECT_TRUE(Info.m_DeleteTestStorageFilesOnSuccess);
+}

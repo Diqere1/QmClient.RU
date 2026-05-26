@@ -203,6 +203,19 @@ namespace
 		return RuntimeKey;
 	}
 
+	SSettingsRuntimeCacheKey ToSettingsRuntimeCacheKey(const SSettingsSectionCacheRuntimeKey &RuntimeKey)
+	{
+		SSettingsRuntimeCacheKey Key;
+		Key.m_LanguageHash = RuntimeKey.m_LanguageHash;
+		Key.m_FontGeneration = RuntimeKey.m_FontHash;
+		Key.m_BackendGeneration = RuntimeKey.m_BackendHash;
+		Key.m_WindowWidth = RuntimeKey.m_ViewportWidth;
+		Key.m_WindowHeight = RuntimeKey.m_ViewportHeight;
+		Key.m_UiScale = RuntimeKey.m_UiScale;
+		Key.m_ConfigHash = RuntimeKey.m_ConfigHash;
+		return Key;
+	}
+
 	class CUiRenderOnlyGuard
 	{
 	public:
@@ -3508,12 +3521,17 @@ void CMenus::LoadSettingsRuntimeCacheMetadata()
 	SSessionUiCache SessionCache;
 	CSectionLoader::LoadSessionCache(SessionCache, SETTINGS_RUNTIME_CACHE_METADATA_FILE, Storage());
 	m_SettingsRuntimeMetadata = {};
+	const CUIRect CacheView = Ui()->Screen() != nullptr ? TClientSettingsContentView(*Ui()->Screen()) : CUIRect{0.0f, 0.0f, 0.0f, 0.0f};
+	const SSettingsRuntimeCacheKey CurrentRuntimeKey = ToSettingsRuntimeCacheKey(MakeSettingsSectionRuntimeKey(CacheView, Graphics()));
+	const SSettingsRuntimeCacheKey PersistedRuntimeKey = ToSettingsRuntimeCacheKey(SessionCache.m_RuntimeKey);
+	const bool RuntimeKeyMatches = SettingsRuntimeCacheKeyMatches(CurrentRuntimeKey, PersistedRuntimeKey);
 	m_SettingsRuntimeMetadata.m_LastPage = SessionCache.m_LastSettingsPage;
 	m_SettingsRuntimeMetadata.m_LastTClientTab = CanonicalizePersistedTClientTab(SessionCache.m_LastTClientTab >= 0 ? SessionCache.m_LastTClientTab : 0);
 	m_SettingsRuntimeMetadata.m_LastQmTab = CanonicalizePersistedQmClientTab(SessionCache.m_LastQmTab >= 0 ? SessionCache.m_LastQmTab : 0);
-	m_SettingsRuntimeMetadata.m_LastScrollPage = SessionCache.m_bValid ? SETTINGS_TCLIENT : -1;
-	m_SettingsRuntimeMetadata.m_LastScrollY = SessionCache.m_LastScrollY;
-	m_SettingsRuntimeMetadata.m_Valid = SessionCache.m_bValid;
+	m_SettingsRuntimeMetadata.m_LastScrollPage = SessionCache.m_bValid && RuntimeKeyMatches ? SETTINGS_TCLIENT : -1;
+	m_SettingsRuntimeMetadata.m_LastScrollY = RuntimeKeyMatches ? SessionCache.m_LastScrollY : 0.0f;
+	m_SettingsRuntimeMetadata.m_RuntimeKey = CurrentRuntimeKey;
+	m_SettingsRuntimeMetadata.m_Valid = SessionCache.m_bValid && RuntimeKeyMatches;
 	if(m_SettingsRuntimeMetadata.m_LastPage == SETTINGS_CONFIGS)
 	{
 		m_SettingsRuntimeMetadata.m_LastPage = SETTINGS_QMCLIENT;
@@ -3526,8 +3544,8 @@ void CMenus::LoadSettingsRuntimeCacheMetadata()
 	}
 	if(SessionCache.m_LastTClientTab >= 0)
 		m_TClientSettingsTab = CanonicalizePersistedTClientTab(SessionCache.m_LastTClientTab);
-	m_SettingsTClientCurrentScrollY = SessionCache.m_LastScrollY;
-	m_SettingsTClientScrollRestorePending = SessionCache.m_bValid;
+	m_SettingsTClientCurrentScrollY = RuntimeKeyMatches ? SessionCache.m_LastScrollY : 0.0f;
+	m_SettingsTClientScrollRestorePending = SessionCache.m_bValid && RuntimeKeyMatches;
 	if(SessionCache.m_LastQmTab >= 0)
 		m_QmClientSettingsTab = CanonicalizePersistedQmClientTab(SessionCache.m_LastQmTab);
 	PrepareSettingsRuntimeWarmupPlan();
@@ -3542,6 +3560,9 @@ void CMenus::SaveSettingsRuntimeCacheMetadata()
 	if(m_SettingsRuntimeMetadata.m_LastPage >= 0)
 		m_SettingsRuntimeMetadata.m_Valid = true;
 	SSessionUiCache SessionCache;
+	CUIRect CacheView = Ui()->Screen() != nullptr ? TClientSettingsContentView(*Ui()->Screen()) : CUIRect{0.0f, 0.0f, 0.0f, 0.0f};
+	SessionCache.m_RuntimeKey = MakeSettingsSectionRuntimeKey(CacheView, Graphics());
+	m_SettingsRuntimeMetadata.m_RuntimeKey = ToSettingsRuntimeCacheKey(SessionCache.m_RuntimeKey);
 	SessionCache.m_LastSettingsPage = m_SettingsRuntimeMetadata.m_LastPage;
 	SessionCache.m_LastTClientTab = m_SettingsRuntimeMetadata.m_LastTClientTab;
 	SessionCache.m_LastQmTab = m_SettingsRuntimeMetadata.m_LastQmTab;

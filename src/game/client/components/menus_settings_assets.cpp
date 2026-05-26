@@ -3486,8 +3486,11 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		}
 		else if(pItem->m_PreviewHighPriority)
 		{
-			auto It = std::find(vReadyQueue.begin(), vReadyQueue.end(), pItem);
-			if(It != vReadyQueue.end())
+			auto It = std::find_if(vReadyQueue.begin(), vReadyQueue.end(), [pItem](const SCustomItem *pQueuedItem) {
+				return pQueuedItem == pItem;
+			});
+			if(It != vReadyQueue.end() && !vReadyQueue.empty() &&
+				SettingsAssetPreviewShouldUploadHighPriorityFirst(vReadyQueue.front()->m_PreviewHighPriority, pItem->m_PreviewHighPriority))
 			{
 				vReadyQueue.erase(It);
 				vReadyQueue.push_front(pItem);

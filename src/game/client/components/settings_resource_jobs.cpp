@@ -137,6 +137,11 @@ bool SettingsSkinListShouldRequestImmediateLoad(bool Visible)
 	return Visible;
 }
 
+bool SettingsSkinFinalizeShouldDeferBackgroundSweep(bool ProcessedHighPrioritySkin, int ProcessedThisFrame, int MaxPerFrame)
+{
+	return ProcessedHighPrioritySkin && ProcessedThisFrame > 0 && ProcessedThisFrame < MaxPerFrame;
+}
+
 bool SettingsAssetListShouldShowBlockingLoading(bool Loading, int VisibleEntries)
 {
 	return Loading && VisibleEntries <= 0;
@@ -156,6 +161,11 @@ bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double Elap
 bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex)
 {
 	return FirstVisibleIndex >= 0 && LastVisibleIndex >= FirstVisibleIndex && Index >= FirstVisibleIndex && Index <= LastVisibleIndex;
+}
+
+bool SettingsAssetPreviewShouldUploadHighPriorityFirst(bool CurrentHighPriority, bool CandidateHighPriority)
+{
+	return !CurrentHighPriority && CandidateHighPriority;
 }
 
 bool SettingsWorkshopThumbShouldStartHighPriority(int VisibleDownloadableIndex, int FirstVisibleDownloadableIndex, int LastVisibleDownloadableIndex)

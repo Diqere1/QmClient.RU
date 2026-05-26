@@ -332,10 +332,8 @@ const char *SettingsInvalidationReasonName(ESettingsInvalidationReason Reason)
 
 bool SettingsRuntimeCacheAllowsVisibleCompactText(const char *pRenderName)
 {
-	return pRenderName != nullptr &&
-		str_find(pRenderName, "DeferredSummary") == nullptr &&
-		str_find(pRenderName, "CompactSummary") == nullptr &&
-		str_find(pRenderName, "SummaryBlock") == nullptr;
+	(void)pRenderName;
+	return false;
 }
 
 void LogSettingsResourcePerf(int Page, const char *pJob, int Count, int Budget, int Remaining, ESettingsWarmupMissReason Reason, double DurationMs)
