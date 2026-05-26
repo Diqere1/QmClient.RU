@@ -1839,7 +1839,7 @@ void CMenus::Render()
 		else if(m_ShowStart)
 		{
 			CPerfTimer StageTimer;
-			m_MenusStart.RenderStartMenuV2(Screen);
+			m_MenusStart.RenderStartMenu(Screen);
 			LogPerfStage("start_menu", StageTimer.ElapsedMs());
 		}
 		else
