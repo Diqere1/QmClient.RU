@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Last Updated:** 2026-05-25
-**Active Feature:** feat-011 反馈批处理已实现并通过构建/自动测试；等待实机回归和提交策略
+**Last Updated:** 2026-05-27
+**Active Feature:** gate/build 基建收口中，目标是统一 Python-first 入口、Windows 构建入口、`cmake-build-*` 目录口径，并让 `check_gate.py` 在失败/异常时稳定产出 summary 与 JSON 报告
 
 ## Status
 
@@ -28,8 +28,8 @@
   - 根 `AGENTS.md` / `CLAUDE.md` 改为短入口地图，不再承载完整手册。
   - 新增 `.ai/harness.md`、`.ai/session-lifecycle.md`、`.ai/ddnet-development.md`、`.ai/verification.md`、`.ai/review.md` 五个分层规则文件。
   - `.ai/reference.md` 改为路由表和脚本入口事实源。
-  - `feature_list.json`、`progress.md`、`session-handoff.md`、`init.sh` 从 `.gitignore` 中释放，作为仓库记录系统的一部分。
-  - `qmclient_scripts/gate/check_workflow_docs.py` 新增 harness 结构检查：根地图长度、分层文档引用、状态文件分节、`feature_list.json` 状态枚举和单 active feature 约束、`init.sh` 入口片段。
+  - `.ai/feature_list.json`、`.ai/progress.md`、`.ai/session-handoff.md`、`qmclient_scripts/init.sh` 作为仓库记录系统的一部分。
+  - `qmclient_scripts/gate/check_workflow_docs.py` 新增 harness 结构检查：根地图长度、分层文档引用、状态文件分节、`.ai/feature_list.json` 状态枚举和单 active feature 约束、`qmclient_scripts/init.sh` 入口片段。
   - `sync_agents_claude.py` 与 gate 文档统一到大写 `CLAUDE.md`，修掉旧的 `Claude.md` / `.codestable` 漂移。
 - [x] feat-006 设置面板现代化
   - `menus_settings.cpp`：设置页外壳改为右侧导航 + 主玻璃内容区，导航项接入 QmUi token 色板与 hover 动画。
@@ -62,27 +62,32 @@
 
 ### What's In Progress
 
-- [ ] feat-011 实机交互/性能回归：demo 节选首帧、快速练习 dummy/枪弹、灵动岛各状态、实体背景 fallback、视频 CPU/FPS、`/tofinish` 地图场景。
+- [ ] gate/build 基建收口：`check_gate.py` / `check_docs.py` 成为唯一活入口，删除 shell 遗留入口，统一 Windows 默认走 `qmclient_scripts\cmake-windows.cmd`。
+- [ ] `full` gate 复验：确认真实失败项只剩仓库既有 debt / 环境债，不再出现 gate 入口自身挂住或无 summary/无 report 的情况。
 
 ### What's Next
 
-1. 实机回归 feat-011：依计划验证 demo、practice、灵动岛、实体背景、视频及 `/tofinish` 场景。
-2. 视觉验收 006~009：设置页、demo 浏览器/播放器、HUD/scoreboard、chat/MOTD/emoticon/vote/infomessages。
-3. 决定提交策略：harness 迁移、UI epic、feat-011 与版本号是否拆 commit。
-4. 若继续 UI epic，评估 feat-010 editor UI 是否真的需要做。
-5. Harness 后续维护：新增长期规则时优先落到 `.ai/` 分层文件；能机械检查的规则同步补 `check_workflow_docs.py` / manifest。
+1. 修完 gate/build 基建阻塞项：稳定测试入口、Windows 临时文件清理、活文档入口统一。
+2. 重跑 `python qmclient_scripts\gate\check_gate.py --mode full --base-ref main --report-json-path ...`，确认 summary/report 终态。
+3. 读取子代理只读审查报告，修复剩余阻塞项后再决定提交策略。
+4. gate/build 基建收口后，再回到菜单 UI / feat-011 的实机视觉与运行时回归。
 
 ## Blockers / Risks
 
 - 006~009 为视觉改造，当前只有构建证据；仍需用户实机视觉验收，尤其是 UI scale、不同分辨率、demo 回放、在线投票和聊天消息堆叠。
+- 2026-05-27 这一轮菜单 UI 统一虽然已经通过当前 canonical `cmake-build-release` 口径对应的构建与测试验证，但 menubar、browser、settings、demo、skins 仍需实机截图确认最终视觉是否符合设计稿。
 - feat-011 的 demo 渲染起点、快速练习 dummy/武器、灵动岛布局和视频 CPU/FPS 属于运行时行为，当前已覆盖编译和已有测试，但仍需客户端实机回归。
-- `check-gate.sh --mode quick` 可通过 Git Bash 启动，但被既有 33 个未使用配置项阻断；本批新增的 `qm_hud_island_show_team` 已被使用，不在失败项中。
+- 历史 quick gate 证据来自旧 shell 入口 `check-gate.sh --mode quick`；当前入口已统一到 `python qmclient_scripts/gate/check_gate.py --mode quick --base-ref main`。
+- 历史 `check_workflow_docs.py` 失败记录仅表示旧门禁状态；当前 docs 入口已统一到 `python qmclient_scripts/gate/check_docs.py`。
 - 已知设计取舍：Slider 用 `pValue` 同时作为 Id（dogfood 内多控件共享 id 风险已规避：DoToButton 使用 CButtonContainer，其他用各自地址）。
-- `bash init.sh` 当前会调用 Windows WSL `C:\Windows\System32\bash.exe`，本机 WSL vhdx 缺失导致失败；已通过 `python qmclient_scripts/gate/check_workflow_docs.py` 和 `py_compile` 验证 harness 脚本主体。
+- `bash qmclient_scripts/init.sh` 当前会调用 Windows WSL `C:\Windows\System32\bash.exe`，本机 WSL vhdx 缺失导致失败；已通过 `python qmclient_scripts/gate/check_workflow_docs.py` 和 `py_compile` 验证 harness 脚本主体。
 
 ## Decisions Made
 
 - **色板**：保留 QmClient 玻璃态作 surface（SURFACE_GLASS 0.08/0.09/0.12/0.70），借 Steam 主蓝 #66c0f4 ≈ ColorRGBA(0.4, 0.753, 0.957) 作 ACCENT_PRIMARY。
+- **2026-05-27 菜单卡片系统**：菜单主面板颜色与透明度不再散落在 browser/settings/demo 各处，统一改为 `cl_menu_panel_color`、`cl_menu_panel_opacity`、`cl_menu_panel_elevated_opacity` 三个配置项驱动。
+- **2026-05-27 menubar 规则**：顶部导航中间项必须真实切出 `6px` 间隙；左上主菜单常驻蓝色圆底；右上纯图标按钮 idle 透明，仅 hover/active 显示玻璃底。
+- **2026-05-27 assets/runtime cache**：`Entity Preview` 这类不进入全局 config hash 的局部布局状态，必须进 settings page runtime key 或显式失效 FBO；本轮通过文件级状态 + assets page cache invalidate 收口。
 - **依赖注入**：用 IUiContext POD struct，避免把 11 个原语全部绑定到 CMenus 类。
 - **header-only Modal/Card/Tooltip**：template 模板 + lambda body 模式；零开销。
 - **`ColorRGBA constexpr` 限制**：MSVC C++20 strict mode 在 constexpr 上下文只允许 union 激活成员 `x/y/z/a`，不能用 `r/g/b`。static_assert 用 `.x` 而非 `.r`，runtime EXPECT_NEAR 仍用 `.r/.g/.b`。
@@ -127,10 +132,10 @@
 - `.ai/review.md`
 - `.ai/reference.md`
 - `.ai/workflow-manifest.json`
-- `feature_list.json`
-- `progress.md`
-- `session-handoff.md`
-- `init.sh`
+- `.ai/feature_list.json`
+- `.ai/progress.md`
+- `.ai/session-handoff.md`
+- `qmclient_scripts/init.sh`
 - `.gitignore`
 - `qmclient_scripts/gate/check_workflow_docs.py`
 - `qmclient_scripts/gate/sync_agents_claude.py`
@@ -164,11 +169,21 @@
 - `src/game/client/components/qmclient/menus_qmclient.cpp`
 - `src/game/client/components/tclient/fast_practice.cpp`
 - `src/game/client/components/tclient/fast_practice.h`
+
+### 2026-05-27 菜单 UI 统一收口
+- `docs/superpowers/plans/2026-05-27-菜单-ui-统一实现计划.md`
+- `src/engine/shared/config_variables.h`
+- `src/game/client/components/menus.h`
+- `src/game/client/components/menus.cpp`
+- `src/game/client/components/menus_browser.cpp`
+- `src/game/client/components/menus_demo.cpp`
+- `src/game/client/components/menus_settings.cpp`
+- `src/game/client/components/menus_settings_assets.cpp`
 - `src/game/version.h`
 - `docs/info.json`
-- `feature_list.json`
-- `progress.md`
-- `session-handoff.md`
+- `.ai/feature_list.json`
+- `.ai/progress.md`
+- `.ai/session-handoff.md`
 
 ## Evidence of Completion
 
@@ -186,11 +201,18 @@
 - [x] feat-011 背景配置定向测试：`cmake-build-release\testrunner.exe --gtest_filter=BackgroundEntitiesValue.*` 通过，8/8 tests PASSED。
 - [x] feat-011 实体背景选择页补测：`cmake-build-release\testrunner.exe --gtest_filter=BackgroundEntitiesValue.*:AssetsResourceRegistry.EntityBg*` 通过，17/17 tests PASSED。
 - [x] feat-011 全量 C++ 测试：`qmclient_scripts\cmake-windows.cmd --build cmake-build-debug --target run_tests -j 4` 通过，729/729 tests PASSED。
+- [x] 2026-05-27 菜单 UI 统一 build-ninja 构建：`qmclient_scripts\cmake-windows.cmd --build build-ninja --target game-client -j 10` 通过，154/154 完成并链接 `build-ninja\DDNet.exe` 成功。
+- [x] 2026-05-27 菜单 UI 统一 build-ninja 测试：`build-ninja\testrunner.exe` 通过，877 tests from 97 test suites PASSED。
+- [x] 2026-05-27 菜单 UI 统一审查后收口：右上页面图标重新参与 underline，动作图标继续排除；browser 左右卡片真实留出 10px 间距；assets 的 `Entity Preview` 与 `Show Workshop Assets` 均会主动失效页面缓存。
+- [x] 2026-05-27 harness 文档校验脚本收口：`python qmclient_scripts\gate\check_workflow_docs.py` 通过；已移除对旧 `governance.yml`、`strict-debug-check.sh`、`refresh_baseline_debt_allowlist.py` 的过时依赖，并改为当前 `check_gate.py` / `check_docs.py` 体系。
+- [x] 2026-05-27 菜单 UI 统一最终 build-ninja 构建：`qmclient_scripts\cmake-windows.cmd --build build-ninja --target game-client -j 10` 通过，增量重编并重新链接 `build-ninja\DDNet.exe` 成功。
+- [x] 2026-05-27 菜单 UI 统一最终 build-ninja 测试：`build-ninja\testrunner.exe` 通过，877 tests from 97 test suites PASSED；测试日志中的 `.tmp` 路径为既有 filesystem / gameworld 测试临时目录输出，不代表失败。
+- [x] 2026-05-27 构建目录口径统一：当前 canonical 命名统一为 `cmake-build-release` / `cmake-build-debug` / `cmake-build-analyze`；上面保留的 `build-ninja` 记录仅表示改名前的历史验证证据。
 - [x] feat-011 diff 格式检查：`git diff --check` 通过（仅显示现有工作树的 LF/CRLF 转换提示）。
 - [ ] 实体背景选择页 `maps`/`mapres` 补丁后的 Release 链接：`qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target game-client -j 10` 99/99 编译完成后在链接阶段失败，原因是当前 `cmake-build-release\DDNet.exe` 进程正在运行并锁住输出文件；不是编译错误。
 - [ ] 裸 `cmake --build cmake-build-debug --target run_tests --config Debug -j 4`：失败，MSVC 环境未加载导致缺少 `cstddef`；改用 Windows 包装脚本后通过，不属于代码回归。
-- [ ] feat-011 quick gate：`C:\Program Files\Git\bin\bash.exe qmclient_scripts/gate/check-gate.sh --mode quick --base-ref main` 运行完成但失败；阻断为仓库既有 33 个未使用配置项，新增 `qm_hud_island_show_team` 不在失败列表，其他 quick 子检查通过。
-- [ ] `bash init.sh`：未通过，原因是本机 WSL 磁盘路径缺失，不是脚本检查项失败。
+- [ ] feat-011 quick gate（历史旧入口证据）：`C:\Program Files\Git\bin\bash.exe qmclient_scripts/gate/check-gate.sh --mode quick --base-ref main` 运行完成但失败；阻断为仓库既有 33 个未使用配置项，新增 `qm_hud_island_show_team` 不在失败列表，其他 quick 子检查通过。
+- [ ] `bash qmclient_scripts/init.sh`：未通过，原因是本机 WSL 磁盘路径缺失，不是脚本检查项失败。
 - [ ] 006~009 视觉验证：未执行。本会话留给用户。
 - [ ] feat-011 实机交互和视频性能回归：未执行，按反馈计划中的场景验证。
 

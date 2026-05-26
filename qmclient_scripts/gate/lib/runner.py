@@ -8,10 +8,12 @@ import platform
 import shutil
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+_CONSOLE_OUTPUT_LIMIT = 12000
 
 
 def is_windows_env() -> bool:
@@ -54,20 +56,75 @@ def _uses_windows_paths(py_cmd: str) -> bool:
     return bool(re.search(r"py\.exe|python\.exe|^[A-Za-z]:[/\\]", py_cmd))
 
 
+def _is_windowsapps_stub(path: str) -> bool:
+    normalized = path.replace("/", "\\").lower()
+    return (
+        "windowsapps\\python.exe" in normalized
+        or "windowsapps\\python3.exe" in normalized
+    )
+
+
+def _is_working_python(path: str) -> bool:
+    try:
+        proc = subprocess.run(
+            [path, "-c", "import sys; print(sys.executable)"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
+
+
 def resolve_python_cmd() -> str | None:
-    for name in ("py.exe", "py", "python", "python.exe"):
+    candidates: list[str] = []
+
+    if sys.executable:
+        candidates.append(sys.executable)
+
+    for env_name in ("PYTHON", "PYTHON3"):
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            candidates.append(value)
+
+    for scoop_candidate in (
+        str(Path.home() / "scoop" / "apps" / "python" / "current" / "python.exe"),
+        r"D:\Scoop\apps\python\current\python.exe",
+    ):
+        candidates.append(scoop_candidate)
+
+    for name in ("python", "python.exe", "py.exe", "py"):
         cmd = shutil.which(name)
         if cmd:
-            return cmd
+            candidates.append(cmd)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate:
+            continue
+        normalized = candidate.replace("/", "\\").lower()
+        if normalized in seen or _is_windowsapps_stub(candidate):
+            continue
+        seen.add(normalized)
+        if _is_working_python(candidate):
+            return candidate
+
     if is_windows_host() and shutil.which("where.exe"):
-        for name in ("python", "py"):
+        for name in ("python", "python.exe", "py", "py.exe"):
             try:
                 out = subprocess.check_output(
                     ["where.exe", name], text=True, stderr=subprocess.DEVNULL
                 )
-                line = out.strip().splitlines()[0]
-                if line:
-                    return line
+                for line in out.strip().splitlines():
+                    if (
+                        line
+                        and not _is_windowsapps_stub(line)
+                        and _is_working_python(line)
+                    ):
+                        return line
             except (subprocess.CalledProcessError, IndexError):
                 pass
     return None
@@ -142,7 +199,7 @@ def run(
     ]
     filtered = "\n".join(lines)
     if filtered:
-        print(filtered)
+        print(_truncate_console_output(filtered))
 
     if proc.returncode != 0:
         return (
@@ -155,6 +212,18 @@ def run(
         pass
 
     return (0, filtered)
+
+
+def _truncate_console_output(output: str, limit: int = _CONSOLE_OUTPUT_LIMIT) -> str:
+    if len(output) <= limit:
+        return output
+    head_limit = int(limit * 0.7)
+    tail_limit = limit - head_limit
+    return (
+        output[:head_limit].rstrip()
+        + "\n\n... [output truncated by gate runner] ...\n\n"
+        + output[-tail_limit:].lstrip()
+    )
 
 
 # 保持与旧脚本的 print_section 兼容

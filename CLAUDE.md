@@ -1,36 +1,36 @@
 # AGENTS.md / CLAUDE.md
 
-QmClient is a customized DDNet/TaterClient fork. This file is the agent map for the repository, not the full manual. Keep it short, then load the focused documents below only when the task needs them.
+QmClient 是一个定制化的 DDNet/TaterClient 分支。这个文件是仓库的智能体导航图，不是完整手册。请保持简短，并且只在任务需要时再读取下方对应的聚焦文档。
 
 ## 入口原则
 
-- The repository is the record system: decisions, plans, feature state, verification evidence, and handoff notes belong in versioned files.
-- This file is a map, not a manual. Do not append long task history or one-off fixes here; put durable details in the right `.ai/` document or in `progress.md`.
-- Work on one feature at a time. Use `feature_list.json` as the scope boundary and `progress.md` / `session-handoff.md` as continuity state.
-- If a feature request is ambiguous, ask until the behavior, scope, and compatibility boundary are clear.
-- Read real code before changing behavior. Prefer local patterns and DDNet compatibility over generic modern C++ preferences.
+- 仓库就是记录系统：决策、计划、功能状态、验证证据和交接说明都应该写进版本化文件。
+- 这个文件是导航图，不是手册。不要在这里追加冗长的任务历史或一次性修复说明；把长期有效的信息放进对应的 `.ai/` 文档或 `.ai/progress.md`。
+- 一次只处理一个功能。用 `.ai/feature_list.json` 作为范围边界，用 `.ai/progress.md` / `.ai/session-handoff.md` 作为连续状态。
+- 如果功能请求有歧义，先问清行为、范围和兼容性边界，再开始实现。
+- 改行为之前先读真实代码。优先遵循本地模式和 DDNet 兼容性，而不是套用泛化的现代 C++ 偏好。
 
 ## 启动顺序
 
 1. Read this file.
-2. Read `feature_list.json` and identify the active or highest-priority unfinished feature.
-3. Read `progress.md` and `session-handoff.md` for verified state, blockers, and the next action.
-4. Run `./init.sh` when the shell environment supports bash. If it is too expensive for the current turn, at minimum run `python qmclient_scripts/gate/check_workflow_docs.py`.
-5. Read the focused `.ai/` document that matches the task.
-6. Inspect nearby source, call sites, config variables, translations, and tests before editing.
+2. Read `.ai/feature_list.json` and identify the active or highest-priority unfinished feature.
+3. Read `.ai/progress.md` and `.ai/session-handoff.md` for verified state, blockers, and the next action.
+4. 如果当前 shell 支持 bash，就运行 `bash qmclient_scripts/init.sh`。如果这一轮成本太高，至少运行 `python qmclient_scripts/gate/check_docs.py`。
+5. 读取与任务匹配的聚焦 `.ai/` 文档。
+6. 修改前检查附近源码、调用点、配置变量、翻译和测试。
 
 ## 文档地图
 
-| Path | When to read |
+| 路径 | 何时阅读 |
 |------|--------------|
-| `.ai/harness.md` | Harness principles adapted from `deusyu/harness-engineering`: repository record system, map-not-manual, mechanical enforcement, and entropy control. |
-| `.ai/session-lifecycle.md` | Starting, selecting one feature, executing, verifying, updating state, and leaving a resumable handoff. |
-| `.ai/ddnet-development.md` | DDNet/QmClient C++ rules, compatibility constraints, style, ownership, performance, and risk boundaries. |
-| `.ai/verification.md` | Build, test, quick/default/full gate commands, visual checks, and what counts as evidence. |
-| `.ai/review.md` | Code review stance, severity format, DDNet-specific risk areas, and output format. |
-| `.ai/reference.md` | Detailed routing for scripts, PR validation, release notes, and workflow document maintenance. |
-| `qmclient_scripts/gate/check-gate-workflow.md` | Gate script semantics, mode split, allowlist behavior, and report format. |
-| `qmclient_scripts/脚本总览.md` | Script inventory and which script to use for each maintenance task. |
+| `.ai/harness.md` | 读取 harness 核心原则：仓库记录系统、地图而非手册、机械化约束、熵管理。 |
+| `.ai/session-lifecycle.md` | 读取会话生命周期：启动、选定单一功能、执行、验证、更新状态、留下可恢复交接。 |
+| `.ai/ddnet-development.md` | 读取 DDNet/QmClient 的 C++ 规则、兼容性约束、风格、所有权、性能和风险边界。 |
+| `.ai/verification.md` | 读取构建、测试、quick/default/full gate 命令、视觉检查和证据标准。 |
+| `.ai/review.md` | 读取代码审查立场、严重级别格式、DDNet 特有风险点和输出格式。 |
+| `.ai/reference.md` | 读取脚本入口、PR 验证、发布说明和工作流文档维护的详细路由。 |
+| `qmclient_scripts/gate/check-gate-workflow.md` | 读取 gate 脚本语义、模式拆分、allowlist 行为和报告格式。 |
+| `qmclient_scripts/脚本总览.md` | 读取脚本清单，以及每类维护任务该用哪一个脚本。 |
 
 ## 全局硬约束
 
@@ -38,24 +38,25 @@ QmClient is a customized DDNet/TaterClient fork. This file is the agent map for 
 - Keep patches focused. Do not rewrite unrelated upstream DDNet code or introduce broad abstractions for small changes.
 - QmClient-specific work normally belongs in `src/game/client/components/qmclient/`, `src/game/client/QmUi/`, QmClient config headers, translations, docs, metadata, and `qmclient_scripts/`.
 - Out-of-scope areas need explicit user approval: upstream engine core, server gameplay, map editor, third-party libraries, CI release workflow, protocol fields, physics, prediction, snapshots, inputs, collision, timing, and replay semantics.
+- Windows 上默认用 `qmclient_scripts\cmake-windows.cmd` 作为构建入口；只有已确认当前 shell 已注入可用的 VS/MSVC 环境时，才直接使用裸 `cmake`。
 - When completing a full feature or improvement, update the QmClient version by the MMP rule unless the user explicitly limits the task to investigation or text-only output.
 - After implementation and user confirmation, provide commit notes grouped as `FEAT`, `FIX`, and `DEL`.
 
 ## 机械化入口
 
-Use scripts instead of relying on memory:
+优先用脚本，不要依赖记忆：
 
 ```bash
-python qmclient_scripts/gate/check_workflow_docs.py
-bash qmclient_scripts/gate/check-gate.sh --mode quick --base-ref main
-bash qmclient_scripts/gate/check-gate.sh --mode default --base-ref main
+python qmclient_scripts/gate/check_docs.py
+python qmclient_scripts/gate/check_gate.py --mode quick --base-ref main
+python qmclient_scripts/gate/check_gate.py --mode default --base-ref main
 ```
 
-When changing `AGENTS.md`, `CLAUDE.md`, `.ai/`, workflow scripts, or governance CI, run:
+修改 `AGENTS.md`、`CLAUDE.md`、`.ai/`、workflow 脚本或 governance CI 后，运行：
 
 ```bash
-python qmclient_scripts/gate/sync_agents_claude.py --prefer agents
-python qmclient_scripts/gate/check_workflow_docs.py
+python qmclient_scripts/gate/check_docs.py --sync-only --prefer agents
+python qmclient_scripts/gate/check_docs.py
 ```
 
-Before closing a feature, record evidence in `progress.md`, update `feature_list.json`, refresh `session-handoff.md`, and run the relevant build/test gate from `.ai/verification.md`.
+关闭一个功能前，把证据写入 `.ai/progress.md`，更新 `.ai/feature_list.json`，刷新 `.ai/session-handoff.md`，并运行 `.ai/verification.md` 里对应的构建/测试 gate。

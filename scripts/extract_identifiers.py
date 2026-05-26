@@ -172,7 +172,7 @@ def normalize_include_arg(value):
 
 
 def collect_compile_command_args(file):
-    compile_commands = os.path.join("build-debug", "compile_commands.json")
+    compile_commands = os.path.join("cmake-build-debug", "compile_commands.json")
     if not os.path.isfile(compile_commands):
         return []
 

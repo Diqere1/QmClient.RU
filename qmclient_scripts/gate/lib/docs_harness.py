@@ -1,27 +1,16 @@
-#!/usr/bin/env python3
-"""
-检查仓库 harness / workflow 文档入口是否仍然一致。
-
-目标：
-1. 防止 AGENTS / CLAUDE / .ai 分层文档漂移。
-2. 防止 feature_list / progress / session-handoff 状态文件失去结构。
-3. 防止 reference.md 引用的脚本失效。
-4. 用中文输出可直接并入 check-gate 汇总。
-"""
-
 from __future__ import annotations
 
-import re
-import sys
 import json
-import subprocess
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from lib.agents_sync import normalize_text, sync_files
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = REPO_ROOT / ".ai" / "workflow-manifest.json"
-SYNC_SCRIPT_PATH = REPO_ROOT / "qmclient_scripts" / "gate" / "sync_agents_claude.py"
+FEATURE_LIST_PATH = REPO_ROOT / ".ai" / "feature_list.json"
 
 
 @dataclass
@@ -46,20 +35,14 @@ class WorkflowJob:
     steps: list[WorkflowStep]
 
 
-def read_text(relative_path: str) -> str:
-    return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
 
 
-def read_manifest() -> dict:
-    with MANIFEST_PATH.open("r", encoding="utf-8") as file:
-        return json.load(file)
-
-
-def run_sync_script(prefer: str = "auto") -> tuple[int, str]:
-    command = [sys.executable, str(SYNC_SCRIPT_PATH), "--prefer", prefer]
-    completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8")
-    output = (completed.stdout or "") + (completed.stderr or "")
-    return completed.returncode, output.strip()
+def read_text_if_exists(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")
 
 
 def ordered_contains(text: str, snippets: list[str]) -> bool:
@@ -79,18 +62,14 @@ def missing_snippets(text: str, snippets: list[str]) -> list[str]:
 def count_lines(text: str) -> int:
     if not text:
         return 0
-    return len(text.replace("\r\n", "\n").replace("\r", "\n").splitlines())
-
-
-def normalize_full_sync_text(text: str) -> str:
-    return text.replace("\r\n", "\n").replace("\r", "\n")
+    return len(normalize_text(text).splitlines())
 
 
 def collect_markdown_paths(text: str) -> list[str]:
     seen: set[str] = set()
     matches: list[str] = []
     for match in re.findall(
-        r"`((?:\.ai|qmclient_scripts|scripts|feature_list|progress|session-handoff|init)[^`]*?\.(?:md|ps1|py|sh|json)|init\.sh|feature_list\.json|progress\.md|session-handoff\.md)`",
+        r"`((?:\.ai|qmclient_scripts|scripts|feature_list|progress|session-handoff|init)[^`]*?\.(?:md|ps1|py|sh|json)|qmclient_scripts/init\.sh|\.ai/feature_list\.json|\.ai/progress\.md|\.ai/session-handoff\.md)`",
         text,
     ):
         if match not in seen:
@@ -108,14 +87,20 @@ def path_exists_or_is_glob(relative_path: str) -> bool:
     return (REPO_ROOT / relative_path).exists()
 
 
-def discover_unmanaged_governance_files(manifest: dict, required_files: list[str]) -> list[str]:
+def discover_unmanaged_governance_files(
+    manifest: dict, required_files: list[str]
+) -> list[str]:
     unmanaged: set[str] = set()
     required_file_set = set(required_files)
 
     for rule in manifest.get("managed_governance_directories", []):
         base = str(rule.get("base", "")).strip()
         glob = str(rule.get("glob", "")).strip()
-        ignored_files = {str(item).replace("\\", "/").strip() for item in rule.get("ignored_files", []) if str(item).strip()}
+        ignored_files = {
+            str(item).replace("\\", "/").strip()
+            for item in rule.get("ignored_files", [])
+            if str(item).strip()
+        }
         if not base or not glob:
             continue
 
@@ -135,12 +120,11 @@ def discover_unmanaged_governance_files(manifest: dict, required_files: list[str
 
 
 def check_feature_list(manifest: dict) -> CheckResult:
-    path = REPO_ROOT / "feature_list.json"
-    if not path.exists():
-        return CheckResult(False, "feature_list.json 结构", "缺失 feature_list.json")
+    if not FEATURE_LIST_PATH.exists():
+        return CheckResult(False, "feature_list.json 结构", "缺失 .ai/feature_list.json")
 
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(FEATURE_LIST_PATH.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         return CheckResult(False, "feature_list.json 结构", f"JSON 解析失败: {error}")
 
@@ -182,12 +166,14 @@ def check_feature_list(manifest: dict) -> CheckResult:
             problems.append(f"{feature_id or index} dependencies 必须是数组")
 
     if in_progress_count > max_in_progress:
-        problems.append(f"in-progress 数量为 {in_progress_count}，最多允许 {max_in_progress}")
+        problems.append(
+            f"in-progress 数量为 {in_progress_count}，最多允许 {max_in_progress}"
+        )
 
-    return CheckResult(
-        ok=not problems,
-        title="feature_list.json 结构",
-        detail="通过" if not problems else "; ".join(problems),
+    return (
+        CheckResult(True, "feature_list.json 结构", "通过")
+        if not problems
+        else CheckResult(False, "feature_list.json 结构", "; ".join(problems))
     )
 
 
@@ -202,24 +188,27 @@ def check_state_file_sections(manifest: dict) -> CheckResult:
         missing = missing_snippets(text, list(sections))
         if missing:
             problems.append(f"{relative_path} 缺少分节: {', '.join(missing)}")
-
-    return CheckResult(
-        ok=not problems,
-        title="状态文件结构",
-        detail="通过" if not problems else "; ".join(problems),
+    return (
+        CheckResult(True, "状态文件结构", "通过")
+        if not problems
+        else CheckResult(False, "状态文件结构", "; ".join(problems))
     )
 
 
 def check_init_script(manifest: dict) -> CheckResult:
-    path = REPO_ROOT / "init.sh"
+    path = REPO_ROOT / "qmclient_scripts" / "init.sh"
     if not path.exists():
-        return CheckResult(False, "init.sh harness 入口", "缺失 init.sh")
+        return CheckResult(
+            False, "init.sh harness 入口", "缺失 qmclient_scripts/init.sh"
+        )
     text = path.read_text(encoding="utf-8")
     missing = missing_snippets(text, manifest.get("init_required_snippets", []))
-    return CheckResult(
-        ok=not missing,
-        title="init.sh harness 入口",
-        detail="通过" if not missing else f"缺少片段: {', '.join(missing)}",
+    return (
+        CheckResult(True, "init.sh harness 入口", "通过")
+        if not missing
+        else CheckResult(
+            False, "init.sh harness 入口", f"缺少片段: {', '.join(missing)}"
+        )
     )
 
 
@@ -231,16 +220,26 @@ def check_root_map_size(text: str, manifest: dict) -> CheckResult:
     return CheckResult(
         ok=line_count <= max_lines,
         title="AGENTS 根地图长度",
-        detail=f"通过 ({line_count}/{max_lines} 行)" if line_count <= max_lines else f"过长: {line_count}/{max_lines} 行，应把细节下沉到 .ai/",
+        detail=f"通过 ({line_count}/{max_lines} 行)"
+        if line_count <= max_lines
+        else f"过长: {line_count}/{max_lines} 行，应把细节下沉到 .ai/",
     )
 
 
 def check_forbidden_snippets(text: str, manifest: dict) -> CheckResult:
-    forbidden = [snippet for snippet in manifest.get("agents_forbidden_snippets", []) if snippet in text]
-    return CheckResult(
-        ok=not forbidden,
-        title="AGENTS 地图化约束",
-        detail="通过" if not forbidden else f"根入口包含应下沉的旧分节: {', '.join(forbidden)}",
+    forbidden = [
+        snippet
+        for snippet in manifest.get("agents_forbidden_snippets", [])
+        if snippet in text
+    ]
+    return (
+        CheckResult(True, "AGENTS 地图化约束", "通过")
+        if not forbidden
+        else CheckResult(
+            False,
+            "AGENTS 地图化约束",
+            f"根入口包含应下沉的旧分节: {', '.join(forbidden)}",
+        )
     )
 
 
@@ -274,7 +273,9 @@ def parse_governance_jobs(text: str) -> dict[str, WorkflowJob]:
         nonlocal current_job_id, current_steps, step_indent
         flush_step()
         if current_job_id:
-            jobs[current_job_id] = WorkflowJob(job_id=current_job_id, steps=list(current_steps))
+            jobs[current_job_id] = WorkflowJob(
+                job_id=current_job_id, steps=list(current_steps)
+            )
         current_job_id = ""
         current_steps = []
         step_indent = None
@@ -301,7 +302,9 @@ def parse_governance_jobs(text: str) -> dict[str, WorkflowJob]:
 
         if current_step is not None and in_run_block:
             if stripped and indent > run_block_indent:
-                current_step.run = f"{current_step.run}\n{stripped}" if current_step.run else stripped
+                current_step.run = (
+                    f"{current_step.run}\n{stripped}" if current_step.run else stripped
+                )
                 current_step.raw_lines.append(stripped)
                 continue
             in_run_block = False
@@ -347,7 +350,6 @@ def parse_governance_jobs(text: str) -> dict[str, WorkflowJob]:
 
         if jobs_indent is None:
             continue
-
         if indent < jobs_indent and stripped:
             flush_job()
 
@@ -380,150 +382,142 @@ def check_governance_workflow_structure(text: str, manifest: dict) -> CheckResul
                 problems.append(f"{job_id}/{step_name} 缺少 if: {expected_if}")
 
             searchable_text = "\n".join(
-                part for part in [workflow_step.run, workflow_step.uses, "\n".join(workflow_step.raw_lines)] if part
+                part
+                for part in [
+                    workflow_step.run,
+                    workflow_step.uses,
+                    "\n".join(workflow_step.raw_lines),
+                ]
+                if part
             )
             for snippet in required_step.get("must_contain", []):
                 if snippet not in searchable_text:
                     problems.append(f"{job_id}/{step_name} 缺少片段: {snippet}")
 
-    return CheckResult(
-        ok=not problems,
-        title="governance CI 结构化语义",
-        detail="通过" if not problems else "; ".join(problems),
+    return (
+        CheckResult(True, "workflow 结构化语义", "通过")
+        if not problems
+        else CheckResult(False, "workflow 结构化语义", "; ".join(problems))
     )
 
 
-def run_checks() -> list[CheckResult]:
+def run_checks(prefer: str = "auto") -> list[CheckResult]:
     results: list[CheckResult] = []
     if not MANIFEST_PATH.exists():
         return [
             CheckResult(
-                ok=False,
-                title="工作流 manifest 存在性",
-                detail=f"缺失: {MANIFEST_PATH.relative_to(REPO_ROOT).as_posix()}",
+                False,
+                "工作流 manifest 存在性",
+                f"缺失: {MANIFEST_PATH.relative_to(REPO_ROOT).as_posix()}",
             )
         ]
 
-    manifest = read_manifest()
-    sync_mode = str(manifest.get("claude_sync_mode", ""))
-    if sync_mode == "sync_agents_first":
-        sync_exit_code, sync_output = run_sync_script("agents")
-        results.append(
-            CheckResult(
-                ok=sync_exit_code == 0,
-                title="CLAUDE / AGENTS 自动同步",
-                detail="通过" if sync_exit_code == 0 else (sync_output or "自动同步失败"),
-            )
-        )
-        if sync_exit_code != 0:
-            return results
-    elif sync_mode == "sync_claude_first":
-        sync_exit_code, sync_output = run_sync_script("claude")
-        results.append(
-            CheckResult(
-                ok=sync_exit_code == 0,
-                title="CLAUDE / AGENTS 自动同步",
-                detail="通过" if sync_exit_code == 0 else (sync_output or "自动同步失败"),
-            )
-        )
-        if sync_exit_code != 0:
-            return results
-    elif sync_mode == "sync_auto":
-        sync_exit_code, sync_output = run_sync_script("auto")
-        results.append(
-            CheckResult(
-                ok=sync_exit_code == 0,
-                title="CLAUDE / AGENTS 自动同步",
-                detail="通过" if sync_exit_code == 0 else (sync_output or "自动同步失败"),
-            )
-        )
-        if sync_exit_code != 0:
-            return results
-    required_files = manifest.get("required_files", [])
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
+    sync_result = sync_files(prefer)
+    results.append(
+        CheckResult(sync_result.ok, "AGENTS / CLAUDE 镜像同步", sync_result.detail)
+    )
+    if not sync_result.ok:
+        return results
+
+    required_files = manifest.get("required_files", [])
     missing = [path for path in required_files if not (REPO_ROOT / path).exists()]
     results.append(
-        CheckResult(
-            ok=not missing,
-            title="必需工作流文件存在性",
-            detail="通过" if not missing else f"缺失: {', '.join(missing)}",
-        )
+        CheckResult(True, "必需工作流文件存在性", "通过")
+        if not missing
+        else CheckResult(False, "必需工作流文件存在性", f"缺失: {', '.join(missing)}")
     )
 
-    unmanaged_governance_files = discover_unmanaged_governance_files(manifest, required_files)
+    unmanaged_governance_files = discover_unmanaged_governance_files(
+        manifest, required_files
+    )
     results.append(
-        CheckResult(
-            ok=not unmanaged_governance_files,
-            title="治理文件登记完整性",
-            detail="通过" if not unmanaged_governance_files else f"发现未登记治理文件: {', '.join(unmanaged_governance_files)}",
+        CheckResult(True, "治理文件登记完整性", "通过")
+        if not unmanaged_governance_files
+        else CheckResult(
+            False,
+            "治理文件登记完整性",
+            f"发现未登记治理文件: {', '.join(unmanaged_governance_files)}",
         )
     )
 
-    agents = read_text("AGENTS.md")
-    claude = read_text("CLAUDE.md")
-    reference = read_text(".ai/reference.md")
+    agents = read_text(REPO_ROOT / "AGENTS.md")
+    claude = read_text(REPO_ROOT / "CLAUDE.md")
+    reference = read_text(REPO_ROOT / ".ai/reference.md")
 
     agents_order = manifest.get("agents_root_order", [])
     results.append(
         CheckResult(
-            ok=ordered_contains(agents, agents_order),
-            title="AGENTS 文档入口顺序",
-            detail="通过" if ordered_contains(agents, agents_order) else "未按 harness 地图顺序声明 .ai 入口",
+            ordered_contains(agents, agents_order),
+            "AGENTS 文档入口顺序",
+            "通过"
+            if ordered_contains(agents, agents_order)
+            else "未按 harness 地图顺序声明 .ai 入口",
         )
     )
-
     results.append(check_root_map_size(agents, manifest))
     results.append(check_forbidden_snippets(agents, manifest))
 
     required_agent_sections = manifest.get("agents_required_sections", [])
     missing_agent_sections = missing_snippets(agents, required_agent_sections)
     results.append(
-        CheckResult(
-            ok=not missing_agent_sections,
-            title="AGENTS 根规则分层",
-            detail="通过" if not missing_agent_sections else f"缺少节: {', '.join(missing_agent_sections)}",
+        CheckResult(True, "AGENTS 根规则分层", "通过")
+        if not missing_agent_sections
+        else CheckResult(
+            False, "AGENTS 根规则分层", f"缺少节: {', '.join(missing_agent_sections)}"
         )
     )
 
     claude_required = manifest.get("claude_sync_references", [])
     missing_claude = [snippet for snippet in claude_required if snippet not in claude]
     results.append(
-        CheckResult(
-            ok=not missing_claude,
-            title="CLAUDE 文档同步入口",
-            detail="通过" if not missing_claude else f"缺少引用: {', '.join(missing_claude)}",
+        CheckResult(True, "CLAUDE 文档同步入口", "通过")
+        if not missing_claude
+        else CheckResult(
+            False, "CLAUDE 文档同步入口", f"缺少引用: {', '.join(missing_claude)}"
         )
     )
 
-    claude_sync_mode = manifest.get("claude_sync_mode", "")
-    if claude_sync_mode == "match_agents_full_text_except_line_endings":
-        agents_normalized = normalize_full_sync_text(agents)
-        claude_normalized = normalize_full_sync_text(claude)
+    if (
+        manifest.get("claude_sync_mode", "")
+        == "match_agents_full_text_except_line_endings"
+    ):
+        agents_normalized = normalize_text(agents)
+        claude_normalized = normalize_text(claude)
         results.append(
             CheckResult(
-                ok=agents_normalized == claude_normalized,
-                title="CLAUDE 与 AGENTS 全文同步",
-                detail="通过" if agents_normalized == claude_normalized else "CLAUDE.md 与 AGENTS.md 未保持 1:1 全文一致（仅允许换行差异）",
+                agents_normalized == claude_normalized,
+                "CLAUDE 与 AGENTS 全文同步",
+                "通过"
+                if agents_normalized == claude_normalized
+                else "CLAUDE.md 与 AGENTS.md 未保持 1:1 全文一致（仅允许换行差异）",
             )
         )
 
     focused_docs = manifest.get("focused_ai_docs", [])
     missing_focused_refs = [path for path in focused_docs if f"`{path}`" not in agents]
     results.append(
-        CheckResult(
-            ok=not missing_focused_refs,
-            title="AGENTS 分层文档地图",
-            detail="通过" if not missing_focused_refs else f"缺少 .ai 地图引用: {', '.join(missing_focused_refs)}",
+        CheckResult(True, "AGENTS 分层文档地图", "通过")
+        if not missing_focused_refs
+        else CheckResult(
+            False,
+            "AGENTS 分层文档地图",
+            f"缺少 .ai 地图引用: {', '.join(missing_focused_refs)}",
         )
     )
 
     referenced_paths = collect_markdown_paths(reference)
-    missing_referenced = [path for path in referenced_paths if not path_exists_or_is_glob(path)]
+    missing_referenced = [
+        path for path in referenced_paths if not path_exists_or_is_glob(path)
+    ]
     results.append(
-        CheckResult(
-            ok=not missing_referenced,
-            title="reference.md 引用可达性",
-            detail="通过" if not missing_referenced else f"引用存在断链: {', '.join(missing_referenced)}",
+        CheckResult(True, "reference.md 引用可达性", "通过")
+        if not missing_referenced
+        else CheckResult(
+            False,
+            "reference.md 引用可达性",
+            f"引用存在断链: {', '.join(missing_referenced)}",
         )
     )
 
@@ -531,34 +525,39 @@ def run_checks() -> list[CheckResult]:
     for route in manifest.get("workflow_routes", []):
         route_name = route.get("name", "unknown")
         for required_path in route.get("must_reference", []):
-            quoted = f"`{required_path}`"
-            if quoted not in reference:
+            if f"`{required_path}`" not in reference:
                 missing_routes.append(f"{route_name}:{required_path}")
     results.append(
-        CheckResult(
-            ok=not missing_routes,
-            title="reference.md 路由完整性",
-            detail="通过" if not missing_routes else f"缺少路由入口: {', '.join(missing_routes)}",
+        CheckResult(True, "reference.md 路由完整性", "通过")
+        if not missing_routes
+        else CheckResult(
+            False,
+            "reference.md 路由完整性",
+            f"缺少路由入口: {', '.join(missing_routes)}",
         )
     )
 
     reference_required_sections = manifest.get("reference_required_sections", [])
-    missing_reference_sections = missing_snippets(reference, reference_required_sections)
+    missing_reference_sections = missing_snippets(
+        reference, reference_required_sections
+    )
     results.append(
-        CheckResult(
-            ok=not missing_reference_sections,
-            title="reference.md 核心分节",
-            detail="通过" if not missing_reference_sections else f"缺少分节: {', '.join(missing_reference_sections)}",
+        CheckResult(True, "reference.md 核心分节", "通过")
+        if not missing_reference_sections
+        else CheckResult(
+            False,
+            "reference.md 核心分节",
+            f"缺少分节: {', '.join(missing_reference_sections)}",
         )
     )
 
     release_notes_required = manifest.get("release_notes_required_references", [])
     missing_release_notes = missing_snippets(reference, release_notes_required)
     results.append(
-        CheckResult(
-            ok=not missing_release_notes,
-            title="发布说明脚本入口",
-            detail="通过" if not missing_release_notes else f"缺少引用: {', '.join(missing_release_notes)}",
+        CheckResult(True, "发布说明脚本入口", "通过")
+        if not missing_release_notes
+        else CheckResult(
+            False, "发布说明脚本入口", f"缺少引用: {', '.join(missing_release_notes)}"
         )
     )
 
@@ -566,37 +565,48 @@ def run_checks() -> list[CheckResult]:
     results.append(check_state_file_sections(manifest))
     results.append(check_init_script(manifest))
 
-    governance_workflow_text = read_text(".github/workflows/governance.yml")
-    governance_required_snippets = manifest.get("governance_workflow_required_snippets", [])
-    missing_governance_snippets = missing_snippets(governance_workflow_text, governance_required_snippets)
-    results.append(
-        CheckResult(
-            ok=not missing_governance_snippets,
-            title="governance CI 关键语义",
-            detail="通过" if not missing_governance_snippets else f"缺少 CI 关键片段: {', '.join(missing_governance_snippets)}",
-        )
+    governance_workflow_path = str(manifest.get("governance_workflow_path", "")).strip()
+    governance_required_snippets = manifest.get(
+        "governance_workflow_required_snippets", []
     )
-    results.append(check_governance_workflow_structure(governance_workflow_text, manifest))
+    governance_required_jobs = manifest.get("governance_workflow_required_jobs", [])
+    if governance_workflow_path:
+        governance_workflow_file = REPO_ROOT / governance_workflow_path
+        governance_workflow_text = read_text_if_exists(governance_workflow_file)
+        if governance_workflow_text is None:
+            results.append(
+                CheckResult(
+                    False,
+                    "workflow 关键语义",
+                    f"缺失 workflow: {governance_workflow_path}",
+                )
+            )
+        else:
+            missing_governance_snippets = missing_snippets(
+                governance_workflow_text, governance_required_snippets
+            )
+            results.append(
+                CheckResult(True, "workflow 关键语义", "通过")
+                if not missing_governance_snippets
+                else CheckResult(
+                    False,
+                    "workflow 关键语义",
+                    f"缺少 workflow 关键片段: {', '.join(missing_governance_snippets)}",
+                )
+            )
+            if governance_required_jobs:
+                results.append(
+                    check_governance_workflow_structure(
+                        governance_workflow_text, manifest
+                    )
+                )
+    else:
+        results.append(
+            CheckResult(
+                True,
+                "workflow 关键语义",
+                "未在 manifest 启用专用 workflow 结构检查，跳过",
+            )
+        )
 
     return results
-
-
-def main() -> int:
-    results = run_checks()
-    failed = [result for result in results if not result.ok]
-
-    print("工作流文档一致性检查")
-    for result in results:
-        prefix = "通过" if result.ok else "失败"
-        print(f"- {prefix}：{result.title} - {result.detail}")
-
-    if failed:
-        print("\n结论：存在工作流文档漂移或断链，需要修复。")
-        return 1
-
-    print("\n结论：工作流文档入口一致，未发现断链。")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

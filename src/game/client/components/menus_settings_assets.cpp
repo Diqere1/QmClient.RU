@@ -1046,6 +1046,7 @@ static std::vector<CMenus::SCustomGuiCursor *> gs_vpSearchGuiCursorList;
 static std::vector<CMenus::SCustomArrow *> gs_vpSearchArrowList;
 static std::vector<CMenus::SCustomStrongWeak *> gs_vpSearchStrongWeakList;
 static std::vector<CMenus::SCustomEntityBg *> gs_vpSearchEntityBgList;
+bool gs_SettingsAssetsEntityGamePreview = true;
 static std::vector<CMenus::SCustomExtras *> gs_vpSearchExtrasList;
 
 static bool gs_aInitCustomList[NUMBER_OF_ASSETS_TABS] = {
@@ -3000,7 +3001,6 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	static bool s_AssetsTransitionInitialized = false;
 	static int s_PrevAssetsTab = ASSETS_TAB_ENTITIES;
 	static float s_AssetsTransitionDirection = 0.0f;
-	static bool s_EntityGamePreview = true;
 	const uint64_t AssetsTabSwitchNode = UiAnimNodeKey("settings_assets_tab_switch");
 
 	MainView.HSplitTop(20.0f, &TabBar, &MainView);
@@ -3450,8 +3450,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 
 	int OldSelected = -1;
 	float Margin = 10;
-	float TextureWidth = 150;
-	float TextureHeight = 150;
+	float TextureWidth = 128;
+	float TextureHeight = 128;
 	const SAssetResourceCategory *pCurrentCategory = AssetResourceCategoryByTab(s_CurCustomTab);
 	SMenuAssetScanUser LazyLoadUser;
 	LazyLoadUser.m_pUser = this;
@@ -3623,6 +3623,25 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		Ui()->DoLabel(&BadgeRect, pLabel, FontSize, TEXTALIGN_MC);
 	};
 
+	auto ComputePreviewDrawRect = [&](const CUIRect &TextureRect, float ContentWidth, float ContentHeight) {
+		const float SafeContentWidth = maximum(ContentWidth, 1.0f);
+		const float SafeContentHeight = maximum(ContentHeight, 1.0f);
+		const float FrameScale = minimum(TextureRect.w / SafeContentWidth, TextureRect.h / SafeContentHeight);
+		const float DrawWidth = SafeContentWidth * FrameScale;
+		const float DrawHeight = SafeContentHeight * FrameScale;
+		return CUIRect{
+			TextureRect.x + (TextureRect.w - DrawWidth) / 2.0f,
+			TextureRect.y + (TextureRect.h - DrawHeight) / 2.0f,
+			DrawWidth,
+			DrawHeight};
+	};
+
+	auto DrawPreviewFrame = [&](const CUIRect &TextureRect) {
+		CUIRect PreviewFrame = TextureRect;
+		PreviewFrame.Margin(2.0f, &PreviewFrame);
+		PreviewFrame.Draw(ColorRGBA(0.03f, 0.05f, 0.08f, 0.18f), IGraphics::CORNER_ALL, 10.0f);
+	};
+
 	auto RenderEntityBgFallback = [&](const CUIRect &Rect) {
 		CUIRect FallbackRect = Rect;
 		FallbackRect.Margin(6.0f, &FallbackRect);
@@ -3773,7 +3792,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	else if(s_CurCustomTab == ASSETS_TAB_GAME)
 	{
 		SearchListSize = gs_vpSearchGamesList.size();
-		TextureHeight = 75;
+		TextureHeight = 64;
 	}
 	else if(s_CurCustomTab == ASSETS_TAB_EMOTICONS)
 	{
@@ -3798,7 +3817,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	else if(s_CurCustomTab == ASSETS_TAB_STRONG_WEAK)
 	{
 		SearchListSize = gs_vpSearchStrongWeakList.size();
-		TextureHeight = 50;
+		TextureHeight = 44;
 	}
 	else if(s_CurCustomTab == ASSETS_TAB_ENTITY_BG)
 	{
@@ -4078,13 +4097,15 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 				AuthorProps.m_MaxWidth = static_cast<int>(HeaderLayout.m_AuthorRect.w);
 				Ui()->DoLabel(&HeaderLayout.m_AuthorRect, "--", 7.0f, TEXTALIGN_ML, AuthorProps);
 			}
+			DrawPreviewFrame(HeaderLayout.m_TextureRect);
 			if(pItem->m_RenderTexture.IsValid())
 			{
+				const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureHeight);
 				Graphics()->WrapClamp();
 				Graphics()->TextureSet(pItem->m_RenderTexture);
 				Graphics()->QuadsBegin();
 				Graphics()->SetColor(1, 1, 1, 1);
-				IGraphics::CQuadItem QuadItem(HeaderLayout.m_TextureRect.x + (HeaderLayout.m_TextureRect.w - TextureWidth) / 2, HeaderLayout.m_TextureRect.y + (HeaderLayout.m_TextureRect.h - TextureHeight) / 2, TextureWidth, TextureHeight);
+				IGraphics::CQuadItem QuadItem(PreviewRect.x, PreviewRect.y, PreviewRect.w, PreviewRect.h);
 				Graphics()->QuadsDrawTL(&QuadItem, 1);
 				Graphics()->QuadsEnd();
 				Graphics()->WrapNormal();
@@ -4921,7 +4942,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 						Ui()->DoLabel(&IconRect, str_comp(pItem->m_aName, "..") == 0 ? FONT_ICON_FOLDER_OPEN : FONT_ICON_FOLDER, 36.0f, TEXTALIGN_MC);
 						TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 					}
-					else if(s_CurCustomTab == ASSETS_TAB_ENTITIES && s_EntityGamePreview)
+					else if(s_CurCustomTab == ASSETS_TAB_ENTITIES && gs_SettingsAssetsEntityGamePreview)
 					{
 						const auto *pEntitiesItem = static_cast<const SCustomEntities *>(pItem);
 						IGraphics::CTextureHandle Tex;
@@ -4954,9 +4975,11 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 								{TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK},
 							};
 
-							float TileSize = TextureWidth / (float)COLS;
-							float OffX = HeaderLayout.m_TextureRect.x + (HeaderLayout.m_TextureRect.w - TextureWidth) / 2.0f;
-							float OffY = HeaderLayout.m_TextureRect.y + (HeaderLayout.m_TextureRect.h - ROWS * TileSize) / 2.0f;
+							DrawPreviewFrame(HeaderLayout.m_TextureRect);
+							const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureWidth);
+							float TileSize = PreviewRect.w / (float)COLS;
+							float OffX = PreviewRect.x;
+							float OffY = PreviewRect.y + (PreviewRect.h - ROWS * TileSize) / 2.0f;
 
 							const float TileInset = 1.5f / 1024.0f;
 							const float TileScale = 1.0f / 16.0f;
@@ -4989,6 +5012,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					}
 					else
 					{
+						DrawPreviewFrame(HeaderLayout.m_TextureRect);
 						IGraphics::CTextureHandle Tex = pItem->m_RenderTexture;
 						if(!Tex.IsValid())
 						{
@@ -5003,11 +5027,12 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 						}
 						if(Tex.IsValid())
 						{
+							const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureHeight);
 							Graphics()->WrapClamp();
 							Graphics()->TextureSet(Tex);
 							Graphics()->QuadsBegin();
 							Graphics()->SetColor(1, 1, 1, 1);
-							IGraphics::CQuadItem QuadItem(HeaderLayout.m_TextureRect.x + (HeaderLayout.m_TextureRect.w - TextureWidth) / 2, HeaderLayout.m_TextureRect.y + (HeaderLayout.m_TextureRect.h - TextureHeight) / 2, TextureWidth, TextureHeight);
+							IGraphics::CQuadItem QuadItem(PreviewRect.x, PreviewRect.y, PreviewRect.w, PreviewRect.h);
 							Graphics()->QuadsDrawTL(&QuadItem, 1);
 							Graphics()->QuadsEnd();
 							Graphics()->WrapNormal();
@@ -5062,7 +5087,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					if(HeaderLayout.m_HasStatusTag)
 						RenderAssetStatusTag(HeaderLayout.m_StatusTagRect, Asset.m_Installed);
 
-					if(s_CurCustomTab == ASSETS_TAB_ENTITIES && s_EntityGamePreview && Asset.m_ThumbTexture.IsValid())
+					DrawPreviewFrame(HeaderLayout.m_TextureRect);
+					if(s_CurCustomTab == ASSETS_TAB_ENTITIES && gs_SettingsAssetsEntityGamePreview && Asset.m_ThumbTexture.IsValid())
 					{
 						static const int COLS = 7, ROWS = 7;
 						static const unsigned char aLayout[ROWS][COLS] = {
@@ -5075,9 +5101,10 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 							{TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK},
 						};
 
-						float TileSize = TextureWidth / (float)COLS;
-						float OffX = HeaderLayout.m_TextureRect.x + (HeaderLayout.m_TextureRect.w - TextureWidth) / 2.0f;
-						float OffY = HeaderLayout.m_TextureRect.y + (HeaderLayout.m_TextureRect.h - ROWS * TileSize) / 2.0f;
+						const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureWidth);
+						float TileSize = PreviewRect.w / (float)COLS;
+						float OffX = PreviewRect.x;
+						float OffY = PreviewRect.y + (PreviewRect.h - ROWS * TileSize) / 2.0f;
 
 						const float TileInset = 1.5f / 1024.0f;
 						const float TileScale = 1.0f / 16.0f;
@@ -5109,18 +5136,19 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					}
 					else if(Asset.m_ThumbTexture.IsValid())
 					{
+						const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureHeight);
 						Graphics()->WrapClamp();
 						Graphics()->TextureSet(Asset.m_ThumbTexture);
 						Graphics()->QuadsBegin();
 						Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-						IGraphics::CQuadItem QuadItem(HeaderLayout.m_TextureRect.x + (HeaderLayout.m_TextureRect.w - TextureWidth) / 2, HeaderLayout.m_TextureRect.y + (HeaderLayout.m_TextureRect.h - TextureHeight) / 2, TextureWidth, TextureHeight);
+						IGraphics::CQuadItem QuadItem(PreviewRect.x, PreviewRect.y, PreviewRect.w, PreviewRect.h);
 						Graphics()->QuadsDrawTL(&QuadItem, 1);
 						Graphics()->QuadsEnd();
 						Graphics()->WrapNormal();
 					}
 					else
 					{
-						CUIRect LoadingRect = {HeaderLayout.m_TextureRect.x + (HeaderLayout.m_TextureRect.w - TextureWidth) / 2, HeaderLayout.m_TextureRect.y + (HeaderLayout.m_TextureRect.h - TextureHeight) / 2, TextureWidth, TextureHeight};
+						CUIRect LoadingRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureHeight);
 						LoadingRect.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.10f), IGraphics::CORNER_ALL, 6.0f);
 						Ui()->DoLabel(&LoadingRect, Localize("Loading…"), 10.0f, TEXTALIGN_MC);
 					}
@@ -5387,8 +5415,11 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		DirectoryButton.VSplitRight(10.0f, &DirectoryButton, nullptr);
 		DirectoryButton.VSplitRight(EntityPreviewButtonWidth, &DirectoryButton, &ToggleRect);
 		static CButtonContainer s_EntityPreviewToggleId;
-		if(DoButton_Menu(&s_EntityPreviewToggleId, Localize("Entity Preview"), s_EntityGamePreview, &ToggleRect))
-			s_EntityGamePreview = !s_EntityGamePreview;
+		if(DoButton_Menu(&s_EntityPreviewToggleId, Localize("Entity Preview"), gs_SettingsAssetsEntityGamePreview, &ToggleRect))
+		{
+			gs_SettingsAssetsEntityGamePreview = !gs_SettingsAssetsEntityGamePreview;
+			InvalidateSettingsPageRuntimeCache(SETTINGS_ASSETS, -1);
+		}
 		GameClient()->m_Tooltips.DoToolTip(&s_EntityPreviewToggleId, &ToggleRect, Localize("Toggle between game scene preview and raw texture"));
 	}
 
@@ -5398,6 +5429,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	if(SupportsWorkshopSync && DoButton_Menu(&s_ShowWorkshopAssetsId, Localize("Show Workshop Assets"), m_ShowWorkshopAssets, &ShowWorkshopAssetsButton))
 	{
 		m_ShowWorkshopAssets = !m_ShowWorkshopAssets;
+		InvalidateSettingsPageRuntimeCache(SETTINGS_ASSETS, -1);
 		gs_aInitCustomList[s_CurCustomTab] = true;
 		if(s_CurCustomTab == ASSETS_TAB_ENTITY_BG)
 			RefreshEntityBgHierarchyView();

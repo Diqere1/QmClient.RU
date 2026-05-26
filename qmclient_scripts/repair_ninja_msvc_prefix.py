@@ -40,7 +40,9 @@ def _extract_showincludes_prefix(build_dir: Path) -> str | None:
     show_dir = build_dir / "CMakeFiles" / "ShowIncludes"
     show_dir.mkdir(parents=True, exist_ok=True)
     (show_dir / "foo.h").write_text("\n", encoding="utf-8")
-    (show_dir / "main.c").write_text('#include "foo.h"\nint main(void) { return 0; }\n', encoding="utf-8")
+    (show_dir / "main.c").write_text(
+        '#include "foo.h"\nint main(void) { return 0; }\n', encoding="utf-8"
+    )
     include_path = str((show_dir / "foo.h").resolve())
 
     result = subprocess.run(

@@ -232,7 +232,7 @@ def render_markdown(
     else:
         lines.append("- Gate：未提供 `--gate-report`，请人工补充最新总入口结果。")
     lines.append("- 构建 / 测试： [补充本次实际执行的验证命令]")
-    lines.append("- 发布态验证： [补充是否做过 build-ninja / Release 真实运行]")
+    lines.append("- 发布态验证： [补充是否做过 cmake-build-release / Release 真实运行]")
     lines.append("")
     lines.append("## 素材来源")
     lines.append("- `.ai/features/*/*-acceptance.md`")

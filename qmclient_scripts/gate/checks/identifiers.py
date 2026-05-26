@@ -47,19 +47,23 @@ def run(results: ResultCollector, included: list[str], dry_run: bool = False) ->
                 stdout=f,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
         if proc.returncode != 0:
             results.add("FAIL", "标识符命名检查", proc.stderr)
             return
-        code2, out = runner.run(
-            [py, str(REPO_ROOT / "scripts" / "check_identifiers.py")],
-            title="检查标识符",
-            check=False,
-            stdin=open(tmp_path, "r", encoding="utf-8"),
-        )
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            code2, out = runner.run(
+                [py, str(REPO_ROOT / "scripts" / "check_identifiers.py")],
+                title="检查标识符",
+                check=False,
+                stdin=f,
+            )
         if code2 != 0:
             results.add("FAIL", "标识符命名检查", out)
             return
         results.add("PASS", "标识符命名检查", "命名风格检查通过")
     finally:
-        os.unlink(tmp_path)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)

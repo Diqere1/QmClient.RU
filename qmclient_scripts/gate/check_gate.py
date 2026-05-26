@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""QmClient 仓库级门禁总入口（Python 版，替代 check-gate.sh）。
+"""QmClient 仓库级门禁总入口（Python 版）。
 
 纯编排层：只负责模式定义、参数解析、范围收集和检查调度。
 具体检查逻辑下沉到 checks/ 各模块中。
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from pathlib import Path
 
 # 确保 gate/lib 和 gate/checks 在路径上
@@ -149,13 +150,12 @@ _CHECK_MAP = {
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="QmClient 仓库级门禁总入口")
-    parser.add_argument("--build-dir", default="build-ninja")
+    parser.add_argument("--build-dir", default="cmake-build-release")
     parser.add_argument("--base-ref", default="main")
     parser.add_argument(
         "--mode", choices=["quick", "default", "full", "build"], default="default"
     )
     parser.add_argument("--skip-ci-build", action="store_true")
-    parser.add_argument("--analyze-all", action="store_true")
     parser.add_argument("--skip-preflight", action="store_true")
     parser.add_argument("--skip-config-checks", action="store_true")
     parser.add_argument("--skip-workflow-docs", action="store_true")
@@ -163,16 +163,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-style-check", action="store_true")
     parser.add_argument("--skip-strict-debug", action="store_true")
     parser.add_argument("--skip-cxx-tests", action="store_true")
-    parser.add_argument("--run-rust-tests", action="store_true")
     parser.add_argument("--run-all-tests", action="store_true")
     parser.add_argument("--include-identifier-check", action="store_true")
-    parser.add_argument("--include-unused-header-check", action="store_true")
     parser.add_argument("--enable-clang-format-check", action="store_true")
     parser.add_argument("--enable-full-clang-tidy-warn", action="store_true")
     parser.add_argument("--skip-ruff-check", action="store_true")
     parser.add_argument("--skip-shell-check", action="store_true")
     parser.add_argument("--skip-dilate-check", action="store_true")
-    parser.add_argument("--strict-environment", action="store_true")
     parser.add_argument(
         "--ci-mode",
         action="store_true",
@@ -223,6 +220,32 @@ def _should_run_check(name: str, mode_spec: dict, args: argparse.Namespace) -> b
     return False
 
 
+def _finalize_run(
+    args: argparse.Namespace,
+    mode_spec: dict,
+    results: ResultCollector,
+    scoped_files: list[str],
+) -> None:
+    report_path = Path(args.report_json_path) if args.report_json_path else None
+    results.write_json(
+        report_path,
+        mode=args.mode,
+        mode_spec={
+            "Name": args.mode,
+            "Target": mode_spec["target"],
+            "Expectation": mode_spec["expectation"],
+            "BlockingRule": mode_spec["blocking_rule"],
+        },
+        scoped_files=scoped_files,
+    )
+    results.write_summary(
+        mode=args.mode,
+        mode_target=mode_spec["target"],
+        mode_expectation=mode_spec["expectation"],
+        mode_blocking_rule=mode_spec["blocking_rule"],
+    )
+
+
 def main() -> int:
     args = _parse_args()
 
@@ -235,89 +258,86 @@ def main() -> int:
         REPO_ROOT / "qmclient_scripts" / "gate" / "baseline_debt_allowlist.json"
     )
     results = ResultCollector(allowlist_path if allowlist_path.exists() else None)
+    scoped_files: list[str] = []
 
-    # 范围收集
-    sc = scope.collect_scope(args.base_ref, args.branch_scope_only)
-    results.add(
-        "INFO",
-        "差异范围统计",
-        f"branch={len(sc.branch)}, unstaged={len(sc.unstaged)}, staged={len(sc.staged)}, "
-        f"untracked={len(sc.untracked)}, included={len(sc.included)}, excluded={len(sc.excluded)}",
-    )
-    if not sc.base_ref_available:
-        msg = f"差异基线不可用: {args.base_ref}"
-        if sc.base_ref_failure_reason:
-            msg += f" ({sc.base_ref_failure_reason})"
-        results.add("WARN", "差异基线检查", msg)
+    try:
+        # 范围收集
+        sc = scope.collect_scope(args.base_ref, args.branch_scope_only)
+        scoped_files = sc.included
+        results.add(
+            "INFO",
+            "差异范围统计",
+            f"branch={len(sc.branch)}, unstaged={len(sc.unstaged)}, staged={len(sc.staged)}, "
+            f"untracked={len(sc.untracked)}, included={len(sc.included)}, excluded={len(sc.excluded)}",
+        )
+        if not sc.base_ref_available:
+            msg = f"差异基线不可用: {args.base_ref}"
+            if sc.base_ref_failure_reason:
+                msg += f" ({sc.base_ref_failure_reason})"
+            results.add("WARN", "差异基线检查", msg)
 
-    if args.explain_scope:
-        runner.print_section("差异范围说明")
-        print(f"BaseRef: {args.base_ref}")
-        print(f"BaseRef 可用: {sc.base_ref_available}")
-        if sc.base_ref_failure_reason:
-            print(f"BaseRef 失败原因: {sc.base_ref_failure_reason}")
-        print(f"纳入首方范围文件数: {len(sc.included)}")
-        print(f"排除文件数: {len(sc.excluded)}")
+        if args.explain_scope:
+            runner.print_section("差异范围说明")
+            print(f"BaseRef: {args.base_ref}")
+            print(f"BaseRef 可用: {sc.base_ref_available}")
+            if sc.base_ref_failure_reason:
+                print(f"BaseRef 失败原因: {sc.base_ref_failure_reason}")
+            print(f"纳入首方范围文件数: {len(sc.included)}")
+            print(f"排除文件数: {len(sc.excluded)}")
 
-    scope_report_path = Path(args.scope_report_path) if args.scope_report_path else None
-    results.write_scope_json(
-        scope_report_path,
-        args.base_ref,
-        sc.base_ref_available,
-        sc.base_ref_failure_reason,
-        sc.included,
-        sc.excluded,
-    )
-
-    # 检查调度
-    for name in _CHECK_MAP:
-        if not _should_run_check(name, mode_spec, args):
-            continue
-        check_module = _CHECK_MAP[name]
-        if name == "strict_build":
-            check_module.run(results, sc.included, args.dry_run, base_ref=args.base_ref)
-        else:
-            check_module.run(results, sc.included, args.dry_run)
-
-    # 测试调度
-    test_spec = mode_spec.get("tests", {})
-    run_cxx = (
-        test_spec.get("cxx", False)
-        and not args.skip_cxx_tests
-        and not args.run_all_tests
-    )
-    run_rust = test_spec.get("rust", False) and not args.run_all_tests
-    run_all = args.run_all_tests
-    if run_cxx or run_rust or run_all:
-        tests.run(
-            results,
+        scope_report_path = (
+            Path(args.scope_report_path) if args.scope_report_path else None
+        )
+        results.write_scope_json(
+            scope_report_path,
+            args.base_ref,
+            sc.base_ref_available,
+            sc.base_ref_failure_reason,
             sc.included,
-            dry_run=args.dry_run,
-            build_dir=args.build_dir,
-            run_all=run_all,
-            run_cxx=run_cxx,
-            run_rust=run_rust,
+            sc.excluded,
         )
 
-    # 报告
-    report_path = Path(args.report_json_path) if args.report_json_path else None
-    results.write_json(
-        report_path,
-        mode=args.mode,
-        mode_spec={
-            "Name": args.mode,
-            "Target": mode_spec["target"],
-            "Expectation": mode_spec["expectation"],
-            "BlockingRule": mode_spec["blocking_rule"],
-        },
-        scoped_files=sc.included,
-    )
-    results.write_summary(
-        mode=args.mode,
-        mode_target=mode_spec["target"],
-        mode_expectation=mode_spec["expectation"],
-        mode_blocking_rule=mode_spec["blocking_rule"],
-    )
+        # 检查调度
+        for name in _CHECK_MAP:
+            if not _should_run_check(name, mode_spec, args):
+                continue
+            check_module = _CHECK_MAP[name]
+            if name == "strict_build":
+                check_module.run(
+                    results, sc.included, args.dry_run, base_ref=args.base_ref
+                )
+            else:
+                check_module.run(results, sc.included, args.dry_run)
+
+        # 测试调度
+        test_spec = mode_spec.get("tests", {})
+        run_cxx = (
+            test_spec.get("cxx", False)
+            and not args.skip_cxx_tests
+            and not args.run_all_tests
+        )
+        run_rust = test_spec.get("rust", False) and not args.run_all_tests
+        run_all = args.run_all_tests
+        if run_cxx or run_rust or run_all:
+            tests.run(
+                results,
+                sc.included,
+                dry_run=args.dry_run,
+                build_dir=args.build_dir,
+                run_all=run_all,
+                run_cxx=run_cxx,
+                run_rust=run_rust,
+            )
+    except KeyboardInterrupt:
+        results.add("FAIL", "Gate 入口中断", "收到 KeyboardInterrupt，已提前终止。")
+    except Exception:
+        results.add("FAIL", "Gate 入口异常", traceback.format_exc())
+    finally:
+        try:
+            _finalize_run(args, mode_spec, results, scoped_files)
+        except Exception:
+            print("\n[FAIL] Gate 收尾异常", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
 
     print("\n仓库级检查完成。")
     return 1 if results.has_failures() else 0

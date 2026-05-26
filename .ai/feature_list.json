@@ -6,7 +6,7 @@
       "description": "服务器浏览器 (src/game/client/components/menus_browser.cpp) 的列宽拖拽代码已存在(s_vResizeHandles / s_ResizeDragColIndex / 配置回写 m_BrColWidthGametype 等),但实际界面里全部 5 列(Gametype/Map/Friends/Players/Ping)的表头分隔条均无法拖动,鼠标悬停到分隔处也没有热区高亮和指针变化 — 提示问题大概率出在命中检测前置环节(Handle.m_Rect 计算、Headers 被上层覆盖、或拖拽循环未被执行)。需要定位失效原因并修复,使鼠标悬停表头分隔处出现拖拽热区、按住左键左右拖动改变列宽、松开后宽度持久化到 m_BrColWidth* 配置项。",
       "dependencies": [],
       "status": "done",
-      "evidence": "已按 progress.md 记录完成并提交 4217bd737；后续 feat-005 已基于该修复继续实施。"
+      "evidence": "已按 .ai/progress.md 记录完成并提交 4217bd737；后续 feat-005 已基于该修复继续实施。"
     },
     {
       "id": "feat-002",

@@ -1771,17 +1771,17 @@ void CMenus::RenderDemoBrowser(CUIRect MainView)
 	GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_DEMOS);
 
 	CUIRect ListView, DetailsView, ButtonsView;
-	MainView.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.85f), IGraphics::CORNER_B, ui_token::radius::CARD);
-	MainView.Margin(12.0f, &MainView);
-	MainView.HSplitBottom(22.0f * 2.0f + 5.0f, &ListView, &ButtonsView);
+	MainView.HSplitBottom(10.0f, &MainView, nullptr);
+	MainView.HSplitBottom(22.0f * 2.0f + 10.0f, &ListView, &ButtonsView);
+	ListView.HSplitBottom(10.0f, &ListView, nullptr);
 	ListView.VSplitRight(205.0f, &ListView, &DetailsView);
 	ListView.VSplitRight(10.0f, &ListView, nullptr);
-	ListView.Draw(ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	DetailsView.Draw(ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	ButtonsView.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_ALL, ui_token::radius::BASE);
-	ListView.Margin(8.0f, &ListView);
-	DetailsView.Margin(8.0f, &DetailsView);
-	ButtonsView.Margin(7.0f, &ButtonsView);
+	ListView.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	DetailsView.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	ButtonsView.Draw(MenuPanelElevatedColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	ListView.Margin(10.0f, &ListView);
+	DetailsView.Margin(10.0f, &DetailsView);
+	ButtonsView.Margin(10.0f, &ButtonsView);
 
 	bool WasListboxItemActivated;
 	RenderDemoBrowserList(ListView, WasListboxItemActivated);
@@ -1860,8 +1860,8 @@ void CMenus::RenderDemoBrowserList(CUIRect ListView, bool &WasListboxItemActivat
 
 	CUIRect Headers, ListBox;
 	ListView.HSplitTop(ms_ListheaderHeight, &Headers, &ListBox);
-	Headers.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_T, ui_token::radius::BASE);
-	ListBox.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.35f), IGraphics::CORNER_B, ui_token::radius::BASE);
+	Headers.Draw(MenuPanelElevatedColor(), IGraphics::CORNER_T, ui_token::radius::BASE);
+	ListBox.Draw(MenuPanelColor(0.72f), IGraphics::CORNER_B, ui_token::radius::BASE);
 
 	for(auto &Col : s_aCols)
 	{
@@ -2088,8 +2088,8 @@ void CMenus::RenderDemoBrowserDetails(CUIRect DetailsView)
 {
 	CUIRect Contents, Header;
 	DetailsView.HSplitTop(ms_ListheaderHeight, &Header, &Contents);
-	Contents.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.35f), IGraphics::CORNER_B, ui_token::radius::BASE);
-	Contents.Margin(5.0f, &Contents);
+	Contents.Draw(MenuPanelColor(0.72f), IGraphics::CORNER_B, ui_token::radius::BASE);
+	Contents.Margin(10.0f, &Contents);
 
 	const float FontSize = 12.0f;
 	const int NumSelected = NumSelectedDemos();
@@ -2102,7 +2102,7 @@ void CMenus::RenderDemoBrowserDetails(CUIRect DetailsView)
 		pItem = m_vpFilteredDemos[m_DemolistSelectedIndex];
 	}
 
-	Header.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_T, ui_token::radius::BASE);
+	Header.Draw(MenuPanelElevatedColor(), IGraphics::CORNER_T, ui_token::radius::BASE);
 	const char *pHeaderLabel;
 	if(NumSelected == 0)
 		pHeaderLabel = DemoBrowserBrowsingScreenshots() ? Localize("No screenshot selected") : Localize("No demo selected");

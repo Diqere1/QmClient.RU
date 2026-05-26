@@ -48,6 +48,8 @@
 #include <unordered_map>
 #include <vector>
 
+extern bool gs_SettingsAssetsEntityGamePreview;
+
 namespace {
 class CUiRenderOnlyScope
 {
@@ -93,6 +95,16 @@ uint64_t HashSettingsPageConfig()
 	return Hash;
 }
 
+uint64_t HashSettingsPageLayoutState(int Page, int Tab)
+{
+	uint64_t Hash = 1469598103934665603ull;
+	Hash = HashMenuCacheValue(Hash, Page);
+	Hash = HashMenuCacheValue(Hash, Tab);
+	if(Page == CMenus::SETTINGS_ASSETS)
+		Hash = HashMenuCacheValue(Hash, gs_SettingsAssetsEntityGamePreview ? 1 : 0);
+	return Hash;
+}
+
 int CanonicalizeTClientCacheTab(int Tab)
 {
 	static constexpr int TCLIENT_CACHE_SLOTS = 6;
@@ -120,6 +132,8 @@ SSettingsSectionCacheRuntimeKey MakeSettingsPageRuntimeKey(CUIRect View, IGraphi
 	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, Page);
 	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, Tab);
 	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, (int)std::round(ScrollY));
+	RuntimeKey.m_ConfigHash ^= HashSettingsPageLayoutState(Page, Tab);
+	RuntimeKey.m_ConfigHash *= 1099511628211ull;
 	RuntimeKey.m_LanguageHash = str_quickhash(g_Config.m_ClLanguagefile);
 	RuntimeKey.m_FontHash = str_quickhash(g_Config.m_TcCustomFont);
 	RuntimeKey.m_BackendHash = str_quickhash(g_Config.m_GfxBackend);
@@ -394,6 +408,18 @@ float CMenus::ResolveMenuTabAnimationValue(const void *pButtonId, const bool Act
 	const uint64_t NodeKey = BuildUiAnimNodeKey(s_ScopeHash, reinterpret_cast<uint64_t>(pButtonId));
 	CUiV2AnimationRuntime &AnimRuntime = GameClient()->UiRuntimeV2()->AnimRuntime();
 	return std::clamp(ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::SCALE, Target, DurationSec, EEasing::EASE_OUT), 0.0f, 1.0f);
+}
+
+ColorRGBA CMenus::MenuPanelColor(float AlphaScale) const
+{
+	const ColorRGBA Base = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMenuPanelColor));
+	return Base.WithAlpha(std::clamp((g_Config.m_ClMenuPanelOpacity / 100.0f) * AlphaScale, 0.0f, 1.0f));
+}
+
+ColorRGBA CMenus::MenuPanelElevatedColor(float AlphaScale) const
+{
+	const ColorRGBA Base = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMenuPanelColor));
+	return Base.WithAlpha(std::clamp((g_Config.m_ClMenuPanelElevatedOpacity / 100.0f) * AlphaScale, 0.0f, 1.0f));
 }
 
 int CMenus::DoButton_Toggle(const void *pId, int Checked, const CUIRect *pRect, bool Active, const unsigned Flags)
@@ -956,7 +982,6 @@ int CMenus::DoMenuTabV2(CButtonContainer *pButtonContainer, const char *pText, b
 	const uint64_t NodeKey = BuildUiAnimNodeKey(MakeUiScopeHash("menubar_v2_tab"), reinterpret_cast<uint64_t>(pButtonContainer));
 	CUiV2AnimationRuntime &AnimRt = GameClient()->UiRuntimeV2()->AnimRuntime();
 	const ColorRGBA Resolved = ResolveUiAnimValueColor(AnimRt, NodeKey, Target, ui_token::motion::BTN_HOVER.m_DurationSec, ui_token::motion::BTN_HOVER.m_Easing);
-
 	pRect->Draw(Resolved, Corners, 10.0f);
 
 	if(pCommunityIcon != nullptr)
@@ -978,6 +1003,11 @@ int CMenus::DoMenuTabV2(CButtonContainer *pButtonContainer, const char *pText, b
 void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 {
 	CUIRect Button;
+	const float MenubarOuterInsetX = 6.0f;
+	const float MenubarOuterInsetY = 2.0f;
+	Box.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.12f), IGraphics::CORNER_ALL, 12.0f);
+	Box.VMargin(MenubarOuterInsetX, &Box);
+	Box.HMargin(MenubarOuterInsetY, &Box);
 
 	int NewPage = -1;
 	int ActivePage = -1;
@@ -1011,55 +1041,87 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 	TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
 
-	Box.VSplitRight(33.0f, &Box, &Button);
+	const float MenubarIconButtonSize = Box.h;
+	const float MenubarIconGap = 10.0f;
+	const float MenubarItemGap = 6.0f;
+	const ColorRGBA IconButtonDefault(0.0f, 0.0f, 0.0f, 0.0f);
+	const ColorRGBA IconButtonActive = MenuPanelElevatedColor(0.95f);
+	const ColorRGBA IconButtonHover = MenuPanelColor(0.55f);
+	const ColorRGBA HomeButtonDefault = ui_token::color::ACCENT_PRIMARY.WithMultipliedAlpha(0.95f);
+	const ColorRGBA HomeButtonHover = ui_token::color::ACCENT_PRIMARY;
+	Box.VSplitRight(MenubarIconButtonSize, &Box, &Button);
 	static CButtonContainer s_QuitButton;
 	ColorRGBA QuitColor(1, 0, 0, 0.5f);
-	if(DoMenuTabV2(&s_QuitButton, FONT_ICON_POWER_OFF, false, &Button, IGraphics::CORNER_T, nullptr, nullptr, &QuitColor))
 	{
-		if(GameClient()->Editor()->HasUnsavedData() || (GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmQuitTime && g_Config.m_ClConfirmQuitTime >= 0) || m_MenusIngameTouchControls.UnsavedChanges() || GameClient()->m_TouchControls.HasEditingChanges())
+		CUIRect QuitButton = Button;
+		const float CircleSize = minimum(QuitButton.w, QuitButton.h);
+		QuitButton.x += (QuitButton.w - CircleSize) / 2.0f;
+		QuitButton.w = CircleSize;
+		if(DoMenuTabV2(&s_QuitButton, FONT_ICON_POWER_OFF, false, &QuitButton, IGraphics::CORNER_ALL, &IconButtonDefault, nullptr, &QuitColor))
 		{
-			m_Popup = POPUP_QUIT;
-		}
-		else
-		{
-			Client()->Quit();
+			if(GameClient()->Editor()->HasUnsavedData() || (GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmQuitTime && g_Config.m_ClConfirmQuitTime >= 0) || m_MenusIngameTouchControls.UnsavedChanges() || GameClient()->m_TouchControls.HasEditingChanges())
+			{
+				m_Popup = POPUP_QUIT;
+			}
+			else
+			{
+				Client()->Quit();
+			}
 		}
 	}
 	GameClient()->m_Tooltips.DoToolTip(&s_QuitButton, &Button, Localize("Quit"));
 
-	Box.VSplitRight(10.0f, &Box, nullptr);
-	Box.VSplitRight(33.0f, &Box, &Button);
+	Box.VSplitRight(MenubarIconGap, &Box, nullptr);
+	Box.VSplitRight(MenubarIconButtonSize, &Box, &Button);
 	static CButtonContainer s_SettingsButton;
-	if(DoMenuTabV2(&s_SettingsButton, FONT_ICON_GEAR, ActivePage == PAGE_SETTINGS, &Button))
 	{
-		NewPage = PAGE_SETTINGS;
+		CUIRect SettingsButton = Button;
+		const float CircleSize = minimum(SettingsButton.w, SettingsButton.h);
+		SettingsButton.x += (SettingsButton.w - CircleSize) / 2.0f;
+		SettingsButton.w = CircleSize;
+		if(DoMenuTabV2(&s_SettingsButton, FONT_ICON_GEAR, ActivePage == PAGE_SETTINGS, &SettingsButton, IGraphics::CORNER_ALL, &IconButtonDefault, &IconButtonActive, &IconButtonHover))
+		{
+			NewPage = PAGE_SETTINGS;
+		}
+		MenubarTrackActive(PAGE_SETTINGS, SettingsButton);
 	}
-	MenubarTrackActive(PAGE_SETTINGS, Button);
 	GameClient()->m_Tooltips.DoToolTip(&s_SettingsButton, &Button, Localize("Settings"));
 
-	Box.VSplitRight(10.0f, &Box, nullptr);
-	Box.VSplitRight(33.0f, &Box, &Button);
+	Box.VSplitRight(MenubarIconGap, &Box, nullptr);
+	Box.VSplitRight(MenubarIconButtonSize, &Box, &Button);
 	static CButtonContainer s_EditorButton;
-	if(DoMenuTabV2(&s_EditorButton, FONT_ICON_PEN_TO_SQUARE, false, &Button))
 	{
-		g_Config.m_ClEditor = 1;
+		CUIRect EditorButton = Button;
+		const float CircleSize = minimum(EditorButton.w, EditorButton.h);
+		EditorButton.x += (EditorButton.w - CircleSize) / 2.0f;
+		EditorButton.w = CircleSize;
+		if(DoMenuTabV2(&s_EditorButton, FONT_ICON_PEN_TO_SQUARE, false, &EditorButton, IGraphics::CORNER_ALL, &IconButtonDefault, nullptr, &IconButtonHover))
+		{
+			g_Config.m_ClEditor = 1;
+		}
 	}
 	GameClient()->m_Tooltips.DoToolTip(&s_EditorButton, &Button, Localize("Editor"));
 
 	if(ClientState == IClient::STATE_OFFLINE)
 	{
-		Box.VSplitRight(10.0f, &Box, nullptr);
-		Box.VSplitRight(33.0f, &Box, &Button);
+		Box.VSplitRight(MenubarIconGap, &Box, nullptr);
+		Box.VSplitRight(MenubarIconButtonSize, &Box, &Button);
 		static CButtonContainer s_DemoButton;
-		if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &Button))
 		{
-			NewPage = PAGE_DEMOS;
+			CUIRect DemoButton = Button;
+			const float CircleSize = minimum(DemoButton.w, DemoButton.h);
+			DemoButton.x += (DemoButton.w - CircleSize) / 2.0f;
+			DemoButton.w = CircleSize;
+			if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &DemoButton, IGraphics::CORNER_ALL, &IconButtonDefault, &IconButtonActive, &IconButtonHover))
+			{
+				NewPage = PAGE_DEMOS;
+			}
+			MenubarTrackActive(PAGE_DEMOS, DemoButton);
 		}
-		MenubarTrackActive(PAGE_DEMOS, Button);
 		GameClient()->m_Tooltips.DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
-		Box.VSplitRight(10.0f, &Box, nullptr);
+		Box.VSplitRight(MenubarIconGap, &Box, nullptr);
 
-		Box.VSplitLeft(33.0f, &Button, &Box);
+		Box.VSplitLeft(MenubarIconButtonSize, &Button, &Box);
 
 		bool GotNewsOrUpdate = false;
 
@@ -1074,8 +1136,8 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 
 		GotNewsOrUpdate |= (bool)g_Config.m_UiUnreadNews;
 
-		ColorRGBA HomeButtonColorAlert(0, 1, 0, 0.25f);
-		ColorRGBA HomeButtonColorAlertHover(0, 1, 0, 0.5f);
+		ColorRGBA HomeButtonColorAlert = HomeButtonDefault;
+		ColorRGBA HomeButtonColorAlertHover = HomeButtonHover;
 		ColorRGBA *pHomeButtonColor = nullptr;
 		ColorRGBA *pHomeButtonColorHover = nullptr;
 
@@ -1088,9 +1150,15 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		}
 
 		static CButtonContainer s_StartButton;
-		if(DoMenuTabV2(&s_StartButton, pHomeScreenButtonLabel, false, &Button, IGraphics::CORNER_T, pHomeButtonColor, nullptr, pHomeButtonColorHover))
 		{
-			m_ShowStart = true;
+			CUIRect HomeButton = Button;
+			const float CircleSize = minimum(HomeButton.w, HomeButton.h);
+			HomeButton.x += (HomeButton.w - CircleSize) / 2.0f;
+			HomeButton.w = CircleSize;
+			if(DoMenuTabV2(&s_StartButton, pHomeScreenButtonLabel, false, &HomeButton, IGraphics::CORNER_ALL, pHomeButtonColor != nullptr ? pHomeButtonColor : &HomeButtonDefault, nullptr, pHomeButtonColorHover != nullptr ? pHomeButtonColorHover : &HomeButtonHover))
+			{
+				m_ShowStart = true;
+			}
 		}
 		GameClient()->m_Tooltips.DoToolTip(&s_StartButton, &Button, Localize("Main menu"));
 
@@ -1098,25 +1166,27 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		Box.VSplitLeft(10.0f, nullptr, &Box);
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 		static CButtonContainer s_InternetButton;
-		if(DoMenuTabV2(&s_InternetButton, FONT_ICON_EARTH_AMERICAS, ActivePage == PAGE_INTERNET, &Button))
+		if(DoMenuTabV2(&s_InternetButton, FONT_ICON_EARTH_AMERICAS, ActivePage == PAGE_INTERNET, &Button, IGraphics::CORNER_ALL))
 		{
 			NewPage = PAGE_INTERNET;
 		}
 		MenubarTrackActive(PAGE_INTERNET, Button);
 		GameClient()->m_Tooltips.DoToolTip(&s_InternetButton, &Button, Localize("Internet"));
 
+		Box.VSplitLeft(MenubarItemGap, nullptr, &Box);
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 		static CButtonContainer s_LanButton;
-		if(DoMenuTabV2(&s_LanButton, FONT_ICON_NETWORK_WIRED, ActivePage == PAGE_LAN, &Button))
+		if(DoMenuTabV2(&s_LanButton, FONT_ICON_NETWORK_WIRED, ActivePage == PAGE_LAN, &Button, IGraphics::CORNER_ALL))
 		{
 			NewPage = PAGE_LAN;
 		}
 		MenubarTrackActive(PAGE_LAN, Button);
 		GameClient()->m_Tooltips.DoToolTip(&s_LanButton, &Button, Localize("LAN"));
 
+		Box.VSplitLeft(MenubarItemGap, nullptr, &Box);
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 		static CButtonContainer s_FavoritesButton;
-		if(DoMenuTabV2(&s_FavoritesButton, FONT_ICON_STAR, ActivePage == PAGE_FAVORITES, &Button))
+		if(DoMenuTabV2(&s_FavoritesButton, FONT_ICON_STAR, ActivePage == PAGE_FAVORITES, &Button, IGraphics::CORNER_ALL))
 		{
 			NewPage = PAGE_FAVORITES;
 		}
@@ -1125,9 +1195,10 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 
 		TextRender()->SetRenderFlags(0);
 		TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
+		Box.VSplitLeft(MenubarItemGap, nullptr, &Box);
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 		static CButtonContainer s_FavoriteMapsButton;
-		if(DoMenuTabV2(&s_FavoriteMapsButton, "🔖", ActivePage == PAGE_FAVORITE_MAPS, &Button))
+		if(DoMenuTabV2(&s_FavoriteMapsButton, "🔖", ActivePage == PAGE_FAVORITE_MAPS, &Button, IGraphics::CORNER_ALL))
 		{
 			NewPage = PAGE_FAVORITE_MAPS;
 		}
@@ -1193,8 +1264,9 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		static_assert(std::size(s_aFavoriteCommunityButtons) == (size_t)IServerBrowser::TYPE_FAVORITE_COMMUNITY_5 - IServerBrowser::TYPE_FAVORITE_COMMUNITY_1 + 1);
 		for(const CCommunity *pCommunity : ServerBrowser()->FavoriteCommunities())
 		{
-			if(Box.w < BrowserButtonWidth)
+			if(Box.w < BrowserButtonWidth + MenubarItemGap)
 				break;
+			Box.VSplitLeft(MenubarItemGap, nullptr, &Box);
 			Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 
 			const uint64_t NodeKey = BuildUiAnimNodeKey(s_FavoriteCommunityAppearScopeHash, static_cast<uint64_t>(str_quickhash(pCommunity->Id())));
@@ -1224,7 +1296,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			HoverColor.a *= AppearStrength;
 
 			const int Page = PAGE_FAVORITE_COMMUNITY_1 + FavoriteCommunityIndex;
-			if(DoMenuTabV2(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], FONT_ICON_ELLIPSIS, ActivePage == Page, &AnimatedButton, IGraphics::CORNER_T, &InactiveColor, &ActiveColor, &HoverColor, m_CommunityIcons.Find(pCommunity->Id())))
+			if(DoMenuTabV2(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], FONT_ICON_ELLIPSIS, ActivePage == Page, &AnimatedButton, IGraphics::CORNER_ALL, &InactiveColor, &ActiveColor, &HoverColor, m_CommunityIcons.Find(pCommunity->Id())))
 			{
 				NewPage = Page;
 			}
@@ -1261,7 +1333,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		const float BrowserButtonWidth = CompactOnlineMenuTabs ? 78.0f : 90.0f;
 		const float GhostButtonWidth = CompactOnlineMenuTabs ? 78.0f : 90.0f;
 		const float CallVoteButtonWidth = CompactOnlineMenuTabs ? 88.0f : 100.0f;
-		const float CallVoteSpacing = CompactOnlineMenuTabs ? 2.0f : 4.0f;
+		const float OnlineTabGap = 6.0f;
 
 		Box.VSplitLeft(GameButtonWidth, &Button, &Box);
 		static CButtonContainer s_GameButton;
@@ -1269,37 +1341,41 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			NewPage = PAGE_GAME;
 		MenubarTrackActive(PAGE_GAME, Button);
 
+		Box.VSplitLeft(OnlineTabGap, nullptr, &Box);
 		Box.VSplitLeft(PlayersButtonWidth, &Button, &Box);
 		static CButtonContainer s_PlayersButton;
-		if(DoMenuTabV2(&s_PlayersButton, Localize("Players"), ActivePage == PAGE_PLAYERS, &Button, IGraphics::CORNER_NONE))
+		if(DoMenuTabV2(&s_PlayersButton, Localize("Players"), ActivePage == PAGE_PLAYERS, &Button, IGraphics::CORNER_ALL))
 			NewPage = PAGE_PLAYERS;
 		MenubarTrackActive(PAGE_PLAYERS, Button);
 
+		Box.VSplitLeft(OnlineTabGap, nullptr, &Box);
 		Box.VSplitLeft(ServerInfoButtonWidth, &Button, &Box);
 		static CButtonContainer s_ServerInfoButton;
-		if(DoMenuTabV2(&s_ServerInfoButton, Localize("Server info"), ActivePage == PAGE_SERVER_INFO, &Button, IGraphics::CORNER_NONE))
+		if(DoMenuTabV2(&s_ServerInfoButton, Localize("Server info"), ActivePage == PAGE_SERVER_INFO, &Button, IGraphics::CORNER_ALL))
 			NewPage = PAGE_SERVER_INFO;
 		MenubarTrackActive(PAGE_SERVER_INFO, Button);
 
+		Box.VSplitLeft(OnlineTabGap, nullptr, &Box);
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 		static CButtonContainer s_NetworkButton;
-		if(DoMenuTabV2(&s_NetworkButton, Localize("Browser"), ActivePage == PAGE_NETWORK, &Button, IGraphics::CORNER_NONE))
+		if(DoMenuTabV2(&s_NetworkButton, Localize("Browser"), ActivePage == PAGE_NETWORK, &Button, IGraphics::CORNER_ALL))
 			NewPage = PAGE_NETWORK;
 		MenubarTrackActive(PAGE_NETWORK, Button);
 
 		if(GameClient()->m_GameInfo.m_Race)
 		{
+			Box.VSplitLeft(OnlineTabGap, nullptr, &Box);
 			Box.VSplitLeft(GhostButtonWidth, &Button, &Box);
 			static CButtonContainer s_GhostButton;
-			if(DoMenuTabV2(&s_GhostButton, Localize("Ghost"), ActivePage == PAGE_GHOST, &Button, IGraphics::CORNER_NONE))
+			if(DoMenuTabV2(&s_GhostButton, Localize("Ghost"), ActivePage == PAGE_GHOST, &Button, IGraphics::CORNER_ALL))
 				NewPage = PAGE_GHOST;
 			MenubarTrackActive(PAGE_GHOST, Button);
 		}
 
+		Box.VSplitLeft(OnlineTabGap, nullptr, &Box);
 		Box.VSplitLeft(CallVoteButtonWidth, &Button, &Box);
-		Box.VSplitLeft(CallVoteSpacing, nullptr, &Box);
 		static CButtonContainer s_CallVoteButton;
-		if(DoMenuTabV2(&s_CallVoteButton, Localize("Call vote"), ActivePage == PAGE_CALLVOTE, &Button, IGraphics::CORNER_TR))
+		if(DoMenuTabV2(&s_CallVoteButton, Localize("Call vote"), ActivePage == PAGE_CALLVOTE, &Button, IGraphics::CORNER_ALL))
 		{
 			NewPage = PAGE_CALLVOTE;
 			m_ControlPageOpening = true;
@@ -1314,11 +1390,15 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			Box.VSplitRight(10.0f, &Box, nullptr);
 			Box.VSplitRight(33.0f, &Box, &Button);
 			static CButtonContainer s_DemoButton;
-			if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &Button))
+			CUIRect DemoButton = Button;
+			const float CircleSize = minimum(DemoButton.w, DemoButton.h);
+			DemoButton.x += (DemoButton.w - CircleSize) / 2.0f;
+			DemoButton.w = CircleSize;
+			if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &DemoButton, IGraphics::CORNER_ALL, &IconButtonDefault, &IconButtonActive, &IconButtonHover))
 			{
 				NewPage = PAGE_DEMOS;
 			}
-			MenubarTrackActive(PAGE_DEMOS, Button);
+			MenubarTrackActive(PAGE_DEMOS, DemoButton);
 			GameClient()->m_Tooltips.DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
 			Box.VSplitRight(10.0f, &Box, nullptr);
 
@@ -1327,22 +1407,21 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		}
 	}
 
-	// feat-004: draw a 2px ACCENT_PRIMARY underline below the active tab. The
-	// X/W position eases between tabs via the v2 runtime so changing pages
-	// glides instead of snapping. Indicator is omitted when there is no
-	// determinable active tab (e.g. on the home start screen).
+	// feat-004: draw a 2px ACCENT_PRIMARY underline below the active page tab.
+	// This includes page-shaped icon buttons such as Settings/Demos, but still
+	// excludes pure action buttons like Quit/Editor.
 	if(MenubarHaveActive)
 	{
 		CUIRect IndicatorTarget;
 		IndicatorTarget.x = MenubarActiveRect.x + MenubarActiveRect.w * 0.15f;
-		IndicatorTarget.y = MenubarActiveRect.y + MenubarActiveRect.h - 2.0f;
+		IndicatorTarget.y = MenubarActiveRect.y + MenubarActiveRect.h - 3.0f;
 		IndicatorTarget.w = MenubarActiveRect.w * 0.70f;
-		IndicatorTarget.h = 2.0f;
+		IndicatorTarget.h = 3.0f;
 
 		const uint64_t IndicatorNode = BuildUiAnimNodeKey(MakeUiScopeHash("menubar_v2_indicator"), static_cast<uint64_t>(ClientState));
 		CUiV2AnimationRuntime &AnimRt = GameClient()->UiRuntimeV2()->AnimRuntime();
 		const CUIRect IndicatorRect = ResolveUiAnimValueRect(AnimRt, IndicatorNode, IndicatorTarget, ui_curve::EMPHASIZED.m_DurationSec, ui_curve::EMPHASIZED.m_Easing);
-		IndicatorRect.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_NONE, 0.0f);
+		IndicatorRect.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_ALL, 1.5f);
 	}
 
 	if(NewPage != -1)
@@ -1974,7 +2053,8 @@ void CMenus::Render()
 		else
 		{
 			CUIRect TabBar, MainView;
-			Screen.HSplitTop(24.0f, &TabBar, &MainView);
+			Screen.HSplitTop(34.0f, &TabBar, &MainView);
+			MainView.HSplitTop(10.0f, nullptr, &MainView);
 			const CUIRect MainViewClip = MainView;
 			const float TransitionStrength = ReadUiSwitchAnimation(UiAnimNodeKey("menu_page_switch"));
 			const bool TransitionActive = TransitionStrength > 0.0f && m_MenuPageTransitionDirection != 0.0f;
@@ -2056,7 +2136,8 @@ void CMenus::Render()
 		else
 		{
 			CUIRect TabBar, MainView;
-			Screen.HSplitTop(24.0f, &TabBar, &MainView);
+			Screen.HSplitTop(34.0f, &TabBar, &MainView);
+			MainView.HSplitTop(10.0f, nullptr, &MainView);
 			const CUIRect MainViewClip = MainView;
 			const float TransitionStrength = ReadUiSwitchAnimation(UiAnimNodeKey("game_page_switch"));
 			const bool TransitionActive = TransitionStrength > 0.0f && m_GamePageTransitionDirection != 0.0f;
@@ -3610,11 +3691,6 @@ bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab
 
 	const int Width = std::max(1, (int)ContentView.w);
 	const int Height = std::max(1, (int)ContentView.h);
-	if(pCache->m_State.m_DrawnOnce)
-	{
-		LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", ESettingsWarmupMissReason::PAGE_FBO_NOT_READY, PerfDebugElapsedMs(PerfStartTime));
-		return false;
-	}
 	const SSettingsSectionCacheRuntimeKey RuntimeKey = MakeSettingsPageRuntimeKey(ContentView, Graphics(), Page, Tab, ScrollY);
 	const bool CacheMatches = SettingsPageRuntimeCacheMatches(pCache->m_State, Page, Tab, Width, Height, RuntimeKey);
 	if(!SettingsPageCacheCanUseRecordedResources(CacheMatches, pCache->m_RenderTarget.IsValid(), pCache->m_State.m_ResourcesReadyAtRecord))

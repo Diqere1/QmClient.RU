@@ -1,39 +1,44 @@
-# Verification
+# 验证
 
-Use the narrowest verification that covers the risk of the change, then record evidence in `progress.md`.
+用能覆盖改动风险的最小验证集合，然后把证据记录到 `.ai/progress.md`。
 
-## Harness and docs
+## Harness 与文档
 
 ```bash
-python qmclient_scripts/gate/check_workflow_docs.py
+python qmclient_scripts/gate/check_docs.py
 ```
 
-Run this after changing `AGENTS.md`, `CLAUDE.md`, `.ai/`, `feature_list.json`, `progress.md`, `session-handoff.md`, `init.sh`, governance workflow files, or gate scripts.
+当你改了 `AGENTS.md`、`CLAUDE.md`、`.ai/`、`.ai/feature_list.json`、`.ai/progress.md`、`.ai/session-handoff.md`、`qmclient_scripts/init.sh`、governance workflow 文件或 gate 脚本后，都要跑这一项。
 
-## Build
+## 构建
 
-Windows recommended:
+Windows 推荐：
 
 ```bat
-qmclient_scripts\cmake-windows.cmd -S . -B cmake-build-release
+qmclient_scripts\cmake-windows.cmd -G Ninja -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
 qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target game-client -j 10
 ```
 
-Linux/macOS:
+说明：当前仓库的自动化与 Agent 会话在 Windows 上默认走 `qmclient_scripts\cmake-windows.cmd`，因为不能假设当前 PowerShell 已经注入了可用的 MSVC 环境。当前 canonical 的 `cmake-build-*` 目录按 Ninja 生成器维护；只有在调用方已经明确处于可用的 VS/MSVC shell 时，才可以直接使用裸 `cmake`。
+
+Linux/macOS：
 
 ```sh
-cmake -S . -B cmake-build-release
+cmake -G Ninja -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build cmake-build-release --target game-client -j 10
 ```
 
-## Tests
+## 测试
 
 Windows:
 
 ```bat
-qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target run_cxx_tests
+qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target testrunner -j 10
+cmake-build-release\testrunner.exe
 qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target run_rust_tests
 ```
+
+说明：常规运行/测试目录默认是 `cmake-build-release`；C++ 测试主路径是先构建 `testrunner`，再直接执行测试二进制。`default/full` gate 里的严格构建与静态分析会另外使用 `cmake-build-debug` 和 `cmake-build-analyze`。
 
 Linux/macOS:
 
@@ -42,29 +47,17 @@ cmake --build cmake-build-release --target run_cxx_tests
 cmake --build cmake-build-release --target run_rust_tests
 ```
 
-## Gate modes
+## Gate 模式
 
 ```bash
-bash qmclient_scripts/gate/check-gate.sh --mode quick --base-ref main
-bash qmclient_scripts/gate/check-gate.sh --mode default --base-ref main
-bash qmclient_scripts/gate/check-gate.sh --mode full --base-ref main
+python qmclient_scripts/gate/check_gate.py --mode quick --base-ref main
+python qmclient_scripts/gate/check_gate.py --mode default --base-ref main
+python qmclient_scripts/gate/check_gate.py --mode full --base-ref main
 ```
 
-| Mode | Use |
-|------|-----|
-| `quick` | Fast governance: config variables, header guards, style, workflow docs. |
-| `default` | Daily pre-commit: quick plus strict debug/static analysis and C++ tests. |
-| `full` | Release-style: default plus heavier checks and Rust tests. |
+## 视觉改动
 
-Strict debug only:
-
-```bash
-bash qmclient_scripts/gate/strict-debug-check.sh --base-ref main
-```
-
-## Visual changes
-
-For menus, HUD, UI widgets, browser rows, settings, overlays, and animations:
+对菜单、HUD、UI 控件、浏览器列表行、设置页、覆盖层和动画类改动：
 
 - Build the client.
 - Launch `DDNet.exe`.
@@ -72,9 +65,9 @@ For menus, HUD, UI widgets, browser rows, settings, overlays, and animations:
 - Check hover, selected, disabled, modal, keyboard, and controller paths if relevant.
 - Capture screenshots when preparing a PR or visual handoff.
 
-## Evidence format
+## 证据格式
 
-Record:
+记录格式：
 
 ```text
 Command: <exact command>
@@ -83,4 +76,4 @@ Scope: <what this proves>
 Gaps: <what was not verified>
 ```
 
-Do not mark a feature `done` without evidence. If a check cannot run because of environment or time, record that as a gap.
+没有证据就不要把功能标成 `done`。如果某项检查因为环境或时间跑不了，也要明确记成 gap。

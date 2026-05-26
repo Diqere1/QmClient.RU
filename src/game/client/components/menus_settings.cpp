@@ -2081,6 +2081,21 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	static CButtonContainer s_UiColorResetId;
 	DoLine_ColorPicker(&s_UiColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("UI Color"), &g_Config.m_UiColor, color_cast<ColorRGBA>(ColorHSLA(0xE4A046AFU, true)), false, nullptr, true);
+	static CButtonContainer s_MenuPanelColorResetId;
+	const unsigned OldMenuPanelColor = g_Config.m_ClMenuPanelColor;
+	DoLine_ColorPicker(&s_MenuPanelColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("Menu panel color"), &g_Config.m_ClMenuPanelColor, color_cast<ColorRGBA>(ColorHSLA(CConfig::ms_ClMenuPanelColor)), false, nullptr, false);
+	if(OldMenuPanelColor != g_Config.m_ClMenuPanelColor)
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
+
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelOpacity, &g_Config.m_ClMenuPanelOpacity, &Button, Localize("Menu panel opacity"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
+
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelElevatedOpacity, &g_Config.m_ClMenuPanelElevatedOpacity, &Button, Localize("Menu panel elevated opacity"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
 
 	// Backend list
 	struct SMenuBackendInfo
@@ -3506,13 +3521,11 @@ void CMenus::RenderSettings(CUIRect MainView)
 	// render background
 	CUIRect Button, TabBar, RestartBar;
 	const float TabBarWidth = std::clamp(MainView.w * 0.16f, 132.0f, 168.0f);
-	MainView.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.85f), IGraphics::CORNER_B, ui_token::radius::CARD);
-	MainView.Margin(std::clamp(MainView.w * 0.012f, 8.0f, 14.0f), &MainView);
 	MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
-	MainView.VSplitRight(12.0f, &MainView, nullptr);
-	TabBar.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	MainView.Draw(ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	const float ContentMargin = std::clamp(MainView.w * 0.018f, 14.0f, 22.0f);
+	MainView.VSplitRight(10.0f, &MainView, nullptr);
+	TabBar.Draw(MenuPanelElevatedColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	MainView.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	const float ContentMargin = 10.0f;
 	MainView.Margin(ContentMargin, &MainView);
 
 	const bool NeedRestart = m_NeedRestartGraphics || m_NeedRestartSound || m_NeedRestartUpdate;
@@ -3549,7 +3562,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 				continue;
 			TabBar.HSplitTop(10.0f, nullptr, &TabBar);
 			TabBar.HSplitTop(26.0f, &Button, &TabBar);
-			if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], g_Config.m_UiSettingsPage == i, &Button, IGraphics::CORNER_R, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
+			const bool Active = g_Config.m_UiSettingsPage == i;
+			if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], g_Config.m_UiSettingsPage == i, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
 				g_Config.m_UiSettingsPage = i;
 			if(Active)
 			{

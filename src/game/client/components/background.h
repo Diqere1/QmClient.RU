@@ -302,7 +302,7 @@ protected:
 	bool RenderBackgroundTexture();
 	IGraphics::CTextureHandle ActiveBackgroundTexture() const { return m_BackgroundTexture; }
 #if defined(CONF_VIDEORECORDER)
-	bool DecodeNextVideoFrame(bool StoreRgbaFrame = true);
+	bool DecodeNextVideoFrame();
 	bool RestartVideoBackground();
 	bool UploadVideoFrame();
 #endif

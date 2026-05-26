@@ -18,12 +18,12 @@ def run(results: ResultCollector, included: list[str], dry_run: bool = False) ->
             "WARN", "全量 .clang-tidy 附加检查", "PATH 中未找到 clang-tidy，已跳过"
         )
         return
-    cc = REPO_ROOT / "build-debug" / "compile_commands.json"
+    cc = REPO_ROOT / "cmake-build-debug" / "compile_commands.json"
     if not cc.exists():
         results.add(
             "WARN",
             "全量 .clang-tidy 附加检查",
-            "缺少 build-debug/compile_commands.json，请先跑 strict-debug-check 或 default/full 构建层",
+            "缺少 cmake-build-debug/compile_commands.json，请先跑 strict-debug-check 或 default/full 构建层",
         )
         return
     for file in included:
@@ -31,7 +31,7 @@ def run(results: ResultCollector, included: list[str], dry_run: bool = False) ->
             [
                 "clang-tidy",
                 file,
-                "-p=build-debug",
+                "-p=cmake-build-debug",
                 f"--config-file={REPO_ROOT / '.clang-tidy'}",
                 "--extra-arg=-Qunused-arguments",
                 "--quiet",

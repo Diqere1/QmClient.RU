@@ -111,9 +111,6 @@ constexpr bool SettingsPageRuntimeCacheShouldShortCircuit(SSettingsPageRuntimeCa
 {
 	if(!SettingsPageRuntimeCacheMatches(Cache, Page, Tab, Width, Height, RuntimeKey))
 		return false;
-	if(Cache.m_DrawnOnce)
-		return false;
-	Cache.m_DrawnOnce = true;
 	return true;
 }
 

@@ -47,16 +47,21 @@ def _repo_command(
     runner.print_section(title)
     print(f"命令: {' '.join(cmd)}")
     proc = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=str(cwd) if cwd else None
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(cwd) if cwd else None,
     )
     lines = [
         line
-        for line in (proc.stdout + proc.stderr).splitlines()
+        for line in ((proc.stdout or "") + (proc.stderr or "")).splitlines()
         if not line.startswith("注意: 包含文件:")
     ]
     output = "\n".join(lines)
     if output:
-        print(output)
+        print(runner._truncate_console_output(output))
 
     if proc.returncode != 0:
         summary = ""
@@ -197,7 +202,7 @@ def run(
             )
 
     # Debug CRT 配置与构建
-    debug_build_dir = "build-debug"
+    debug_build_dir = "cmake-build-debug"
     if cm_cmd == "cmd.exe":
         win_script = runner.to_windows_path(str(cmake_script))
         configure_cmd = [
@@ -238,7 +243,7 @@ def run(
             "该阶段已按设计降级跳过",
         )
     elif run_analyze:
-        analyze_build_dir = "build-analyze"
+        analyze_build_dir = "cmake-build-analyze"
         if cm_cmd == "cmd.exe":
             analyze_cmd = [
                 "cmd.exe",

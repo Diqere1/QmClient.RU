@@ -1,51 +1,51 @@
-# Session Lifecycle
+# 会话生命周期
 
-Use this lifecycle for QmClient agent sessions. It keeps long-running work resumable and prevents scope drift.
+QmClient 的智能体会话请遵循这个生命周期。它能让长时任务可恢复，也能防止范围漂移。
 
-## Start
+## 启动
 
 1. Read `AGENTS.md` / `CLAUDE.md`.
-2. Read `feature_list.json`.
-3. Read `progress.md`.
-4. Read `session-handoff.md`.
-5. Run `./init.sh` when practical. If not, run `python qmclient_scripts/gate/check_workflow_docs.py`.
+2. Read `.ai/feature_list.json`.
+3. Read `.ai/progress.md`.
+4. Read `.ai/session-handoff.md`.
+5. 条件允许时运行 `bash qmclient_scripts/init.sh`。如果不方便，运行 `python qmclient_scripts/gate/check_docs.py`。
 6. Check `git status --short` and treat unrelated changes as user work.
 
-## Select
+## 选定任务
 
-- Work on exactly one feature or one user-requested fix at a time.
-- Prefer an existing `in-progress` feature from `feature_list.json`.
-- If no active feature matches the user's request, update the state files only after the task is clearly defined.
-- If the request is ambiguous, ask before implementation.
+- 一次只做一个功能，或者一个用户明确请求的修复。
+- 优先选择 `.ai/feature_list.json` 里已经是 `in-progress` 的功能。
+- 如果当前没有活跃功能能匹配用户请求，先把任务定义清楚，再更新状态文件。
+- 如果请求有歧义，先问清楚再实现。
 
-## Execute
+## 执行
 
-- Read nearby source, call sites, config variables, translations, and tests before editing.
-- Keep the patch within the smallest safe surface.
-- Do not change high-risk DDNet behavior without explicit approval.
-- Record important decisions in `progress.md` as they become durable.
+- 修改前先读附近源码、调用点、配置变量、翻译和测试。
+- 把补丁限制在最小安全改动面。
+- 没有明确批准，不要改高风险的 DDNet 行为。
+- 重要决定一旦稳定下来，就记到 `.ai/progress.md`。
 
-## Verify
+## 验证
 
-Use `.ai/verification.md` to choose the appropriate checks.
+用 `.ai/verification.md` 来选取合适的检查。
 
-Evidence should include:
+证据应包括：
 
 - Exact command.
 - Result.
 - Build/test warnings if any.
 - Known unverified areas, especially visual checks.
 
-## Wrap Up
+## 收尾
 
-Before ending a substantial session:
+在结束一个较大的会话前：
 
-1. Update `progress.md` with completed work, evidence, blockers, and next action.
-2. Update `feature_list.json` if a feature status or evidence changed.
-3. Update `session-handoff.md` with current objective, files changed, known risks, and the exact resume command.
-4. Leave the worktree understandable. Do not revert unrelated user changes.
-5. If the feature is complete, ensure version metadata follows the MMP rule unless the user explicitly scoped the task away from code changes.
+1. 用完成内容、证据、阻塞项和下一步更新 `.ai/progress.md`。
+2. 如果功能状态或证据变了，更新 `.ai/feature_list.json`。
+3. 用当前目标、已改文件、已知风险和精确恢复命令更新 `.ai/session-handoff.md`。
+4. 让工作树保持可理解。不要回退无关的用户改动。
+5. 如果功能已完成，确认版本元数据遵循 MMP 规则，除非用户明确把任务范围排除在代码改动之外。
 
-## Clean state expectation
+## 完成态要求
 
-A task is not complete just because code was edited. Completion requires implemented behavior plus relevant verification evidence. If verification cannot be run, state that clearly in `progress.md` and in the final response.
+任务不是“代码改了”就算完成。完成意味着行为已实现，并且有对应验证证据。如果验证无法运行，要在 `.ai/progress.md` 和最终回复里明确说明。

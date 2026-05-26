@@ -1,23 +1,23 @@
-# DDNet / QmClient Development Rules
+# DDNet / QmClient 开发规则
 
-Use this document for C++ implementation, refactoring, or debugging in QmClient.
+在 QmClient 中做 C++ 实现、重构或调试时，使用这份文档。
 
-## Compatibility first
+## 兼容性优先
 
-DDNet compatibility beats generic modern C++ preferences.
+DDNet 兼容性优先级高于泛化的现代 C++ 偏好。
 
-Do not change these without explicit approval:
+没有明确批准时，不要改这些：
 
 - Network protocol fields or layout.
 - Demo, skin, map, config, or save file formats.
 - Physics, collision, prediction, snapshots, inputs, timing, replay, or map behavior.
 - Anything that makes existing ranks unreachable or existing maps easier.
 
-If a task touches any of these areas, call out the risk before implementation and keep the patch minimal.
+如果任务触碰到这些区域，先指出风险，再开始实现，并把补丁保持在最小范围。
 
-## Scope boundary
+## 范围边界
 
-Normal QmClient scope:
+QmClient 的常规范围包括：
 
 - `src/game/client/components/qmclient/`
 - `src/game/client/QmUi/`
@@ -28,25 +28,25 @@ Normal QmClient scope:
 - `qmclient_scripts/`
 - `.ai/`, `AGENTS.md`, `CLAUDE.md`, and other harness files
 
-Out of scope without explicit request:
+没有明确请求时，以下内容都算超范围：
 
 - Upstream engine core outside QmClient config.
 - Server gameplay, editor internals, protocol, physics, collision, prediction, snapshots, replay behavior.
 - Third-party libraries in `ddnet-libs/` or `src/engine/external/`.
 - Release CI workflow behavior.
 
-## Style
+## 风格
 
-Follow existing DDNet style over generic C++ style:
+优先遵循现有 DDNet 风格，而不是泛化的 C++ 风格：
 
 - Prefer UpperCamelCase for local variables, methods, and classes outside special areas like `src/base`.
 - Use existing prefixes: `m_` members, `g_` globals, `s_` statics, `p` pointers, `a` fixed arrays, `v` vectors, `C` classes, `I` interfaces.
 - Prefer semantic names. Short loop variables are acceptable only when the scope is tiny and obvious.
 - Prefer early returns and small focused functions, but do not split code so much that DDNet-style readability suffers.
 
-## Modern C++
+## 现代 C++
 
-Allowed when it fits the module:
+如果和当前模块风格匹配，可以使用：
 
 - `constexpr`
 - `enum class` with `E...` names and uppercase values
@@ -56,7 +56,7 @@ Allowed when it fits the module:
 - `std::array`
 - carefully scoped `std::string_view`
 
-Avoid:
+避免：
 
 - raw `new` / `delete` unless the surrounding code owns objects that way
 - unnecessary macros
@@ -67,11 +67,11 @@ Avoid:
 - unnecessary heap allocation
 - broad template or RAII rewrites that do not match the module
 
-## Runtime and hot paths
+## 运行时与热路径
 
-DDNet is a real-time networked game. Check whether code runs per frame, tick, player, entity, snapshot, render item, or text layout.
+DDNet 是实时联网游戏。先判断代码是不是跑在每帧、每 tick、每玩家、每实体、每个 snapshot、每个渲染项或文本布局路径上。
 
-Be suspicious of:
+要特别警惕：
 
 - heap allocations in render/tick paths
 - repeated string construction
@@ -81,18 +81,18 @@ Be suspicious of:
 - serialization/deserialization inside frequent loops
 - extra network bandwidth or protocol growth
 
-Avoid premature optimization, but do not introduce obvious hot-path waste.
+不要过早优化，但也不要把明显的热路径浪费带进去。
 
-## Errors and data boundaries
+## 错误处理与数据边界
 
-- Do not silently ignore file, network, parse, config, console, resource, or external-data failures.
-- Validate indices, sizes, pointers, and external input.
-- Use debug assertions for developer invariants and runtime handling for user/external failures.
-- Follow the module's existing error propagation style; do not convert large areas to exception-driven flow.
+- 不要静默忽略文件、网络、解析、配置、控制台、资源或外部数据失败。
+- 校验索引、大小、指针和外部输入。
+- 对开发者不变量使用 debug assertion，对用户/外部失败使用运行时处理。
+- 遵循当前模块既有的错误传播风格，不要大面积改成异常驱动流程。
 
-## Memory and lifetime
+## 内存与生命周期
 
-Check for:
+重点检查：
 
 - dangling pointers or references
 - returning references to local data
@@ -102,8 +102,8 @@ Check for:
 - uninitialized reads
 - `string_view` or pointer lifetime mismatches
 
-When using cached, static, or global state, consider initialization order and thread safety.
+当代码使用缓存、静态或全局状态时，要考虑初始化顺序和线程安全。
 
-## Threads
+## 线程
 
-Do not introduce threads, locks, or atomics speculatively. If code touches audio, graphics, HTTP, storage, database, logs, platform code, or background jobs, identify the thread boundary and shared mutable state.
+不要为了“以防万一”就引入线程、锁或原子变量。如果代码碰到音频、图形、HTTP、存储、数据库、日志、平台代码或后台任务，先识别线程边界和共享可变状态。

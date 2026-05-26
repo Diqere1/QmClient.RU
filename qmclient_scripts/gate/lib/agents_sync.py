@@ -1,24 +1,12 @@
-#!/usr/bin/env python3
-"""
-同步 AGENTS.md 与 CLAUDE.md。
-
-目标：
-1. 允许本地只修改任意一处，然后用脚本完成另一处同步。
-2. 避免内容未变时的无意义重写。
-3. 避免两边都改了且内容不一致时盲目覆盖。
-"""
-
 from __future__ import annotations
 
-import argparse
 import json
-import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 AGENTS_PATH = REPO_ROOT / "AGENTS.md"
 CLAUDE_PATH = REPO_ROOT / "CLAUDE.md"
 STATE_PATH = Path(tempfile.gettempdir()) / "qmclient-agents-claude-sync-state.json"
@@ -51,8 +39,8 @@ def read_text(path: Path) -> str:
 def write_text(path: Path, text: str, newline: str) -> None:
     normalized = normalize_text(text)
     rewritten = normalized.replace("\n", newline)
-    with path.open("w", encoding="utf-8", newline="") as f:
-        f.write(rewritten)
+    with path.open("w", encoding="utf-8", newline="") as file:
+        file.write(rewritten)
 
 
 def read_state() -> dict:
@@ -102,7 +90,10 @@ def choose_source(
             return "agents", "首次同步未找到历史状态，按更新较新的 AGENTS.md 作为源文件"
         if claude_mtime > agents_mtime:
             return "claude", "首次同步未找到历史状态，按更新较新的 CLAUDE.md 作为源文件"
-        return "agents", "首次同步未找到历史状态，时间戳相同，默认按 AGENTS.md 作为源文件"
+        return (
+            "agents",
+            "首次同步未找到历史状态，时间戳相同，默认按 AGENTS.md 作为源文件",
+        )
 
     if agents_changed and not claude_changed:
         return "agents", "检测到仅 AGENTS.md 有新改动，将同步到 CLAUDE.md"
@@ -121,7 +112,9 @@ def sync_files(prefer: str) -> SyncResult:
             missing.append("AGENTS.md")
         if not CLAUDE_PATH.exists():
             missing.append("CLAUDE.md")
-        return SyncResult(False, False, "AGENTS / CLAUDE 镜像同步", f"缺少文件: {', '.join(missing)}")
+        return SyncResult(
+            False, False, "AGENTS / CLAUDE 镜像同步", f"缺少文件: {', '.join(missing)}"
+        )
 
     agents_text = read_text(AGENTS_PATH)
     claude_text = read_text(CLAUDE_PATH)
@@ -147,24 +140,6 @@ def sync_files(prefer: str) -> SyncResult:
 
     write_state(final_agents, final_claude)
     target_name = "CLAUDE.md" if source == "agents" else "AGENTS.md"
-    return SyncResult(True, True, "AGENTS / CLAUDE 镜像同步", f"{reason}，已更新 {target_name}")
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="同步 AGENTS.md 与 CLAUDE.md")
-    parser.add_argument(
-        "--prefer",
-        choices=["auto", "agents", "claude"],
-        default="auto",
-        help="冲突或状态不明时优先采用哪一侧；默认自动判断",
+    return SyncResult(
+        True, True, "AGENTS / CLAUDE 镜像同步", f"{reason}，已更新 {target_name}"
     )
-    args = parser.parse_args()
-
-    result = sync_files(args.prefer)
-    prefix = "通过" if result.ok else "失败"
-    print(f"{prefix}：{result.title} - {result.detail}")
-    return 0 if result.ok else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -52,8 +52,8 @@
 - 预期：需要真实构建、严格静态分析和 C++ 测试
 - 默认内容：
   - `quick` 全部
-  - `qmclient_scripts/gate/strict_debug.py`
-  - `run_cxx_tests`
+  - `checks/strict_build`
+  - 先构建 `testrunner`，再直接执行测试二进制
 - 阻断策略：
   - 构建失败阻断
   - 严格静态分析失败阻断
@@ -100,7 +100,7 @@
 ### 默认硬门
 
 - `check_config_variables.py`
-- `qmclient_scripts/gate/check_workflow_docs.py`
+- `qmclient_scripts/gate/check_docs.py`
   - 规则来源：`.ai/workflow-manifest.json`
 - `check_header_guards.py`
 - `check_standard_headers.py`
@@ -109,14 +109,14 @@
   - Windows 上会按命令行长度预算分批调用，避免一次性全仓参数触发 `WinError 206`
   - 当 `check_gate.py` 已算出 scoped files 时，会只把当前收敛后的首方源码文件列表传给 `fix_style.py`
 - `checks/strict_build`（严格构建与静态分析）
-- `run_cxx_tests`
+- `testrunner`
 - `run_rust_tests`（仅 `full`）
 
 这里的默认假设是：
 
-- 运行/测试目录默认是 `build-ninja`
-- 严格调试检查目录默认是 `build-debug/build-analyze`
-- `build-asan` 当前只作为附带实验目录，不能和前两者等权理解
+- 运行/测试目录默认是 `cmake-build-release`
+- 严格调试检查目录默认是 `cmake-build-debug/cmake-build-analyze`
+- `cmake-build-asan` 当前只作为附带实验目录，不能和前两者等权理解
 
 额外说明：
 
@@ -146,7 +146,7 @@
 - `仓库基线债务`
   - 配置变量、workflow 文档入口、header guard、style、标识符、这类长期源码卫生问题
 - `当前改动/构建阻断`
-  - `checks/strict_build`、`run_cxx_tests`、`run_rust_tests`、`run_tests`、JSON 报告写盘这类当前执行路径上的真实阻断
+  - `checks/strict_build`、`testrunner`、`run_rust_tests`、`run_tests`、JSON 报告写盘这类当前执行路径上的真实阻断
 
 这样做的目的不是"自动判断责任归属"，而是让使用者第一眼区分：
 
@@ -216,6 +216,6 @@ JSON 报告当前至少应包含：
 
 ## 当前仍需继续改进的点
 
-- `checks/strict_build` 已内联原 `strict_debug.py` 的全部语义，作为 `check_gate.py` 的调度模块
+- `checks/strict_build` 已内联原严格构建逻辑，作为 `check_gate.py` 的调度模块
 - `clang-format` 与 `fix_style.py` 的职责边界还需要长期观察，不建议现在直接二选一
 - CI 应优先复用本脚本的模式定义和报告格式，而不是另起一套规则；当前 source hygiene 入口为 `.github/workflows/style.yml`，构建 / 测试 / 发布入口为 `.github/workflows/build.yml`
