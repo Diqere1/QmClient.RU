@@ -511,8 +511,6 @@ assert_worktree_preflight() {
 	for required_path in \
 		"${REPO_ROOT}/qmclient_scripts/cmake-windows.cmd" \
 		"${REPO_ROOT}/qmclient_scripts/gate/strict-debug-check.sh" \
-		"${REPO_ROOT}/qmclient_scripts/gate/check_workflow_docs.py" \
-		"${REPO_ROOT}/qmclient_scripts/gate/sync_agents_claude.py" \
 		"${REPO_ROOT}/scripts/check_header_guards.py" \
 		"${REPO_ROOT}/scripts/check_standard_headers.py" \
 		"${REPO_ROOT}/scripts/fix_style.py"; do
@@ -549,10 +547,6 @@ invoke_config_checks() {
 	invoke_python_repo_command "配置变量使用检查（Qm/Tc/栖梦）" "${REPO_ROOT}/qmclient_scripts/check_config_variables.py" --qm
 }
 
-invoke_workflow_doc_checks() {
-	invoke_python_repo_command "CLAUDE / AGENTS 自动同步" "${REPO_ROOT}/qmclient_scripts/gate/sync_agents_claude.py"
-	invoke_python_repo_command "工作流文档一致性检查" "${REPO_ROOT}/qmclient_scripts/gate/check_workflow_docs.py"
-}
 
 invoke_header_checks() {
 	invoke_python_repo_command "头文件 guard 检查" "${REPO_ROOT}/scripts/check_header_guards.py"
@@ -773,7 +767,6 @@ write_scope_diagnostics
 if [[ ${SKIP_CONFIG_CHECKS} -eq 0 ]]; then
 	invoke_config_checks || true
 fi
-invoke_workflow_doc_checks || true
 if [[ ${SKIP_HEADER_CHECKS} -eq 0 ]]; then
 	invoke_header_checks || true
 fi

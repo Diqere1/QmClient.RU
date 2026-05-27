@@ -1783,11 +1783,6 @@ void CQmClient::UpdateQmClientRecognition()
 		return;
 	}
 
-	// Center sync endpoint is intentionally plain HTTP.
-	// Ensure libcurl allows HTTP protocol while this feature is enabled.
-	if(!g_Config.m_HttpAllowInsecure)
-		g_Config.m_HttpAllowInsecure = 1;
-
 	const bool FastSync = g_Config.m_QmVoiceEnable || g_Config.m_QmClientShowBadge;
 	const int SyncInterval = FastSync ? QMCLIENT_VOICE_SYNC_INTERVAL_SECONDS : QMCLIENT_SYNC_INTERVAL_SECONDS;
 	const int64_t IntervalTicks = (int64_t)SyncInterval * time_freq();
