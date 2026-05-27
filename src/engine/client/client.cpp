@@ -317,6 +317,10 @@ void CClient::SendInfo(int Conn)
 	MsgVer.AddString(GameClient()->DDNetVersionStr());
 	SendMsg(Conn, &MsgVer, MSGFLAG_VITAL);
 
+#if defined(CONF_QM_LIVE_CLIENT)
+	SendQmLiveObserverRequest(Conn);
+#endif
+
 	if(IsSixup())
 	{
 		CMsgPacker Msg(NETMSG_INFO, true);
@@ -331,16 +335,77 @@ void CClient::SendInfo(int Conn)
 	Msg.AddString(GameClient()->NetVersion());
 	Msg.AddString(m_aPassword);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	SendKcpCapability(Conn);
+}
+
+void CClient::SendKcpCapability(int Conn)
+{
+	if(Conn != CONN_MAIN)
+		return;
+	CMsgPacker Msg(NETMSG_KCP_CAPABLE, true);
+	Msg.AddInt(1); // negotiation version
+	Msg.AddInt(NET_MAX_PACKETSIZE);
+	Msg.AddInt(NET_MAX_PAYLOAD);
+	Msg.AddInt(Conn == CONN_DUMMY ? 1 : 0);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	if(g_Config.m_Debug)
+	{
+		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "sent kcp capability", gs_ClientNetworkPrintColor);
+	}
+
+	m_KcpNegotiationPending = true;
+	m_KcpNegotiationStartTime = time_get();
+}
+
+void CClient::SendKcpProbe(int Conn)
+{
+	if(Conn != CONN_MAIN || !m_aNetClient[Conn].IsKcpActive())
+		return;
+	CMsgPacker Msg(NETMSG_KCP_CAPABLE, true);
+	Msg.AddInt(1);
+	Msg.AddInt(NET_MAX_PACKETSIZE);
+	Msg.AddInt(NET_MAX_PAYLOAD);
+	Msg.AddInt(0);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+}
+
+void CClient::SendQmLiveObserverRequest(int Conn)
+{
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn != CONN_MAIN)
+		return;
+
+	CMsgPacker Msg(NETMSG_QM_LIVE_OBSERVER_REQUEST, true);
+	Msg.AddInt(QM_LIVE_OBSERVER_PROTOCOL_VERSION);
+	Msg.AddInt(SERVERCAP_LIVE_OBSERVER | SERVERCAP_LIVE_DIRECTOR);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	m_LiveObserverSession.StartRequest();
+#else
+	(void)Conn;
+#endif
 }
 
 void CClient::SendEnterGame(int Conn)
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn == CONN_MAIN && m_LiveObserverSession.Accepted())
+		return;
+#endif
+
 	CMsgPacker Msg(NETMSG_ENTERGAME, true);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
 }
 
 void CClient::SendReady(int Conn)
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn == CONN_MAIN && !m_LiveObserverSession.Accepted())
+	{
+		m_LiveObserverSession.SetReadyPending(true);
+		return;
+	}
+#endif
+
 	CMsgPacker Msg(NETMSG_READY, true);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
 }
@@ -490,6 +555,11 @@ int CClient::PendingResendCount() const
 
 void CClient::SendInput()
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.Accepted())
+		return;
+#endif
+
 	int64_t Now = time_get();
 
 	if(m_aPredTick[g_Config.m_ClDummy] <= 0)
@@ -545,6 +615,8 @@ void CClient::SendInput()
 			m_aCurrentInput[i] %= 200;
 
 			SendMsg(i, &Msg, MSGFLAG_FLUSH);
+			if(i == CONN_MAIN && m_aNetClient[i].IsKcpActive())
+				SendMsg(i, &Msg, MSGFLAG_FLUSH);
 			// ugly workaround for dummy. we need to send input with dummy to prevent
 			// prediction time resets. but if we do it too often, then it's
 			// impossible to use grenade with frozen dummy that gets hammered...
@@ -886,6 +958,9 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 		str_copy(m_aPassword, pPassword);
 
 	m_CanReceiveServerCapabilities = true;
+#if defined(CONF_QM_LIVE_CLIENT)
+	m_LiveObserverSession.Reset();
+#endif
 
 	m_Sixup = OnlySixup;
 	if(m_Sixup)
@@ -929,6 +1004,14 @@ void CClient::DisconnectWithReason(const char *pReason)
 	mem_zero(m_aRconPassword, sizeof(m_aRconPassword));
 	m_MapDetails = std::nullopt;
 	m_ServerSentCapabilities = false;
+	m_ServerCapabilities = {};
+	m_KcpNegotiationPending = false;
+	m_KcpNegotiated = false;
+	m_KcpNegotiationStartTime = 0;
+	m_KcpNegotiationConv = 0;
+#if defined(CONF_QM_LIVE_CLIENT)
+	m_LiveObserverSession.Reset();
+#endif
 	m_UseTempRconCommands = 0;
 	m_ExpectedRconCommands = -1;
 	m_GotRconCommands = 0;
@@ -1744,6 +1827,16 @@ static CServerCapabilities GetServerCapabilities(int Version, int Flags, bool Si
 	{
 		Result.m_SyncWeaponInput = Flags & SERVERCAPFLAG_SYNCWEAPONINPUT;
 	}
+	if(Version >= 6)
+	{
+		Result.m_Kcp = Flags & SERVERCAPFLAG_KCP;
+	}
+	if(Version >= 7)
+	{
+		Result.m_LiveObserver = Flags & SERVERCAP_LIVE_OBSERVER;
+		Result.m_LiveDirector = Flags & SERVERCAP_LIVE_DIRECTOR;
+		Result.m_LiveReplay = Flags & SERVERCAP_LIVE_REPLAY;
+	}
 	return Result;
 }
 
@@ -1825,7 +1918,88 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			m_ServerCapabilities = GetServerCapabilities(Version, Flags, IsSixup());
 			m_CanReceiveServerCapabilities = false;
 			m_ServerSentCapabilities = true;
+			if(m_ServerCapabilities.m_Kcp && !m_KcpNegotiated && !m_KcpNegotiationPending)
+			{
+				SendKcpCapability(Conn);
+			}
 		}
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_KCP_ACCEPT)
+		{
+			const int Version = Unpacker.GetInt();
+			const int Conv = Unpacker.GetInt();
+			if(Unpacker.Error() || Version != 1 || Conv <= 0)
+			{
+				return;
+			}
+			if(!m_aNetClient[Conn].ActivateKcp((uint32_t)Conv))
+			{
+				m_KcpNegotiationPending = false;
+				m_KcpNegotiated = false;
+				m_KcpNegotiationConv = 0;
+				if(g_Config.m_Debug)
+				{
+					m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "kcp negotiation accepted but activation failed", gs_ClientNetworkErrPrintColor);
+				}
+				return;
+			}
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiated = true;
+			m_KcpNegotiationConv = Conv;
+			SendKcpProbe(Conn);
+			if(g_Config.m_Debug)
+			{
+				char aBuf[128];
+				str_format(aBuf, sizeof(aBuf), "kcp negotiation accepted conv=%d", Conv);
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+			}
+		}
+		else if(Conn == CONN_MAIN && Msg == NETMSG_KCP_FALLBACK)
+		{
+			const char *pReason = Unpacker.GetString(CUnpacker::SANITIZE_CC);
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiated = false;
+			m_KcpNegotiationConv = 0;
+			m_aNetClient[Conn].DeactivateKcp();
+			if(g_Config.m_Debug)
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "kcp negotiation fallback reason='%s'", pReason);
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+			}
+		}
+#if defined(CONF_QM_LIVE_CLIENT)
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_QM_LIVE_OBSERVER_ACCEPT)
+		{
+			const int Capabilities = Unpacker.GetInt();
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			m_LiveObserverSession.Accept(Capabilities);
+			if(m_LiveObserverSession.ReadyPending())
+			{
+				m_LiveObserverSession.SetReadyPending(false);
+				SendReady(CONN_MAIN);
+			}
+		}
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_QM_LIVE_OBSERVER_DENY)
+		{
+			const EQmLiveDenyReason Reason = QmLiveDenyReasonFromInt(Unpacker.GetInt());
+			const char *pReasonText = Unpacker.GetString(CUnpacker::SANITIZE_CC);
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			m_LiveObserverSession.Deny(Reason, pReasonText);
+			char aReason[128];
+			str_format(aReason, sizeof(aReason), "live observer denied: %s", m_LiveObserverSession.DenyReasonText());
+			DisconnectWithReason(aReason);
+		}
+#endif
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_MAP_CHANGE)
 		{
 			if(m_CanReceiveServerCapabilities)
@@ -2862,6 +3036,15 @@ void CClient::PumpNetwork()
 			SetState(IClient::STATE_LOADING);
 			SetLoadingStateDetail(IClient::LOADING_STATE_DETAIL_INITIAL);
 			SendInfo(CONN_MAIN);
+		}
+		if(m_KcpNegotiationPending && !m_KcpNegotiated && time_get() - m_KcpNegotiationStartTime > time_freq() * 3)
+		{
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiationStartTime = 0;
+			if(g_Config.m_Debug)
+			{
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "kcp negotiation timed out, using legacy udp", gs_ClientNetworkPrintColor);
+			}
 		}
 
 		// progress on dummy connect when the connection is online

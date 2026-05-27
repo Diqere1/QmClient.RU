@@ -20,6 +20,7 @@
 #include <engine/shared/network.h>
 #include <engine/shared/protocol.h>
 #include <engine/shared/snapshot.h>
+#include <engine/shared/qm_live_protocol.h>
 #include <engine/shared/uuid_manager.h>
 
 #include <memory>
@@ -85,6 +86,7 @@ class CServer : public IServer
 
 	int m_PreviousDebugDummies = 0;
 	void UpdateDebugDummies(bool ForceDisconnect);
+	int64_t m_KcpLastStatsTime = 0;
 
 public:
 	class IGameServer *GameServer() { return m_pGameServer; }
@@ -123,6 +125,7 @@ public:
 			STATE_CONNECTING,
 			STATE_READY,
 			STATE_INGAME,
+			STATE_LIVE_OBSERVER,
 		};
 
 		enum
@@ -149,6 +152,9 @@ public:
 
 		int m_LastAckedSnapshot;
 		int m_LastInputTick;
+		int m_LastKcpInputSize;
+		int m_LastKcpInputTick;
+		int m_aLastKcpInput[MAX_INPUT_SIZE];
 		CSnapshotStorage m_Snapshots;
 
 		CNetMsg_Sv_PreInput m_LastPreInput = {};
@@ -167,6 +173,9 @@ public:
 		int m_Flags;
 		bool m_ShowIps;
 		bool m_DebugDummy;
+		bool m_QmLiveObserver;
+		bool m_IsLiveObserver;
+		int m_QmLiveCapabilities;
 		bool m_ForceHighBandwidthOnSpectate;
 		NETADDR m_DebugDummyAddr;
 		std::array<char, NETADDR_MAXSTRSIZE> m_aDebugDummyAddrString;
@@ -194,6 +203,11 @@ public:
 		char m_aDDNetVersionStr[64];
 		CUuid m_ConnectionId;
 		int64_t m_RedirectDropTime;
+		bool m_KcpCapable;
+		bool m_KcpNegotiated;
+		int m_KcpConv;
+		int64_t m_KcpNegotiatedTime;
+		bool m_CapabilitiesSent;
 
 		// DNSBL
 		EDnsblState m_DnsblState;
@@ -203,7 +217,7 @@ public:
 
 		bool IncludedInServerInfo() const
 		{
-			return m_State != STATE_EMPTY && !m_DebugDummy;
+			return m_State != STATE_EMPTY && !m_DebugDummy && !m_IsLiveObserver;
 		}
 	};
 
@@ -343,6 +357,12 @@ public:
 
 	void SendRconType(int ClientId, bool UsernameReq);
 	void SendCapabilities(int ClientId);
+	int QmLiveCapabilities() const;
+	int NumQmLiveObservers() const;
+	void SendQmLiveObserverAccept(int ClientId);
+	void SendQmLiveObserverDeny(int ClientId, EQmLiveDenyReason Reason);
+	void SendKcpFallback(int ClientId, const char *pReason);
+	void SendKcpFallbackLegacy(int ClientId, const char *pReason);
 	void SendMap(int ClientId);
 	void SendMapData(int ClientId, int Chunk);
 	void SendMapReload(int ClientId);
@@ -432,6 +452,7 @@ public:
 	static void ConShutdown(IConsole::IResult *pResult, void *pUser);
 	static void ConRecord(IConsole::IResult *pResult, void *pUser);
 	static void ConStopRecord(IConsole::IResult *pResult, void *pUser);
+	static void ConKcpStatus(IConsole::IResult *pResult, void *pUser);
 	static void ConMapReload(IConsole::IResult *pResult, void *pUser);
 	static void ConLogout(IConsole::IResult *pResult, void *pUser);
 	static void ConShowIps(IConsole::IResult *pResult, void *pUser);
