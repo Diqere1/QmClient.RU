@@ -74,9 +74,7 @@ def run(
             results.add("PASS", "CMake run_tests", "通过")
         return
     if run_cxx:
-        code, out = _run_cmake_target(
-            "testrunner", build_dir, "CMake testrunner build"
-        )
+        code, out = _run_cmake_target("testrunner", build_dir, "CMake testrunner build")
         if code == 0:
             code, out = _run_testrunner_binary(build_dir, "C++ tests")
         if code != 0:

@@ -26,7 +26,7 @@ QmClient 的常规范围包括：
 - `data/languages/simplified_chinese.txt`
 - `docs/info.json`
 - `qmclient_scripts/`
-- `.ai/`, `AGENTS.md`, `CLAUDE.md`, and other harness files
+- `.ai/`、`AGENTS.md`、`CLAUDE.md` 和其他 agent/harness 文件
 
 没有明确请求时，以下内容都算超范围：
 

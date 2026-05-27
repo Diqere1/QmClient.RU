@@ -1,143 +1,211 @@
 #!/usr/bin/env python3
 """
-根据 CodeStable 产物生成一份发布说明初稿。
+根据 tag 区间内的 commit 生成 GitHub Release 说明。
 
-目标不是替代人工，而是把 feature / issue / gate 的事实先汇总成可改写的 Markdown。
+默认输出格式：
+
+# 更新日志
+## feat
+- feat(scope): 中文文本
+
+## fix
+- fix(scope): 中文文本
+
+# What's Changed
+## feat
+- feat(scope): english text
+
+## fix
+- fix(scope): english text
+
+优先从 commit body 中读取：
+- Release-ZH: ...
+- Release-EN: ...
+
+如果缺失，则退回到 commit subject 的 description。
 """
 
 from __future__ import annotations
 
 import argparse
-import json
+import re
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INCLUDED_STATUSES = {
-    "accepted",
-    "approved",
-    "done",
-    "fixed",
-    "completed",
-    "active",
-}
-STATUS_ALIASES = {
-    "pass": "accepted",
-    "confirmed": "fixed",
-}
+COMMIT_SEPARATOR = "\x1e"
+FIELD_SEPARATOR = "\x1f"
+
+SUBJECT_RE = re.compile(
+    r"^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?[:：]\s*(?P<desc>.+)$"
+)
+TRAILER_RE = re.compile(r"^Release-(?P<lang>ZH|EN):\s*(?P<text>.+)$")
 
 
 @dataclass
-class ArtifactItem:
-    slug: str
-    path: Path
-    status: str
-    normalized_status: str
-    summary: str
+class CommitNote:
+    commit_hash: str
+    commit_type: str
+    scope: str
+    description: str
+    release_zh: str
+    release_en: str
+    group: str
+
+    def format_prefix(self) -> str:
+        if self.scope:
+            return f"{self.commit_type}({self.scope})"
+        return self.commit_type
 
 
-def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    if not text.startswith("---\n"):
-        return {}, text
-    end_marker = "\n---\n"
-    end_index = text.find(end_marker, 4)
-    if end_index < 0:
-        return {}, text
-    frontmatter_text = text[4:end_index]
-    body = text[end_index + len(end_marker) :]
-    data: dict[str, str] = {}
-    for line in frontmatter_text.splitlines():
-        if ":" not in line:
+def run_git(args: list[str]) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return result.stdout.strip()
+
+
+def git_ref_exists(ref: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", ref],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return result.returncode == 0
+
+
+def normalize_group(commit_type: str) -> str | None:
+    commit_type = commit_type.lower()
+    if commit_type == "feat":
+        return "feat"
+    if commit_type in {"fix", "perf", "refactor", "revert"}:
+        return "fix"
+    return None
+
+
+def parse_trailers(body: str) -> tuple[str, str]:
+    zh = ""
+    en = ""
+    for line in body.splitlines():
+        match = TRAILER_RE.match(line.strip())
+        if not match:
             continue
-        key, value = line.split(":", 1)
-        data[key.strip()] = value.strip()
-    return data, body
+        if match.group("lang") == "ZH":
+            zh = match.group("text").strip()
+        elif match.group("lang") == "EN":
+            en = match.group("text").strip()
+    return zh, en
 
 
-def extract_section_bullets(body: str, headings: list[str]) -> list[str]:
-    lines = body.splitlines()
-    for heading in headings:
-        target = f"## {heading}"
-        for index, line in enumerate(lines):
-            if line.strip() != target:
-                continue
-            bullets: list[str] = []
-            cursor = index + 1
-            while cursor < len(lines):
-                current = lines[cursor]
-                stripped = current.strip()
-                if stripped.startswith("## "):
-                    break
-                if stripped.startswith("- "):
-                    bullets.append(stripped[2:].strip())
-                cursor += 1
-            if bullets:
-                return bullets
-    return []
-
-
-def extract_section_paragraph(body: str, headings: list[str]) -> str:
-    lines = body.splitlines()
-    for heading in headings:
-        target = f"## {heading}"
-        for index, line in enumerate(lines):
-            if line.strip() != target:
-                continue
-            cursor = index + 1
-            collected: list[str] = []
-            while cursor < len(lines):
-                current = lines[cursor].strip()
-                if current.startswith("## "):
-                    break
-                if current and not current.startswith(">"):
-                    collected.append(current)
-                cursor += 1
-            if collected:
-                return " ".join(collected[:3])
-    return ""
-
-
-def normalize_status(status: str) -> str:
-    normalized = status.strip().lower()
-    return STATUS_ALIASES.get(normalized, normalized)
-
-
-def collect_artifacts(
-    root: Path, suffix: str, included_statuses: set[str]
-) -> tuple[list[ArtifactItem], list[ArtifactItem]]:
-    items: list[ArtifactItem] = []
-    skipped_items: list[ArtifactItem] = []
-    if not root.exists():
-        return items, skipped_items
-    for path in sorted(root.rglob(f"*{suffix}")):
-        parent_slug = path.parent.name
-        text = path.read_text(encoding="utf-8")
-        frontmatter, body = parse_frontmatter(text)
-        bullets = extract_section_bullets(body, ["最终结论", "修复内容", "遗留"])
-        paragraph = extract_section_paragraph(body, ["最终结论", "修复内容", "遗留"])
-        summary = bullets[0] if bullets else paragraph
-        normalized_status = normalize_status(frontmatter.get("status", "unknown"))
-        item = ArtifactItem(
-            slug=parent_slug,
-            path=path.relative_to(REPO_ROOT),
-            status=frontmatter.get("status", "unknown"),
-            normalized_status=normalized_status,
-            summary=summary if summary else "未抽取到稳定摘要，请人工补充。",
-        )
-        if item.normalized_status in included_statuses:
-            items.append(item)
-        else:
-            skipped_items.append(item)
-    return items, skipped_items
-
-
-def load_gate_summary(path: Path | None) -> dict[str, Any] | None:
-    if path is None or not path.exists():
+def parse_commit(commit_hash: str, subject: str, body: str) -> CommitNote | None:
+    match = SUBJECT_RE.match(subject.strip())
+    if not match:
         return None
-    with path.open("r", encoding="utf-8-sig") as file:
-        return json.load(file)
+
+    commit_type = match.group("type").lower()
+    scope = (match.group("scope") or "").strip()
+    description = match.group("desc").strip()
+    group = normalize_group(commit_type)
+    if group is None:
+        return None
+
+    release_zh, release_en = parse_trailers(body)
+    if not release_zh:
+        release_zh = description
+    if not release_en:
+        release_en = description
+
+    return CommitNote(
+        commit_hash=commit_hash,
+        commit_type=commit_type,
+        scope=scope,
+        description=description,
+        release_zh=release_zh,
+        release_en=release_en,
+        group=group,
+    )
+
+
+def resolve_previous_tag(current_tag: str) -> str | None:
+    tags = run_git(["tag", "--sort=-creatordate", "--merged", current_tag]).splitlines()
+    for tag in tags:
+        tag = tag.strip()
+        if tag and tag != current_tag:
+            return tag
+    return None
+
+
+def collect_notes(current_tag: str, previous_tag: str | None) -> list[CommitNote]:
+    revspec = f"{previous_tag}..{current_tag}" if previous_tag else current_tag
+    raw = run_git(
+        [
+            "log",
+            "--reverse",
+            f"--format=%H{FIELD_SEPARATOR}%s{FIELD_SEPARATOR}%b{COMMIT_SEPARATOR}",
+            revspec,
+        ]
+    )
+    notes: list[CommitNote] = []
+    for entry in raw.split(COMMIT_SEPARATOR):
+        if not entry.strip():
+            continue
+        parts = entry.split(FIELD_SEPARATOR, 2)
+        if len(parts) != 3:
+            continue
+        note = parse_commit(parts[0].strip(), parts[1].strip(), parts[2])
+        if note is not None:
+            notes.append(note)
+    return notes
+
+
+def render_section(group: str, notes: list[CommitNote], lang: str) -> list[str]:
+    heading = (
+        "##feat."
+        if group == "feat" and lang == "zh"
+        else ("## feat." if group == "feat" else "## fix")
+    )
+    lines = [heading]
+    grouped = [note for note in notes if note.group == group]
+    if not grouped:
+        lines.append("- None")
+        lines.append("")
+        return lines
+
+    for note in grouped:
+        text = note.release_zh if lang == "zh" else note.release_en
+        lines.append(f"- {note.format_prefix()}: {text}")
+    lines.append("")
+    return lines
+
+
+def render_markdown(
+    version: str, current_tag: str, previous_tag: str | None, notes: list[CommitNote]
+) -> str:
+    lines: list[str] = []
+    lines.append("# 更新日志")
+    lines.append(f"> Version: {version}")
+    if previous_tag:
+        lines.append(f"> Range: {previous_tag}..{current_tag}")
+    else:
+        lines.append(f"> Range: {current_tag}")
+    lines.append("")
+    lines.extend(render_section("feat", notes, "zh"))
+    lines.extend(render_section("fix", notes, "zh"))
+    lines.append("# What's Changed")
+    lines.append("")
+    lines.extend(render_section("feat", notes, "en"))
+    lines.extend(render_section("fix", notes, "en"))
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def resolve_repo_path(path: Path | None) -> Path | None:
@@ -148,108 +216,12 @@ def resolve_repo_path(path: Path | None) -> Path | None:
     return REPO_ROOT / path
 
 
-def render_markdown(
-    version: str,
-    features: list[ArtifactItem],
-    fixes: list[ArtifactItem],
-    skipped_features: list[ArtifactItem],
-    skipped_fixes: list[ArtifactItem],
-    gate_summary: dict[str, Any] | None,
-    included_statuses: set[str],
-) -> str:
-    lines: list[str] = []
-    lines.append(f"# QmClient {version}")
-    lines.append("")
-    lines.append("## 本次重点")
-    if features:
-        lines.append(f"- Feature：已沉淀 {len(features)} 项功能产物，见下方条目。")
-    else:
-        lines.append(
-            "- Feature：本次没有自动扫描到 feature acceptance 产物，请人工补充。"
-        )
-    if fixes:
-        lines.append(f"- Fix：已沉淀 {len(fixes)} 项问题修复产物，见下方条目。")
-    else:
-        lines.append("- Fix：本次没有自动扫描到 issue fix-note 产物，请人工补充。")
-    lines.append("")
-    lines.append("## 新增")
-    if features:
-        for item in features:
-            lines.append(
-                f"- `{item.slug}` ({item.normalized_status}) - {item.summary} 产物：`{item.path.as_posix()}`"
-            )
-    else:
-        lines.append("- [补充用户可感知的新能力]")
-    lines.append("")
-    lines.append("## 修复")
-    if fixes:
-        for item in fixes:
-            lines.append(
-                f"- `{item.slug}` ({item.normalized_status}) - {item.summary} 产物：`{item.path.as_posix()}`"
-            )
-    else:
-        lines.append("- [补充用户可感知的问题修复]")
-    lines.append("")
-    lines.append("## 调整")
-    lines.append("- [补充行为、流程或界面调整]")
-    lines.append("")
-    lines.append("## 兼容性说明")
-    lines.append("- [确认是否影响协议、demo、skin、地图行为或客户端配置]")
-    lines.append("")
-    lines.append("## 已知限制")
-    lines.append("- [补充当前仍保留的限制或实验路径]")
-    lines.append("")
-    if skipped_features or skipped_fixes:
-        lines.append("## 待人工确认的非正式产物")
-        lines.append(f"- 当前状态白名单：`{', '.join(sorted(included_statuses))}`")
-        for item in skipped_features:
-            lines.append(
-                f"- 跳过 Feature：`{item.slug}` ({item.normalized_status}) 原始状态：`{item.status}` 产物：`{item.path.as_posix()}`"
-            )
-        for item in skipped_fixes:
-            lines.append(
-                f"- 跳过 Fix：`{item.slug}` ({item.normalized_status}) 原始状态：`{item.status}` 产物：`{item.path.as_posix()}`"
-            )
-        lines.append("")
-    lines.append("---")
-    lines.append("")
-    lines.append("# Maintainer Notes")
-    lines.append("")
-    lines.append("## 变更范围")
-    lines.append(f"- Feature artifacts: {len(features)}")
-    lines.append(f"- Fix artifacts: {len(fixes)}")
-    lines.append(
-        "- Workflow artifacts: release notes 初稿由 `qmclient_scripts/generate_release_notes.py` 生成"
-    )
-    lines.append("")
-    lines.append("## 验证摘要")
-    if gate_summary is not None:
-        summary = gate_summary.get("Summary", {})
-        lines.append(f"- Gate 模式：`{gate_summary.get('Mode', 'unknown')}`")
-        lines.append(
-            f"- Gate 结果：PASS={summary.get('Pass', 'n/a')} WARN={summary.get('Warn', 'n/a')} FAIL={summary.get('Fail', 'n/a')}"
-        )
-    else:
-        lines.append("- Gate：未提供 `--gate-report`，请人工补充最新总入口结果。")
-    lines.append("- 构建 / 测试： [补充本次实际执行的验证命令]")
-    lines.append("- 发布态验证： [补充是否做过 cmake-build-release / Release 真实运行]")
-    lines.append("")
-    lines.append("## 素材来源")
-    lines.append("- `.ai/features/*/*-acceptance.md`")
-    lines.append("- `.ai/issues/*/*-fix-note.md`")
-    lines.append("- `qmclient_scripts/gate/check_gate.py` JSON 报告（如果提供）")
-    lines.append("")
-    return "\n".join(lines)
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description="生成 QmClient 发布说明初稿")
-    parser.add_argument("--version", default="UNRELEASED", help="版本号，如 v2.3.0")
+    parser = argparse.ArgumentParser(description="生成 GitHub Release 说明")
+    parser.add_argument("--version", default="UNRELEASED", help="展示用版本号")
+    parser.add_argument("--current-tag", required=True, help="当前发布 tag，如 v2.52.3")
     parser.add_argument(
-        "--gate-report",
-        type=Path,
-        default=None,
-        help="check_gate.py 生成的 JSON 报告路径",
+        "--previous-tag", default=None, help="上一个 tag；不传则自动推断"
     )
     parser.add_argument(
         "--output",
@@ -257,43 +229,30 @@ def main() -> int:
         default=None,
         help="输出 Markdown 文件路径；不传则打印到 stdout",
     )
-    parser.add_argument(
-        "--include-status",
-        action="append",
-        default=[],
-        help="额外允许纳入正式初稿的状态，可重复传递",
-    )
     args = parser.parse_args()
 
-    included_statuses = set(DEFAULT_INCLUDED_STATUSES)
-    included_statuses.update(
-        normalize_status(status) for status in args.include_status if status.strip()
-    )
-    gate_report_path = resolve_repo_path(args.gate_report)
+    if not git_ref_exists(args.current_tag):
+        print(
+            f"错误：当前 tag/ref 不存在：{args.current_tag}。"
+            "CI 场景请传真实 tag；本地预演请改用仓库里已存在的 tag。",
+            file=sys.stderr,
+        )
+        return 2
+    if args.previous_tag and not git_ref_exists(args.previous_tag):
+        print(f"错误：上一个 tag/ref 不存在：{args.previous_tag}", file=sys.stderr)
+        return 2
+
+    previous_tag = args.previous_tag or resolve_previous_tag(args.current_tag)
     output_path = resolve_repo_path(args.output)
-    features, skipped_features = collect_artifacts(
-        REPO_ROOT / ".ai" / "features", "-acceptance.md", included_statuses
-    )
-    fixes, skipped_fixes = collect_artifacts(
-        REPO_ROOT / ".ai" / "issues", "-fix-note.md", included_statuses
-    )
-    gate_summary = load_gate_summary(gate_report_path)
-    markdown = render_markdown(
-        args.version,
-        features,
-        fixes,
-        skipped_features,
-        skipped_fixes,
-        gate_summary,
-        included_statuses,
-    )
+    notes = collect_notes(args.current_tag, previous_tag)
+    markdown = render_markdown(args.version, args.current_tag, previous_tag, notes)
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(markdown, encoding="utf-8")
-        print(f"已写入发布说明初稿：{output_path}")
+        print(f"已写入发布说明：{output_path}")
     else:
-        print(markdown)
+        print(markdown, end="")
 
     return 0
 

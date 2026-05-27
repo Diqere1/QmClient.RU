@@ -127,6 +127,7 @@ target
 .vscode
 compile_commands.json
 cmake-build-*/*
+cmake-build-*
 cmake-build-release/
 build-ninja/
 cscope.files

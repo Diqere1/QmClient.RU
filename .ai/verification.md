@@ -1,6 +1,6 @@
 # 验证
 
-用能覆盖改动风险的最小验证集合，然后把证据记录到 `.ai/progress.md`。
+用能覆盖改动风险的最小验证集合，然后把证据记录到当前 `docs/superpowers/plans/` 或 `docs/superpowers/specs/`。
 
 ## Harness 与文档
 
@@ -8,13 +8,13 @@
 python qmclient_scripts/gate/check_docs.py
 ```
 
-当你改了 `AGENTS.md`、`CLAUDE.md`、`.ai/`、`.ai/feature_list.json`、`.ai/progress.md`、`.ai/session-handoff.md`、`qmclient_scripts/init.sh`、governance workflow 文件或 gate 脚本后，都要跑这一项。
+当你改了 `AGENTS.md`、`CLAUDE.md`、`.ai/`、`docs/superpowers/plans/`、`docs/superpowers/specs/`、governance workflow 文件或 gate 脚本后，都要跑这一项。
 
 ## 构建
 
 Windows 推荐：
 
-```bat
+```pwsh
 qmclient_scripts\cmake-windows.cmd -G Ninja -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
 qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target game-client -j 10
 ```
@@ -32,7 +32,7 @@ cmake --build cmake-build-release --target game-client -j 10
 
 Windows:
 
-```bat
+```pwsh
 qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target testrunner -j 10
 cmake-build-release\testrunner.exe
 qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target run_rust_tests
@@ -53,6 +53,13 @@ cmake --build cmake-build-release --target run_rust_tests
 python qmclient_scripts/gate/check_gate.py --mode quick --base-ref main
 python qmclient_scripts/gate/check_gate.py --mode default --base-ref main
 python qmclient_scripts/gate/check_gate.py --mode full --base-ref main
+```
+
+版本 / release 相关修改后，至少额外验证：
+
+```bash
+python qmclient_scripts/bump_version.py --version 2.58.0 --dry-run
+python qmclient_scripts/generate_release_notes.py --version "$(git describe --tags --abbrev=0)" --current-tag "$(git describe --tags --abbrev=0)"
 ```
 
 ## 视觉改动

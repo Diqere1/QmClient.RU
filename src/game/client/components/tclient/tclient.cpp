@@ -600,7 +600,6 @@ void CTClient::OnInit()
 	}
 	LoadMapCategoryCache();
 	LoadMapNotes();
-
 }
 
 void CTClient::OnShutdown()
@@ -3123,7 +3122,7 @@ void CTClient::FetchTClientInfo()
 	if(m_pTClientInfoTask && !m_pTClientInfoTask->Done())
 		return;
 	char aUrl[256];
-	str_format(aUrl, sizeof(aUrl), "%s?current=%s", TCLIENT_INFO_URL, TCLIENT_VERSION);
+	str_format(aUrl, sizeof(aUrl), "%s?current=%s", TCLIENT_INFO_URL, QMCLIENT_VERSION);
 	m_pTClientInfoTask = HttpGet(aUrl);
 	m_pTClientInfoTask->AllowInsecureProtocol();
 	m_pTClientInfoTask->Timeout(CTimeout{10000, 0, 500, 10});
@@ -3166,7 +3165,7 @@ void CTClient::FinishTClientInfo()
 		char aLatestVersionStr[64];
 		NormalizeTCVersion(CurrentVersion, aLatestVersionStr, sizeof(aLatestVersionStr));
 		char aCurVersionStr[64];
-		NormalizeTCVersion(TCLIENT_VERSION, aCurVersionStr, sizeof(aCurVersionStr));
+		NormalizeTCVersion(QMCLIENT_VERSION, aCurVersionStr, sizeof(aCurVersionStr));
 		if(aLatestVersionStr[0] != '\0' && str_comp(aLatestVersionStr, aCurVersionStr) != 0)
 		{
 			str_copy(m_aVersionStr, aLatestVersionStr);

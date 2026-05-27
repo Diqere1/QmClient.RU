@@ -8,6 +8,8 @@ import shutil
 from lib import runner
 from lib.report import ResultCollector
 
+RUFF_EXCLUDES = ["ddnet_libs"]
+
 
 def run(results: ResultCollector, included: list[str], dry_run: bool = False) -> None:
     if not shutil.which("ruff"):
@@ -16,14 +18,17 @@ def run(results: ResultCollector, included: list[str], dry_run: bool = False) ->
     if dry_run:
         results.add("INFO", "Python 代码风格检查 (ruff)", "DryRun，仅展示命令")
         return
-    code, out = runner.run(
-        ["ruff", "format", "--check"], title="ruff format", check=False
-    )
+    ruff_format_cmd = ["ruff", "format", "--check"]
+    ruff_check_cmd = ["ruff", "check"]
+    for path in RUFF_EXCLUDES:
+        ruff_format_cmd.extend(["--exclude", path])
+        ruff_check_cmd.extend(["--exclude", path])
+    code, out = runner.run(ruff_format_cmd, title="ruff format", check=False)
     if code != 0:
         results.add("FAIL", "ruff format", out)
         return
     results.add("PASS", "ruff format", "通过")
-    code, out = runner.run(["ruff", "check"], title="ruff check", check=False)
+    code, out = runner.run(ruff_check_cmd, title="ruff check", check=False)
     if code != 0:
         results.add("FAIL", "ruff check", out)
         return

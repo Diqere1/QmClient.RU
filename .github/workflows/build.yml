@@ -90,11 +90,10 @@ jobs:
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG_VERSION#v}"
-          echo "Updating TCLIENT_VERSION to $VERSION"
-          sed -i.bak 's/^#define TCLIENT_VERSION ".*"/#define TCLIENT_VERSION "'"$VERSION"'"/' src/game/version.h && rm -f src/game/version.h.bak
-          echo "Updated version.h:"
-          grep "TCLIENT_VERSION" src/game/version.h
+          python3 qmclient_scripts/bump_version.py --tag "$TAG_VERSION"
+          echo "Updated version files:"
+          grep "QMCLIENT_VERSION" src/game/version.h
+          cat docs/info.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -334,11 +333,10 @@ jobs:
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG_VERSION#v}"
-          echo "Updating TCLIENT_VERSION to $VERSION"
-          sed -i.bak 's/^#define TCLIENT_VERSION ".*"/#define TCLIENT_VERSION "'"$VERSION"'"/' src/game/version.h && rm -f src/game/version.h.bak
-          echo "Updated version.h:"
-          grep "TCLIENT_VERSION" src/game/version.h
+          python3 qmclient_scripts/bump_version.py --tag "$TAG_VERSION"
+          echo "Updated version files:"
+          grep "QMCLIENT_VERSION" src/game/version.h
+          cat docs/info.json
 
       - name: Setup Java 21
         uses: actions/setup-java@v5
@@ -571,6 +569,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Download packaged artifacts
         uses: actions/download-artifact@v5
         with:
@@ -581,10 +584,22 @@ jobs:
       - name: List release assets
         run: ls -lah release-assets
 
+      - name: Generate release notes
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/}"
+          python3 qmclient_scripts/generate_release_notes.py \
+            --version "$TAG_VERSION" \
+            --current-tag "$TAG_VERSION" \
+            --output release-assets/release-notes.md
+
+      - name: Show release notes
+        run: cat release-assets/release-notes.md
+
       - name: Create release and upload desktop assets
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: release-assets/release-notes.md
           files: |
             release-assets/QmClient-windows.zip
             release-assets/QmClient-windows.7z
