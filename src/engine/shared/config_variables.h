@@ -403,6 +403,12 @@ MACRO_CONFIG_STR(BrCachedBestServerinfoUrl, br_cached_best_serverinfo_url, 256, 
 MACRO_CONFIG_INT(BrSort, br_sort, 4, 0, 256, CFGFLAG_SAVE | CFGFLAG_CLIENT, "服务器浏览器中的排序列")
 MACRO_CONFIG_INT(BrSortOrder, br_sort_order, 2, 0, 2, CFGFLAG_SAVE | CFGFLAG_CLIENT, "服务器浏览器中的排序顺序")
 MACRO_CONFIG_INT(BrMaxRequests, br_max_requests, 100, 0, 1000, CFGFLAG_SAVE | CFGFLAG_CLIENT, "刷新服务器浏览器时使用的并发请求数")
+MACRO_CONFIG_INT(BrColWidthName, br_col_width_name, 120, 60, 1000, CFGFLAG_SAVE | CFGFLAG_CLIENT, "服务器浏览器中名称列的最小宽度")
+MACRO_CONFIG_INT(BrColWidthGametype, br_col_width_gametype, 50, 36, 300, CFGFLAG_SAVE | CFGFLAG_CLIENT, "服务器浏览器中类型列的宽度")
+MACRO_CONFIG_INT(BrColWidthMap, br_col_width_map, 120, 60, 800, CFGFLAG_SAVE | CFGFLAG_CLIENT, "服务器浏览器中地图列的宽度")
+MACRO_CONFIG_INT(BrColWidthFriends, br_col_width_friends, 20, 18, 120, CFGFLAG_SAVE | CFGFLAG_CLIENT, "服务器浏览器中好友列的宽度")
+MACRO_CONFIG_INT(BrColWidthPlayers, br_col_width_players, 60, 48, 240, CFGFLAG_SAVE | CFGFLAG_CLIENT, "服务器浏览器中玩家列的宽度")
+MACRO_CONFIG_INT(BrColWidthPing, br_col_width_ping, 40, 32, 180, CFGFLAG_SAVE | CFGFLAG_CLIENT, "服务器浏览器中延迟列的宽度")
 
 MACRO_CONFIG_INT(BrDemoSort, br_demo_sort, 0, 0, 3, CFGFLAG_SAVE | CFGFLAG_CLIENT, "回放浏览器中的排序列")
 MACRO_CONFIG_INT(BrDemoSortOrder, br_demo_sort_order, 0, 0, 1, CFGFLAG_SAVE | CFGFLAG_CLIENT, "回放浏览器中的排序顺序")

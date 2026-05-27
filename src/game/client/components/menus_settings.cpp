@@ -19,10 +19,10 @@
 
 #include <generated/protocol.h>
 
-#include <game/client/animstate.h>
 #include <game/client/QmUi/QmAnimResolve.h>
 #include <game/client/QmUi/UiContext.h>
 #include <game/client/QmUi/UiTokens.h>
+#include <game/client/animstate.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/message_gradient.h>
@@ -86,7 +86,6 @@ namespace
 			MaxX = maximum(MaxX, FeetMinX + FeetWidth);
 			MaxY = maximum(MaxY, FeetMinY + FeetHeight);
 		}
-
 	}
 
 	bool PerfDebugEnabled()
@@ -111,6 +110,71 @@ namespace
 		else
 			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
 	}
+
+	struct SSettingsPreviewSkinKey
+	{
+		char m_aSkinName[MAX_SKIN_LENGTH] = {};
+		int m_UseCustomColor = 0;
+		int m_ColorBody = 0;
+		int m_ColorFeet = 0;
+
+		bool operator==(const SSettingsPreviewSkinKey &Other) const
+		{
+			return str_comp(m_aSkinName, Other.m_aSkinName) == 0 &&
+			       m_UseCustomColor == Other.m_UseCustomColor &&
+			       m_ColorBody == Other.m_ColorBody &&
+			       m_ColorFeet == Other.m_ColorFeet;
+		}
+	};
+
+	struct SSettingsPreviewSkinTransitionState
+	{
+		SSettingsPreviewSkinKey m_Key;
+		bool m_HasKey = false;
+		CTeeRenderInfo m_LastInfo;
+		CTeeRenderInfo m_PreviousInfo;
+		std::optional<std::chrono::nanoseconds> m_StartTime;
+
+		void Update(const SSettingsPreviewSkinKey &Key, const CTeeRenderInfo &Info, std::chrono::nanoseconds Now)
+		{
+			if(g_Config.m_QmSkinChangeTransitionMs <= 0)
+			{
+				m_PreviousInfo.Reset();
+				m_StartTime.reset();
+			}
+
+			if(m_HasKey && !(m_Key == Key) && m_LastInfo.Valid() && Info.Valid())
+			{
+				m_PreviousInfo = m_LastInfo;
+				m_StartTime = Now;
+			}
+
+			m_Key = Key;
+			m_HasKey = true;
+			m_LastInfo = Info;
+		}
+
+		float Progress(std::chrono::nanoseconds Now) const
+		{
+			if(!m_StartTime.has_value())
+			{
+				return 1.0f;
+			}
+
+			const float ElapsedSeconds = std::chrono::duration<float>(Now - m_StartTime.value()).count();
+			return ResolveSkinChangeTransitionProgress(ElapsedSeconds, g_Config.m_QmSkinChangeTransitionMs);
+		}
+
+		const CTeeRenderInfo *PreviousInfo(std::chrono::nanoseconds Now) const
+		{
+			if(g_Config.m_QmSkinChangeTransitionMs <= 0 || !m_StartTime.has_value() || Progress(Now) >= 1.0f || !m_PreviousInfo.Valid())
+			{
+				return nullptr;
+			}
+
+			return &m_PreviousInfo;
+		}
+	};
 
 }
 
@@ -253,7 +317,6 @@ namespace
 				LabelElement.Init(pUi, 1);
 			gs_LanguageLabelElementsInit = true;
 		}
-
 	}
 
 	void LayoutLanguagePageBaseRects(float MainViewWidth, CUIRect &List)
@@ -1097,6 +1160,15 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	OwnSkinInfo.Apply(pOwnSkinContainer == nullptr || pOwnSkinContainer->Skin() == nullptr ? pDefaultSkin : pOwnSkinContainer->Skin().get());
 	OwnSkinInfo.ApplyColors(*pUseCustomColor, *pColorBody, *pColorFeet);
 	OwnSkinInfo.m_Size = 60.0f;
+	SSettingsPreviewSkinKey PreviewKey;
+	str_copy(PreviewKey.m_aSkinName, pSkinName[0] == '\0' ? "default" : pSkinName, sizeof(PreviewKey.m_aSkinName));
+	PreviewKey.m_UseCustomColor = *pUseCustomColor;
+	PreviewKey.m_ColorBody = (int)*pColorBody;
+	PreviewKey.m_ColorFeet = (int)*pColorFeet;
+	static std::array<SSettingsPreviewSkinTransitionState, NUM_DUMMIES> s_aPreviewTransitionStates;
+	const std::chrono::nanoseconds PreviewNow = time_get_nanoseconds();
+	SSettingsPreviewSkinTransitionState &PreviewTransitionState = s_aPreviewTransitionStates[m_Dummy];
+	PreviewTransitionState.Update(PreviewKey, OwnSkinInfo, PreviewNow);
 
 	// Tee
 	{
@@ -1109,7 +1181,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		const float InteractionDistance = 20.0f;
 		const vec2 TeeDirection = Distance < InteractionDistance ? normalize(vec2(DeltaPosition.x, maximum(DeltaPosition.y, 0.5f))) : normalize(DeltaPosition);
 		const int TeeEmote = Distance < InteractionDistance ? EMOTE_HAPPY : *pEmote;
-		RenderTools()->RenderTee(CAnimState::GetIdle(), &OwnSkinInfo, TeeEmote, TeeDirection, TeeRenderPos);
+		RenderTools()->RenderTeeWithSkinChangeTransition(CAnimState::GetIdle(), PreviewTransitionState.PreviousInfo(PreviewNow), &OwnSkinInfo, TeeEmote, TeeDirection, TeeRenderPos, PreviewTransitionState.Progress(PreviewNow));
 	}
 
 	// Skin loading status
@@ -1317,7 +1389,12 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		QueueSection.HSplitTop(20.0f, &QueueControls, &QueueSection);
 		CUIRect IntervalRect, LengthRect;
 		QueueControls.VSplitMid(&IntervalRect, &LengthRect, 10.0f);
-		Ui()->DoScrollbarOption(&QueueInterval, &QueueInterval, &IntervalRect, Localize("间隔"), 5, 120, &CUi::ms_LinearScrollbarScale, 0, "s");
+		CUIRect IntervalLabel, IntervalScrollbar;
+		IntervalRect.VSplitMid(&IntervalLabel, &IntervalScrollbar, minimum(10.0f, IntervalRect.w * 0.05f));
+		char aIntervalLabel[64];
+		str_format(aIntervalLabel, sizeof(aIntervalLabel), "%s: %.1fs", Localize("间隔"), QueueInterval / 10.0f);
+		Ui()->DoLabel(&IntervalLabel, aIntervalLabel, IntervalLabel.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_ML);
+		QueueInterval = CUi::ms_LinearScrollbarScale.ToAbsolute(Ui()->DoScrollbarH(&QueueInterval, &IntervalScrollbar, CUi::ms_LinearScrollbarScale.ToRelative(QueueInterval, 5, 1200)), 5, 1200);
 		if(Ui()->DoScrollbarOption(&QueueLength, &QueueLength, &LengthRect, Localize("长度"), 0, QueueMaxLimit))
 		{
 			GameClient()->m_Skins.TrimSkinQueueToLimit(QueueDummy);
@@ -2136,83 +2213,83 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		MainView.HSplitTop(20.0f, &BackendDropDown, &MainView);
 		Ui()->DoLabel(&Text, Localize("Renderer"), 16.0f, TEXTALIGN_MC);
 
-			static std::vector<std::string> s_vBackendIdNames;
-			static std::vector<const char *> s_vpBackendIdNamesCStr;
-			static std::vector<SMenuBackendInfo> s_vBackendInfos;
+		static std::vector<std::string> s_vBackendIdNames;
+		static std::vector<const char *> s_vpBackendIdNamesCStr;
+		static std::vector<SMenuBackendInfo> s_vBackendInfos;
 
-			size_t BackendCount = FoundBackendCount + 1;
-			s_vBackendIdNames.resize(BackendCount);
-			s_vpBackendIdNamesCStr.resize(BackendCount);
-			s_vBackendInfos.resize(BackendCount);
+		size_t BackendCount = FoundBackendCount + 1;
+		s_vBackendIdNames.resize(BackendCount);
+		s_vpBackendIdNamesCStr.resize(BackendCount);
+		s_vBackendInfos.resize(BackendCount);
 
-			char aTmpBackendName[256];
+		char aTmpBackendName[256];
 
-			auto IsInfoDefault = [](const SMenuBackendInfo &CheckInfo) {
-				return str_comp_nocase(CheckInfo.m_pBackendName, CConfig::ms_pGfxBackend) == 0 && CheckInfo.m_Major == CConfig::ms_GfxGLMajor && CheckInfo.m_Minor == CConfig::ms_GfxGLMinor && CheckInfo.m_Patch == CConfig::ms_GfxGLPatch;
-			};
+		auto IsInfoDefault = [](const SMenuBackendInfo &CheckInfo) {
+			return str_comp_nocase(CheckInfo.m_pBackendName, CConfig::ms_pGfxBackend) == 0 && CheckInfo.m_Major == CConfig::ms_GfxGLMajor && CheckInfo.m_Minor == CConfig::ms_GfxGLMinor && CheckInfo.m_Patch == CConfig::ms_GfxGLPatch;
+		};
 
-			int SelectedOldBackend = -1;
-			uint32_t CurCounter = 0;
-			for(uint32_t i = 0; i < BACKEND_TYPE_COUNT; ++i)
+		int SelectedOldBackend = -1;
+		uint32_t CurCounter = 0;
+		for(uint32_t i = 0; i < BACKEND_TYPE_COUNT; ++i)
+		{
+			for(uint32_t n = 0; n < GRAPHICS_DRIVER_AGE_TYPE_COUNT; ++n)
 			{
-				for(uint32_t n = 0; n < GRAPHICS_DRIVER_AGE_TYPE_COUNT; ++n)
+				auto &Info = aaSupportedBackends[i][n];
+				if(Info.m_Found)
 				{
-					auto &Info = aaSupportedBackends[i][n];
-					if(Info.m_Found)
+					bool IsDefault = IsInfoDefault(Info);
+					str_format(aTmpBackendName, sizeof(aTmpBackendName), "%s (%d.%d.%d)%s%s", Info.m_pBackendName, Info.m_Major, Info.m_Minor, Info.m_Patch, IsDefault ? " - " : "", IsDefault ? Localize("default") : "");
+					s_vBackendIdNames[CurCounter] = aTmpBackendName;
+					s_vpBackendIdNamesCStr[CurCounter] = s_vBackendIdNames[CurCounter].c_str();
+					if(str_comp_nocase(Info.m_pBackendName, g_Config.m_GfxBackend) == 0 && g_Config.m_GfxGLMajor == Info.m_Major && g_Config.m_GfxGLMinor == Info.m_Minor && g_Config.m_GfxGLPatch == Info.m_Patch)
 					{
-						bool IsDefault = IsInfoDefault(Info);
-						str_format(aTmpBackendName, sizeof(aTmpBackendName), "%s (%d.%d.%d)%s%s", Info.m_pBackendName, Info.m_Major, Info.m_Minor, Info.m_Patch, IsDefault ? " - " : "", IsDefault ? Localize("default") : "");
-						s_vBackendIdNames[CurCounter] = aTmpBackendName;
-						s_vpBackendIdNamesCStr[CurCounter] = s_vBackendIdNames[CurCounter].c_str();
-						if(str_comp_nocase(Info.m_pBackendName, g_Config.m_GfxBackend) == 0 && g_Config.m_GfxGLMajor == Info.m_Major && g_Config.m_GfxGLMinor == Info.m_Minor && g_Config.m_GfxGLPatch == Info.m_Patch)
-						{
-							SelectedOldBackend = CurCounter;
-						}
-
-						s_vBackendInfos[CurCounter] = Info;
-						++CurCounter;
+						SelectedOldBackend = CurCounter;
 					}
+
+					s_vBackendInfos[CurCounter] = Info;
+					++CurCounter;
 				}
 			}
+		}
 
-			if(SelectedOldBackend != -1)
-			{
-				// no custom selected
-				BackendCount -= 1;
-			}
-			else
-			{
-				// custom selected one
-				str_format(aTmpBackendName, sizeof(aTmpBackendName), "%s (%s %d.%d.%d)", Localize("custom"), g_Config.m_GfxBackend, g_Config.m_GfxGLMajor, g_Config.m_GfxGLMinor, g_Config.m_GfxGLPatch);
-				s_vBackendIdNames[CurCounter] = aTmpBackendName;
-				s_vpBackendIdNamesCStr[CurCounter] = s_vBackendIdNames[CurCounter].c_str();
-				SelectedOldBackend = CurCounter;
+		if(SelectedOldBackend != -1)
+		{
+			// no custom selected
+			BackendCount -= 1;
+		}
+		else
+		{
+			// custom selected one
+			str_format(aTmpBackendName, sizeof(aTmpBackendName), "%s (%s %d.%d.%d)", Localize("custom"), g_Config.m_GfxBackend, g_Config.m_GfxGLMajor, g_Config.m_GfxGLMinor, g_Config.m_GfxGLPatch);
+			s_vBackendIdNames[CurCounter] = aTmpBackendName;
+			s_vpBackendIdNamesCStr[CurCounter] = s_vBackendIdNames[CurCounter].c_str();
+			SelectedOldBackend = CurCounter;
 
-				s_vBackendInfos[CurCounter].m_pBackendName = "custom";
-				s_vBackendInfos[CurCounter].m_Major = g_Config.m_GfxGLMajor;
-				s_vBackendInfos[CurCounter].m_Minor = g_Config.m_GfxGLMinor;
-				s_vBackendInfos[CurCounter].m_Patch = g_Config.m_GfxGLPatch;
-			}
+			s_vBackendInfos[CurCounter].m_pBackendName = "custom";
+			s_vBackendInfos[CurCounter].m_Major = g_Config.m_GfxGLMajor;
+			s_vBackendInfos[CurCounter].m_Minor = g_Config.m_GfxGLMinor;
+			s_vBackendInfos[CurCounter].m_Patch = g_Config.m_GfxGLPatch;
+		}
 
-			static int s_SelectedOldBackend = -1;
-			if(s_SelectedOldBackend == -1)
-				s_SelectedOldBackend = SelectedOldBackend;
+		static int s_SelectedOldBackend = -1;
+		if(s_SelectedOldBackend == -1)
+			s_SelectedOldBackend = SelectedOldBackend;
 
-			static CUi::SDropDownState s_BackendDropDownState;
-			static CScrollRegion s_BackendDropDownScrollRegion;
-			s_BackendDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_BackendDropDownScrollRegion;
-			const int NewBackend = Ui()->DoDropDown(&BackendDropDown, SelectedOldBackend, s_vpBackendIdNamesCStr.data(), BackendCount, s_BackendDropDownState);
-			if(SelectedOldBackend != NewBackend)
-			{
-				str_copy(g_Config.m_GfxBackend, s_vBackendInfos[NewBackend].m_pBackendName);
-				g_Config.m_GfxGLMajor = s_vBackendInfos[NewBackend].m_Major;
-				g_Config.m_GfxGLMinor = s_vBackendInfos[NewBackend].m_Minor;
-				g_Config.m_GfxGLPatch = s_vBackendInfos[NewBackend].m_Patch;
+		static CUi::SDropDownState s_BackendDropDownState;
+		static CScrollRegion s_BackendDropDownScrollRegion;
+		s_BackendDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_BackendDropDownScrollRegion;
+		const int NewBackend = Ui()->DoDropDown(&BackendDropDown, SelectedOldBackend, s_vpBackendIdNamesCStr.data(), BackendCount, s_BackendDropDownState);
+		if(SelectedOldBackend != NewBackend)
+		{
+			str_copy(g_Config.m_GfxBackend, s_vBackendInfos[NewBackend].m_pBackendName);
+			g_Config.m_GfxGLMajor = s_vBackendInfos[NewBackend].m_Major;
+			g_Config.m_GfxGLMinor = s_vBackendInfos[NewBackend].m_Minor;
+			g_Config.m_GfxGLPatch = s_vBackendInfos[NewBackend].m_Patch;
 
-				CheckSettings = true;
-				s_GfxBackendChanged = s_SelectedOldBackend != NewBackend;
-				InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::BACKEND_CHANGED);
-			}
+			CheckSettings = true;
+			s_GfxBackendChanged = s_SelectedOldBackend != NewBackend;
+			InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::BACKEND_CHANGED);
+		}
 	}
 
 	// GPU list
@@ -2226,52 +2303,52 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		MainView.HSplitTop(20.0f, &GpuDropDown, &MainView);
 		Ui()->DoLabel(&Text, Localize("Graphics card"), 16.0f, TEXTALIGN_MC);
 
-			static std::vector<const char *> s_vpGpuIdNames;
+		static std::vector<const char *> s_vpGpuIdNames;
 
-			size_t GpuCount = GpuList.m_vGpus.size() + 1;
-			s_vpGpuIdNames.resize(GpuCount);
+		size_t GpuCount = GpuList.m_vGpus.size() + 1;
+		s_vpGpuIdNames.resize(GpuCount);
 
-			char aCurDeviceName[256 + 4];
+		char aCurDeviceName[256 + 4];
 
-			int OldSelectedGpu = -1;
-			for(size_t i = 0; i < GpuCount; ++i)
+		int OldSelectedGpu = -1;
+		for(size_t i = 0; i < GpuCount; ++i)
+		{
+			if(i == 0)
 			{
-				if(i == 0)
+				str_format(aCurDeviceName, sizeof(aCurDeviceName), "%s (%s)", Localize("auto"), GpuList.m_AutoGpu.m_aName);
+				s_vpGpuIdNames[i] = aCurDeviceName;
+				if(str_comp("auto", g_Config.m_GfxGpuName) == 0)
 				{
-					str_format(aCurDeviceName, sizeof(aCurDeviceName), "%s (%s)", Localize("auto"), GpuList.m_AutoGpu.m_aName);
-					s_vpGpuIdNames[i] = aCurDeviceName;
-					if(str_comp("auto", g_Config.m_GfxGpuName) == 0)
-					{
-						OldSelectedGpu = 0;
-					}
-				}
-				else
-				{
-					s_vpGpuIdNames[i] = GpuList.m_vGpus[i - 1].m_aName;
-					if(str_comp(GpuList.m_vGpus[i - 1].m_aName, g_Config.m_GfxGpuName) == 0)
-					{
-						OldSelectedGpu = i;
-					}
+					OldSelectedGpu = 0;
 				}
 			}
-
-			static int s_OldSelectedGpu = -1;
-			if(s_OldSelectedGpu == -1)
-				s_OldSelectedGpu = OldSelectedGpu;
-
-			static CUi::SDropDownState s_GpuDropDownState;
-			static CScrollRegion s_GpuDropDownScrollRegion;
-			s_GpuDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_GpuDropDownScrollRegion;
-			const int NewGpu = Ui()->DoDropDown(&GpuDropDown, OldSelectedGpu, s_vpGpuIdNames.data(), GpuCount, s_GpuDropDownState);
-			if(OldSelectedGpu != NewGpu)
+			else
 			{
-				if(NewGpu == 0)
-					str_copy(g_Config.m_GfxGpuName, "auto");
-				else
-					str_copy(g_Config.m_GfxGpuName, GpuList.m_vGpus[NewGpu - 1].m_aName);
-				CheckSettings = true;
-				s_GfxGpuChanged = NewGpu != s_OldSelectedGpu;
+				s_vpGpuIdNames[i] = GpuList.m_vGpus[i - 1].m_aName;
+				if(str_comp(GpuList.m_vGpus[i - 1].m_aName, g_Config.m_GfxGpuName) == 0)
+				{
+					OldSelectedGpu = i;
+				}
 			}
+		}
+
+		static int s_OldSelectedGpu = -1;
+		if(s_OldSelectedGpu == -1)
+			s_OldSelectedGpu = OldSelectedGpu;
+
+		static CUi::SDropDownState s_GpuDropDownState;
+		static CScrollRegion s_GpuDropDownScrollRegion;
+		s_GpuDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_GpuDropDownScrollRegion;
+		const int NewGpu = Ui()->DoDropDown(&GpuDropDown, OldSelectedGpu, s_vpGpuIdNames.data(), GpuCount, s_GpuDropDownState);
+		if(OldSelectedGpu != NewGpu)
+		{
+			if(NewGpu == 0)
+				str_copy(g_Config.m_GfxGpuName, "auto");
+			else
+				str_copy(g_Config.m_GfxGpuName, GpuList.m_vGpus[NewGpu - 1].m_aName);
+			CheckSettings = true;
+			s_GfxGpuChanged = NewGpu != s_OldSelectedGpu;
+		}
 	}
 
 	// check if the new settings require a restart
@@ -3488,9 +3565,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 {
 	// This handles cases where old config files have an invalid page index
 	m_SettingsScrollActive = Input()->KeyPress(KEY_MOUSE_WHEEL_UP) ||
-		Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) ||
-		Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) ||
-		Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
+				 Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) ||
+				 Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) ||
+				 Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
 	if(g_Config.m_UiSettingsPage < 0 || g_Config.m_UiSettingsPage >= SETTINGS_LENGTH)
 		g_Config.m_UiSettingsPage = SETTINGS_GENERAL;
 	if(g_Config.m_UiSettingsPage == SETTINGS_CONFIGS)
@@ -3691,7 +3768,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(15);
 			const char *pQmSection = m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONFIG ? "config" :
-				(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONTRIBUTORS ? "contributors" : "general");
+													 (m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONTRIBUTORS ? "contributors" : "general");
 			DrawOrPrewarmSection(SETTINGS_QMCLIENT, m_QmClientSettingsTab, pQmSection);
 			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_QMCLIENT, m_QmClientSettingsTab);
 			if(!RuntimeCacheHit)

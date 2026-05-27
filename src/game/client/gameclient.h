@@ -104,9 +104,12 @@
 #include "components/ui_effects.h"
 #include "components/voting.h"
 
+#include <chrono>
+#include <optional>
 #include <vector>
 
 class CQmJelly;
+class CCollisionHitbox;
 
 class CGameInfo
 {
@@ -198,6 +201,7 @@ public:
 
 	friend class CTClient;
 	friend class CFastPractice;
+	friend class CCollisionHitbox;
 
 	// all components
 	CInfoMessages m_InfoMessages;
@@ -573,6 +577,8 @@ public:
 		friend class CGameClient;
 		CGameClient *m_pGameClient;
 		int m_ClientId;
+		int LocalDummyIndex() const;
+		void BuildLocalSkinDescriptor(CSkinDescriptor &SkinDescriptor, int Dummy) const;
 
 	public:
 		int m_UseCustomColor;
@@ -632,6 +638,45 @@ public:
 
 		std::shared_ptr<CManagedTeeRenderInfo> m_pSkinInfo = nullptr; // this is what the server reports
 		CTeeRenderInfo m_RenderInfo; // this is what we use
+		CTeeRenderInfo m_SkinTransitionPreviousRenderInfo;
+
+		class CSkinTransitionKey
+		{
+		public:
+			CSkinDescriptor m_SkinDescriptor;
+			int m_UseCustomColor = 0;
+			int m_ColorBody = 0;
+			int m_ColorFeet = 0;
+			int m_aaSixupUseCustomColors[NUM_DUMMIES][protocol7::NUM_SKINPARTS] = {};
+			int m_aaSixupSkinPartColors[NUM_DUMMIES][protocol7::NUM_SKINPARTS] = {};
+
+			bool operator==(const CSkinTransitionKey &Other) const
+			{
+				if(!(m_SkinDescriptor == Other.m_SkinDescriptor) ||
+					m_UseCustomColor != Other.m_UseCustomColor ||
+					m_ColorBody != Other.m_ColorBody ||
+					m_ColorFeet != Other.m_ColorFeet)
+				{
+					return false;
+				}
+
+				for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+				{
+					for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+					{
+						if(m_aaSixupUseCustomColors[Dummy][Part] != Other.m_aaSixupUseCustomColors[Dummy][Part] ||
+							m_aaSixupSkinPartColors[Dummy][Part] != Other.m_aaSixupSkinPartColors[Dummy][Part])
+						{
+							return false;
+						}
+					}
+				}
+
+				return true;
+			}
+		} m_LastSkinTransitionKey;
+		bool m_HasSkinTransitionKey = false;
+		std::optional<std::chrono::nanoseconds> m_SkinTransitionStart;
 
 		float m_Angle;
 		bool m_Active;
@@ -670,6 +715,9 @@ public:
 		void UpdateSkin7HatSprite(int Dummy);
 		void UpdateSkin7BotDecoration(int Dummy);
 		void UpdateRenderInfo();
+		void UpdateSkinChangeTransition(const CTeeRenderInfo &NewRenderInfo, const CSkinDescriptor &SkinDescriptor);
+		float SkinChangeTransitionProgress(std::chrono::nanoseconds Now) const;
+		const CTeeRenderInfo *SkinChangePreviousRenderInfo(std::chrono::nanoseconds Now) const;
 		void Reset();
 		CSkinDescriptor ToSkinDescriptor() const;
 
@@ -812,6 +860,7 @@ public:
 	bool GotWantedSkin7(bool Dummy);
 	void SendInfo(bool Start);
 	void SendDummyInfo(bool Start) override;
+	void UpdateLocalSkinInfo(int Dummy);
 	void SendKill();
 	void SendKill() const;
 	void SendReadyChange7();

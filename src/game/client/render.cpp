@@ -260,6 +260,31 @@ void CRenderTools::RenderTee(const CAnimState *pAnim, const CTeeRenderInfo *pInf
 	RenderTee(pAnim, pInfo, Emote, Dir, Pos, Alpha, vec2(1.0f, 1.0f), vec2(1.0f, 1.0f), 0.0f, 0.0f);
 }
 
+void CRenderTools::RenderTeeWithSkinChangeTransition(const CAnimState *pAnim, const CTeeRenderInfo *pPreviousInfo, const CTeeRenderInfo *pCurrentInfo, int Emote, vec2 Dir, vec2 Pos, float Progress, float Alpha, vec2 BodyScale, vec2 FeetScale, float BodyAngle, float FeetAngle) const
+{
+	if(pCurrentInfo == nullptr)
+	{
+		return;
+	}
+
+	Progress = ClampSkinChangeTransitionProgress(Progress);
+	if(pPreviousInfo == nullptr || !pPreviousInfo->Valid() || Progress >= 1.0f)
+	{
+		RenderTee(pAnim, pCurrentInfo, Emote, Dir, Pos, Alpha, BodyScale, FeetScale, BodyAngle, FeetAngle);
+		return;
+	}
+
+	const SSkinChangeTransitionBlend Blend = ComputeSkinChangeTransitionBlend(Progress, BodyScale, FeetScale, g_Config.m_QmSkinChangeTransitionType);
+	if(Blend.m_PreviousAlpha > 0.0f)
+	{
+		RenderTee(pAnim, pPreviousInfo, Emote, Dir, Pos + Blend.m_PreviousPosOffset, Alpha * Blend.m_PreviousAlpha, Blend.m_PreviousBodyScale, Blend.m_PreviousFeetScale, BodyAngle + Blend.m_PreviousAngleOffset, FeetAngle + Blend.m_PreviousAngleOffset);
+	}
+	if(Blend.m_CurrentAlpha > 0.0f)
+	{
+		RenderTee(pAnim, pCurrentInfo, Emote, Dir, Pos + Blend.m_CurrentPosOffset, Alpha * Blend.m_CurrentAlpha, Blend.m_CurrentBodyScale, Blend.m_CurrentFeetScale, BodyAngle + Blend.m_CurrentAngleOffset, FeetAngle + Blend.m_CurrentAngleOffset);
+	}
+}
+
 void CRenderTools::RenderTee(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, float Alpha, vec2 BodyScale, vec2 FeetScale, float BodyAngle, float FeetAngle) const
 {
 	if(pInfo->m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_BODY).IsValid())

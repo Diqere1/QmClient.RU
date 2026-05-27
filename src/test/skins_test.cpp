@@ -1,8 +1,8 @@
 #include <game/client/components/skins.h>
 
-#include <cstdlib>
-
 #include <gtest/gtest.h>
+
+#include <cstdlib>
 
 static void SetTestPixel(CImageInfo &Image, size_t x, size_t y, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha)
 {
@@ -119,4 +119,35 @@ TEST(Skins, SkinDataPreparationBuildsMetricsWithoutGraphics)
 	EXPECT_EQ(Plan.m_Feet.m_MaxHeight, 8);
 
 	Image.Free();
+}
+
+TEST(Skins, SkinQueueEntrySixupDataParticipatesInEquality)
+{
+	CSkins::CSkinQueueEntry Base;
+	Base.m_SkinName = "cammostripes";
+	Base.m_UseCustomColor = true;
+	Base.m_ColorBody = 123;
+	Base.m_ColorFeet = 456;
+	Base.m_HasSixup = true;
+	for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+	{
+		str_copy(Base.m_aaSixupSkinPartNames[Part], "standard", sizeof(Base.m_aaSixupSkinPartNames[Part]));
+		Base.m_aSixupUseCustomColors[Part] = 0;
+		Base.m_aSixupSkinPartColors[Part] = Part;
+	}
+
+	CSkins::CSkinQueueEntry Same = Base;
+	EXPECT_TRUE(Base == Same);
+
+	CSkins::CSkinQueueEntry DifferentPartName = Base;
+	str_copy(DifferentPartName.m_aaSixupSkinPartNames[0], "kitty", sizeof(DifferentPartName.m_aaSixupSkinPartNames[0]));
+	EXPECT_FALSE(Base == DifferentPartName);
+
+	CSkins::CSkinQueueEntry DifferentUseCustomColor = Base;
+	DifferentUseCustomColor.m_aSixupUseCustomColors[1] = 1;
+	EXPECT_FALSE(Base == DifferentUseCustomColor);
+
+	CSkins::CSkinQueueEntry DifferentPartColor = Base;
+	DifferentPartColor.m_aSixupSkinPartColors[2] = 999;
+	EXPECT_FALSE(Base == DifferentPartColor);
 }

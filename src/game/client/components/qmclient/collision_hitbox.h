@@ -1,6 +1,8 @@
 #ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_COLLISION_HITBOX_H
 #define GAME_CLIENT_COMPONENTS_QMCLIENT_COLLISION_HITBOX_H
 
+#include <base/color.h>
+
 #include <game/client/component.h>
 
 class CTile;
@@ -22,9 +24,28 @@ private:
 	ivec2 m_MapDataSize;
 	int *m_pMapData = nullptr;
 
+	float HitboxAlpha() const;
+	bool HitboxModeEnabled() const;
+	bool LegacyModeEnabled() const;
+	bool ShouldRenderClient(int ClientId) const;
+	bool IsOnScreen(vec2 Position, float Margin = 0.0f) const;
+	bool IsLineOnScreen(vec2 From, vec2 To, float Margin = 0.0f) const;
+	ColorRGBA FreezeColor(float Alpha) const;
+	ColorRGBA TeeColor(int ClientId, float Alpha) const;
+	ColorRGBA WeaponColor(float Alpha) const;
+	void DrawCross(vec2 Position, float Size, ColorRGBA Color);
+	void DrawCircleOutline(vec2 Center, float Radius, ColorRGBA Color, int Segments = 32);
+	void DrawBoxOutline(vec2 Center, float Radius, ColorRGBA Color);
+	bool GetProjectileRenderPosition(const class CProjectileData &Projectile, vec2 &Position, vec2 &PreviousPosition) const;
+
 	void RenderTileHitboxes();
 	void RenderTeeHitboxes();
 	void RenderPickupHitboxes();
+	void RenderWeaponHitboxes();
+	void RenderHammerHitboxes();
+	void RenderProjectileHitboxes();
+	void RenderLaserHitboxes();
+	void RenderHookHitboxes();
 
 public:
 	int Sizeof() const override { return sizeof(*this); }

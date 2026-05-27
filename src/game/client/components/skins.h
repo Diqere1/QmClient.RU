@@ -10,6 +10,8 @@
 #include <engine/shared/config.h>
 #include <engine/shared/jobs.h>
 
+#include <generated/protocol7.h>
+
 #include <game/client/component.h>
 #include <game/client/components/settings_resource_jobs.h>
 #include <game/client/skin.h>
@@ -17,8 +19,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <list>
 #include <limits>
+#include <list>
 #include <optional>
 #include <set>
 #include <string>
@@ -159,7 +161,7 @@ public:
 		static bool TracksUsage(EState State, bool AlwaysLoaded)
 		{
 			return !AlwaysLoaded &&
-				(State == EState::PENDING || State == EState::LOADING || State == EState::LOADED);
+			       (State == EState::PENDING || State == EState::LOADING || State == EState::LOADED);
 		}
 		static SUsageTrackingUpdate UsageTrackingUpdate(EState State, bool AlwaysLoaded, bool HasUsageEntry)
 		{
@@ -332,14 +334,33 @@ public:
 		bool m_UseCustomColor = false;
 		int m_ColorBody = 0;
 		int m_ColorFeet = 0;
+		bool m_HasSixup = false;
+		char m_aaSixupSkinPartNames[protocol7::NUM_SKINPARTS][protocol7::MAX_SKIN_LENGTH] = {};
+		int m_aSixupUseCustomColors[protocol7::NUM_SKINPARTS] = {};
+		int m_aSixupSkinPartColors[protocol7::NUM_SKINPARTS] = {};
 
 		bool operator==(const CSkinQueueEntry &Other) const
 		{
-			if(m_SkinName != Other.m_SkinName || m_UseCustomColor != Other.m_UseCustomColor)
+			if(m_SkinName != Other.m_SkinName || m_UseCustomColor != Other.m_UseCustomColor || m_HasSixup != Other.m_HasSixup)
 				return false;
 			if(!m_UseCustomColor)
-				return true;
-			return m_ColorBody == Other.m_ColorBody && m_ColorFeet == Other.m_ColorFeet;
+				return !m_HasSixup || SixupEquals(Other);
+			return m_ColorBody == Other.m_ColorBody && m_ColorFeet == Other.m_ColorFeet && (!m_HasSixup || SixupEquals(Other));
+		}
+
+	private:
+		bool SixupEquals(const CSkinQueueEntry &Other) const
+		{
+			for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+			{
+				if(str_comp(m_aaSixupSkinPartNames[Part], Other.m_aaSixupSkinPartNames[Part]) != 0 ||
+					m_aSixupUseCustomColors[Part] != Other.m_aSixupUseCustomColors[Part] ||
+					m_aSixupSkinPartColors[Part] != Other.m_aSixupSkinPartColors[Part])
+				{
+					return false;
+				}
+			}
+			return true;
 		}
 	};
 

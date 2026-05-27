@@ -1169,6 +1169,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		FocusMode,
 		KeyBinds,
 		MiniFeatures,
+		SkinTransition,
 		CameraView,
 		DummyMiniView,
 		Coords,
@@ -1211,6 +1212,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::FocusMode: return "focus_mode";
 		case EQmModuleId::KeyBinds: return "key_binds";
 		case EQmModuleId::MiniFeatures: return "mini_features";
+		case EQmModuleId::SkinTransition: return "skin_transition";
 		case EQmModuleId::CameraView: return "camera_view";
 		case EQmModuleId::DummyMiniView: return "dummy_miniview";
 		case EQmModuleId::Coords: return "coords";
@@ -1258,7 +1260,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const char *m_pKey;
 	};
 
-	constexpr size_t QmModuleCount = 30;
+	constexpr size_t QmModuleCount = 31;
 
 	// Layout string format: key:column:order; entries separated by ';'.
 	static const std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
@@ -1268,14 +1270,15 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::FocusMode, EQmModuleColumn::Left, 3, "focus_mode"},
 		{EQmModuleId::KeyBinds, EQmModuleColumn::Left, 4, "key_binds"},
 		{EQmModuleId::MiniFeatures, EQmModuleColumn::Left, 5, "mini_features"},
-		{EQmModuleId::Coords, EQmModuleColumn::Left, 6, "coords"},
-		{EQmModuleId::Streamer, EQmModuleColumn::Left, 7, "streamer"},
-		{EQmModuleId::FriendNotify, EQmModuleColumn::Left, 8, "friend_notify"},
-		{EQmModuleId::BlockWords, EQmModuleColumn::Left, 9, "block_words"},
-		{EQmModuleId::Translate, EQmModuleColumn::Left, 12, "translate"},
-		{EQmModuleId::TranslateUi, EQmModuleColumn::Left, 13, "translate_ui"},
-		{EQmModuleId::QiaFen, EQmModuleColumn::Left, 10, "qiafen"},
-		{EQmModuleId::PieMenu, EQmModuleColumn::Left, 11, "pie_menu"},
+		{EQmModuleId::SkinTransition, EQmModuleColumn::Left, 6, "skin_transition"},
+		{EQmModuleId::Coords, EQmModuleColumn::Left, 7, "coords"},
+		{EQmModuleId::Streamer, EQmModuleColumn::Left, 8, "streamer"},
+		{EQmModuleId::FriendNotify, EQmModuleColumn::Left, 9, "friend_notify"},
+		{EQmModuleId::BlockWords, EQmModuleColumn::Left, 10, "block_words"},
+		{EQmModuleId::Translate, EQmModuleColumn::Left, 13, "translate"},
+		{EQmModuleId::TranslateUi, EQmModuleColumn::Left, 14, "translate_ui"},
+		{EQmModuleId::QiaFen, EQmModuleColumn::Left, 11, "qiafen"},
+		{EQmModuleId::PieMenu, EQmModuleColumn::Left, 12, "pie_menu"},
 		{EQmModuleId::CameraView, EQmModuleColumn::Right, 0, "camera_view"},
 		{EQmModuleId::EntityOverlay, EQmModuleColumn::Right, 1, "entity_overlay"},
 		{EQmModuleId::Laser, EQmModuleColumn::Right, 2, "laser"},
@@ -1436,7 +1439,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			}
 		};
 
-		AppendBalancedGroup({EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi});
+		AppendBalancedGroup({EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::SkinTransition, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi});
 		AppendBalancedGroup({EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::FocusMode, EQmModuleId::KeyBinds, EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist});
 		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::HudNotifications, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls});
 
@@ -2038,7 +2041,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::Gores: return "gores kog king of gores 锤枪切换 chuichang qiehuan 自动切枪 zidong qieqiang gun hammer prevweapon fire 开火后切锤 kaihuo qiechui 拿到其他武器停用 快速输入 kuaisu shuru fast input 快速输入其他玩家";
 		case EQmModuleId::FocusMode: return "禅模式 zhuanzhi moshi focus mode zen mode 隐藏 yincang hud 名字 mingzi 特效 texiao 计分板 jifenban 沉浸 chenjing 无干扰 wuganrao 聊天 liaotian chat 非必要UI";
 		case EQmModuleId::KeyBinds: return "按键绑定 anjian bangding bind 快捷键 kuaijiejian 常用绑定 changyong bangding";
-		case EQmModuleId::MiniFeatures: return "梦的小功能 meng xiaogongneng 粒子拖尾 lizi tuowei 远程粒子 yuancheng lizi 计分板查分 chafen 聊天框淡出 liaotian danchu 表情选择 biaoqing xuanze 动画优化 donghua youhua 复读 fudu 锤人换皮 chuiren huanpi 随机表情 suiji biaoqing 连击 lianji combo 说话不弹表情 shuo hua biaoqing 本地彩虹名字 caihong mingzi 武器弹道辅助线 dan dao fuzhuxian 位置跳跃提示 tiaoyue tishi";
+		case EQmModuleId::MiniFeatures: return "梦的小功能 meng xiaogongneng 粒子拖尾 lizi tuowei 远程粒子 yuancheng lizi 计分板查分 chafen 聊天框淡出 liaotian danchu 表情选择 biaoqing xuanze 动画优化 donghua youhua 复读 fudu 随机表情 suiji biaoqing 连击 lianji combo 说话不弹表情 shuo hua biaoqing 本地彩虹名字 caihong mingzi 武器弹道辅助线 dan dao fuzhuxian 位置跳跃提示 tiaoyue tishi";
+		case EQmModuleId::SkinTransition:
+			return "皮肤切换 pifu qiehuan skin transition 换皮 huanpi 动画 donghua 类型 leixing 时长 shichang 锤中偷皮 chuizhong toupi";
 		case EQmModuleId::CameraView: return "镜头 jingtou camera drift 漂移 piaoyi dynamic fov 动态视野 dongtai shiye 纵横比 zonghengbi aspect ratio preset 预设 yushe 自定义 zidinyi 视野视角 shijiao";
 		case EQmModuleId::DummyMiniView: return "分身小窗 fenshen xiaochuang dummy mini view 预览 yulan 缩放 suofang 小窗大小 daxiao 离开视角 offscreen 自动显示 zidong xianshi";
 		case EQmModuleId::Coords: return "显示坐标 xianshi zuobiao coords position 自己坐标 ziji 他人坐标 taren 显示x xianshi x 显示y xianshi y 对齐提示 duiqi tishi 严格对齐 yange duiqi";
@@ -2059,7 +2064,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::DebugGraph: return "调试图表 tiaoshi tubiao debug graph monitoring hud 不透明度 touming 透明度 面板 mianban 快捷键 kuaijiejian 按键 anjian";
 		case EQmModuleId::InputOverlay: return "按键显示 anjian xianshi input overlay 按键叠加 anjian diejia 大小 daxiao 不透明度 butouming 水平位置 shuiping weizhi 垂直位置 chuizhi weizhi";
 		case EQmModuleId::HudNotifications: return "通知栏 tongzhi lan notification toast echo 系统提示 xitong tishi 黑名单 heimingdan 右侧 youce 动画 donghua 背景 beijing 文字 wenzi";
-		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo";
+		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo 高级 gaoji advanced";
 		case EQmModuleId::DynamicIsland: return "灵动岛 lld lingdongdao dynamic island hud 顶部 dingbu 背景 beijing 颜色 yanse 透明度 touming 黑底 heidi 原版 yuanban 默认 moren classic old style";
 		case EQmModuleId::SystemMediaControls: return "系统媒体控制 xitong meiti kongzhi smtc media controls 启用系统媒体 qiyong 显示歌曲信息 gequ xinxi 上一个 shangyige 播放暂停 bofang zanting 下一个 xiayige";
 		case EQmModuleId::Info: return "贡献者 gongxianzhe 社区 shequ qq群 反馈 fankui 更新 gengxin 赞助 zanzhu 支持 zhichi 开发人员 kaifa sponsor supporters team";
@@ -2080,6 +2085,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case QMCLIENT_SETTINGS_TAB_VISUAL:
 			return Id == EQmModuleId::ChatBubble ||
 			       Id == EQmModuleId::CameraView ||
+			       Id == EQmModuleId::SkinTransition ||
 			       Id == EQmModuleId::Streamer ||
 			       Id == EQmModuleId::EntityOverlay ||
 			       Id == EQmModuleId::Laser ||
@@ -2395,9 +2401,23 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::KeyBinds:
 			return {3, Localize("按键绑定"), Localize("常见的按键绑定")};
 		case EQmModuleId::MiniFeatures:
-			return {2, Localize("梦的小功能"), Localize("只有你想不到,没有梦做不到")};
+			return {
+				2,
+				Localize("梦的小功能"),
+				Localize("只有你想不到,没有梦做不到"),
+			};
+		case EQmModuleId::SkinTransition:
+			return {
+				5,
+				Localize("皮肤切换"),
+				Localize("调整锤中偷皮和换皮动画"),
+			};
 		case EQmModuleId::CameraView:
-			return {10, Localize("镜头与视野"), Localize("调整游戏镜头和视野设置")};
+			return {
+				10,
+				Localize("镜头与视野"),
+				Localize("调整游戏镜头和视野设置"),
+			};
 		case EQmModuleId::DummyMiniView:
 			return {12, Localize("分身小窗"), Localize("看看你操控本体的时候分身有没有被别人欺负")};
 		case EQmModuleId::Coords:
@@ -2772,7 +2792,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		};
 		if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_VISUAL)
 		{
-			for(EQmModuleId Id : {EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi})
+			for(EQmModuleId Id : {EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::SkinTransition, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi})
 				AppendModuleIfVisible(Id);
 		}
 		else if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_FUNCTION)
@@ -3339,10 +3359,6 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHammerSwapSkin, Localize("锤中偷皮"), &g_Config.m_QmHammerSwapSkin, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmRandomEmoteOnHit, Localize("随机表情"), &g_Config.m_QmRandomEmoteOnHit, &Row, LgLineHeight);
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
@@ -3366,6 +3382,57 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcJumpHint, Localize("位置跳跃提示"), &g_Config.m_TcJumpHint, &Row, LgLineHeight);
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				}
+
+				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
+				Column.y = CardContent.y;
+				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
+				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
+				HandleModuleDragState(pModule, s_GlassCards.back());
+			}
+			break;
+			case EQmModuleId::SkinTransition:
+			{
+				// ========== 模块: 皮肤切换 ==========
+				Column.HSplitTop(LgCardSpacing, nullptr, &Column);
+				CUIRect CardSkinTransitionStart = Column;
+				s_GlassCards.push_back(CardSkinTransitionStart);
+
+				Column.HSplitTop(LgCardPadding, nullptr, &Column);
+				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
+				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
+				DoModuleHeadline(CardContent, 5, Localize("皮肤切换"), Localize("调整锤中偷皮和换皮动画"));
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHammerSwapSkin, Localize("锤中偷皮"), &g_Config.m_QmHammerSwapSkin, &Row, LgLineHeight);
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				{
+					CUIRect LabelColValue, ControlColValue;
+					Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+					Ui()->DoLabel(&LabelColValue, Localize("换皮动画类型"), LgBodySize, TEXTALIGN_ML);
+					const char *apSkinTransitionDropDownNames[] = {
+						Localize("残影弹出"),
+						Localize("柔和淡变"),
+						Localize("向左滑切"),
+						Localize("旋转弹出"),
+						Localize("明暗切换"),
+					};
+					static CUi::SDropDownState s_SkinTransitionDropDownState;
+					static CScrollRegion s_SkinTransitionDropDownScrollRegion;
+					s_SkinTransitionDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_SkinTransitionDropDownScrollRegion;
+					const int TransitionTypeSelectedNew = Ui()->DoDropDown(&ControlColValue, g_Config.m_QmSkinChangeTransitionType, apSkinTransitionDropDownNames, std::size(apSkinTransitionDropDownNames), s_SkinTransitionDropDownState);
+					if(g_Config.m_QmSkinChangeTransitionType != TransitionTypeSelectedNew)
+						g_Config.m_QmSkinChangeTransitionType = TransitionTypeSelectedNew;
+				}
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+				Ui()->DoLabel(&LabelCol, Localize("换皮动画时长"), LgBodySize, TEXTALIGN_ML);
+				static int s_QmSkinChangeTransitionMsInputId;
+				RenderSliderWithValueInput(&s_QmSkinChangeTransitionMsInputId, ControlCol, &g_Config.m_QmSkinChangeTransitionMs, 0, 2000, "ms");
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;
@@ -5000,7 +5067,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			break;
 			case EQmModuleId::CollisionHitbox:
 			{
-				// ========== 模块: 碰撞体积可视化 ==========
+				// ========== 模块: 碰撞箱模式 ==========
 				Column.HSplitTop(LgCardSpacing, nullptr, &Column);
 				CUIRect Card8StartCollisionHitbox = Column;
 				s_GlassCards.push_back(Card8StartCollisionHitbox);
@@ -5008,22 +5075,63 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Column.HSplitTop(LgCardPadding, nullptr, &Column);
 				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
 				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
-				DoModuleHeadline(CardContent, 7, Localize("Collision hitbox"), Localize("Show the base player collision box"));
+				DoModuleHeadline(CardContent, 7, Localize("碰撞箱模式"), Localize("显示 Tee、地图和武器交互碰撞箱"));
 
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmShowCollisionHitbox, Localize("Show collision hitbox"), &g_Config.m_QmShowCollisionHitbox, &Row, LgLineHeight);
+				int HitboxModeEnabled = g_Config.m_QmHitboxMode || g_Config.m_QmShowCollisionHitbox;
+				if(DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxMode, Localize("显示碰撞箱模式"), &HitboxModeEnabled, &Row, LgLineHeight))
+				{
+					g_Config.m_QmHitboxMode = HitboxModeEnabled;
+					g_Config.m_QmShowCollisionHitbox = 0;
+				}
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
-				if(g_Config.m_QmShowCollisionHitbox)
+				if(HitboxModeEnabled)
 				{
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxShowMap, Localize("地图危险边界"), &g_Config.m_QmHitboxShowMap, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxShowTees, Localize("Tee 碰撞箱"), &g_Config.m_QmHitboxShowTees, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxShowPickups, Localize("拾取物范围"), &g_Config.m_QmHitboxShowPickups, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHitboxShowWeapons, Localize("武器交互范围"), &g_Config.m_QmHitboxShowWeapons, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					static std::vector<const char *> s_HitboxScopeDropDownNames;
+					s_HitboxScopeDropDownNames = {Localize("仅本地"), Localize("本地 + 分身"), Localize("所有玩家")};
+					static CUi::SDropDownState s_HitboxScopeDropDownState;
+					static CScrollRegion s_HitboxScopeDropDownScrollRegion;
+					s_HitboxScopeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_HitboxScopeDropDownScrollRegion;
+					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("玩家范围"), LgBodySize, TEXTALIGN_ML);
+					const int HitboxScope = std::clamp(g_Config.m_QmHitboxPlayerScope, 0, 2);
+					const int HitboxScopeNew = Ui()->DoDropDown(&ControlCol, HitboxScope, s_HitboxScopeDropDownNames.data(), s_HitboxScopeDropDownNames.size(), s_HitboxScopeDropDownState);
+					if(g_Config.m_QmHitboxPlayerScope != HitboxScopeNew)
+						g_Config.m_QmHitboxPlayerScope = HitboxScopeNew;
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
 					static CButtonContainer s_FreezeColorId;
-					DoLine_ColorPicker(&s_FreezeColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("Freeze border color"), &g_Config.m_QmCollisionHitboxColorFreeze, ColorRGBA(1.0f, 0.0f, 1.0f), false);
+					DoLine_ColorPicker(&s_FreezeColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("Freeze 边界颜色"), &g_Config.m_QmHitboxColorFreeze, ColorRGBA(1.0f, 0.0f, 1.0f), false);
+
+					static CButtonContainer s_TeeColorId;
+					DoLine_ColorPicker(&s_TeeColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("Tee 碰撞箱颜色"), &g_Config.m_QmHitboxColorTee, ColorRGBA(0.0f, 1.0f, 1.0f), false);
+
+					static CButtonContainer s_WeaponColorId;
+					DoLine_ColorPicker(&s_WeaponColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("武器范围颜色"), &g_Config.m_QmHitboxColorWeapon, ColorRGBA(1.0f, 1.0f, 0.0f), false);
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("Hitbox opacity"), LgBodySize, TEXTALIGN_ML);
-					static int s_QmCollisionHitboxAlphaInputId;
-					RenderSliderWithValueInput(&s_QmCollisionHitboxAlphaInputId, ControlCol, &g_Config.m_QmCollisionHitboxAlpha, 0, 100, "%");
+					Ui()->DoLabel(&LabelCol, Localize("透明度"), LgBodySize, TEXTALIGN_ML);
+					static int s_QmHitboxAlphaInputId;
+					RenderSliderWithValueInput(&s_QmHitboxAlphaInputId, ControlCol, &g_Config.m_QmHitboxAlpha, 0, 100, "%");
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				}
 
@@ -5835,176 +5943,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					}
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceShowConnectionStatus, Localize("显示语音连接状态"), &g_Config.m_QmVoiceShowConnectionStatus, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					if(g_Config.m_QmVoiceShowConnectionStatus)
-					{
-						AddVoiceSectionLabel(Localize("当前状态"), Localize("先看这里，可以快速判断卡在设备、服务器还是房间"));
-						RenderVoiceStatusRow(Localize("麦克风"), LocalizeVoiceUiMicStatus(VoiceUiStatus));
-						RenderVoiceStatusRow(Localize("扬声器"), LocalizeVoiceUiOutputStatus(VoiceUiStatus));
-						RenderVoiceStatusRow(Localize("输入切换"), aVoiceInputRouteStatus);
-						RenderVoiceStatusRow(Localize("输出切换"), aVoiceOutputRouteStatus);
-						RenderVoiceStatusRow(Localize("服务器"), aVoiceServerStatus);
-						RenderVoiceStatusRow(Localize("房间"), aVoiceRoomStatus);
-						RenderVoiceStatusRow(Localize("收发"), aVoiceTransportDetail);
-						RenderVoiceStatusRow(Localize("建议排查"), LocalizeVoiceUiActionHint(VoiceUiStatus));
-						RenderVoiceStatusRow(Localize("音频问题"), LocalizeVoiceUiAudioIssue(VoiceUiStatus));
-						if(VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus)[0] != '\0')
-							RenderVoiceStatusRow(Localize("详细原因"), VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus));
-						CardContent.HSplitTop(LgLineSpacing * 0.5f, nullptr, &CardContent);
-					}
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("服务器IP"), LgBodySize, TEXTALIGN_ML);
-					static CLineInput s_VoiceServer(g_Config.m_QmVoiceServer, sizeof(g_Config.m_QmVoiceServer));
-					s_VoiceServer.SetEmptyText("42.194.185.210:9987");
-					Ui()->DoEditBox(&s_VoiceServer, &ControlCol, LgBodySize);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("房间密码"), LgBodySize, TEXTALIGN_ML);
 					static CLineInput s_VoiceToken(g_Config.m_QmVoiceToken, sizeof(g_Config.m_QmVoiceToken));
 					s_VoiceToken.SetEmptyText(Localize("留空以进入公共房间"));
 					Ui()->DoEditBox(&s_VoiceToken, &ControlCol, LgBodySize);
-					CardContent.HSplitTop(LgLineSpacing * 1.15f, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("输入设备"), LgBodySize, TEXTALIGN_ML);
-					static std::vector<std::string> s_VoiceInputDeviceDisplayNames;
-					static std::vector<std::string> s_VoiceInputDeviceConfigValues;
-					static std::vector<const char *> s_VoiceInputDeviceDropDownNames;
-					static std::vector<VoiceUtils::SVoiceDeviceDropdownEntry> s_VoiceInputDeviceEntries;
-					static CUi::SDropDownState s_VoiceInputDeviceDropDownState;
-					static CScrollRegion s_VoiceInputDeviceDropDownScrollRegion;
-					static bool s_VoiceInputDevicesInitialized = false;
-					s_VoiceInputDeviceDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceInputDeviceDropDownScrollRegion;
-					auto RefreshVoiceInputDeviceList = [&]() {
-						CPerfTimer StageTimer;
-						s_VoiceInputDeviceDisplayNames.clear();
-						s_VoiceInputDeviceConfigValues.clear();
-						s_VoiceInputDeviceDropDownNames.clear();
-						std::vector<std::string> vDetectedDeviceNames;
-						const int NumInputs = SDL_GetNumAudioDevices(1);
-						for(int i = 0; i < NumInputs; i++)
-						{
-							const char *pName = SDL_GetAudioDeviceName(i, 1);
-							if(!pName || pName[0] == '\0')
-								continue;
-							vDetectedDeviceNames.emplace_back(pName);
-						}
-
-						VoiceUtils::BuildVoiceDeviceDropdownEntries(
-							vDetectedDeviceNames,
-							g_Config.m_QmVoiceInputDevice,
-							Localize("默认"),
-							Localize("已断开"),
-							s_VoiceInputDeviceEntries);
-
-						s_VoiceInputDeviceDisplayNames.reserve(s_VoiceInputDeviceEntries.size());
-						s_VoiceInputDeviceConfigValues.reserve(s_VoiceInputDeviceEntries.size());
-						s_VoiceInputDeviceDropDownNames.reserve(s_VoiceInputDeviceDisplayNames.size());
-						for(const auto &Entry : s_VoiceInputDeviceEntries)
-						{
-							s_VoiceInputDeviceDisplayNames.push_back(Entry.m_DisplayName);
-							s_VoiceInputDeviceConfigValues.push_back(Entry.m_ConfigValue);
-							s_VoiceInputDeviceDropDownNames.push_back(s_VoiceInputDeviceDisplayNames.back().c_str());
-						}
-
-						char aVoiceExtra[96];
-						str_format(aVoiceExtra, sizeof(aVoiceExtra), "devices=%d", (int)s_VoiceInputDeviceDisplayNames.size());
-						LogQmPerfStage("voice_device_enum", StageTimer.ElapsedMs(), false, aVoiceExtra);
-					};
-					if(!s_VoiceInputDevicesInitialized)
-					{
-						RefreshVoiceInputDeviceList();
-						s_VoiceInputDevicesInitialized = true;
-					}
-
-					CUIRect VoiceInputDropDownRect;
-					CUIRect VoiceInputRefreshButton;
-					ControlCol.VSplitRight(maximum(68.0f, 68.0f * UiScale), &VoiceInputDropDownRect, &VoiceInputRefreshButton);
-
-					const int VoiceInputSelectedOld = VoiceUtils::VoiceFindSelectedDeviceIndex(s_VoiceInputDeviceEntries, g_Config.m_QmVoiceInputDevice);
-
-					const int VoiceInputSelectedNew = Ui()->DoDropDown(&VoiceInputDropDownRect, VoiceInputSelectedOld, s_VoiceInputDeviceDropDownNames.data(), s_VoiceInputDeviceDropDownNames.size(), s_VoiceInputDeviceDropDownState);
-					if(VoiceInputSelectedNew >= 0 && VoiceInputSelectedNew != VoiceInputSelectedOld && (size_t)VoiceInputSelectedNew < s_VoiceInputDeviceConfigValues.size())
-						str_copy(g_Config.m_QmVoiceInputDevice, s_VoiceInputDeviceConfigValues[VoiceInputSelectedNew].c_str(), sizeof(g_Config.m_QmVoiceInputDevice));
-
-					static CButtonContainer s_VoiceInputRefreshButton;
-					if(DoButton_Menu(&s_VoiceInputRefreshButton, Localize("刷新"), 0, &VoiceInputRefreshButton))
-						RefreshVoiceInputDeviceList();
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("输出设备"), LgBodySize, TEXTALIGN_ML);
-					static std::vector<std::string> s_VoiceOutputDeviceDisplayNames;
-					static std::vector<std::string> s_VoiceOutputDeviceConfigValues;
-					static std::vector<const char *> s_VoiceOutputDeviceDropDownNames;
-					static std::vector<VoiceUtils::SVoiceDeviceDropdownEntry> s_VoiceOutputDeviceEntries;
-					static CUi::SDropDownState s_VoiceOutputDeviceDropDownState;
-					static CScrollRegion s_VoiceOutputDeviceDropDownScrollRegion;
-					static bool s_VoiceOutputDevicesInitialized = false;
-					s_VoiceOutputDeviceDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceOutputDeviceDropDownScrollRegion;
-					auto RefreshVoiceOutputDeviceList = [&]() {
-						CPerfTimer StageTimer;
-						s_VoiceOutputDeviceDisplayNames.clear();
-						s_VoiceOutputDeviceConfigValues.clear();
-						s_VoiceOutputDeviceDropDownNames.clear();
-						std::vector<std::string> vDetectedDeviceNames;
-						const int NumOutputs = SDL_GetNumAudioDevices(0);
-						for(int i = 0; i < NumOutputs; i++)
-						{
-							const char *pName = SDL_GetAudioDeviceName(i, 0);
-							if(!pName || pName[0] == '\0')
-								continue;
-							vDetectedDeviceNames.emplace_back(pName);
-						}
-
-						VoiceUtils::BuildVoiceDeviceDropdownEntries(
-							vDetectedDeviceNames,
-							g_Config.m_QmVoiceOutputDevice,
-							Localize("默认"),
-							Localize("已断开"),
-							s_VoiceOutputDeviceEntries);
-
-						s_VoiceOutputDeviceDisplayNames.reserve(s_VoiceOutputDeviceEntries.size());
-						s_VoiceOutputDeviceConfigValues.reserve(s_VoiceOutputDeviceEntries.size());
-						s_VoiceOutputDeviceDropDownNames.reserve(s_VoiceOutputDeviceDisplayNames.size());
-						for(const auto &Entry : s_VoiceOutputDeviceEntries)
-						{
-							s_VoiceOutputDeviceDisplayNames.push_back(Entry.m_DisplayName);
-							s_VoiceOutputDeviceConfigValues.push_back(Entry.m_ConfigValue);
-							s_VoiceOutputDeviceDropDownNames.push_back(s_VoiceOutputDeviceDisplayNames.back().c_str());
-						}
-
-						char aVoiceExtra[96];
-						str_format(aVoiceExtra, sizeof(aVoiceExtra), "devices=%d", (int)s_VoiceOutputDeviceDisplayNames.size());
-						LogQmPerfStage("voice_output_device_enum", StageTimer.ElapsedMs(), false, aVoiceExtra);
-					};
-					if(!s_VoiceOutputDevicesInitialized)
-					{
-						RefreshVoiceOutputDeviceList();
-						s_VoiceOutputDevicesInitialized = true;
-					}
-
-					CUIRect VoiceOutputDropDownRect;
-					CUIRect VoiceOutputRefreshButton;
-					ControlCol.VSplitRight(maximum(68.0f, 68.0f * UiScale), &VoiceOutputDropDownRect, &VoiceOutputRefreshButton);
-
-					const int VoiceOutputSelectedOld = VoiceUtils::VoiceFindSelectedDeviceIndex(s_VoiceOutputDeviceEntries, g_Config.m_QmVoiceOutputDevice);
-
-					const int VoiceOutputSelectedNew = Ui()->DoDropDown(&VoiceOutputDropDownRect, VoiceOutputSelectedOld, s_VoiceOutputDeviceDropDownNames.data(), s_VoiceOutputDeviceDropDownNames.size(), s_VoiceOutputDeviceDropDownState);
-					if(VoiceOutputSelectedNew >= 0 && VoiceOutputSelectedNew != VoiceOutputSelectedOld && (size_t)VoiceOutputSelectedNew < s_VoiceOutputDeviceConfigValues.size())
-						str_copy(g_Config.m_QmVoiceOutputDevice, s_VoiceOutputDeviceConfigValues[VoiceOutputSelectedNew].c_str(), sizeof(g_Config.m_QmVoiceOutputDevice));
-
-					static CButtonContainer s_VoiceOutputRefreshButton;
-					if(DoButton_Menu(&s_VoiceOutputRefreshButton, Localize("刷新"), 0, &VoiceOutputRefreshButton))
-						RefreshVoiceOutputDeviceList();
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
@@ -6022,157 +5965,329 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					{
-						static std::vector<const char *> s_VoiceBitrateProfileDropDownNames;
-						s_VoiceBitrateProfileDropDownNames = {
-							Localize("自动"),
-							"24 kbps",
-							"32 kbps",
-							"48 kbps",
-							"64 kbps",
-						};
-						static CUi::SDropDownState s_VoiceBitrateProfileDropDownState;
-						static CScrollRegion s_VoiceBitrateProfileDropDownScrollRegion;
-						s_VoiceBitrateProfileDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceBitrateProfileDropDownScrollRegion;
-
-						Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
-						Ui()->DoLabel(&LabelCol, Localize("语音码率"), LgBodySize, TEXTALIGN_ML);
-						const int CurrentBitrateProfile = std::clamp(g_Config.m_QmVoiceBitrateProfile, 0, 4);
-						const int NewBitrateProfile = Ui()->DoDropDown(&ControlCol, CurrentBitrateProfile, s_VoiceBitrateProfileDropDownNames.data(), s_VoiceBitrateProfileDropDownNames.size(), s_VoiceBitrateProfileDropDownState);
-						if(CurrentBitrateProfile != NewBitrateProfile)
-							g_Config.m_QmVoiceBitrateProfile = NewBitrateProfile;
-					}
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					{
-						static std::vector<const char *> s_VoiceNoiseSuppressModeDropDownNames;
-						s_VoiceNoiseSuppressModeDropDownNames = {
-							Localize("不降噪"),
-							Localize("简单降噪"),
-#if defined(CONF_RNNOISE)
-							Localize("RNNoise 降噪"),
-#else
-							Localize("RNNoise 降噪（当前构建不可用）"),
-#endif
-						};
-						static CUi::SDropDownState s_VoiceNoiseSuppressModeDropDownState;
-						static CScrollRegion s_VoiceNoiseSuppressModeDropDownScrollRegion;
-						s_VoiceNoiseSuppressModeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceNoiseSuppressModeDropDownScrollRegion;
-
-						Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
-						Ui()->DoLabel(&LabelCol, Localize("降噪模式"), LgBodySize, TEXTALIGN_ML);
-						const int CurrentNoiseSuppressMode = std::clamp(g_Config.m_QmVoiceNoiseSuppressEnable, 0, 2);
-						const int NewNoiseSuppressMode = Ui()->DoDropDown(&ControlCol, CurrentNoiseSuppressMode, s_VoiceNoiseSuppressModeDropDownNames.data(), s_VoiceNoiseSuppressModeDropDownNames.size(), s_VoiceNoiseSuppressModeDropDownState);
-						if(CurrentNoiseSuppressMode != NewNoiseSuppressMode)
-							g_Config.m_QmVoiceNoiseSuppressEnable = NewNoiseSuppressMode;
-					}
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					if(g_Config.m_QmVoiceNoiseSuppressEnable != 0)
-					{
-#if !defined(CONF_RNNOISE)
-						if(g_Config.m_QmVoiceNoiseSuppressEnable == 2)
-						{
-							CardContent.HSplitTop(LgLineHeight * 0.78f, &Row, &CardContent);
-							Ui()->DoLabel(&Row, Localize("当前构建未集成 RNNoise，将自动回退到简单降噪"), LgBodySize * 0.72f, TEXTALIGN_ML);
-							CardContent.HSplitTop(LgLineSpacing * 0.75f, nullptr, &CardContent);
-						}
-#endif
-						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-						{
-							CUIRect LabelColValue, ControlColValue;
-							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-#if !defined(CONF_RNNOISE)
-							const bool RnnoiseFallbackActive = g_Config.m_QmVoiceNoiseSuppressEnable == 2;
-#endif
-							const char *pNoiseSuppressStrengthLabel = g_Config.m_QmVoiceNoiseSuppressEnable == 2 ?
-#if !defined(CONF_RNNOISE)
-													  (RnnoiseFallbackActive ? Localize("回退后的简单降噪强度") : Localize("RNNoise 降噪强度")) :
-#else
-													  Localize("RNNoise 降噪强度") :
-#endif
-													  Localize("简单降噪强度");
-							Ui()->DoLabel(&LabelColValue, pNoiseSuppressStrengthLabel, LgBodySize, TEXTALIGN_ML);
-							static int s_QmVoiceNoiseSuppressStrengthInputId;
-							RenderSliderWithValueInput(&s_QmVoiceNoiseSuppressStrengthInputId, ControlColValue, &g_Config.m_QmVoiceNoiseSuppressStrength, 0, 100, "%");
-						}
-						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-					}
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceAgcEnable, Localize("自动平衡麦克风音量（AGC，实验性）"), &g_Config.m_QmVoiceAgcEnable, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceVadEnable, Localize("自动检测说话时开麦"), &g_Config.m_QmVoiceVadEnable, &Row, LgLineHeight);
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
-					if(g_Config.m_QmVoiceVadEnable)
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceShowAdvanced, Localize("高级选项"), &g_Config.m_QmVoiceShowAdvanced, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_QmVoiceShowAdvanced)
 					{
 						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceShowConnectionStatus, Localize("显示语音连接状态"), &g_Config.m_QmVoiceShowConnectionStatus, &Row, LgLineHeight);
+						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+						if(g_Config.m_QmVoiceShowConnectionStatus)
 						{
-							CUIRect LabelColValue, ControlColValue;
-							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-							Ui()->DoLabel(&LabelColValue, Localize("说话触发阈值"), LgBodySize, TEXTALIGN_ML);
-							static int s_QmVoiceVadThresholdInputId;
-							RenderSliderWithValueInput(&s_QmVoiceVadThresholdInputId, ControlColValue, &g_Config.m_QmVoiceVadThreshold, 0, 100, "%");
+							AddVoiceSectionLabel(Localize("当前状态"), Localize("先看这里，可以快速判断卡在设备、服务器还是房间"));
+							RenderVoiceStatusRow(Localize("麦克风"), LocalizeVoiceUiMicStatus(VoiceUiStatus));
+							RenderVoiceStatusRow(Localize("扬声器"), LocalizeVoiceUiOutputStatus(VoiceUiStatus));
+							RenderVoiceStatusRow(Localize("输入切换"), aVoiceInputRouteStatus);
+							RenderVoiceStatusRow(Localize("输出切换"), aVoiceOutputRouteStatus);
+							RenderVoiceStatusRow(Localize("服务器"), aVoiceServerStatus);
+							RenderVoiceStatusRow(Localize("房间"), aVoiceRoomStatus);
+							RenderVoiceStatusRow(Localize("收发"), aVoiceTransportDetail);
+							RenderVoiceStatusRow(Localize("建议排查"), LocalizeVoiceUiActionHint(VoiceUiStatus));
+							RenderVoiceStatusRow(Localize("音频问题"), LocalizeVoiceUiAudioIssue(VoiceUiStatus));
+							if(VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus)[0] != '\0')
+								RenderVoiceStatusRow(Localize("详细原因"), VoiceUtils::VoiceUiPrimaryError(VoiceUiStatus));
+							CardContent.HSplitTop(LgLineSpacing * 0.5f, nullptr, &CardContent);
+						}
+
+						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+						Ui()->DoLabel(&LabelCol, Localize("服务器IP"), LgBodySize, TEXTALIGN_ML);
+						static CLineInput s_VoiceServer(g_Config.m_QmVoiceServer, sizeof(g_Config.m_QmVoiceServer));
+						s_VoiceServer.SetEmptyText("42.194.185.210:9987");
+						Ui()->DoEditBox(&s_VoiceServer, &ControlCol, LgBodySize);
+						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+						Ui()->DoLabel(&LabelCol, Localize("输入设备"), LgBodySize, TEXTALIGN_ML);
+						static std::vector<std::string> s_VoiceInputDeviceDisplayNames;
+						static std::vector<std::string> s_VoiceInputDeviceConfigValues;
+						static std::vector<const char *> s_VoiceInputDeviceDropDownNames;
+						static std::vector<VoiceUtils::SVoiceDeviceDropdownEntry> s_VoiceInputDeviceEntries;
+						static CUi::SDropDownState s_VoiceInputDeviceDropDownState;
+						static CScrollRegion s_VoiceInputDeviceDropDownScrollRegion;
+						static bool s_VoiceInputDevicesInitialized = false;
+						s_VoiceInputDeviceDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceInputDeviceDropDownScrollRegion;
+						auto RefreshVoiceInputDeviceList = [&]() {
+							CPerfTimer StageTimer;
+							s_VoiceInputDeviceDisplayNames.clear();
+							s_VoiceInputDeviceConfigValues.clear();
+							s_VoiceInputDeviceDropDownNames.clear();
+							std::vector<std::string> vDetectedDeviceNames;
+							const int NumInputs = SDL_GetNumAudioDevices(1);
+							for(int i = 0; i < NumInputs; i++)
+							{
+								const char *pName = SDL_GetAudioDeviceName(i, 1);
+								if(!pName || pName[0] == '\0')
+									continue;
+								vDetectedDeviceNames.emplace_back(pName);
+							}
+
+							VoiceUtils::BuildVoiceDeviceDropdownEntries(
+								vDetectedDeviceNames,
+								g_Config.m_QmVoiceInputDevice,
+								Localize("默认"),
+								Localize("已断开"),
+								s_VoiceInputDeviceEntries);
+
+							s_VoiceInputDeviceDisplayNames.reserve(s_VoiceInputDeviceEntries.size());
+							s_VoiceInputDeviceConfigValues.reserve(s_VoiceInputDeviceEntries.size());
+							s_VoiceInputDeviceDropDownNames.reserve(s_VoiceInputDeviceDisplayNames.size());
+							for(const auto &Entry : s_VoiceInputDeviceEntries)
+							{
+								s_VoiceInputDeviceDisplayNames.push_back(Entry.m_DisplayName);
+								s_VoiceInputDeviceConfigValues.push_back(Entry.m_ConfigValue);
+								s_VoiceInputDeviceDropDownNames.push_back(s_VoiceInputDeviceDisplayNames.back().c_str());
+							}
+
+							char aVoiceExtra[96];
+							str_format(aVoiceExtra, sizeof(aVoiceExtra), "devices=%d", (int)s_VoiceInputDeviceDisplayNames.size());
+							LogQmPerfStage("voice_device_enum", StageTimer.ElapsedMs(), false, aVoiceExtra);
+						};
+						if(!s_VoiceInputDevicesInitialized)
+						{
+							RefreshVoiceInputDeviceList();
+							s_VoiceInputDevicesInitialized = true;
+						}
+
+						CUIRect VoiceInputDropDownRect;
+						CUIRect VoiceInputRefreshButton;
+						ControlCol.VSplitRight(maximum(68.0f, 68.0f * UiScale), &VoiceInputDropDownRect, &VoiceInputRefreshButton);
+
+						const int VoiceInputSelectedOld = VoiceUtils::VoiceFindSelectedDeviceIndex(s_VoiceInputDeviceEntries, g_Config.m_QmVoiceInputDevice);
+
+						const int VoiceInputSelectedNew = Ui()->DoDropDown(&VoiceInputDropDownRect, VoiceInputSelectedOld, s_VoiceInputDeviceDropDownNames.data(), s_VoiceInputDeviceDropDownNames.size(), s_VoiceInputDeviceDropDownState);
+						if(VoiceInputSelectedNew >= 0 && VoiceInputSelectedNew != VoiceInputSelectedOld && (size_t)VoiceInputSelectedNew < s_VoiceInputDeviceConfigValues.size())
+							str_copy(g_Config.m_QmVoiceInputDevice, s_VoiceInputDeviceConfigValues[VoiceInputSelectedNew].c_str(), sizeof(g_Config.m_QmVoiceInputDevice));
+
+						static CButtonContainer s_VoiceInputRefreshButton;
+						if(DoButton_Menu(&s_VoiceInputRefreshButton, Localize("刷新"), 0, &VoiceInputRefreshButton))
+							RefreshVoiceInputDeviceList();
+						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+						Ui()->DoLabel(&LabelCol, Localize("输出设备"), LgBodySize, TEXTALIGN_ML);
+						static std::vector<std::string> s_VoiceOutputDeviceDisplayNames;
+						static std::vector<std::string> s_VoiceOutputDeviceConfigValues;
+						static std::vector<const char *> s_VoiceOutputDeviceDropDownNames;
+						static std::vector<VoiceUtils::SVoiceDeviceDropdownEntry> s_VoiceOutputDeviceEntries;
+						static CUi::SDropDownState s_VoiceOutputDeviceDropDownState;
+						static CScrollRegion s_VoiceOutputDeviceDropDownScrollRegion;
+						static bool s_VoiceOutputDevicesInitialized = false;
+						s_VoiceOutputDeviceDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceOutputDeviceDropDownScrollRegion;
+						auto RefreshVoiceOutputDeviceList = [&]() {
+							CPerfTimer StageTimer;
+							s_VoiceOutputDeviceDisplayNames.clear();
+							s_VoiceOutputDeviceConfigValues.clear();
+							s_VoiceOutputDeviceDropDownNames.clear();
+							std::vector<std::string> vDetectedDeviceNames;
+							const int NumOutputs = SDL_GetNumAudioDevices(0);
+							for(int i = 0; i < NumOutputs; i++)
+							{
+								const char *pName = SDL_GetAudioDeviceName(i, 0);
+								if(!pName || pName[0] == '\0')
+									continue;
+								vDetectedDeviceNames.emplace_back(pName);
+							}
+
+							VoiceUtils::BuildVoiceDeviceDropdownEntries(
+								vDetectedDeviceNames,
+								g_Config.m_QmVoiceOutputDevice,
+								Localize("默认"),
+								Localize("已断开"),
+								s_VoiceOutputDeviceEntries);
+
+							s_VoiceOutputDeviceDisplayNames.reserve(s_VoiceOutputDeviceEntries.size());
+							s_VoiceOutputDeviceConfigValues.reserve(s_VoiceOutputDeviceEntries.size());
+							s_VoiceOutputDeviceDropDownNames.reserve(s_VoiceOutputDeviceDisplayNames.size());
+							for(const auto &Entry : s_VoiceOutputDeviceEntries)
+							{
+								s_VoiceOutputDeviceDisplayNames.push_back(Entry.m_DisplayName);
+								s_VoiceOutputDeviceConfigValues.push_back(Entry.m_ConfigValue);
+								s_VoiceOutputDeviceDropDownNames.push_back(s_VoiceOutputDeviceDisplayNames.back().c_str());
+							}
+
+							char aVoiceExtra[96];
+							str_format(aVoiceExtra, sizeof(aVoiceExtra), "devices=%d", (int)s_VoiceOutputDeviceDisplayNames.size());
+							LogQmPerfStage("voice_output_device_enum", StageTimer.ElapsedMs(), false, aVoiceExtra);
+						};
+						if(!s_VoiceOutputDevicesInitialized)
+						{
+							RefreshVoiceOutputDeviceList();
+							s_VoiceOutputDevicesInitialized = true;
+						}
+
+						CUIRect VoiceOutputDropDownRect;
+						CUIRect VoiceOutputRefreshButton;
+						ControlCol.VSplitRight(maximum(68.0f, 68.0f * UiScale), &VoiceOutputDropDownRect, &VoiceOutputRefreshButton);
+
+						const int VoiceOutputSelectedOld = VoiceUtils::VoiceFindSelectedDeviceIndex(s_VoiceOutputDeviceEntries, g_Config.m_QmVoiceOutputDevice);
+
+						const int VoiceOutputSelectedNew = Ui()->DoDropDown(&VoiceOutputDropDownRect, VoiceOutputSelectedOld, s_VoiceOutputDeviceDropDownNames.data(), s_VoiceOutputDeviceDropDownNames.size(), s_VoiceOutputDeviceDropDownState);
+						if(VoiceOutputSelectedNew >= 0 && VoiceOutputSelectedNew != VoiceOutputSelectedOld && (size_t)VoiceOutputSelectedNew < s_VoiceOutputDeviceConfigValues.size())
+							str_copy(g_Config.m_QmVoiceOutputDevice, s_VoiceOutputDeviceConfigValues[VoiceOutputSelectedNew].c_str(), sizeof(g_Config.m_QmVoiceOutputDevice));
+
+						static CButtonContainer s_VoiceOutputRefreshButton;
+						if(DoButton_Menu(&s_VoiceOutputRefreshButton, Localize("刷新"), 0, &VoiceOutputRefreshButton))
+							RefreshVoiceOutputDeviceList();
+						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						{
+							static std::vector<const char *> s_VoiceBitrateProfileDropDownNames;
+							s_VoiceBitrateProfileDropDownNames = {
+								Localize("自动"),
+								"24 kbps",
+								"32 kbps",
+								"48 kbps",
+								"64 kbps",
+							};
+							static CUi::SDropDownState s_VoiceBitrateProfileDropDownState;
+							static CScrollRegion s_VoiceBitrateProfileDropDownScrollRegion;
+							s_VoiceBitrateProfileDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceBitrateProfileDropDownScrollRegion;
+
+							Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+							Ui()->DoLabel(&LabelCol, Localize("语音码率"), LgBodySize, TEXTALIGN_ML);
+							const int CurrentBitrateProfile = std::clamp(g_Config.m_QmVoiceBitrateProfile, 0, 4);
+							const int NewBitrateProfile = Ui()->DoDropDown(&ControlCol, CurrentBitrateProfile, s_VoiceBitrateProfileDropDownNames.data(), s_VoiceBitrateProfileDropDownNames.size(), s_VoiceBitrateProfileDropDownState);
+							if(CurrentBitrateProfile != NewBitrateProfile)
+								g_Config.m_QmVoiceBitrateProfile = NewBitrateProfile;
 						}
 						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 						{
-							CUIRect LabelColValue, ControlColValue;
-							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-							Ui()->DoLabel(&LabelColValue, Localize("语音激活释放延迟"), LgBodySize, TEXTALIGN_ML);
-							static int s_QmVoiceVadReleaseDelayMsInputId;
-							RenderSliderWithValueInput(&s_QmVoiceVadReleaseDelayMsInputId, ControlColValue, &g_Config.m_QmVoiceVadReleaseDelayMs, 0, 1000, "ms");
+							static std::vector<const char *> s_VoiceNoiseSuppressModeDropDownNames;
+							s_VoiceNoiseSuppressModeDropDownNames = {
+								Localize("不降噪"),
+								Localize("简单降噪"),
+#if defined(CONF_RNNOISE)
+								Localize("RNNoise 降噪"),
+#else
+								Localize("RNNoise 降噪（当前构建不可用）"),
+#endif
+							};
+							static CUi::SDropDownState s_VoiceNoiseSuppressModeDropDownState;
+							static CScrollRegion s_VoiceNoiseSuppressModeDropDownScrollRegion;
+							s_VoiceNoiseSuppressModeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_VoiceNoiseSuppressModeDropDownScrollRegion;
+
+							Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+							Ui()->DoLabel(&LabelCol, Localize("降噪模式"), LgBodySize, TEXTALIGN_ML);
+							const int CurrentNoiseSuppressMode = std::clamp(g_Config.m_QmVoiceNoiseSuppressEnable, 0, 2);
+							const int NewNoiseSuppressMode = Ui()->DoDropDown(&ControlCol, CurrentNoiseSuppressMode, s_VoiceNoiseSuppressModeDropDownNames.data(), s_VoiceNoiseSuppressModeDropDownNames.size(), s_VoiceNoiseSuppressModeDropDownState);
+							if(CurrentNoiseSuppressMode != NewNoiseSuppressMode)
+								g_Config.m_QmVoiceNoiseSuppressEnable = NewNoiseSuppressMode;
 						}
 						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-					}
 
-					CardContent.HSplitTop(LgLineSpacing * 1.15f, nullptr, &CardContent);
+						if(g_Config.m_QmVoiceNoiseSuppressEnable != 0)
+						{
+#if !defined(CONF_RNNOISE)
+							if(g_Config.m_QmVoiceNoiseSuppressEnable == 2)
+							{
+								CardContent.HSplitTop(LgLineHeight * 0.78f, &Row, &CardContent);
+								Ui()->DoLabel(&Row, Localize("当前构建未集成 RNNoise，将自动回退到简单降噪"), LgBodySize * 0.72f, TEXTALIGN_ML);
+								CardContent.HSplitTop(LgLineSpacing * 0.75f, nullptr, &CardContent);
+							}
+#endif
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							{
+								CUIRect LabelColValue, ControlColValue;
+								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+#if !defined(CONF_RNNOISE)
+								const bool RnnoiseFallbackActive = g_Config.m_QmVoiceNoiseSuppressEnable == 2;
+#endif
+								const char *pNoiseSuppressStrengthLabel = g_Config.m_QmVoiceNoiseSuppressEnable == 2 ?
+#if !defined(CONF_RNNOISE)
+														  (RnnoiseFallbackActive ? Localize("回退后的简单降噪强度") : Localize("RNNoise 降噪强度")) :
+#else
+														  Localize("RNNoise 降噪强度") :
+#endif
+														  Localize("简单降噪强度");
+								Ui()->DoLabel(&LabelColValue, pNoiseSuppressStrengthLabel, LgBodySize, TEXTALIGN_ML);
+								static int s_QmVoiceNoiseSuppressStrengthInputId;
+								RenderSliderWithValueInput(&s_QmVoiceNoiseSuppressStrengthInputId, ControlColValue, &g_Config.m_QmVoiceNoiseSuppressStrength, 0, 100, "%");
+							}
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+						}
 
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					{
-						CUIRect LabelColValue, ControlColValue;
-						Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-						Ui()->DoLabel(&LabelColValue, Localize("播放音量"), LgBodySize, TEXTALIGN_ML);
-						static int s_QmVoiceVolumeInputId;
-						RenderSliderWithValueInput(&s_QmVoiceVolumeInputId, ControlColValue, &g_Config.m_QmVoiceVolume, 0, 400, "%");
-					}
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceAgcEnable, Localize("自动平衡麦克风音量（AGC，实验性）"), &g_Config.m_QmVoiceAgcEnable, &Row, LgLineHeight);
+						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceStereo, Localize("启用立体声定位"), &g_Config.m_QmVoiceStereo, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+						if(g_Config.m_QmVoiceVadEnable)
+						{
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							{
+								CUIRect LabelColValue, ControlColValue;
+								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+								Ui()->DoLabel(&LabelColValue, Localize("说话触发阈值"), LgBodySize, TEXTALIGN_ML);
+								static int s_QmVoiceVadThresholdInputId;
+								RenderSliderWithValueInput(&s_QmVoiceVadThresholdInputId, ControlColValue, &g_Config.m_QmVoiceVadThreshold, 0, 100, "%");
+							}
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
-					if(g_Config.m_QmVoiceStereo)
-					{
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							{
+								CUIRect LabelColValue, ControlColValue;
+								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+								Ui()->DoLabel(&LabelColValue, Localize("语音激活释放延迟"), LgBodySize, TEXTALIGN_ML);
+								static int s_QmVoiceVadReleaseDelayMsInputId;
+								RenderSliderWithValueInput(&s_QmVoiceVadReleaseDelayMsInputId, ControlColValue, &g_Config.m_QmVoiceVadReleaseDelayMs, 0, 1000, "ms");
+							}
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+						}
+
+						CardContent.HSplitTop(LgLineSpacing * 1.15f, nullptr, &CardContent);
+
 						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 						{
 							CUIRect LabelColValue, ControlColValue;
 							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-							Ui()->DoLabel(&LabelColValue, Localize("左右声道宽度"), LgBodySize, TEXTALIGN_ML);
-							static int s_QmVoiceStereoWidthInputId;
-							RenderSliderWithValueInput(&s_QmVoiceStereoWidthInputId, ControlColValue, &g_Config.m_QmVoiceStereoWidth, 0, 200, "%");
+							Ui()->DoLabel(&LabelColValue, Localize("播放音量"), LgBodySize, TEXTALIGN_ML);
+							static int s_QmVoiceVolumeInputId;
+							RenderSliderWithValueInput(&s_QmVoiceVolumeInputId, ControlColValue, &g_Config.m_QmVoiceVolume, 0, 400, "%");
 						}
 						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
-					}
 
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					{
-						CUIRect LabelColValue, ControlColValue;
-						Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
-						Ui()->DoLabel(&LabelColValue, Localize("语音距离半径（格）"), LgBodySize, TEXTALIGN_ML);
-						static int s_QmVoiceRadiusInputId;
-						RenderSliderWithValueInput(&s_QmVoiceRadiusInputId, ControlColValue, &g_Config.m_QmVoiceRadius, 1, 400);
-					}
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceStereo, Localize("启用立体声定位"), &g_Config.m_QmVoiceStereo, &Row, LgLineHeight);
+						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
-					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceGroupGlobal, Localize("同房间全图收听"), &g_Config.m_QmVoiceGroupGlobal, &Row, LgLineHeight);
-					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+						if(g_Config.m_QmVoiceStereo)
+						{
+							CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+							{
+								CUIRect LabelColValue, ControlColValue;
+								Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+								Ui()->DoLabel(&LabelColValue, Localize("左右声道宽度"), LgBodySize, TEXTALIGN_ML);
+								static int s_QmVoiceStereoWidthInputId;
+								RenderSliderWithValueInput(&s_QmVoiceStereoWidthInputId, ControlColValue, &g_Config.m_QmVoiceStereoWidth, 0, 200, "%");
+							}
+							CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+						}
+
+						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						{
+							CUIRect LabelColValue, ControlColValue;
+							Row.VSplitLeft(LgLabelWidth, &LabelColValue, &ControlColValue);
+							Ui()->DoLabel(&LabelColValue, Localize("语音距离半径（格）"), LgBodySize, TEXTALIGN_ML);
+							static int s_QmVoiceRadiusInputId;
+							RenderSliderWithValueInput(&s_QmVoiceRadiusInputId, ControlColValue, &g_Config.m_QmVoiceRadius, 1, 400);
+						}
+						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+						CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+						DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmVoiceGroupGlobal, Localize("同房间全图收听"), &g_Config.m_QmVoiceGroupGlobal, &Row, LgLineHeight);
+						CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+					}
 				}
 
 				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
@@ -6247,6 +6362,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudIslandUseOriginalStyle, Localize("使用原始样式"), &g_Config.m_QmHudIslandUseOriginalStyle, &Row, LgLineHeight);
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmHudIslandShowTeam, Localize("显示队伍"), &g_Config.m_QmHudIslandShowTeam, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 				if(g_Config.m_QmHudIslandUseOriginalStyle)
