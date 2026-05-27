@@ -58,6 +58,8 @@ void CNetConnection::Reset(bool Rejoin)
 	m_Buffer.Init();
 
 	mem_zero(&m_Construct, sizeof(m_Construct));
+	m_pfnPacketOutput = nullptr;
+	m_pPacketOutputUser = nullptr;
 }
 
 const char *CNetConnection::ErrorString()
@@ -108,6 +110,17 @@ float CNetConnection::PacketLoss() const
 	return (float)m_MissingVitalChunks * 100.0f / (float)TotalVitalChunks;
 }
 
+int CNetConnection::PendingResendCount() const
+{
+	int Count = 0;
+	auto *pResendBuffer = const_cast<CStaticRingBuffer<CNetChunkResend, NET_CONN_BUFFERSIZE> *>(&m_Buffer);
+	for(CNetChunkResend *pResend = pResendBuffer->First(); pResend != nullptr; pResend = pResendBuffer->Next(pResend))
+	{
+		++Count;
+	}
+	return Count;
+}
+
 int CNetConnection::Flush()
 {
 	// Only flush the connection if there is at least one chunk to flush,
@@ -120,7 +133,10 @@ int CNetConnection::Flush()
 
 	// send of the packets
 	m_Construct.m_Ack = m_Ack;
-	CNetBase::SendPacket(m_Socket, &m_PeerAddr, &m_Construct, m_SecurityToken, m_Sixup);
+	if(m_pfnPacketOutput)
+		m_pfnPacketOutput(m_pPacketOutputUser, &m_Construct, m_SecurityToken, m_Sixup);
+	else
+		CNetBase::SendPacket(m_Socket, &m_PeerAddr, &m_Construct, m_SecurityToken, m_Sixup);
 
 	// update send times
 	m_LastSendTime = time_get();
@@ -128,6 +144,12 @@ int CNetConnection::Flush()
 	// clear construct so we can start building a new package
 	mem_zero(&m_Construct, sizeof(m_Construct));
 	return NumChunks;
+}
+
+void CNetConnection::SetPacketOutput(NETFUNC_PACKETOUTPUT pfnPacketOutput, void *pUser)
+{
+	m_pfnPacketOutput = pfnPacketOutput;
+	m_pPacketOutputUser = pUser;
 }
 
 int CNetConnection::QueueChunkEx(int Flags, int DataSize, const void *pData, int Sequence)
@@ -203,9 +225,29 @@ void CNetConnection::SendConnect()
 
 void CNetConnection::SendControl(int ControlMsg, const void *pExtra, int ExtraSize)
 {
+	if(ExtraSize < 0 || ExtraSize > NET_MAX_PAYLOAD - 1)
+	{
+		return;
+	}
+
 	// send the control message
 	m_LastSendTime = time_get();
-	CNetBase::SendControlMsg(m_Socket, &m_PeerAddr, m_Ack, ControlMsg, pExtra, ExtraSize, m_SecurityToken, m_Sixup);
+	if(m_pfnPacketOutput)
+	{
+		CNetPacketConstruct Construct;
+		Construct.m_Flags = NET_PACKETFLAG_CONTROL;
+		Construct.m_Ack = m_Ack;
+		Construct.m_NumChunks = 0;
+		Construct.m_DataSize = 1 + ExtraSize;
+		Construct.m_aChunkData[0] = ControlMsg;
+		if(pExtra)
+			mem_copy(&Construct.m_aChunkData[1], pExtra, ExtraSize);
+		m_pfnPacketOutput(m_pPacketOutputUser, &Construct, m_SecurityToken, m_Sixup);
+	}
+	else
+	{
+		CNetBase::SendControlMsg(m_Socket, &m_PeerAddr, m_Ack, ControlMsg, pExtra, ExtraSize, m_SecurityToken, m_Sixup);
+	}
 }
 
 void CNetConnection::ResendChunk(CNetChunkResend *pResend)
@@ -327,6 +369,18 @@ void CNetConnection::DirectInit(const NETADDR &Addr, SECURITY_TOKEN SecurityToke
 	m_SecurityToken = SecurityToken;
 	m_Token = Token;
 	m_Sixup = Sixup;
+}
+
+bool CNetConnection::UpdatePeerAddressForRebind(const NETADDR &Addr)
+{
+	if(State() == EState::OFFLINE || State() == EState::ERROR)
+		return false;
+	if(net_addr_comp_noport(&m_PeerAddr, &Addr) != 0)
+		return false;
+	if(m_PeerAddr == Addr)
+		return true;
+	SetPeerAddr(&Addr);
+	return true;
 }
 
 int CNetConnection::Feed(CNetPacketConstruct *pPacket, NETADDR *pAddr, SECURITY_TOKEN SecurityToken, SECURITY_TOKEN ResponseToken)

@@ -22,6 +22,7 @@
 #include <engine/shared/fifo.h>
 #include <engine/shared/http.h>
 #include <engine/shared/network.h>
+#include <engine/shared/qm_live_observer_session.h>
 #include <engine/textrender.h>
 #include <engine/warning.h>
 
@@ -58,6 +59,10 @@ public:
 	bool m_PingEx = false;
 	bool m_AllowDummy = false;
 	bool m_SyncWeaponInput = false;
+	bool m_Kcp = false;
+	bool m_LiveObserver = false;
+	bool m_LiveDirector = false;
+	bool m_LiveReplay = false;
 };
 
 class CClient : public IClient, public CDemoPlayer::IListener
@@ -245,6 +250,13 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	bool m_CanReceiveServerCapabilities = false;
 	bool m_ServerSentCapabilities = false;
 	CServerCapabilities m_ServerCapabilities;
+	bool m_KcpNegotiationPending = false;
+	bool m_KcpNegotiated = false;
+	int64_t m_KcpNegotiationStartTime = 0;
+	int m_KcpNegotiationConv = 0;
+#if defined(CONF_QM_LIVE_CLIENT)
+	CLiveObserverSession m_LiveObserverSession;
+#endif
 
 public:
 	bool ServerCapAnyPlayerFlag() const override { return m_ServerCapabilities.m_AnyPlayerFlag; }
@@ -340,6 +352,9 @@ public:
 
 	void SendTClientInfo(int Conn);
 	void SendInfo(int Conn);
+	void SendKcpCapability(int Conn);
+	void SendKcpProbe(int Conn);
+	void SendQmLiveObserverRequest(int Conn);
 	void SendEnterGame(int Conn);
 	void SendReady(int Conn);
 	void SendMapRequest();

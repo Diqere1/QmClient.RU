@@ -687,6 +687,210 @@ def client_can_connect(test_env):
     client.wait_for_exit()
 
 
+def wait_for_kcp_status_line(server, predicate, timeout=5):
+	deadline = time() + timeout
+	last_status = None
+	while time() < deadline:
+		server.command("kcp_status")
+		try:
+			status = server.wait_for_log(lambda l: "transport=" in l.line and "id=" in l.line, timeout=0.5).line
+		except TimeoutError:
+			continue
+		last_status = status
+		if predicate(status):
+			return status
+	raise AssertionError(f"did not find expected kcp_status line. Last status: {last_status}")
+
+def wait_for_transport(server, transport, timeout=5):
+	return wait_for_kcp_status_line(server, lambda line: f"transport={transport}" in line, timeout=timeout)
+
+def assert_kcp_metrics_present(status):
+	for metric in "rtt= loss= resend= jitter= snap_delay= send_q= recv_q= bw_down= bw_up= session_count=".split():
+		if metric not in status:
+			raise AssertionError(f"missing metric {metric!r} in status line: {status}")
+
+@test
+def client_negotiates_kcp_transport(test_env):
+	client = test_env.client(["player_name kcp_client"])
+	server = test_env.server(["sv_kcp 1", "sv_kcp_debug 1"])
+	wait_for_startup([client, server])
+	client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+	status = wait_for_transport(server, "kcp", timeout=5)
+	if "kcp_capable=1" not in status or "kcp_negotiated=1" not in status or "session_count=1" not in status:
+		raise AssertionError(f"unexpected kcp status: {status}")
+	assert_kcp_metrics_present(status)
+	server.exit()
+	client.wait_for_log_exact("client: offline error='Server shutdown'")
+	client.exit()
+	server.wait_for_exit()
+	client.wait_for_exit()
+
+@test
+def client_falls_back_when_kcp_disabled(test_env):
+	client = test_env.client(["player_name legacy_client"])
+	server = test_env.server(["sv_kcp 0", "sv_kcp_debug 1"])
+	wait_for_startup([client, server])
+	client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+	status = wait_for_transport(server, "legacy", timeout=5)
+	if "kcp_negotiated=0" not in status:
+		raise AssertionError(f"unexpected fallback status: {status}")
+	assert_kcp_metrics_present(status)
+	server.exit()
+	client.wait_for_log_exact("client: offline error='Server shutdown'")
+	client.exit()
+	server.wait_for_exit()
+	client.wait_for_exit()
+
+@test
+def client_connects_when_kcp_required(test_env):
+	client = test_env.client(["player_name required_kcp_client"])
+	server = test_env.server(["sv_kcp 1", "sv_kcp_required 1", "sv_kcp_debug 1"])
+	wait_for_startup([client, server])
+	client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+	status = wait_for_transport(server, "kcp", timeout=5)
+	if "kcp_negotiated=1" not in status:
+		raise AssertionError(f"unexpected required-kcp status: {status}")
+	server.exit()
+	client.wait_for_log_exact("client: offline error='Server shutdown'")
+	client.exit()
+	server.wait_for_exit()
+	client.wait_for_exit()
+
+@test
+def client_reconnects_with_kcp(test_env):
+	client = test_env.client(["player_name reconnect_kcp_client"])
+	server = test_env.server(["sv_kcp 1"])
+	wait_for_startup([client, server])
+	client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+	wait_for_transport(server, "kcp", timeout=5)
+	client.command("disconnect")
+	server.wait_for_log_prefix("game: leave player=", timeout=10)
+	client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+	status = wait_for_transport(server, "kcp", timeout=5)
+	if "session_count=1" not in status:
+		raise AssertionError(f"unexpected reconnect status: {status}")
+	server.exit()
+	client.wait_for_log_exact("client: offline error='Server shutdown'")
+	client.exit()
+	server.wait_for_exit()
+	client.wait_for_exit()
+
+@test
+def kcp_hot_disable_falls_back_to_legacy(test_env):
+	client = test_env.client(["player_name hot_fallback_client"])
+	server = test_env.server(["sv_kcp 1"])
+	wait_for_startup([client, server])
+	client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+	wait_for_transport(server, "kcp", timeout=5)
+	server.command("sv_kcp 0")
+	status = wait_for_transport(server, "legacy", timeout=5)
+	if "session_count=0" not in status:
+		raise AssertionError(f"unexpected hot fallback status: {status}")
+	server.exit()
+	client.wait_for_log_exact("client: offline error='Server shutdown'")
+	client.exit()
+	server.wait_for_exit()
+	client.wait_for_exit()
+
+@test(timeout=90)
+def kcp_mixed_clients_after_fallback(test_env):
+	legacy_client = test_env.client(["player_name mixed_legacy"])
+	server = test_env.server(["sv_kcp 1"])
+	wait_for_startup([legacy_client, server])
+	legacy_client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+	wait_for_transport(server, "kcp", timeout=5)
+	server.command("sv_kcp 0")
+	wait_for_transport(server, "legacy", timeout=5)
+	server.command("sv_kcp 1")
+
+	kcp_client = test_env.client(["player_name mixed_kcp"])
+	wait_for_startup([kcp_client])
+	kcp_client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+
+	wait_for_kcp_status_line(server, lambda line: "id=0" in line and "transport=legacy" in line, timeout=5)
+	wait_for_kcp_status_line(server, lambda line: "id=1" in line and "transport=kcp" in line, timeout=5)
+	server.exit()
+	legacy_client.wait_for_log_exact("client: offline error='Server shutdown'")
+	kcp_client.wait_for_log_exact("client: offline error='Server shutdown'")
+	legacy_client.exit()
+	kcp_client.exit()
+	server.wait_for_exit()
+	legacy_client.wait_for_exit(timeout=30)
+	kcp_client.wait_for_exit(timeout=30)
+
+@test(timeout=90)
+def kcp_weak_network_smoke(test_env):
+	client = test_env.client(["player_name weak_kcp_client"])
+	server = test_env.server([
+		"sv_kcp 1",
+		"sv_net_fake_loss 1",
+		"sv_net_fake_jitter 30",
+		"sv_net_fake_rtt 80",
+		"sv_net_fake_reorder 1",
+	])
+	wait_for_startup([client, server])
+	client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=30)
+	status = wait_for_transport(server, "kcp", timeout=10)
+	assert_kcp_metrics_present(status)
+	if "fake_queue=" not in " ".join(server.full_stdout):
+		server.command("kcp_status")
+		server.wait_for_log(lambda l: "fake_queue=" in l.line, timeout=5)
+	server.exit()
+	client.wait_for_log_exact("client: offline error='Server shutdown'")
+	client.exit()
+	server.wait_for_exit()
+	client.wait_for_exit()
+
+@test(timeout=180)
+def kcp_stress_many_clients(test_env):
+	server = test_env.server(["sv_kcp 1"])
+	wait_for_startup([server])
+	server.command("sv_max_clients_per_ip 16")
+	server.command("sv_connlimit 100")
+	clients = []
+	for ClientIndex in range(4):
+		client = test_env.client([f"player_name stress_kcp_{ClientIndex}", f"connect localhost:{server.port}"])
+		clients.append(client)
+		client.wait_for_startup()
+		server.wait_for_log_prefix("server: player has entered the game", timeout=20)
+
+	for ClientIndex in range(len(clients)):
+		wait_for_kcp_status_line(server, lambda line, index=ClientIndex: f"id={index}" in line and "transport=kcp" in line, timeout=10)
+	server.command("kcp_status")
+	server.wait_for_log(lambda l: "sessions=4" in l.line, timeout=5)
+
+	server.exit()
+	for client in clients:
+		client.wait_for_log_exact("client: offline error='Server shutdown'")
+		client.exit()
+	server.wait_for_exit()
+	for client in clients:
+		client.wait_for_exit(timeout=30)
+
+@test(timeout=30)
+def kcp_timeout_drops_session(test_env):
+	client = test_env.client(["player_name timeout_kcp_client"])
+	server = test_env.server(["sv_kcp 1", "conn_timeout 5"])
+	wait_for_startup([client, server])
+	client.command(f"connect localhost:{server.port}")
+	server.wait_for_log_prefix("server: player has entered the game", timeout=10)
+	wait_for_transport(server, "kcp", timeout=5)
+	server.command("sv_net_fake_loss 100")
+	server.wait_for_log(lambda l: "client dropped." in l.line or "has left the game" in l.line, timeout=12)
+	client.exit()
+	server.exit()
+	server.wait_for_exit()
+	client.wait_for_exit()
+
 @test
 def client_focus_settings_smoke_can_start_and_connect(test_env):
     client = test_env.client(

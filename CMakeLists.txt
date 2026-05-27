@@ -2268,6 +2268,7 @@ set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   network_conn.cpp
   network_console.cpp
   network_console_conn.cpp
+  network_kcp.cpp
   network_server.cpp
   network_stun.cpp
   packer.cpp
@@ -2279,6 +2280,10 @@ set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   protocol_ex_msgs.h
   protocolglue.cpp
   protocolglue.h
+  qm_live_observer_session.cpp
+  qm_live_observer_session.h
+  qm_live_protocol.cpp
+  qm_live_protocol.h
   ringbuffer.cpp
   ringbuffer.h
   serverinfo.cpp
@@ -2309,6 +2314,12 @@ set_src(ENGINE_EXTERNAL GLOB src/engine/external
   tinyexpr.cpp
   tinyexpr.h
 )
+set(ENGINE_EXTERNAL_KCP
+  src/engine/external/kcp/ikcp.c
+  src/engine/external/kcp/ikcp.h
+  src/engine/external/kcp/LICENSE
+)
+list(APPEND ENGINE_EXTERNAL ${ENGINE_EXTERNAL_KCP})
 # RNNoise must be compiled in for normal developer builds so the in-client
 # noise suppression selector is real, not a build-time placeholder. Keep the
 # generated rnnoise_data.* model files vendored together with the official
@@ -2783,6 +2794,10 @@ if(CLIENT)
     gameclient.h
     laser_data.cpp
     laser_data.h
+    live/live_director.cpp
+    live/live_director.h
+    live/live_replay_buffer.cpp
+    live/live_replay_buffer.h
     lineinput.cpp
     lineinput.h
     pickup_data.cpp
@@ -3097,6 +3112,102 @@ if(CLIENT)
 
   list(APPEND TARGETS_OWN game-client)
   list(APPEND TARGETS_LINK game-client)
+
+  if(NOT TARGET_OS STREQUAL "android")
+    if(TARGET_OS STREQUAL "windows")
+      set(VERSION_EXECUTABLE "QmLiveClient")
+      set(VERSION_COMPANY "QmLiveClient Team")
+      configure_file("other/versioninfo/versioninfo.rc.in" "live_client.versioninfo.rc")
+      configure_file("other/manifest/live_client.manifest.in" "live_client.manifest")
+      set(LIVE_CLIENT_VERSIONINFO "${CMAKE_CURRENT_BINARY_DIR}/live_client.versioninfo.rc")
+      if(NOT MINGW)
+        set(LIVE_CLIENT_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/live_client.manifest")
+      else()
+        set(LIVE_CLIENT_MANIFEST "other/manifest/client.rc")
+      endif()
+    else()
+      set(LIVE_CLIENT_VERSIONINFO)
+      set(LIVE_CLIENT_MANIFEST)
+    endif()
+
+    add_executable(game-live-client WIN32
+      ${CLIENT_SRC}
+      ${CLIENT_ICON}
+      ${LIVE_CLIENT_VERSIONINFO}
+      ${LIVE_CLIENT_MANIFEST}
+      ${DEPS_CLIENT}
+      $<TARGET_OBJECTS:engine-gfx>
+      $<TARGET_OBJECTS:engine-shared>
+      $<TARGET_OBJECTS:game-shared>
+      $<TARGET_OBJECTS:rust-bridge-shared>
+    )
+    set_property(TARGET game-live-client
+        PROPERTY OUTPUT_NAME QmLiveClient
+    )
+    target_link_libraries(game-live-client ${LIBS_CLIENT})
+    target_compile_definitions(game-live-client PRIVATE CONF_QM_LIVE_CLIENT)
+    if(STEAMAPI_RUNTIME_FILE)
+      add_custom_command(TARGET game-live-client POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${STEAMAPI_RUNTIME_FILE}" "$<TARGET_FILE_DIR:game-live-client>/${STEAMAPI_RUNTIME_FILE_NAME}"
+        COMMENT "Copying official Steam API runtime for QmLiveClient")
+    endif()
+    if(MSVC)
+      target_compile_options(game-live-client PRIVATE /bigobj)
+      target_link_options(game-live-client PRIVATE /ENTRY:mainCRTStartup)
+    endif()
+
+    if(WIN32 AND NOT MSVC)
+      target_compile_options(game-live-client PRIVATE -Wa,-mbig-obj)
+    endif()
+
+    target_include_directories(game-live-client SYSTEM PRIVATE
+      ${PROJECT_SOURCE_DIR}/src/engine/external/chaiscript)
+
+    target_include_directories(game-live-client SYSTEM PRIVATE
+      ${FREETYPE_INCLUDE_DIRS}
+      ${GLEW_INCLUDE_DIRS}
+      ${OGG_INCLUDE_DIRS}
+      ${OPUSFILE_INCLUDE_DIRS}
+      ${OPUS_INCLUDE_DIRS}
+      ${PNG_INCLUDE_DIRS}
+      ${SDL2_INCLUDE_DIRS}
+      ${WAVPACK_INCLUDE_DIRS}
+      ${FFMPEG_INCLUDE_DIRS}
+      ${WebP_INCLUDE_DIRS}
+      ${DISCORDSDK_INCLUDE_DIRS}
+
+      ${VULKAN_INCLUDE_DIRS}
+
+      ${PLATFORM_CLIENT_INCLUDE_DIRS}
+    )
+
+    if(STEAMAPI_KIND STREQUAL SHARED OR DISCORD_DYNAMIC)
+      set_own_rpath(game-live-client)
+    endif()
+
+    if(WAVPACK_OPEN_FILE_INPUT_EX)
+      target_compile_definitions(game-live-client PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
+    endif()
+
+    if(WAVPACK_CLOSE_FILE)
+      target_compile_definitions(game-live-client PRIVATE CONF_WAVPACK_CLOSE_FILE)
+    endif()
+
+    if(GLEW_BUNDLED)
+      target_compile_definitions(game-live-client PRIVATE CONF_GLEW_HAS_CONTEXT_INIT)
+    endif()
+
+    if(VULKAN)
+      target_compile_definitions(game-live-client PRIVATE CONF_BACKEND_VULKAN)
+    endif()
+
+    if(TARGET sync_runtime_data)
+      add_dependencies(game-live-client sync_runtime_data)
+    endif()
+
+    list(APPEND TARGETS_OWN game-live-client)
+    list(APPEND TARGETS_LINK game-live-client)
+  endif()
 endif()
 
 
@@ -3274,6 +3385,61 @@ if(SERVER)
   list(APPEND TARGETS_OWN game-server)
   list(APPEND TARGETS_LINK game-server)
 
+  if(TARGET_OS STREQUAL "windows")
+    set(VERSION_EXECUTABLE "QmLiveServer")
+    set(VERSION_COMPANY "${CLIENT_EXECUTABLE} Team")
+    configure_file("other/versioninfo/versioninfo.rc.in" "live_server.versioninfo.rc")
+    set(LIVE_SERVER_VERSIONINFO "${CMAKE_CURRENT_BINARY_DIR}/live_server.versioninfo.rc")
+  else()
+    set(LIVE_SERVER_VERSIONINFO)
+  endif()
+
+  add_library(game-live-server-without-main OBJECT
+      ${DEPS}
+      ${SERVER_SRC}
+      $<TARGET_OBJECTS:engine-shared>
+      $<TARGET_OBJECTS:game-shared>
+      $<TARGET_OBJECTS:rust-bridge-shared>
+  )
+  set_property(TARGET game-live-server-without-main
+      PROPERTY OUTPUT_NAME QmLiveServer
+  )
+  target_compile_definitions(game-live-server-without-main PRIVATE CONF_QM_LIVE_SERVER)
+  target_link_libraries(game-live-server-without-main ${LIBS_SERVER})
+  list(APPEND TARGETS_OWN game-live-server-without-main)
+  list(APPEND TARGETS_LINK game-live-server-without-main)
+
+  if(TARGET_OS STREQUAL "android")
+    add_library(game-live-server SHARED
+      ${DEPS}
+      $<TARGET_OBJECTS:game-live-server-without-main>
+      "${PROJECT_SOURCE_DIR}/src/engine/server/main.cpp"
+      ${SERVER_ICON}
+      ${LIVE_SERVER_VERSIONINFO}
+      $<TARGET_OBJECTS:engine-shared>
+      $<TARGET_OBJECTS:game-shared>
+      $<TARGET_OBJECTS:rust-bridge-shared>
+    )
+  else()
+    add_executable(game-live-server
+      ${DEPS}
+      "${PROJECT_SOURCE_DIR}/src/engine/server/main.cpp"
+      ${SERVER_ICON}
+      ${LIVE_SERVER_VERSIONINFO}
+      $<TARGET_OBJECTS:game-live-server-without-main>
+      $<TARGET_OBJECTS:engine-shared>
+      $<TARGET_OBJECTS:game-shared>
+      $<TARGET_OBJECTS:rust-bridge-shared>
+    )
+  endif()
+  set_property(TARGET game-live-server
+      PROPERTY OUTPUT_NAME QmLiveServer
+  )
+  target_compile_definitions(game-live-server PRIVATE CONF_QM_LIVE_SERVER)
+  target_link_libraries(game-live-server ${LIBS_SERVER})
+  list(APPEND TARGETS_OWN game-live-server)
+  list(APPEND TARGETS_LINK game-live-server)
+
   if(TARGET_OS AND TARGET_OS STREQUAL "mac")
     set(SERVER_LAUNCHER_SRC src/macos/server.mm)
     add_executable(game-server-launcher ${SERVER_LAUNCHER_SRC})
@@ -3292,10 +3458,18 @@ if(CMAKE_GENERATOR MATCHES ".*Makefiles.*")
     add_custom_target(${CLIENT_EXECUTABLE})
     add_dependencies(${CLIENT_EXECUTABLE} game-client)
   endif()
+  if(TARGET game-live-client)
+    add_custom_target(QmLiveClient)
+    add_dependencies(QmLiveClient game-live-client)
+  endif()
 
   if(TARGET game-server)
     add_custom_target(${SERVER_EXECUTABLE})
     add_dependencies(${SERVER_EXECUTABLE} game-server)
+  endif()
+  if(TARGET game-live-server)
+    add_custom_target(QmLiveServer)
+    add_dependencies(QmLiveServer game-live-server)
   endif()
 endif()
 
@@ -4249,10 +4423,10 @@ foreach(target ${TARGETS_OWN})
   if(TEST_MYSQL)
     target_compile_definitions(${target} PRIVATE CONF_TEST_MYSQL)
   endif()
-  if(AUTOUPDATE)
+  if(AUTOUPDATE AND NOT "${target}" STREQUAL "game-live-client")
     target_compile_definitions(${target} PRIVATE CONF_AUTOUPDATE)
   endif()
-  if(INFORM_UPDATE)
+  if(INFORM_UPDATE AND NOT "${target}" STREQUAL "game-live-client")
     target_compile_definitions(${target} PRIVATE CONF_INFORM_UPDATE)
   endif()
   # if(STEAM)
