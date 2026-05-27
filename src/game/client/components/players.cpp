@@ -1246,6 +1246,50 @@ void CPlayers::RenderPlayer(
 				Graphics()->QuadsSetRotation(State.GetAttach()->m_Angle * pi * 2 + Angle);
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 			}
+
+			if(Player.m_Weapon == WEAPON_GUN || Player.m_Weapon == WEAPON_SHOTGUN)
+			{
+				// check if we're firing stuff
+				if(g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles) // prev.attackticks)
+				{
+					float AlphaMuzzle = 0.0f;
+					if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
+					{
+						float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
+						AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
+					}
+
+					int MuzzleIteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
+					static int s_LastMuzzleIteX = MuzzleIteX;
+					if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
+					{
+						const IDemoPlayer::CInfo *pInfo = DemoPlayer()->BaseInfo();
+						if(pInfo->m_Paused)
+							MuzzleIteX = s_LastMuzzleIteX;
+						else
+							s_LastMuzzleIteX = MuzzleIteX;
+					}
+					else
+					{
+						if(GameClient()->m_Snap.m_pGameInfoObj && GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_PAUSED)
+							MuzzleIteX = s_LastMuzzleIteX;
+						else
+							s_LastMuzzleIteX = MuzzleIteX;
+					}
+					if(AlphaMuzzle > 0.0f && g_pData->m_Weapons.m_aId[CurrentWeapon].m_aSpriteMuzzles[MuzzleIteX])
+					{
+						float OffsetY = -g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsety;
+						int MuzzleQuadOffset = MuzzleIteX * 2 + (Direction.x < 0.0f ? 1 : 0);
+						if(Direction.x < 0.0f)
+							OffsetY = -OffsetY;
+
+						vec2 DirectionY(-Direction.y, Direction.x);
+						vec2 MuzzlePos = WeaponPosition + Direction * g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsetx + DirectionY * OffsetY;
+						Graphics()->TextureSet(GameClient()->m_GameSkin.m_aaSpriteWeaponsMuzzles[CurrentWeapon][MuzzleIteX]);
+						Graphics()->RenderQuadContainerAsSprite(m_aWeaponSpriteMuzzleQuadContainerIndex[CurrentWeapon], MuzzleQuadOffset, MuzzlePos.x, MuzzlePos.y);
+					}
+				}
+			}
 		}
 	}
 
@@ -1697,6 +1741,50 @@ void CPlayers::RenderPlayerGhost(
 					WeaponPosition.y -= 8;
 				Graphics()->QuadsSetRotation(State.GetAttach()->m_Angle * pi * 2 + Angle);
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
+			}
+
+			if(Player.m_Weapon == WEAPON_GUN || Player.m_Weapon == WEAPON_SHOTGUN)
+			{
+				// check if we're firing stuff
+				if(g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles) // prev.attackticks)
+				{
+					float AlphaMuzzle = 0.0f;
+					if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
+					{
+						float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
+						AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
+					}
+
+					int MuzzleIteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
+					static int s_LastMuzzleIteX = MuzzleIteX;
+					if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
+					{
+						const IDemoPlayer::CInfo *pInfo = DemoPlayer()->BaseInfo();
+						if(pInfo->m_Paused)
+							MuzzleIteX = s_LastMuzzleIteX;
+						else
+							s_LastMuzzleIteX = MuzzleIteX;
+					}
+					else
+					{
+						if(GameClient()->m_Snap.m_pGameInfoObj && GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_PAUSED)
+							MuzzleIteX = s_LastMuzzleIteX;
+						else
+							s_LastMuzzleIteX = MuzzleIteX;
+					}
+					if(AlphaMuzzle > 0.0f && g_pData->m_Weapons.m_aId[CurrentWeapon].m_aSpriteMuzzles[MuzzleIteX])
+					{
+						float OffsetY = -g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsety;
+						int MuzzleQuadOffset = MuzzleIteX * 2 + (Direction.x < 0.0f ? 1 : 0);
+						if(Direction.x < 0.0f)
+							OffsetY = -OffsetY;
+
+						vec2 DirectionY(-Direction.y, Direction.x);
+						vec2 MuzzlePos = WeaponPosition + Direction * g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsetx + DirectionY * OffsetY;
+						Graphics()->TextureSet(GameClient()->m_GameSkin.m_aaSpriteWeaponsMuzzles[CurrentWeapon][MuzzleIteX]);
+						Graphics()->RenderQuadContainerAsSprite(m_aWeaponSpriteMuzzleQuadContainerIndex[CurrentWeapon], MuzzleQuadOffset, MuzzlePos.x, MuzzlePos.y);
+					}
+				}
 			}
 		}
 	}
