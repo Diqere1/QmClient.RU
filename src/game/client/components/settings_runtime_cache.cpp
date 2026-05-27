@@ -133,6 +133,7 @@ SSettingsSectionRegistry BuildSettingsSectionRegistry()
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 0, "pet", true, true);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 0, "theme", true, true);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 0, "misc", true, true);
+	AddSection(Registry.m_vSections, CMenus::SETTINGS_TCLIENT, 0, "hud", true, true);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_VISUAL, "general", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_CONFIG, "config", false, false);
 	AddSection(Registry.m_vSections, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_CONTRIBUTORS, "contributors", false, false);

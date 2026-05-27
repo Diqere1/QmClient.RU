@@ -498,6 +498,7 @@ TEST(SettingsRuntimeCache, SectionRegistryRequiresBothLayersForStaticFbo)
 	EXPECT_TRUE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "pet"));
 	EXPECT_TRUE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "theme"));
 	EXPECT_TRUE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "misc"));
+	EXPECT_TRUE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 0, "hud"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_TCLIENT, 1, "auto-reply"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_VISUAL, "general"));
 	EXPECT_FALSE(SettingsSectionCanRecordStaticFbo(Registry, CMenus::SETTINGS_QMCLIENT, CMenus::QMCLIENT_SETTINGS_TAB_CONFIG, "config"));

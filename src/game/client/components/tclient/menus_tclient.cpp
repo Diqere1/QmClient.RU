@@ -1499,7 +1499,7 @@ bool CMenus::PrepareTClientSettingsRuntimeCacheSection(CUIRect SectionView, cons
 		}
 		return true;
 	}
-	if(str_comp(pSectionId, "misc") == 0)
+	if(str_comp(pSectionId, "misc") == 0 || str_comp(pSectionId, "hud") == 0)
 	{
 		pLoader = &s_RightSectionLoader;
 		pLoaderSectionName = "HUD";
