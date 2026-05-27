@@ -9,13 +9,13 @@ README.md merge=ours
 other/*/include/* linguist-vendored
 src/engine/external/* linguist-vendored
 
-# C/C++ 源码：仓库 LF，工作区跟随平台（Windows=CRLF）
-*.c text
-*.cc text
-*.cpp text
-*.h text
-*.hpp text
-*.inl text
+# C/C++ 源码：仓库 LF，工作区也固定 LF，避免 Windows mixed-EOL 噪声。
+*.c text eol=lf
+*.cc text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.inl text eol=lf
 
 # Rust 源码：仓库 LF，工作区跟随平台
 *.rs text

@@ -120,11 +120,26 @@ namespace
 		int *m_pTarget;
 	};
 
+	struct SConfigIntFanoutSync
+	{
+		int *m_pSource;
+		int *m_apTargets[8];
+		int m_NumTargets;
+	};
+
 	void ConchainConfigIntAlias(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
 	{
 		pfnCallback(pResult, pCallbackUserData);
 		const SConfigIntAliasSync *pSync = static_cast<const SConfigIntAliasSync *>(pUserData);
 		*pSync->m_pTarget = *pSync->m_pSource;
+	}
+
+	void ConchainConfigIntFanout(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
+	{
+		pfnCallback(pResult, pCallbackUserData);
+		const SConfigIntFanoutSync *pSync = static_cast<const SConfigIntFanoutSync *>(pUserData);
+		for(int i = 0; i < pSync->m_NumTargets; ++i)
+			*pSync->m_apTargets[i] = *pSync->m_pSource;
 	}
 
 	void SetDemoInputKeyState(unsigned char *pKeyStates, int Key, bool Pressed)
@@ -369,6 +384,17 @@ void CGameClient::OnConsoleInit()
 		{&g_Config.m_QmSmtcEnable, &g_Config.m_ClSmtcEnableLegacy},
 		{&g_Config.m_QmSmtcShowHud, &g_Config.m_ClSmtcShowHudLegacy},
 	};
+	static SConfigIntFanoutSync s_aLegacyFocusAliases[] = {
+		{&g_Config.m_QmFocusModeHideEffectsLegacy,
+			{&g_Config.m_QmFocusModeHideJumpEffects, &g_Config.m_QmFocusModeHideKillEffects, &g_Config.m_QmFocusModeHideExplosionEffects, &g_Config.m_QmFocusModeHideFreezeEffects, &g_Config.m_QmFocusModeHideHammerEffects, &g_Config.m_QmFocusModeHideMuzzleEffects},
+			6},
+		{&g_Config.m_QmFocusModeHideUILegacy,
+			{&g_Config.m_QmFocusModeHideHud},
+			1},
+		{&g_Config.m_QmFocusModeHideOverheadIndicatorsLegacy,
+			{&g_Config.m_QmFocusModeHideDirectionIndicators, &g_Config.m_QmFocusModeHideGuideLines},
+			2},
+	};
 
 	Console()->Chain("cl_languagefile", ConchainLanguageUpdate, this);
 	Console()->Chain("cl_scoreboard_on_death", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[0]);
@@ -385,6 +411,9 @@ void CGameClient::OnConsoleInit()
 	Console()->Chain("qm_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[4]);
 	Console()->Chain("qm_smtc_enable", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[5]);
 	Console()->Chain("qm_smtc_show_hud", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[6]);
+	Console()->Chain("qm_focus_mode_hide_effects", ConchainConfigIntFanout, &s_aLegacyFocusAliases[0]);
+	Console()->Chain("qm_focus_mode_hide_ui", ConchainConfigIntFanout, &s_aLegacyFocusAliases[1]);
+	Console()->Chain("qm_focus_mode_hide_overhead_indicators", ConchainConfigIntFanout, &s_aLegacyFocusAliases[2]);
 
 	Console()->Chain("player_name", ConchainSpecialInfoupdate, this);
 	Console()->Chain("player_clan", ConchainSpecialInfoupdate, this);

@@ -337,6 +337,26 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 
 	if(Event.m_Flags & IInput::FLAG_PRESS)
 	{
+		if(KeyModifierMask != KeyModifier::NONE)
+		{
+			while(true)
+			{
+				auto ActiveModifierBind = std::find_if(m_vActiveBinds.begin(), m_vActiveBinds.end(), [&](const CBindSlot &Bind) {
+					return ShouldReleaseUnmodifiedModifierBindOnModifierPress(Bind, KeyModifierMask);
+				});
+				if(ActiveModifierBind == m_vActiveBinds.end())
+					break;
+
+				// The release command can unbind itself, so resolve it before erasing the active slot.
+				const char *pBind = m_aapKeyBindings[ActiveModifierBind->m_ModifierMask][ActiveModifierBind->m_Key];
+				if(pBind)
+				{
+					ExecuteBindCommand(Console(), pBind, GameClient(), 0);
+				}
+				m_vActiveBinds.erase(ActiveModifierBind);
+			}
+		}
+
 		auto ActiveBind = std::find_if(m_vActiveBinds.begin(), m_vActiveBinds.end(), [&](const CBindSlot &Bind) {
 			return Event.m_Key == Bind.m_Key;
 		});
@@ -361,8 +381,7 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 				Handled = true;
 			}
 			else if(m_aapKeyBindings[KeyModifier::NONE][Event.m_Key] &&
-				ModifierMask != ((1 << KeyModifier::CTRL) | (1 << KeyModifier::SHIFT)) &&
-				ModifierMask != ((1 << KeyModifier::GUI) | (1 << KeyModifier::SHIFT)))
+				AllowsUnmodifiedFallback(Event.m_Key, ModifierMask))
 			{
 				OnKeyPress(KeyModifier::NONE);
 				Handled = true;

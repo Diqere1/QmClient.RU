@@ -4011,6 +4011,9 @@ void CTClient::ApplyFocusModeEffects()
 			ConfigValue = NextValue;
 	};
 	const bool StateWasKnown = m_FocusModeStateKnown;
+	const bool HideFocusHud = ShouldHideFocusHud(FocusActive, g_Config.m_QmFocusModeHideHud != 0);
+	const bool HideFocusNameplates = ShouldHideFocusNameplates(FocusActive, g_Config.m_QmFocusModeHideNameplates != 0);
+	const bool HideFocusDirectionIndicators = ShouldHideFocusDirectionIndicators(FocusActive, g_Config.m_QmFocusModeHideDirectionIndicators != 0);
 	if(!m_FocusModeStateKnown)
 	{
 		m_FocusModeStateKnown = true;
@@ -4032,16 +4035,16 @@ void CTClient::ApplyFocusModeEffects()
 		GameClient()->Echo(aFocusMsg, true);
 	}
 
-	ApplyFocusOverride(m_FocusHudOverrideState, FocusActive && g_Config.m_QmFocusModeHideHud != 0, g_Config.m_ClShowhud, 0);
-	ApplyFocusOverride(m_FocusNamePlatesOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_ClNamePlates, 0);
-	ApplyFocusOverride(m_FocusNamePlatesOwnOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_ClNamePlatesOwn, 0);
-	ApplyFocusOverride(m_FocusNameplateCoordsOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoords, 0);
-	ApplyFocusOverride(m_FocusNameplateCoordsOwnOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordsOwn, 0);
-	ApplyFocusOverride(m_FocusNameplateCoordXOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordX, 0);
-	ApplyFocusOverride(m_FocusNameplateCoordYOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordY, 0);
-	ApplyFocusOverride(m_FocusDirectionOverrideState, FocusActive && g_Config.m_QmFocusModeHideDirectionIndicators != 0, g_Config.m_ClShowDirection, 0);
-	ApplyFocusOverride(m_FocusVideoHudOverrideState, FocusActive && g_Config.m_QmFocusModeHideHud != 0, g_Config.m_ClVideoShowhud, 0);
-	ApplyFocusOverride(m_FocusVideoDirectionOverrideState, FocusActive && g_Config.m_QmFocusModeHideDirectionIndicators != 0, g_Config.m_ClVideoShowDirection, 0);
+	ApplyFocusOverride(m_FocusHudOverrideState, HideFocusHud, g_Config.m_ClShowhud, 0);
+	ApplyFocusOverride(m_FocusNamePlatesOverrideState, HideFocusNameplates, g_Config.m_ClNamePlates, 0);
+	ApplyFocusOverride(m_FocusNamePlatesOwnOverrideState, HideFocusNameplates, g_Config.m_ClNamePlatesOwn, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordsOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoords, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordsOwnOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordsOwn, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordXOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordX, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordYOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordY, 0);
+	ApplyFocusOverride(m_FocusDirectionOverrideState, HideFocusDirectionIndicators, g_Config.m_ClShowDirection, 0);
+	ApplyFocusOverride(m_FocusVideoHudOverrideState, HideFocusHud, g_Config.m_ClVideoShowhud, 0);
+	ApplyFocusOverride(m_FocusVideoDirectionOverrideState, HideFocusDirectionIndicators, g_Config.m_ClVideoShowDirection, 0);
 	m_PrevFocusModeActive = FocusActive;
 }
 

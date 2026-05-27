@@ -1265,12 +1265,12 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	// Layout string format: key:column:order; entries separated by ';'.
 	static const std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
 		{EQmModuleId::ChatBubble, EQmModuleColumn::Left, 0, "chat_bubble"},
-		{EQmModuleId::GoresActor, EQmModuleColumn::Left, 1, "gores_actor"},
-		{EQmModuleId::Gores, EQmModuleColumn::Left, 2, "gores"},
-		{EQmModuleId::FocusMode, EQmModuleColumn::Left, 3, "focus_mode"},
-		{EQmModuleId::KeyBinds, EQmModuleColumn::Left, 4, "key_binds"},
-		{EQmModuleId::MiniFeatures, EQmModuleColumn::Left, 5, "mini_features"},
-		{EQmModuleId::SkinTransition, EQmModuleColumn::Left, 6, "skin_transition"},
+		{EQmModuleId::SkinTransition, EQmModuleColumn::Left, 1, "skin_transition"},
+		{EQmModuleId::FocusMode, EQmModuleColumn::Left, 2, "focus_mode"},
+		{EQmModuleId::GoresActor, EQmModuleColumn::Left, 3, "gores_actor"},
+		{EQmModuleId::Gores, EQmModuleColumn::Left, 4, "gores"},
+		{EQmModuleId::KeyBinds, EQmModuleColumn::Left, 5, "key_binds"},
+		{EQmModuleId::MiniFeatures, EQmModuleColumn::Left, 6, "mini_features"},
 		{EQmModuleId::Coords, EQmModuleColumn::Left, 7, "coords"},
 		{EQmModuleId::Streamer, EQmModuleColumn::Left, 8, "streamer"},
 		{EQmModuleId::FriendNotify, EQmModuleColumn::Left, 9, "friend_notify"},
@@ -1294,6 +1294,21 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 12, "dummy_miniview"},
 		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 13, "dynamic_island"},
 		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 14, "system_media_controls"}}};
+
+	static constexpr std::array<EQmModuleId, 9> s_aQmVisualModules = {
+		EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::SkinTransition,
+		EQmModuleId::FocusMode, EQmModuleId::Streamer, EQmModuleId::EntityOverlay,
+		EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi};
+	static constexpr std::array<EQmModuleId, 11> s_aQmFunctionModules = {
+		EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::KeyBinds,
+		EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords,
+		EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu,
+		EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist};
+	static constexpr std::array<EQmModuleId, 10> s_aQmHudModules = {
+		EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats,
+		EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay,
+		EQmModuleId::HudNotifications, EQmModuleId::Voice, EQmModuleId::DynamicIsland,
+		EQmModuleId::SystemMediaControls};
 
 	static std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleLayout = s_aQmModuleDefaults;
 	static char s_aQmModuleLayoutConfigCache[sizeof(g_Config.m_QmSidebarCardOrder)] = {};
@@ -1413,7 +1428,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		vRightIndices.reserve(s_aQmModuleLayout.size());
 		std::array<bool, QmModuleCount> aAssigned = {};
 
-		auto AppendBalancedGroup = [&](std::initializer_list<EQmModuleId> vGroup) {
+		auto AppendBalancedGroup = [&](const auto &vGroup) {
 			float LeftHeight = 0.0f;
 			float RightHeight = 0.0f;
 			for(EQmModuleId Id : vGroup)
@@ -1439,9 +1454,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			}
 		};
 
-		AppendBalancedGroup({EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::SkinTransition, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi});
-		AppendBalancedGroup({EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::FocusMode, EQmModuleId::KeyBinds, EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist});
-		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::HudNotifications, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls});
+		AppendBalancedGroup(s_aQmVisualModules);
+		AppendBalancedGroup(s_aQmFunctionModules);
+		AppendBalancedGroup(s_aQmHudModules);
 
 		for(size_t i = 0; i < s_aQmModuleLayout.size(); ++i)
 		{
@@ -2080,41 +2095,17 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	};
 
 	auto ModuleMatchesSelectedTab = [&](EQmModuleId Id) -> bool {
+		auto ContainsModule = [&](const auto &vModules) {
+			return std::find(vModules.begin(), vModules.end(), Id) != vModules.end();
+		};
 		switch(m_QmClientSettingsTab)
 		{
 		case QMCLIENT_SETTINGS_TAB_VISUAL:
-			return Id == EQmModuleId::ChatBubble ||
-			       Id == EQmModuleId::CameraView ||
-			       Id == EQmModuleId::SkinTransition ||
-			       Id == EQmModuleId::Streamer ||
-			       Id == EQmModuleId::EntityOverlay ||
-			       Id == EQmModuleId::Laser ||
-			       Id == EQmModuleId::CollisionHitbox ||
-			       Id == EQmModuleId::TranslateUi;
+			return ContainsModule(s_aQmVisualModules);
 		case QMCLIENT_SETTINGS_TAB_FUNCTION:
-			return Id == EQmModuleId::GoresActor ||
-			       Id == EQmModuleId::Gores ||
-			       Id == EQmModuleId::FocusMode ||
-			       Id == EQmModuleId::KeyBinds ||
-			       Id == EQmModuleId::MiniFeatures ||
-			       Id == EQmModuleId::FriendNotify ||
-			       Id == EQmModuleId::BlockWords ||
-			       Id == EQmModuleId::Translate ||
-			       Id == EQmModuleId::QiaFen ||
-			       Id == EQmModuleId::PieMenu ||
-			       Id == EQmModuleId::FavoriteMaps ||
-			       Id == EQmModuleId::HJAssist;
+			return ContainsModule(s_aQmFunctionModules);
 		case QMCLIENT_SETTINGS_TAB_HUD:
-			return Id == EQmModuleId::DummyMiniView ||
-			       Id == EQmModuleId::Coords ||
-			       Id == EQmModuleId::PlayerStats ||
-			       Id == EQmModuleId::SpeedrunTimer ||
-			       Id == EQmModuleId::DebugGraph ||
-			       Id == EQmModuleId::InputOverlay ||
-			       Id == EQmModuleId::HudNotifications ||
-			       Id == EQmModuleId::Voice ||
-			       Id == EQmModuleId::DynamicIsland ||
-			       Id == EQmModuleId::SystemMediaControls;
+			return ContainsModule(s_aQmHudModules);
 		case QMCLIENT_SETTINGS_TAB_CONTRIBUTORS:
 			return false;
 		default:
@@ -2791,20 +2782,14 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				VisibleFullModules.push_back(pModule);
 		};
 		if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_VISUAL)
-		{
-			for(EQmModuleId Id : {EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::SkinTransition, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi})
+			for(EQmModuleId Id : s_aQmVisualModules)
 				AppendModuleIfVisible(Id);
-		}
 		else if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_FUNCTION)
-		{
-			for(EQmModuleId Id : {EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::FocusMode, EQmModuleId::KeyBinds, EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist})
+			for(EQmModuleId Id : s_aQmFunctionModules)
 				AppendModuleIfVisible(Id);
-		}
 		else if(m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_HUD)
-		{
-			for(EQmModuleId Id : {EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay, EQmModuleId::HudNotifications, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls})
+			for(EQmModuleId Id : s_aQmHudModules)
 				AppendModuleIfVisible(Id);
-		}
 		else
 		{
 			for(const SQmModuleEntry *pModule : FullModules)
@@ -3226,7 +3211,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideScoreboard, "隐藏记分板");
 
 				DoFocusSectionLabel(LeftColumn, "玩家");
-				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideNames, "隐藏玩家身份");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideNames, "隐藏名字");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideNameplates, "隐藏名字板");
 				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideDirectionIndicators, "隐藏方向");
 				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideGuideLines, "隐藏辅助线");
 
@@ -3236,6 +3222,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideExplosionEffects, "隐藏炮击特效");
 				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideFreezeEffects, "隐藏冻结特效");
 				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideHammerEffects, "隐藏锤击特效");
+				DoFocusCheckbox(LeftColumn, &g_Config.m_QmFocusModeHideMuzzleEffects, "隐藏武器火焰");
 
 				DoFocusSectionLabel(RightColumn, "声音");
 				DoFocusCheckbox(RightColumn, &g_Config.m_QmFocusModeMuteJumpSounds, "静音跳跃");

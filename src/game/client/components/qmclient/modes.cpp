@@ -56,13 +56,6 @@ bool ShouldRenderGoresDebugRoute(bool Online, bool DebugRouteEnabled, bool Gores
 	return Online && DebugRouteEnabled && GoresMapProgressEnabled;
 }
 
-bool ShouldHideFocusUiOverlays(bool FocusActive, bool HideUi)
-{
-	(void)FocusActive;
-	(void)HideUi;
-	return false;
-}
-
 bool ShouldHideFocusHud(bool FocusActive, bool HideHud)
 {
 	return FocusActive && HideHud;
@@ -76,6 +69,11 @@ bool ShouldHideFocusScoreboard(bool FocusActive, bool HideScoreboard)
 bool ShouldHideFocusNames(bool FocusActive, bool HideNames)
 {
 	return FocusActive && HideNames;
+}
+
+bool ShouldHideFocusNameplates(bool FocusActive, bool HideNameplates)
+{
+	return FocusActive && HideNameplates;
 }
 
 bool ShouldHideFocusJumpEffects(bool FocusActive, bool HideJumpEffects)
@@ -101,6 +99,11 @@ bool ShouldHideFocusFreezeEffects(bool FocusActive, bool HideFreezeEffects)
 bool ShouldHideFocusHammerEffects(bool FocusActive, bool HideHammerEffects)
 {
 	return FocusActive && HideHammerEffects;
+}
+
+bool ShouldHideFocusMuzzleEffects(bool FocusActive, bool HideMuzzleEffects)
+{
+	return FocusActive && HideMuzzleEffects;
 }
 
 bool ShouldMuteFocusJumpSounds(bool FocusActive, bool MuteJumpSounds)
@@ -186,12 +189,14 @@ SQmFocusModeDecisions GetQmFocusModeDecisions(const SQmFocusModeConfig &Config)
 	Decisions.m_HideExplosionEffects = ShouldHideFocusExplosionEffects(Config.m_FocusActive, Config.m_HideExplosionEffects);
 	Decisions.m_HideFreezeEffects = ShouldHideFocusFreezeEffects(Config.m_FocusActive, Config.m_HideFreezeEffects);
 	Decisions.m_HideHammerEffects = ShouldHideFocusHammerEffects(Config.m_FocusActive, Config.m_HideHammerEffects);
+	Decisions.m_HideMuzzleEffects = ShouldHideFocusMuzzleEffects(Config.m_FocusActive, Config.m_HideMuzzleEffects);
 	Decisions.m_MuteDeathSounds = ShouldMuteFocusDeathSounds(Config.m_FocusActive, Config.m_MuteDeathSounds);
 	Decisions.m_MuteHammerSounds = ShouldMuteFocusHammerSounds(Config.m_FocusActive, Config.m_MuteHammerSounds);
 	Decisions.m_RenderMapProgressBar = ShouldRenderMapProgressBar(Config.m_MapProgressEnabled, Config.m_MapProgressStyle, Config.m_PlayerStatsHudEnabled, Config.m_GoresMapProgressEnabled) && !ShouldHideFocusMapProgress(Config.m_FocusActive, Config.m_HideMapProgress);
 	Decisions.m_HideHud = ShouldHideFocusHud(Config.m_FocusActive, Config.m_HideHud);
 	Decisions.m_HideScoreboard = ShouldHideFocusScoreboard(Config.m_FocusActive, Config.m_HideScoreboard);
 	Decisions.m_HideNames = ShouldHideFocusNames(Config.m_FocusActive, Config.m_HideNames);
+	Decisions.m_HideNameplates = ShouldHideFocusNameplates(Config.m_FocusActive, Config.m_HideNameplates);
 	Decisions.m_HideInfoMessages = ShouldHideFocusInfoMessages(Config.m_FocusActive, Config.m_HideInfoMessages);
 	Decisions.m_HideDirectionIndicators = ShouldHideFocusDirectionIndicators(Config.m_FocusActive, Config.m_HideDirectionIndicators);
 	Decisions.m_HideGuideLines = ShouldHideFocusGuideLines(Config.m_FocusActive, Config.m_HideGuideLines);

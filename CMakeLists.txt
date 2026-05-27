@@ -3418,6 +3418,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     assets_resource_registry_test.cpp
     audio_pack_editor_test.cpp
     bezier_test.cpp
+    binds_test.cpp
     blocklist_driver_test.cpp
     bytes_be_test.cpp
     chunk_header_test.cpp

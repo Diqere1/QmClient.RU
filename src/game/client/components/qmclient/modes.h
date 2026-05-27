@@ -10,12 +10,12 @@ struct SQmAirJumpEffectDecision
 struct SQmFocusModeConfig
 {
 	bool m_FocusActive = false;
-	bool m_LegacyHideEffects = false;
 	bool m_HideJumpEffects = false;
 	bool m_HideKillEffects = false;
 	bool m_HideExplosionEffects = false;
 	bool m_HideFreezeEffects = false;
 	bool m_HideHammerEffects = false;
+	bool m_HideMuzzleEffects = false;
 	bool m_MuteJumpSounds = false;
 	bool m_MuteDeathSounds = false;
 	bool m_MuteHammerSounds = false;
@@ -28,6 +28,7 @@ struct SQmFocusModeConfig
 	bool m_HideHud = false;
 	bool m_HideScoreboard = false;
 	bool m_HideNames = false;
+	bool m_HideNameplates = false;
 	bool m_HideInfoMessages = false;
 	bool m_HideDirectionIndicators = false;
 	bool m_HideGuideLines = false;
@@ -44,12 +45,14 @@ struct SQmFocusModeDecisions
 	bool m_HideExplosionEffects = false;
 	bool m_HideFreezeEffects = false;
 	bool m_HideHammerEffects = false;
+	bool m_HideMuzzleEffects = false;
 	bool m_MuteDeathSounds = false;
 	bool m_MuteHammerSounds = false;
 	bool m_RenderMapProgressBar = false;
 	bool m_HideHud = false;
 	bool m_HideScoreboard = false;
 	bool m_HideNames = false;
+	bool m_HideNameplates = false;
 	bool m_HideInfoMessages = false;
 	bool m_HideDirectionIndicators = false;
 	bool m_HideGuideLines = false;
@@ -72,15 +75,16 @@ bool ApplyQmGoresLinkedConfig(bool GoresActive, bool AutoToggle, bool CurrentVal
 bool ShouldHideGoresGuide(bool GoresEnabled, bool HideGuidesEnabled, bool ManualGuideVisible);
 bool ShouldRenderGoresDebugRoute(bool Online, bool DebugRouteEnabled, bool GoresMapProgressEnabled);
 
-bool ShouldHideFocusUiOverlays(bool FocusActive, bool HideUi);
 bool ShouldHideFocusHud(bool FocusActive, bool HideHud);
 bool ShouldHideFocusScoreboard(bool FocusActive, bool HideScoreboard);
 bool ShouldHideFocusNames(bool FocusActive, bool HideNames);
+bool ShouldHideFocusNameplates(bool FocusActive, bool HideNameplates);
 bool ShouldHideFocusJumpEffects(bool FocusActive, bool HideJumpEffects);
 bool ShouldHideFocusKillEffects(bool FocusActive, bool HideKillEffects);
 bool ShouldHideFocusExplosionEffects(bool FocusActive, bool HideExplosionEffects);
 bool ShouldHideFocusFreezeEffects(bool FocusActive, bool HideFreezeEffects);
 bool ShouldHideFocusHammerEffects(bool FocusActive, bool HideHammerEffects);
+bool ShouldHideFocusMuzzleEffects(bool FocusActive, bool HideMuzzleEffects);
 bool ShouldMuteFocusJumpSounds(bool FocusActive, bool MuteJumpSounds);
 bool ShouldMuteFocusDeathSounds(bool FocusActive, bool MuteDeathSounds);
 bool ShouldMuteFocusHammerSounds(bool FocusActive, bool MuteHammerSounds);
