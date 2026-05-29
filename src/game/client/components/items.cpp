@@ -92,8 +92,8 @@ void CItems::RenderProjectile(const CProjectileData *pCurrent, int ItemId)
 	vec2 Pos = CalcPos(pCurrent->m_StartPos, pCurrent->m_StartVel, Curvature, Speed, Ct);
 	vec2 PrevPos = CalcPos(pCurrent->m_StartPos, pCurrent->m_StartVel, Curvature, Speed, Ct - 0.001f);
 
-	float Alpha = 1.f;
-	if(IsOtherTeam)
+	float Alpha = pCurrent->m_ExtraInfo && pCurrent->m_Owner >= 0 ? GameClient()->LiveObserverClientAlpha(pCurrent->m_Owner) : 1.0f;
+	if(Alpha >= 1.0f && IsOtherTeam)
 	{
 		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 	}
@@ -334,7 +334,9 @@ void CItems::RenderLaser(const CLaserData *pCurrent, bool IsPredicted)
 
 	bool IsOtherTeam = (pCurrent->m_ExtraInfo && pCurrent->m_Owner >= 0 && GameClient()->IsOtherTeam(pCurrent->m_Owner));
 
-	float Alpha = IsOtherTeam ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.f;
+	float Alpha = pCurrent->m_ExtraInfo && pCurrent->m_Owner >= 0 ? GameClient()->LiveObserverClientAlpha(pCurrent->m_Owner) : 1.0f;
+	if(Alpha >= 1.0f && IsOtherTeam)
+		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 
 	const ColorRGBA OuterColor = color_cast<ColorRGBA>(ColorHSLA(ColorOut).WithAlpha(Alpha));
 	const ColorRGBA InnerColor = color_cast<ColorRGBA>(ColorHSLA(ColorIn).WithAlpha(Alpha));
@@ -530,6 +532,8 @@ void CItems::OnRender()
 	{
 		for(auto *pProj = (CProjectile *)GameClient()->m_PrevPredictedWorld.FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pProj; pProj = (CProjectile *)pProj->NextEntity())
 		{
+			if(GameClient()->LiveObserverDimClient(pProj->GetOwner()))
+				continue;
 			if(!IsSuper && pProj->m_Number > 0 && pProj->m_Number < (int)aSwitchers.size() && !aSwitchers[pProj->m_Number].m_aStatus[SwitcherTeam] && (pProj->m_Explosive ? BlinkingProjEx : BlinkingProj))
 				continue;
 
@@ -588,7 +592,7 @@ void CItems::OnRender()
 						ReconstructSmokeTrail(&Data, pProj->m_DestroyTick);
 					}
 					pProj->m_LastRenderTick = Client()->GameTick(g_Config.m_ClDummy);
-					if(!IsOtherTeam)
+					if(!IsOtherTeam && !GameClient()->LiveObserverDimClient(pProj->GetOwner()))
 						continue;
 				}
 			}
@@ -783,9 +787,11 @@ void CItems::ReconstructSmokeTrail(const CProjectileData *pCurrent, int DestroyT
 	float Gt = (Client()->PrevGameTick(g_Config.m_ClDummy) - pCurrent->m_StartTick) / (float)Client()->GameTickSpeed() + Client()->GameTickTime(g_Config.m_ClDummy);
 
 	float Alpha = 1.f;
-	if(pCurrent->m_ExtraInfo && pCurrent->m_Owner >= 0 && GameClient()->IsOtherTeam(pCurrent->m_Owner))
+	if(pCurrent->m_ExtraInfo && pCurrent->m_Owner >= 0)
 	{
-		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
+		Alpha = GameClient()->LiveObserverClientAlpha(pCurrent->m_Owner);
+		if(Alpha >= 1.0f && GameClient()->IsOtherTeam(pCurrent->m_Owner))
+			Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 	}
 
 	float T = Pt;

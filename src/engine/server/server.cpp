@@ -798,6 +798,11 @@ bool CServer::ClientIngame(int ClientId) const
 	return ClientId >= 0 && ClientId < MAX_CLIENTS && m_aClients[ClientId].m_State == CServer::CClient::STATE_INGAME;
 }
 
+bool CServer::ClientIsQmLiveObserver(int ClientId) const
+{
+	return ClientId >= 0 && ClientId < MAX_CLIENTS && m_aClients[ClientId].m_State != CServer::CClient::STATE_EMPTY && m_aClients[ClientId].m_IsLiveObserver;
+}
+
 int CServer::Port() const
 {
 	return m_NetServer.Address().port;
@@ -2041,6 +2046,8 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 					str_format(aBuf, sizeof(aBuf), "live observer is ready. ClientId=%d addr=<{%s}>", ClientId, ClientAddrString(ClientId, true));
 					Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "server", aBuf);
 					m_aClients[ClientId].m_State = CClient::STATE_LIVE_OBSERVER;
+					SendConnectionReady(ClientId);
+					GameServer()->OnLiveObserverEnter(ClientId);
 					return;
 				}
 
@@ -2103,9 +2110,6 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 		}
 		else if(Msg == NETMSG_INPUT)
 		{
-			if(m_aClients[ClientId].m_IsLiveObserver)
-				return;
-
 			const int LastAckedSnapshot = Unpacker.GetInt();
 			int IntendedTick = Unpacker.GetInt();
 			int Size = Unpacker.GetInt();
@@ -2113,6 +2117,9 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 			{
 				return;
 			}
+			if(m_aClients[ClientId].m_IsLiveObserver && Size != 0)
+				return;
+
 			const int OriginalIntendedTick = IntendedTick;
 
 			m_aClients[ClientId].m_LastAckedSnapshot = LastAckedSnapshot;
@@ -2136,6 +2143,10 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 			}
 
 			m_aClients[ClientId].m_LastInputTick = IntendedTick;
+
+			// Live observers only use zero-size input messages as snapshot acks and timing probes.
+			if(m_aClients[ClientId].m_IsLiveObserver)
+				return;
 
 			CClient::CInput *pInput = &m_aClients[ClientId].m_aInputs[m_aClients[ClientId].m_CurrentInput];
 
@@ -3522,8 +3533,14 @@ int CServer::Run()
 
 						SendMap(ClientId);
 						bool HasPersistentData = m_aClients[ClientId].m_HasPersistentData;
+						bool QmLiveObserver = m_aClients[ClientId].m_QmLiveObserver;
+						bool IsLiveObserver = m_aClients[ClientId].m_IsLiveObserver;
+						int QmLiveCapabilities = m_aClients[ClientId].m_QmLiveCapabilities;
 						m_aClients[ClientId].Reset();
 						m_aClients[ClientId].m_HasPersistentData = HasPersistentData;
+						m_aClients[ClientId].m_QmLiveObserver = QmLiveObserver;
+						m_aClients[ClientId].m_IsLiveObserver = IsLiveObserver;
+						m_aClients[ClientId].m_QmLiveCapabilities = QmLiveCapabilities;
 						m_aClients[ClientId].m_State = CClient::STATE_CONNECTING;
 					}
 
@@ -3537,6 +3554,8 @@ int CServer::Run()
 					{
 						CClient &Client = m_aClients[ClientId];
 						if(Client.m_State < CClient::STATE_PREAUTH)
+							continue;
+						if(Client.m_IsLiveObserver)
 							continue;
 
 						// When doing a map change, a new Teehistorian file is created. For players that are already

@@ -731,6 +731,7 @@ private:
 	bool ReclaimBackgroundSkinForPriorityRequest(const char *pRequesterName, int CountFuseLimit);
 	void UpdateStartLoading(CSkinLoadingStats &Stats);
 	void UpdateFinishLoading(CSkinLoadingStats &Stats, std::chrono::nanoseconds StartTime, std::chrono::nanoseconds MaxTime);
+	size_t LoadedSkinLimit() const;
 	void QueueSkinDirectoryScanJob();
 	void ProcessSkinDirectoryScanJob();
 	void QueueSkinListPlanJob();

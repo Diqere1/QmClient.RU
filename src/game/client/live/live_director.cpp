@@ -4,15 +4,17 @@
 
 void CLiveDirector::Reset()
 {
-	m_vTeams.clear();
+	m_vEntries.clear();
 	m_FallbackPlayer = -1;
+	m_HasDDRaceTeams = false;
 	m_Mode = CLiveObserverSession::EDirectorMode::FREEVIEW;
 }
 
-void CLiveDirector::UpdateTeams(const std::array<int, MAX_CLIENTS> &aTeams, const std::array<bool, MAX_CLIENTS> &aActivePlayers)
+void CLiveDirector::UpdateEntries(const std::array<int, MAX_CLIENTS> &aTeams, const std::array<bool, MAX_CLIENTS> &aActivePlayers)
 {
-	m_vTeams.clear();
+	m_vEntries.clear();
 	m_FallbackPlayer = -1;
+	m_HasDDRaceTeams = false;
 
 	std::array<int, TEAM_SUPER> aTeamCounts{};
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
@@ -31,14 +33,64 @@ void CLiveDirector::UpdateTeams(const std::array<int, MAX_CLIENTS> &aTeams, cons
 	for(int Team = TEAM_FLOCK + 1; Team < TEAM_SUPER; ++Team)
 	{
 		if(aTeamCounts[Team] > 0)
-			m_vTeams.push_back({Team, aTeamCounts[Team]});
+		{
+			m_vEntries.push_back({EEntryType::DDRACE_TEAM, Team, -1, aTeamCounts[Team]});
+			m_HasDDRaceTeams = true;
+		}
+	}
+
+	if(m_HasDDRaceTeams)
+		return;
+
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+	{
+		if(aActivePlayers[ClientId])
+			m_vEntries.push_back({EEntryType::PLAYER, -1, ClientId, 1});
 	}
 }
 
 int CLiveDirector::SelectRandomTeam(unsigned Seed) const
 {
-	if(m_vTeams.empty())
+	int NumTeams = 0;
+	for(const CEntry &Entry : m_vEntries)
+	{
+		if(Entry.m_Type == EEntryType::DDRACE_TEAM)
+			++NumTeams;
+	}
+	if(NumTeams == 0)
 		return -1;
 
-	return m_vTeams[Seed % m_vTeams.size()].m_Team;
+	int Target = Seed % NumTeams;
+	for(const CEntry &Entry : m_vEntries)
+	{
+		if(Entry.m_Type != EEntryType::DDRACE_TEAM)
+			continue;
+		if(Target == 0)
+			return Entry.m_Team;
+		--Target;
+	}
+	return -1;
+}
+
+int CLiveDirector::SelectRandomPlayer(unsigned Seed) const
+{
+	int NumPlayers = 0;
+	for(const CEntry &Entry : m_vEntries)
+	{
+		if(Entry.m_Type == EEntryType::PLAYER)
+			++NumPlayers;
+	}
+	if(NumPlayers == 0)
+		return -1;
+
+	int Target = Seed % NumPlayers;
+	for(const CEntry &Entry : m_vEntries)
+	{
+		if(Entry.m_Type != EEntryType::PLAYER)
+			continue;
+		if(Target == 0)
+			return Entry.m_ClientId;
+		--Target;
+	}
+	return -1;
 }

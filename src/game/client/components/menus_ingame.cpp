@@ -427,13 +427,18 @@ void CMenus::RenderGame(CUIRect MainView)
 	const int LocalTeam = HasLocalInfo ? GameClient()->m_Snap.m_pLocalInfo->m_Team : TEAM_SPECTATORS;
 	const bool Recording = DemoRecorder(RECORDER_MANUAL)->IsRecording();
 	const bool FastPracticeEnabled = GameClient()->m_FastPractice.Enabled();
+	const bool LiveDirectorActive = Client()->QmLiveDirectorActive();
 
 	const char *pDisconnectButtonLabel = Localize("Disconnect");
-	const char *pDummyButtonLabel = Localize("连接分身");
-	if(Client()->DummyConnecting())
-		pDummyButtonLabel = Localize("正在连接分身");
-	else if(Client()->DummyConnected())
-		pDummyButtonLabel = Localize("断开分身");
+	const char *pDummyButtonLabel = nullptr;
+	if(!LiveDirectorActive)
+	{
+		pDummyButtonLabel = Localize("连接分身");
+		if(Client()->DummyConnecting())
+			pDummyButtonLabel = Localize("正在连接分身");
+		else if(Client()->DummyConnected())
+			pDummyButtonLabel = Localize("断开分身");
+	}
 	const char *pEditHudButtonLabel = Localize("Edit HUD");
 	const char *pDemoButtonLabel = Recording ? Localize("Stop record") : Localize("Record demo");
 	char aSaveReplayButtonLabel[64];
@@ -458,8 +463,8 @@ void CMenus::RenderGame(CUIRect MainView)
 	const float CompactPracticeButtonWidth = CalcMenuButtonWidth("fp", MenuButtonPaddingCompact, PracticeButtonMinWidth);
 	const float DisconnectButtonWidthNormal = CalcMenuButtonWidth(pDisconnectButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
 	const float DisconnectButtonWidthCompact = CalcMenuButtonWidth(pDisconnectButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
-	const float DummyButtonWidthNormal = CalcMenuButtonWidth(pDummyButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
-	const float DummyButtonWidthCompact = CalcMenuButtonWidth(pDummyButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
+	const float DummyButtonWidthNormal = LiveDirectorActive ? 0.0f : CalcMenuButtonWidth(pDummyButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
+	const float DummyButtonWidthCompact = LiveDirectorActive ? 0.0f : CalcMenuButtonWidth(pDummyButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
 	const float EditHudButtonWidthNormal = CalcMenuButtonWidth(pEditHudButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
 	const float EditHudButtonWidthCompact = CalcMenuButtonWidth(pEditHudButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
 	const float DemoButtonWidthNormal = CalcMenuButtonWidth(pDemoButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
@@ -471,7 +476,7 @@ void CMenus::RenderGame(CUIRect MainView)
 	const float ReportButtonWidthNormal = CalcMenuButtonWidth(pReportButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
 	const float ReportButtonWidthCompact = CalcMenuButtonWidth(pReportButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
 
-	const bool ShowGameplayButtons = HasLocalInfo && HasGameInfo && !Paused && !Spec;
+	const bool ShowGameplayButtons = HasLocalInfo && HasGameInfo && !Paused && !Spec && !LiveDirectorActive;
 	const bool ShowSpectateButton = ShowGameplayButtons && LocalTeam != TEAM_SPECTATORS;
 	const bool ShowJoinRedButton = ShowGameplayButtons && IsTeamPlay && LocalTeam != TEAM_RED;
 	const bool ShowJoinBlueButton = ShowGameplayButtons && IsTeamPlay && LocalTeam != TEAM_BLUE;
@@ -482,9 +487,9 @@ void CMenus::RenderGame(CUIRect MainView)
 	const bool ShowAutoCameraButton = HasLocalInfo && (LocalTeam == TEAM_SPECTATORS || Paused || Spec);
 
 	const float UtilityButtonWidthNormal =
-		DisconnectButtonWidthNormal + DummyButtonWidthNormal + EditHudButtonWidthNormal + DemoButtonWidthNormal + SaveReplayButtonWidthNormal + DemoMarkerButtonWidthNormal + ReportButtonWidthNormal + UtilityButtonSpacingNormal * 6.0f;
+		DisconnectButtonWidthNormal + (LiveDirectorActive ? 0.0f : DummyButtonWidthNormal + UtilityButtonSpacingNormal) + EditHudButtonWidthNormal + DemoButtonWidthNormal + SaveReplayButtonWidthNormal + DemoMarkerButtonWidthNormal + ReportButtonWidthNormal + UtilityButtonSpacingNormal * 5.0f;
 	const float UtilityButtonWidthCompact =
-		DisconnectButtonWidthCompact + DummyButtonWidthCompact + EditHudButtonWidthCompact + DemoButtonWidthCompact + SaveReplayButtonWidthCompact + DemoMarkerButtonWidthCompact + ReportButtonWidthCompact + UtilityButtonSpacingCompact * 6.0f;
+		DisconnectButtonWidthCompact + (LiveDirectorActive ? 0.0f : DummyButtonWidthCompact + UtilityButtonSpacingCompact) + EditHudButtonWidthCompact + DemoButtonWidthCompact + SaveReplayButtonWidthCompact + DemoMarkerButtonWidthCompact + ReportButtonWidthCompact + UtilityButtonSpacingCompact * 5.0f;
 	const float PrimaryButtonBarWidth = maximum(0.0f, MainView.w - 20.0f);
 
 	auto CalcPrimaryButtonsWidth = [&](bool IncludeTeamplayDDRaceButtons) {
@@ -616,44 +621,47 @@ void CMenus::RenderGame(CUIRect MainView)
 	}
 
 	UtilityButtonBar.VSplitRight(UtilityButtonSpacing, &UtilityButtonBar, nullptr);
-	UtilityButtonBar.VSplitRight(DummyButtonWidth, &UtilityButtonBar, &Button);
+	if(!LiveDirectorActive)
+	{
+		UtilityButtonBar.VSplitRight(DummyButtonWidth, &UtilityButtonBar, &Button);
 
-	static CButtonContainer s_DummyButton;
-	if(!Client()->DummyAllowed())
-	{
-		DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
+		static CButtonContainer s_DummyButton;
+		if(!Client()->DummyAllowed())
+		{
+			DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
 			GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("此服务器不允许使用分身"));
-	}
-	else if(Client()->DummyConnectingDelayed())
-	{
-		DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
-		GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("Please wait…"));
-	}
-	else if(Client()->DummyConnecting())
-	{
-		DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
-	}
-	else if(DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 0, &Button))
-	{
-		if(!Client()->DummyConnected())
-		{
-			Client()->DummyConnect();
 		}
-		else
+		else if(Client()->DummyConnectingDelayed())
 		{
-			if(GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0)
+			DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
+			GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("Please wait…"));
+		}
+		else if(Client()->DummyConnecting())
+		{
+			DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
+		}
+		else if(DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 0, &Button))
+		{
+			if(!Client()->DummyConnected())
 			{
-				PopupConfirm(Localize("断开分身"), Localize("确定要断开你的分身吗？"), Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnectDummy);
+				Client()->DummyConnect();
 			}
 			else
 			{
-				Client()->DummyDisconnect(nullptr);
-				SetActive(false);
+				if(GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0)
+				{
+					PopupConfirm(Localize("断开分身"), Localize("确定要断开你的分身吗？"), Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnectDummy);
+				}
+				else
+				{
+					Client()->DummyDisconnect(nullptr);
+					SetActive(false);
+				}
 			}
 		}
-	}
 
-	UtilityButtonBar.VSplitRight(UtilityButtonSpacing, &UtilityButtonBar, nullptr);
+		UtilityButtonBar.VSplitRight(UtilityButtonSpacing, &UtilityButtonBar, nullptr);
+	}
 	UtilityButtonBar.VSplitRight(EditHudButtonWidth, &UtilityButtonBar, &Button);
 	static CButtonContainer s_EditHudButton;
 	if(DoButton_Menu(&s_EditHudButton, pEditHudButtonLabel, 0, &Button))

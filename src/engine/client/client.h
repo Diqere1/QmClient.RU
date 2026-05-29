@@ -256,10 +256,35 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	int m_KcpNegotiationConv = 0;
 #if defined(CONF_QM_LIVE_CLIENT)
 	CLiveObserverSession m_LiveObserverSession;
+	int64_t m_LiveObserverRequestTime = 0;
 #endif
 
 public:
 	bool ServerCapAnyPlayerFlag() const override { return m_ServerCapabilities.m_AnyPlayerFlag; }
+	bool QmLiveObserverActive() const override
+	{
+#if defined(CONF_QM_LIVE_CLIENT)
+		return m_LiveObserverSession.Accepted();
+#else
+		return false;
+#endif
+	}
+	bool QmLiveDirectorActive() const override
+	{
+#if defined(CONF_QM_LIVE_CLIENT)
+		return m_LiveObserverSession.DirectorActive();
+#else
+		return false;
+#endif
+	}
+	bool QmLiveCompatDirectorActive() const override
+	{
+#if defined(CONF_QM_LIVE_CLIENT)
+		return m_LiveObserverSession.CompatDirectorActive();
+#else
+		return false;
+#endif
+	}
 
 private:
 	CServerInfo m_CurrentServerInfo;
@@ -355,6 +380,7 @@ public:
 	void SendKcpCapability(int Conn);
 	void SendKcpProbe(int Conn);
 	void SendQmLiveObserverRequest(int Conn);
+	void EnableQmLiveCompatDirector(EQmLiveDenyReason Reason, const char *pReasonText);
 	void SendEnterGame(int Conn);
 	void SendReady(int Conn);
 	void SendMapRequest();
@@ -375,6 +401,9 @@ public:
 	IGraphics::CTextureHandle GetDebugFont() const override { return m_DebugFont; }
 
 	void SendInput();
+#if defined(CONF_QM_LIVE_CLIENT)
+	void SendQmLiveObserverInputAck();
+#endif
 
 	// TODO: OPT: do this a lot smarter!
 	int *GetInput(int Tick, int IsDummy) const override;
