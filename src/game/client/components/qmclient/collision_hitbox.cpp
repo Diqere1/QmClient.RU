@@ -470,8 +470,8 @@ void CCollisionHitbox::RenderTeeHitboxes()
 			   Player.m_RenderPos.y >= ScreenY0 && Player.m_RenderPos.y <= ScreenY1))
 			continue;
 
-		float PlayerAlpha = Alpha;
-		if(GameClient()->IsOtherTeam(ClientId))
+		float PlayerAlpha = Alpha * GameClient()->LiveObserverClientAlpha(ClientId);
+		if(PlayerAlpha >= Alpha && GameClient()->IsOtherTeam(ClientId))
 			PlayerAlpha *= (float)g_Config.m_ClShowOthersAlpha / 100.0f;
 
 		if(PlayerAlpha <= 0.0f)
@@ -578,8 +578,8 @@ void CCollisionHitbox::RenderHammerHitboxes()
 			continue;
 		HitPosition += RenderDelta;
 
-		float PlayerAlpha = Alpha;
-		if(GameClient()->IsOtherTeam(ClientId))
+		float PlayerAlpha = Alpha * GameClient()->LiveObserverClientAlpha(ClientId);
+		if(PlayerAlpha >= Alpha && GameClient()->IsOtherTeam(ClientId))
 			PlayerAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
 		if(PlayerAlpha <= 0.0f)
 			continue;
@@ -628,8 +628,12 @@ void CCollisionHitbox::RenderProjectileHitboxes()
 			continue;
 
 		float ProjectileAlpha = Alpha;
-		if(Data.m_ExtraInfo && Data.m_Owner >= 0 && GameClient()->IsOtherTeam(Data.m_Owner))
-			ProjectileAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		if(Data.m_ExtraInfo && Data.m_Owner >= 0)
+		{
+			ProjectileAlpha *= GameClient()->LiveObserverClientAlpha(Data.m_Owner);
+			if(ProjectileAlpha >= Alpha && GameClient()->IsOtherTeam(Data.m_Owner))
+				ProjectileAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		}
 		if(ProjectileAlpha <= 0.0f)
 			continue;
 
@@ -663,8 +667,12 @@ void CCollisionHitbox::RenderLaserHitboxes()
 			continue;
 
 		float LaserAlpha = Alpha;
-		if(Data.m_ExtraInfo && Data.m_Owner >= 0 && GameClient()->IsOtherTeam(Data.m_Owner))
-			LaserAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		if(Data.m_ExtraInfo && Data.m_Owner >= 0)
+		{
+			LaserAlpha *= GameClient()->LiveObserverClientAlpha(Data.m_Owner);
+			if(LaserAlpha >= Alpha && GameClient()->IsOtherTeam(Data.m_Owner))
+				LaserAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		}
 		if(LaserAlpha <= 0.0f)
 			continue;
 
@@ -703,8 +711,8 @@ void CCollisionHitbox::RenderHookHitboxes()
 		if(!IsLineOnScreen(StartPosition, HookPosition, CCharacterCore::PhysicalSize()))
 			continue;
 
-		float HookAlpha = Alpha;
-		if(GameClient()->IsOtherTeam(ClientId))
+		float HookAlpha = Alpha * GameClient()->LiveObserverClientAlpha(ClientId);
+		if(HookAlpha >= Alpha && GameClient()->IsOtherTeam(ClientId))
 			HookAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
 		if(HookAlpha <= 0.0f)
 			continue;

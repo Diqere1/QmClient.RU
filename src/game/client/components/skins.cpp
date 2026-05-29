@@ -26,6 +26,9 @@
 using namespace std::chrono_literals;
 
 static constexpr int SKIN_QUEUE_INTERVAL_UNITS_PER_SECOND = 10;
+#if defined(CONF_QM_LIVE_CLIENT)
+static constexpr size_t LIVE_OBSERVER_SKINS_LOADED_MAX = 96;
+#endif
 
 static int &SkinQueueIntervalVar(int Dummy)
 {
@@ -657,6 +660,15 @@ void CSkins::OnUpdate()
 	UpdateFinishLoading(Stats, Now, MaxTime);
 }
 
+size_t CSkins::LoadedSkinLimit() const
+{
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Client()->QmLiveDirectorActive())
+		return minimum((size_t)g_Config.m_ClSkinsLoadedMax, LIVE_OBSERVER_SKINS_LOADED_MAX);
+#endif
+	return (size_t)g_Config.m_ClSkinsLoadedMax;
+}
+
 void CSkins::ClampSkinQueueIndex(int Dummy)
 {
 	auto &Queue = m_aSkinQueue[Dummy];
@@ -876,13 +888,14 @@ void CSkins::SyncSkinQueueFromMapPlayers(int Dummy)
 
 void CSkins::UpdateUnloadSkins(CSkinLoadingStats &Stats)
 {
-	if(Stats.m_NumPending + Stats.m_NumLoaded + Stats.m_NumLoading <= (size_t)g_Config.m_ClSkinsLoadedMax)
+	const size_t SkinLimit = LoadedSkinLimit();
+	if(Stats.m_NumPending + Stats.m_NumLoaded + Stats.m_NumLoading <= SkinLimit)
 	{
 		return;
 	}
 
 	const std::chrono::nanoseconds UnloadStart = time_get_nanoseconds();
-	size_t NumToUnload = std::min<size_t>(Stats.m_NumPending + Stats.m_NumLoaded + Stats.m_NumLoading - (size_t)g_Config.m_ClSkinsLoadedMax, 16);
+	size_t NumToUnload = std::min<size_t>(Stats.m_NumPending + Stats.m_NumLoaded + Stats.m_NumLoading - SkinLimit, 16);
 	const size_t MaxSkipped = m_SkinsUsageList.size() / 8;
 	size_t NumSkipped = 0;
 	std::vector<std::string> vUsageSnapshot;
@@ -934,8 +947,9 @@ void CSkins::UpdateUnloadSkins(CSkinLoadingStats &Stats)
 
 void CSkins::UpdateStartLoading(CSkinLoadingStats &Stats)
 {
+	const size_t SkinLimit = LoadedSkinLimit();
 	auto StartLoadJob = [&](CSkinContainer *pSkinContainer) {
-		if(Stats.m_NumPending == 0 || Stats.m_NumLoading + Stats.m_NumLoaded >= (size_t)g_Config.m_ClSkinsLoadedMax)
+		if(Stats.m_NumPending == 0 || Stats.m_NumLoading + Stats.m_NumLoaded >= SkinLimit)
 		{
 			return false;
 		}

@@ -403,6 +403,7 @@ private:
 	void UpdateUnloadSkins(CSkinLoadingStats &Stats);
 	void UpdateStartLoading(CSkinLoadingStats &Stats);
 	void UpdateFinishLoading(CSkinLoadingStats &Stats, std::chrono::nanoseconds StartTime, std::chrono::nanoseconds MaxTime);
+	size_t LoadedSkinLimit() const;
 
 	static void ConAddFavoriteSkin(IConsole::IResult *pResult, void *pUserData);
 	static void ConRemFavoriteSkin(IConsole::IResult *pResult, void *pUserData);

@@ -2954,6 +2954,13 @@ if(CLIENT)
     render_map.cpp
     render_map.h
   )
+  set(GAME_LIVE_CLIENT
+    ${PROJECT_SOURCE_DIR}/src/game/client/live/live_director.cpp
+    ${PROJECT_SOURCE_DIR}/src/game/client/live/live_director.h
+    ${PROJECT_SOURCE_DIR}/src/game/client/live/live_replay_buffer.cpp
+    ${PROJECT_SOURCE_DIR}/src/game/client/live/live_replay_buffer.h
+  )
+  list(REMOVE_ITEM GAME_CLIENT ${GAME_LIVE_CLIENT})
   set(GAME_GENERATED_CLIENT
     src/generated/checksum.cpp
     src/generated/client_data.cpp
@@ -2962,6 +2969,7 @@ if(CLIENT)
     src/generated/client_data7.h
   )
   set(CLIENT_SRC ${ENGINE_CLIENT} ${PLATFORM_CLIENT} ${GAME_CLIENT} ${GAME_EDITOR} ${GAME_MAP} ${GAME_GENERATED_CLIENT})
+  set(LIVE_CLIENT_SRC ${CLIENT_SRC} ${GAME_LIVE_CLIENT})
 
   set(DEPS_CLIENT ${DEPS} ${GLEW_DEP} ${WAVPACK_DEP})
 
@@ -2995,6 +3003,61 @@ if(CLIENT)
     else()
       list(APPEND LIBS_CLIENT ${CMAKE_DL_LIBS})
     endif()
+  endif()
+
+  add_library(game-client-common INTERFACE)
+  target_link_libraries(game-client-common INTERFACE ${LIBS_CLIENT})
+
+  # Silence warnings from ChaiScript
+  target_include_directories(game-client-common SYSTEM INTERFACE
+    ${PROJECT_SOURCE_DIR}/src/engine/external/chaiscript)
+
+  target_include_directories(game-client-common SYSTEM INTERFACE
+    ${FREETYPE_INCLUDE_DIRS}
+    ${GLEW_INCLUDE_DIRS}
+    ${OGG_INCLUDE_DIRS}
+    ${OPUSFILE_INCLUDE_DIRS}
+    ${OPUS_INCLUDE_DIRS}
+    ${PNG_INCLUDE_DIRS}
+    ${SDL2_INCLUDE_DIRS}
+    ${WAVPACK_INCLUDE_DIRS}
+    ${FFMPEG_INCLUDE_DIRS}
+    ${WebP_INCLUDE_DIRS}
+    ${DISCORDSDK_INCLUDE_DIRS}
+
+    ${VULKAN_INCLUDE_DIRS}
+
+    ${PLATFORM_CLIENT_INCLUDE_DIRS}
+  )
+
+  set(PARAMS "${WAVPACK_INCLUDE_DIRS};${WAVPACK_INCLUDE_DIRS}")
+  if(NOT(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS STREQUAL PARAMS))
+    unset(WAVPACK_OPEN_FILE_INPUT_EX CACHE)
+  endif()
+  set(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS "${PARAMS}" CACHE INTERNAL "")
+
+  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES} ${WAVPACK_INCLUDE_DIRS})
+  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES} ${WAVPACK_LIBRARIES})
+  check_symbol_exists(WavpackOpenFileInputEx wavpack.h WAVPACK_OPEN_FILE_INPUT_EX)
+  check_symbol_exists(WavpackCloseFile wavpack.h WAVPACK_CLOSE_FILE)
+  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES})
+  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES})
+
+  if(WAVPACK_OPEN_FILE_INPUT_EX)
+    target_compile_definitions(game-client-common INTERFACE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
+  endif()
+
+  if(WAVPACK_CLOSE_FILE)
+    target_compile_definitions(game-client-common INTERFACE CONF_WAVPACK_CLOSE_FILE)
+  endif()
+
+  if(GLEW_BUNDLED)
+    target_compile_definitions(game-client-common INTERFACE CONF_GLEW_HAS_CONTEXT_INIT)
+  endif()
+
+  if(VULKAN)
+    target_compile_definitions(game-client-common INTERFACE CONF_BACKEND_VULKAN)
+    target_compile_definitions(engine-shared PRIVATE CONF_BACKEND_VULKAN)
   endif()
 
   if(TARGET_OS STREQUAL "windows")
@@ -3045,7 +3108,7 @@ if(CLIENT)
   set_property(TARGET game-client
       PROPERTY OUTPUT_NAME ${CLIENT_EXECUTABLE}
   )
-  target_link_libraries(game-client ${LIBS_CLIENT})
+  target_link_libraries(game-client game-client-common)
   if(STEAMAPI_RUNTIME_FILE)
     add_custom_command(TARGET game-client POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "${STEAMAPI_RUNTIME_FILE}" "$<TARGET_FILE_DIR:game-client>/${STEAMAPI_RUNTIME_FILE_NAME}"
@@ -3068,60 +3131,8 @@ if(CLIENT)
     target_compile_options(game-client PRIVATE -Wa,-mbig-obj) # TClient, required for ChaiScript
   endif()
 
-  # Silence warnings from ChaiScript
-  target_include_directories(game-client SYSTEM PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/engine/external/chaiscript)
-
-  target_include_directories(game-client SYSTEM PRIVATE
-    ${FREETYPE_INCLUDE_DIRS}
-    ${GLEW_INCLUDE_DIRS}
-    ${OGG_INCLUDE_DIRS}
-    ${OPUSFILE_INCLUDE_DIRS}
-    ${OPUS_INCLUDE_DIRS}
-    ${PNG_INCLUDE_DIRS}
-    ${SDL2_INCLUDE_DIRS}
-    ${WAVPACK_INCLUDE_DIRS}
-    ${FFMPEG_INCLUDE_DIRS}
-    ${WebP_INCLUDE_DIRS}
-    ${DISCORDSDK_INCLUDE_DIRS}
-
-    ${VULKAN_INCLUDE_DIRS}
-
-    ${PLATFORM_CLIENT_INCLUDE_DIRS}
-  )
-
   if(STEAMAPI_KIND STREQUAL SHARED OR DISCORD_DYNAMIC)
     set_own_rpath(game-client)
-  endif()
-
-  set(PARAMS "${WAVPACK_INCLUDE_DIRS};${WAVPACK_INCLUDE_DIRS}")
-  if(NOT(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS STREQUAL PARAMS))
-    unset(WAVPACK_OPEN_FILE_INPUT_EX CACHE)
-  endif()
-  set(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS "${PARAMS}" CACHE INTERNAL "")
-
-  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES} ${WAVPACK_INCLUDE_DIRS})
-  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES} ${WAVPACK_LIBRARIES})
-  check_symbol_exists(WavpackOpenFileInputEx wavpack.h WAVPACK_OPEN_FILE_INPUT_EX)
-  check_symbol_exists(WavpackCloseFile wavpack.h WAVPACK_CLOSE_FILE)
-  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES})
-  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES})
-
-  if(WAVPACK_OPEN_FILE_INPUT_EX)
-    target_compile_definitions(game-client PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
-  endif()
-
-  if(WAVPACK_CLOSE_FILE)
-    target_compile_definitions(game-client PRIVATE CONF_WAVPACK_CLOSE_FILE)
-  endif()
-
-  if(GLEW_BUNDLED)
-    target_compile_definitions(game-client PRIVATE CONF_GLEW_HAS_CONTEXT_INIT)
-  endif()
-
-  if(VULKAN)
-    target_compile_definitions(game-client PRIVATE CONF_BACKEND_VULKAN)
-    target_compile_definitions(engine-shared PRIVATE CONF_BACKEND_VULKAN)
   endif()
 
   if(TARGET sync_runtime_data)
@@ -3149,7 +3160,7 @@ if(CLIENT)
     endif()
 
     add_executable(game-live-client WIN32
-      ${CLIENT_SRC}
+      ${LIVE_CLIENT_SRC}
       ${CLIENT_ICON}
       ${LIVE_CLIENT_VERSIONINFO}
       ${LIVE_CLIENT_MANIFEST}
@@ -3162,7 +3173,7 @@ if(CLIENT)
     set_property(TARGET game-live-client
         PROPERTY OUTPUT_NAME QmLiveClient
     )
-    target_link_libraries(game-live-client ${LIBS_CLIENT})
+    target_link_libraries(game-live-client game-client-common)
     target_compile_definitions(game-live-client PRIVATE CONF_QM_LIVE_CLIENT)
     if(STEAMAPI_RUNTIME_FILE)
       add_custom_command(TARGET game-live-client POST_BUILD
@@ -3178,45 +3189,8 @@ if(CLIENT)
       target_compile_options(game-live-client PRIVATE -Wa,-mbig-obj)
     endif()
 
-    target_include_directories(game-live-client SYSTEM PRIVATE
-      ${PROJECT_SOURCE_DIR}/src/engine/external/chaiscript)
-
-    target_include_directories(game-live-client SYSTEM PRIVATE
-      ${FREETYPE_INCLUDE_DIRS}
-      ${GLEW_INCLUDE_DIRS}
-      ${OGG_INCLUDE_DIRS}
-      ${OPUSFILE_INCLUDE_DIRS}
-      ${OPUS_INCLUDE_DIRS}
-      ${PNG_INCLUDE_DIRS}
-      ${SDL2_INCLUDE_DIRS}
-      ${WAVPACK_INCLUDE_DIRS}
-      ${FFMPEG_INCLUDE_DIRS}
-      ${WebP_INCLUDE_DIRS}
-      ${DISCORDSDK_INCLUDE_DIRS}
-
-      ${VULKAN_INCLUDE_DIRS}
-
-      ${PLATFORM_CLIENT_INCLUDE_DIRS}
-    )
-
     if(STEAMAPI_KIND STREQUAL SHARED OR DISCORD_DYNAMIC)
       set_own_rpath(game-live-client)
-    endif()
-
-    if(WAVPACK_OPEN_FILE_INPUT_EX)
-      target_compile_definitions(game-live-client PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
-    endif()
-
-    if(WAVPACK_CLOSE_FILE)
-      target_compile_definitions(game-live-client PRIVATE CONF_WAVPACK_CLOSE_FILE)
-    endif()
-
-    if(GLEW_BUNDLED)
-      target_compile_definitions(game-live-client PRIVATE CONF_GLEW_HAS_CONTEXT_INIT)
-    endif()
-
-    if(VULKAN)
-      target_compile_definitions(game-live-client PRIVATE CONF_BACKEND_VULKAN)
     endif()
 
     if(TARGET sync_runtime_data)
@@ -3358,6 +3332,9 @@ if(SERVER)
     ${LIBS}
   )
 
+  add_library(game-server-common INTERFACE)
+  target_link_libraries(game-server-common INTERFACE ${LIBS_SERVER})
+
   add_library(game-server-without-main OBJECT
       ${DEPS}
       ${SERVER_SRC}
@@ -3368,7 +3345,7 @@ if(SERVER)
   set_property(TARGET game-server-without-main
       PROPERTY OUTPUT_NAME ${SERVER_EXECUTABLE}
   )
-  target_link_libraries(game-server-without-main ${LIBS_SERVER})
+  target_link_libraries(game-server-without-main game-server-common)
   list(APPEND TARGETS_OWN game-server-without-main)
   list(APPEND TARGETS_LINK game-server-without-main)
 
@@ -3399,7 +3376,7 @@ if(SERVER)
   set_property(TARGET game-server
       PROPERTY OUTPUT_NAME ${SERVER_EXECUTABLE}
   )
-  target_link_libraries(game-server ${LIBS_SERVER})
+  target_link_libraries(game-server game-server-common)
   list(APPEND TARGETS_OWN game-server)
   list(APPEND TARGETS_LINK game-server)
 
@@ -3423,7 +3400,7 @@ if(SERVER)
       PROPERTY OUTPUT_NAME QmLiveServer
   )
   target_compile_definitions(game-live-server-without-main PRIVATE CONF_QM_LIVE_SERVER)
-  target_link_libraries(game-live-server-without-main ${LIBS_SERVER})
+  target_link_libraries(game-live-server-without-main game-server-common)
   list(APPEND TARGETS_OWN game-live-server-without-main)
   list(APPEND TARGETS_LINK game-live-server-without-main)
 
@@ -3454,7 +3431,7 @@ if(SERVER)
       PROPERTY OUTPUT_NAME QmLiveServer
   )
   target_compile_definitions(game-live-server PRIVATE CONF_QM_LIVE_SERVER)
-  target_link_libraries(game-live-server ${LIBS_SERVER})
+  target_link_libraries(game-live-server game-server-common)
   list(APPEND TARGETS_OWN game-live-server)
   list(APPEND TARGETS_LINK game-live-server)
 
@@ -3641,6 +3618,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     os_test.cpp
     packer_test.cpp
     prng_test.cpp
+    qm_live_client_test.cpp
     qm_modes_test.cpp
     QmUiTokensTest.cpp
     qmclient_monitoring_test.cpp
@@ -3679,6 +3657,8 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
+    src/game/client/live/live_director.cpp
+    src/game/client/live/live_replay_buffer.cpp
     src/game/client/components/qmclient/modes.cpp
     src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp

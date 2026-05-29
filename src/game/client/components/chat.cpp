@@ -2445,6 +2445,11 @@ static bool ShouldSyncTeamCommandToOther(const char *pLine)
 
 void CChat::SendChat(int Team, const char *pLine)
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(GameClient()->Client()->QmLiveDirectorActive())
+		return;
+#endif
+
 	// don't send empty messages
 	if(*str_utf8_skip_whitespaces(pLine) == '\0')
 		return;
@@ -2481,6 +2486,11 @@ void CChat::SendChat(int Team, const char *pLine)
 
 void CChat::SendChatOnConn(int Conn, int Team, const char *pLine)
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(GameClient()->Client()->QmLiveDirectorActive())
+		return;
+#endif
+
 	// don't send empty messages
 	if(*str_utf8_skip_whitespaces(pLine) == '\0')
 		return;

@@ -489,7 +489,9 @@ void CPlayers::RenderHookCollLine(
 	// Render hook coll line
 	const int HookCollSize = Local ? g_Config.m_ClHookCollSize : g_Config.m_ClHookCollSizeOther;
 
-	float Alpha = GameClient()->IsOtherTeam(ClientId) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
+	float Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+	if(Alpha >= 1.0f && GameClient()->IsOtherTeam(ClientId))
+		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 	Alpha *= (float)g_Config.m_ClHookCollAlpha / 100;
 	if(ClientId >= 0 && GameClient()->m_FastPractice.Enabled() && !GameClient()->m_Snap.m_SpecInfo.m_Active && !GameClient()->m_FastPractice.IsPracticeParticipant(ClientId))
 		Alpha = std::min(Alpha, 0.5f);
@@ -808,7 +810,9 @@ void CPlayers::RenderHook(
 		Intra = GameClient()->m_aClients[ClientId].m_IsPredicted ? Client()->PredIntraGameTick(g_Config.m_ClDummy) : Client()->IntraGameTick(g_Config.m_ClDummy);
 
 	bool OtherTeam = GameClient()->IsOtherTeam(ClientId);
-	float Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
+	float Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+	if(Alpha >= 1.0f)
+		Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
 	if(ClientId == -2) // ghost
 		Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
 	if(ClientId >= 0 && GameClient()->m_FastPractice.Enabled() && !GameClient()->m_Snap.m_SpecInfo.m_Active && !GameClient()->m_FastPractice.IsPracticeParticipant(ClientId))
@@ -904,10 +908,14 @@ void CPlayers::RenderPlayer(
 	RenderTools()->m_LocalTeeRender = Local; // TClient
 
 	float Alpha = 1.0f;
-	if(OtherTeam || ClientId < 0)
-		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
-	else if(g_Config.m_TcShowOthersGhosts && !Local && !Spec)
-		Alpha = g_Config.m_TcPredGhostsAlpha / 100.0f;
+	Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+	if(Alpha >= 1.0f)
+	{
+		if(OtherTeam || ClientId < 0)
+			Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
+		else if(g_Config.m_TcShowOthersGhosts && !Local && !Spec)
+			Alpha = g_Config.m_TcPredGhostsAlpha / 100.0f;
+	}
 
 	if(!OtherTeam && g_Config.m_TcShowOthersGhosts && !Local && g_Config.m_TcUnpredOthersInFreeze && Client()->m_IsLocalFrozen && !Spec)
 		Alpha = 1.0f;
@@ -1408,10 +1416,14 @@ void CPlayers::RenderPlayerGhost(
 
 	bool FrozenSwappingHide = (GameClient()->m_aClients[ClientId].m_FreezeEnd > 0) && g_Config.m_TcHideFrozenGhosts && g_Config.m_TcSwapGhosts;
 
-	if(OtherTeam || ClientId < 0)
-		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
-	else
-		Alpha = g_Config.m_TcUnpredGhostsAlpha / 100.0f;
+	Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+	if(Alpha >= 1.0f)
+	{
+		if(OtherTeam || ClientId < 0)
+			Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
+		else
+			Alpha = g_Config.m_TcUnpredGhostsAlpha / 100.0f;
+	}
 
 	if(!OtherTeam && FrozenSwappingHide)
 		Alpha = 1.0f;
@@ -1948,7 +1960,9 @@ void CPlayers::OnRender()
 		}
 
 		const int ClientId = Client.ClientId();
-		float Alpha = (GameClient()->IsOtherTeam(ClientId) || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.f : 1.f;
+		float Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+		if(Alpha >= 1.0f)
+			Alpha = (GameClient()->IsOtherTeam(ClientId) || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.f : 1.f;
 		if(ClientId == -2) // ghost
 		{
 			Alpha = g_Config.m_ClRaceGhostAlpha / 100.f;

@@ -380,8 +380,33 @@ void CClient::SendQmLiveObserverRequest(int Conn)
 	Msg.AddInt(SERVERCAP_LIVE_OBSERVER | SERVERCAP_LIVE_DIRECTOR);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
 	m_LiveObserverSession.StartRequest();
+	m_LiveObserverRequestTime = time_get();
 #else
 	(void)Conn;
+#endif
+}
+
+void CClient::EnableQmLiveCompatDirector(EQmLiveDenyReason Reason, const char *pReasonText)
+{
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.CompatDirectorActive() || m_LiveObserverSession.Accepted())
+		return;
+
+	m_LiveObserverSession.StartCompatDirector(Reason, pReasonText);
+	m_LiveObserverRequestTime = 0;
+
+	char aBuf[128];
+	str_format(aBuf, sizeof(aBuf), "live observer fallback: %s", m_LiveObserverSession.DenyReasonText());
+	m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+
+	if(m_LiveObserverSession.ReadyPending())
+	{
+		m_LiveObserverSession.SetReadyPending(false);
+		SendReady(CONN_MAIN);
+	}
+#else
+	(void)Reason;
+	(void)pReasonText;
 #endif
 }
 
@@ -399,7 +424,7 @@ void CClient::SendEnterGame(int Conn)
 void CClient::SendReady(int Conn)
 {
 #if defined(CONF_QM_LIVE_CLIENT)
-	if(Conn == CONN_MAIN && !m_LiveObserverSession.Accepted())
+	if(Conn == CONN_MAIN && m_LiveObserverSession.RequestPending())
 	{
 		m_LiveObserverSession.SetReadyPending(true);
 		return;
@@ -553,11 +578,46 @@ int CClient::PendingResendCount() const
 	return m_aNetClient[g_Config.m_ClDummy].PendingResendCount();
 }
 
+#if defined(CONF_QM_LIVE_CLIENT)
+void CClient::SendQmLiveObserverInputAck()
+{
+	constexpr int Conn = CONN_MAIN;
+	const int PredTick = m_aPredTick[Conn];
+	if(PredTick <= 0)
+		return;
+
+	const int64_t Now = time_get();
+
+	CMsgPacker Msg(NETMSG_INPUT, true);
+	Msg.AddInt(m_aAckGameTick[Conn]);
+	Msg.AddInt(PredTick);
+	// Keep the normal snapshot ack and input-timing loop alive without sending gameplay input.
+	Msg.AddInt(0);
+
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_Tick = PredTick;
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictedTime = m_PredictedTime.Get(Now);
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictionMargin = PredictionMargin() * time_freq() / 1000;
+	if(g_Config.m_TcSmoothPredictionMargin)
+		m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictionMargin = m_PredictedTime.GetMargin(Now);
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_Time = Now;
+
+	m_aCurrentInput[Conn]++;
+	m_aCurrentInput[Conn] %= 200;
+
+	SendMsg(Conn, &Msg, MSGFLAG_FLUSH);
+	if(m_aNetClient[Conn].IsKcpActive())
+		SendMsg(Conn, &Msg, MSGFLAG_FLUSH);
+}
+#endif
+
 void CClient::SendInput()
 {
 #if defined(CONF_QM_LIVE_CLIENT)
 	if(m_LiveObserverSession.Accepted())
+	{
+		SendQmLiveObserverInputAck();
 		return;
+	}
 #endif
 
 	int64_t Now = time_get();
@@ -960,6 +1020,7 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 	m_CanReceiveServerCapabilities = true;
 #if defined(CONF_QM_LIVE_CLIENT)
 	m_LiveObserverSession.Reset();
+	m_LiveObserverRequestTime = 0;
 #endif
 
 	m_Sixup = OnlySixup;
@@ -1011,6 +1072,7 @@ void CClient::DisconnectWithReason(const char *pReason)
 	m_KcpNegotiationConv = 0;
 #if defined(CONF_QM_LIVE_CLIENT)
 	m_LiveObserverSession.Reset();
+	m_LiveObserverRequestTime = 0;
 #endif
 	m_UseTempRconCommands = 0;
 	m_ExpectedRconCommands = -1;
@@ -1073,6 +1135,12 @@ bool CClient::DummyConnectingDelayed() const
 
 void CClient::DummyConnect()
 {
+	if(QmLiveDirectorActive())
+	{
+		log_info("client", "Dummy connection is disabled for QmLive director.");
+		return;
+	}
+
 	if(m_aNetClient[CONN_MAIN].State() != NETSTATE_ONLINE)
 	{
 		log_info("client", "Not online.");
@@ -1140,6 +1208,8 @@ void CClient::DummyDisconnect(const char *pReason)
 
 bool CClient::DummyAllowed() const
 {
+	if(QmLiveDirectorActive())
+		return false;
 	return m_ServerCapabilities.m_AllowDummy;
 }
 
@@ -1980,6 +2050,7 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 				return;
 			}
 			m_LiveObserverSession.Accept(Capabilities);
+			m_LiveObserverRequestTime = 0;
 			if(m_LiveObserverSession.ReadyPending())
 			{
 				m_LiveObserverSession.SetReadyPending(false);
@@ -1994,10 +2065,7 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			{
 				return;
 			}
-			m_LiveObserverSession.Deny(Reason, pReasonText);
-			char aReason[128];
-			str_format(aReason, sizeof(aReason), "live observer denied: %s", m_LiveObserverSession.DenyReasonText());
-			DisconnectWithReason(aReason);
+			EnableQmLiveCompatDirector(Reason, pReasonText);
 		}
 #endif
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_MAP_CHANGE)
@@ -2175,6 +2243,13 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CON_READY)
 		{
 			GameClient()->OnConnected();
+#if defined(CONF_QM_LIVE_CLIENT)
+			if(m_LiveObserverSession.Accepted())
+			{
+				// Live observers do not get a game-layer ReadyToEnter because the server never creates a CPlayer.
+				EnterGame(CONN_MAIN);
+			}
+#endif
 			if(m_DummyReconnectOnReload)
 			{
 				m_DummySendConnInfo = true;
@@ -3159,6 +3234,13 @@ void CClient::UpdateDemoIntraTimers()
 void CClient::Update()
 {
 	PumpNetwork();
+
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.RequestPending() && m_LiveObserverRequestTime != 0 && time_get() > m_LiveObserverRequestTime + time_freq() * 5)
+	{
+		EnableQmLiveCompatDirector(EQmLiveDenyReason::UNSUPPORTED, "no accept");
+	}
+#endif
 
 	if(State() == IClient::STATE_DEMOPLAYBACK)
 	{

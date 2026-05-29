@@ -71,7 +71,8 @@ void CTrails::OnRender()
 			vec2 Direction = direction(Angle);
 
 			float Alpha = 1.0f;
-			if(GameClient()->IsOtherTeam(ClientId))
+			Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+			if(Alpha >= 1.0f && GameClient()->IsOtherTeam(ClientId))
 				Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 
 			GameClient()->m_Effects.FootTrail(Position, Direction, Alpha);
@@ -105,7 +106,8 @@ void CTrails::OnRender()
 			vec2 Direction = direction(Angle);
 
 			float Alpha = 1.0f;
-			if(GameClient()->IsOtherTeam(ClientId))
+			Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+			if(Alpha >= 1.0f && GameClient()->IsOtherTeam(ClientId))
 				Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 
 			// Render foot trail for recognized Q1menG client
@@ -187,7 +189,15 @@ void CTrails::OnRender()
 		// Taken from players.cpp
 		if(ClientId == -2)
 			Alpha *= g_Config.m_ClRaceGhostAlpha / 100.0f;
-		else if(ClientId < 0 || GameClient()->IsOtherTeam(ClientId))
+		else if(ClientId >= 0)
+		{
+			const float LiveObserverAlpha = GameClient()->LiveObserverClientAlpha(ClientId);
+			if(LiveObserverAlpha < 1.0f)
+				Alpha *= LiveObserverAlpha;
+			else if(GameClient()->IsOtherTeam(ClientId))
+				Alpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		}
+		else
 			Alpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
 
 		int TrailLength = g_Config.m_TcTeeTrailLength;

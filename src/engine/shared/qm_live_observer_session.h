@@ -28,11 +28,14 @@ public:
 	void StartRequest();
 	void Accept(int Capabilities);
 	void Deny(EQmLiveDenyReason Reason, const char *pReasonText);
+	void StartCompatDirector(EQmLiveDenyReason Reason, const char *pReasonText);
 
 	EHandshakeState HandshakeState() const { return m_HandshakeState; }
 	bool RequestPending() const { return m_HandshakeState == EHandshakeState::REQUESTED; }
 	bool Accepted() const { return m_HandshakeState == EHandshakeState::ACCEPTED; }
 	bool Denied() const { return m_HandshakeState == EHandshakeState::DENIED; }
+	bool CompatDirectorActive() const { return m_CompatDirectorActive; }
+	bool DirectorActive() const { return Accepted() || CompatDirectorActive(); }
 
 	int Capabilities() const { return m_Capabilities; }
 	EQmLiveDenyReason DenyReason() const { return m_DenyReason; }
@@ -65,6 +68,7 @@ private:
 	int m_FollowClientId = -1;
 	bool m_Freeview = true;
 	bool m_ReadyPending = false;
+	bool m_CompatDirectorActive = false;
 	vec2 m_FreeviewPosition = vec2(0.0f, 0.0f);
 	char m_aDenyReasonText[32] = "";
 };
