@@ -1620,9 +1620,14 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
 
 			if(Render)
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAutoVoteWhenFar, Localize("Automatically vote no on map changes"), &g_Config.m_TcAutoVoteWhenFar, &CurrentColumn, LineSize);
+			{
+				static std::vector<CButtonContainer> s_vAutoMapVoteButtons = {{}, {}, {}};
+				int AutoMapVote = std::clamp(g_Config.m_TcAutoVoteWhenFar, 0, 2);
+				if(DoLine_RadioMenu(CurrentColumn, Localize("Auto map vote"), s_vAutoMapVoteButtons, {Localize("Off"), Localize("Agree"), Localize("Reject")}, {0, 2, 1}, AutoMapVote))
+					g_Config.m_TcAutoVoteWhenFar = AutoMapVote;
+			}
 			else
-				CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+				CurrentColumn.HSplitTop(LineSize + 2.0f, nullptr, &CurrentColumn);
 			CurrentColumn.HSplitTop(LineSize, Render ? &Button : &TmpRect, &CurrentColumn);
 			if(Render)
 				Ui()->DoScrollbarOption(&g_Config.m_TcAutoVoteWhenFarTime, &g_Config.m_TcAutoVoteWhenFarTime, &Button, Localize("Minimum time"), 1, 20, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, Localize(" min"));

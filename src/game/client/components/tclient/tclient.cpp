@@ -1532,7 +1532,8 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 			bool FunVote = SettingVote && str_find_nocase(aDescription, "funvote");
 			bool MapVote = SettingVote && !RandomMapVote && !MapCoolDown && !CategoryVote && !FunVote && (str_find_nocase(aDescription, "Map:") || str_find_nocase(aDescription, "★") || str_find_nocase(aDescription, "✰"));
 
-			if(g_Config.m_TcAutoVoteWhenFar && (MapVote || RandomMapVote))
+			const int AutoMapVote = std::clamp(g_Config.m_TcAutoVoteWhenFar, 0, 2);
+			if(AutoMapVote != 0 && (MapVote || RandomMapVote))
 			{
 				int RaceTime = 0;
 				if(GameClient()->m_Snap.m_pGameInfoObj && GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_RACETIME)
@@ -1563,7 +1564,7 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 
 						if(!Friend && !SameTeam && !MySelf)
 						{
-							GameClient()->m_Voting.Vote(-1);
+							GameClient()->m_Voting.Vote(AutoMapVote == 2 ? 1 : -1);
 							if(str_comp(g_Config.m_TcAutoVoteWhenFarMessage, "") != 0)
 								SendNonDuplicateMessage(0, g_Config.m_TcAutoVoteWhenFarMessage);
 						}

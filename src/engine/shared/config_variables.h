@@ -97,6 +97,7 @@ MACRO_CONFIG_INT(ClShowVotesAfterVoting, cl_show_votes_after_voting, 0, 0, 1, CF
 MACRO_CONFIG_INT(ClShowLocalTimeAlways, cl_show_local_time_always, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "始终显示当地时间")
 MACRO_CONFIG_INT(ClShowfps, cl_showfps, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内 FPS ")
 MACRO_CONFIG_INT(ClShowpred, cl_showpred, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内预测时间（以毫秒为单位）")
+MACRO_CONFIG_INT(ClShowPacketLoss, cl_show_packet_loss, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内丢包率")
 MACRO_CONFIG_INT(ClSmtcEnableLegacy, cl_smtc_enable, 1, 0, 1, CFGFLAG_CLIENT, "旧版系统媒体传输控制集成设置")
 MACRO_CONFIG_INT(ClSmtcShowHudLegacy, cl_smtc_show_hud, 1, 0, 1, CFGFLAG_CLIENT, "旧版系统媒体传输控制集成设置")
 MACRO_CONFIG_INT(ClDummyMiniViewLegacy, cl_dummy_miniview, 0, 0, 1, CFGFLAG_CLIENT, "旧版分身迷你视图设置")
