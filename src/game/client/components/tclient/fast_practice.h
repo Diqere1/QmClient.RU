@@ -27,6 +27,7 @@ public:
 	void Enable(bool PreserveHeldInput = false);
 	void Disable();
 	bool ConsumeKillCommand();
+	bool ConsumeSpectatorCommand();
 	bool ConsumePracticeChatCommand(int Team, const char *pLine);
 	void ResetPracticeToAnchor();
 
@@ -145,6 +146,7 @@ private:
 	void TrackFireSound(int ClientId, CCharacter *pChar);
 	static int WeaponFireSound(int Weapon);
 	void MaybePlayHammerHitEffect(CCharacter *pChar);
+	void StandbyCharacter(CCharacter *pChar) const;
 	void RenderGhost(const SGhostData &Ghost, float Alpha) const;
 	void ReleaseBufferedInputState();
 	void CaptureServerReleasedFireStates();

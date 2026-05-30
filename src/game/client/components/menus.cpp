@@ -1902,7 +1902,7 @@ void CMenus::PrewarmSettingsPages()
 	g_CommandBindCacheInitialized = true;
 
 	// Preload skin list to avoid lag when first entering settings
-	GameClient()->m_Skins.SkinList();
+	GameClient()->m_Skins.SkinList(0);
 }
 
 void CMenus::ConchainBackgroundEntities(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)

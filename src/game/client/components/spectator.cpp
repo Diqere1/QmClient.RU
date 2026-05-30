@@ -677,6 +677,9 @@ void CSpectator::Spectate(int SpectatorId)
 	const bool LiveCompatDirector = false;
 #endif
 
+	if(GameClient()->m_FastPractice.ConsumeSpectatorCommand())
+		return;
+
 	if(GameClient()->m_Snap.m_SpecInfo.m_SpectatorId == SpectatorId && !LiveCompatDirector)
 		return;
 

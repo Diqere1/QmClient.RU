@@ -1419,6 +1419,11 @@ void CNamePlates::UpdateCoordXAlignFrameState()
 			continue;
 		if(!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->m_aClients[ClientId].m_IsVolleyBall)
 			continue;
+		if(GameClient()->IsOtherTeam(ClientId))
+		{
+			m_pData->m_aCoordXAlign[ClientId] = SCoordXAlignState();
+			continue;
+		}
 
 		SCoordXAlignState &CoordXAlignState = m_pData->m_aCoordXAlign[ClientId];
 		const int RoundedX = RoundCoordToCentitiles(GameClient()->m_aClients[ClientId].m_RenderPos.x / 32.0f);
@@ -1505,6 +1510,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 		TrackCoordXAlign &&
 		!pPlayerInfo->m_Local &&
 		GameClient()->m_Snap.m_LocalClientId >= 0 &&
+		!OtherTeam &&
 		CoordXAlignHintEnabled;
 	if(ShouldTrackCoordXAlign)
 	{
