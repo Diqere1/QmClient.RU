@@ -389,6 +389,7 @@ public:
 	int Connect(const NETADDR *pAddr, int NumAddrs);
 	int Connect7(const NETADDR *pAddr, int NumAddrs);
 	void Disconnect(const char *pReason);
+	void Drop(const char *pReason);
 
 	int Update();
 	int Flush();
@@ -729,6 +730,7 @@ public:
 
 	// connection state
 	void Disconnect(const char *pReason);
+	void Drop(const char *pReason);
 	void Connect(const NETADDR *pAddr, int NumAddrs);
 	void Connect7(const NETADDR *pAddr, int NumAddrs);
 

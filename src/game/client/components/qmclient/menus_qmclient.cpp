@@ -1248,7 +1248,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const char *m_pKey;
 	};
 
-	constexpr size_t QmModuleCount = 31;
+	constexpr size_t QmModuleCount = 32;
 
 	// Layout string format: key:column:order; entries separated by ';'.
 	static const std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
@@ -1281,7 +1281,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::Voice, EQmModuleColumn::Right, 11, "voice"},
 		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 12, "dummy_miniview"},
 		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 13, "dynamic_island"},
-		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 14, "system_media_controls"}}};
+		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 14, "system_media_controls"},
+		{EQmModuleId::Background3D, EQmModuleColumn::Right, 15, "background_3d"}}};
 
 	static constexpr std::array<EQmModuleId, 9> s_aQmVisualModules = {
 		EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::SkinTransition,
@@ -1292,11 +1293,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords,
 		EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu,
 		EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist};
-	static constexpr std::array<EQmModuleId, 10> s_aQmHudModules = {
+	static constexpr std::array<EQmModuleId, 11> s_aQmHudModules = {
 		EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats,
 		EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay,
 		EQmModuleId::HudNotifications, EQmModuleId::Voice, EQmModuleId::DynamicIsland,
-		EQmModuleId::SystemMediaControls};
+		EQmModuleId::SystemMediaControls, EQmModuleId::Background3D};
 
 	static std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleLayout = s_aQmModuleDefaults;
 	static char s_aQmModuleLayoutConfigCache[sizeof(g_Config.m_QmSidebarCardOrder)] = {};

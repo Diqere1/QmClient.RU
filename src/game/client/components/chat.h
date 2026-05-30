@@ -174,6 +174,7 @@ class CChat : public CComponent
 	bool m_EditingNewLine;
 	char m_aSavedInputText[MAX_LINE_LENGTH];
 	bool m_SavedInputPending;
+	char m_aChatLogLastCleanupDate[11];
 
 	bool m_ServerSupportsCommandInfo;
 	static void ConSay(IConsole::IResult *pResult, void *pUserData);
@@ -189,6 +190,9 @@ class CChat : public CComponent
 
 	bool LineShouldHighlight(const char *pLine, const char *pName);
 	void StoreSave(const char *pText);
+	bool EnsureChatLogFolder() const;
+	void CleanupOldChatLogs(const char *pToday);
+	void SaveChatLogLine(int ClientId, int Team, const char *pLine);
 	const CCommand *FindServerCommand(const char *pName) const;
 	const char *LocalizeCommandPreviewText(const char *pText) const;
 	bool BuildCommandUsagePreview(const char *pInput, char *pBuf, size_t BufSize) const;

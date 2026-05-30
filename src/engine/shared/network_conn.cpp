@@ -352,6 +352,17 @@ void CNetConnection::Disconnect(const char *pReason)
 	Reset();
 }
 
+void CNetConnection::Drop(const char *pReason)
+{
+	if(State() == EState::OFFLINE)
+		return;
+
+	m_aErrorString[0] = '\0';
+	if(pReason)
+		str_copy(m_aErrorString, pReason);
+	Reset();
+}
+
 void CNetConnection::DirectInit(const NETADDR &Addr, SECURITY_TOKEN SecurityToken, SECURITY_TOKEN Token, bool Sixup)
 {
 	Reset();

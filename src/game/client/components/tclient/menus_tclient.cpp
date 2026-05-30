@@ -2045,88 +2045,6 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 					SkipVisualBlock(LineSize * 3.0f);
 				}
 			}
-			const float BackgroundParticlesBlockHeight = g_Config.m_Bc3DParticles ?
-				22.0f + LineSize * 9.0f + (g_Config.m_Bc3DParticlesColorMode == 1 ? ColorPickerLineSize + ColorPickerLineSpacing : 0.0f) :
-				LineSize;
-			if(ShouldRenderVisualBlock(BackgroundParticlesBlockHeight))
-			{
-				if(DeferVisualEffectsHeavyControls)
-				{
-					char aBuf[128];
-					CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-					str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Background 3D particles"), g_Config.m_Bc3DParticles ? Localize("On") : Localize("Off"));
-					Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-					if(g_Config.m_Bc3DParticles)
-					{
-						const char *pType = g_Config.m_Bc3DParticlesType == 2 ? Localize("Heart") : (g_Config.m_Bc3DParticlesType == 3 ? Localize("Mixed") : Localize("Cube"));
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Particle type"), pType);
-						Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("Particle count"), g_Config.m_Bc3DParticlesCount);
-						Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						str_format(aBuf, sizeof(aBuf), "%s: %d%%", Localize("Particle alpha"), g_Config.m_Bc3DParticlesAlpha);
-						Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						str_format(aBuf, sizeof(aBuf), "%s: %d-%d", Localize("Particle size"), g_Config.m_Bc3DParticlesSizeMin, g_Config.m_Bc3DParticlesSizeMax);
-						Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("Particle speed"), g_Config.m_Bc3DParticlesSpeed);
-						Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						str_format(aBuf, sizeof(aBuf), "%s: %d", Localize("Particle depth"), g_Config.m_Bc3DParticlesDepth);
-						Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Particle glow"), g_Config.m_Bc3DParticlesGlow ? Localize("On") : Localize("Off"));
-						Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Particle color"), g_Config.m_Bc3DParticlesColorMode == 2 ? Localize("Random") : Localize("Custom"));
-						Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
-					}
-				}
-				else
-				{
-					CPerfTimer ParticlesTimer;
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Bc3DParticles, Localize("Background 3D particles"), &g_Config.m_Bc3DParticles, &CurrentColumn, LineSize);
-					if(g_Config.m_Bc3DParticles)
-					{
-						static std::vector<CButtonContainer> s_vParticleTypeButtons = {{}, {}, {}};
-						int Type = g_Config.m_Bc3DParticlesType;
-						if(DoLine_RadioMenu(CurrentColumn, Localize("Particle type"), s_vParticleTypeButtons, {Localize("Cube"), Localize("Heart"), Localize("Mixed")}, {1, 2, 3}, Type))
-							g_Config.m_Bc3DParticlesType = Type;
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						Ui()->DoScrollbarOption(&g_Config.m_Bc3DParticlesCount, &g_Config.m_Bc3DParticlesCount, &Button, Localize("Particle count"), 1, 200);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						Ui()->DoScrollbarOption(&g_Config.m_Bc3DParticlesAlpha, &g_Config.m_Bc3DParticlesAlpha, &Button, Localize("Particle alpha"), 1, 100, &CUi::ms_LinearScrollbarScale, 0, "%");
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						Ui()->DoScrollbarOption(&g_Config.m_Bc3DParticlesSizeMin, &g_Config.m_Bc3DParticlesSizeMin, &Button, Localize("Min size"), 2, 64);
-						if(g_Config.m_Bc3DParticlesSizeMax < g_Config.m_Bc3DParticlesSizeMin)
-							g_Config.m_Bc3DParticlesSizeMax = g_Config.m_Bc3DParticlesSizeMin;
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						Ui()->DoScrollbarOption(&g_Config.m_Bc3DParticlesSizeMax, &g_Config.m_Bc3DParticlesSizeMax, &Button, Localize("Max size"), g_Config.m_Bc3DParticlesSizeMin, 64);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						Ui()->DoScrollbarOption(&g_Config.m_Bc3DParticlesSpeed, &g_Config.m_Bc3DParticlesSpeed, &Button, Localize("Particle speed"), 1, 120);
-						CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
-						Ui()->DoScrollbarOption(&g_Config.m_Bc3DParticlesDepth, &g_Config.m_Bc3DParticlesDepth, &Button, Localize("Particle depth"), 50, 1000);
-						DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Bc3DParticlesGlow, Localize("Particle glow"), &g_Config.m_Bc3DParticlesGlow, &CurrentColumn, LineSize);
-						static std::vector<CButtonContainer> s_vParticleColorModeButtons = {{}, {}};
-						int ColorMode = g_Config.m_Bc3DParticlesColorMode;
-						if(DoLine_RadioMenu(CurrentColumn, Localize("Particle color"), s_vParticleColorModeButtons, {Localize("Custom"), Localize("Random")}, {1, 2}, ColorMode))
-							g_Config.m_Bc3DParticlesColorMode = ColorMode;
-						if(g_Config.m_Bc3DParticlesColorMode == 1)
-						{
-							static CButtonContainer s_ParticleColorId;
-							DoLine_ColorPicker(&s_ParticleColorId, ColorPickerLineSize, ColorPickerLabelSize, ColorPickerLineSpacing, &CurrentColumn, Localize("Particle color"), &g_Config.m_Bc3DParticlesColor, ColorRGBA(0.56f, 0.72f, 0.62f, 1.0f), false, nullptr, true);
-						}
-					}
-					LogSettingsStage("tclient_settings_left_visual_background_particles", ParticlesTimer);
-				}
-			}
-			else
-			{
-				SkipVisualBlock(BackgroundParticlesBlockHeight);
-			}
 			if(ShouldRenderVisualBlock(22.0f + LineSize))
 			{
 				static std::vector<CButtonContainer> s_vButtonContainers = {{}, {}, {}};
@@ -2598,7 +2516,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 				return RenderBoxedFullSection(LayoutVisualEffectsSection, Col);
 			};
 			FillCachedStaticLayer(S, LayoutVisualEffectsSection);
-			S.m_DependencyConfigInts = {&g_Config.m_TcTinyTees, &g_Config.m_TcTinyTeesOthers, &g_Config.m_QmJellyTee, &g_Config.m_Bc3DParticles, &g_Config.m_Bc3DParticlesColorMode};
+			S.m_DependencyConfigInts = {&g_Config.m_TcTinyTees, &g_Config.m_TcTinyTeesOthers, &g_Config.m_QmJellyTee};
 			vLeftSections.push_back(S);
 			// -- Input --
 			S = SSettingsSection{};

@@ -4809,6 +4809,12 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowChatFriends, Localize("Show only chat messages from friends"), &g_Config.m_ClShowChatFriends, &LeftView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowChatTeamMembersOnly, Localize("Show only chat messages from team members"), &g_Config.m_ClShowChatTeamMembersOnly, &LeftView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmChatSaveDraft, Localize("Save unsent chat draft"), &g_Config.m_QmChatSaveDraft, &LeftView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmChatLogAutoSave, Localize("自动保存聊天记录"), &g_Config.m_QmChatLogAutoSave, &LeftView, LineSize);
+		if(g_Config.m_QmChatLogAutoSave)
+		{
+			LeftView.HSplitTop(LineSize, &Button, &LeftView);
+			Ui()->DoScrollbarOption(&g_Config.m_QmChatLogKeepDays, &g_Config.m_QmChatLogKeepDays, &Button, Localize("聊天记录保留天数"), 0, 3650, &CUi::ms_LinearScrollbarScale, 0, Localize("天"));
+		}
 
 		if(DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClChatOld, Localize("Use old chat style"), &g_Config.m_ClChatOld, &LeftView, LineSize))
 			GameClient()->m_Chat.RebuildChat();
