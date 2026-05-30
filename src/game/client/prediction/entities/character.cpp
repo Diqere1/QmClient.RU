@@ -362,7 +362,7 @@ void CCharacter::FireWeapon()
 
 	case WEAPON_GUN:
 	{
-		if(!m_Core.m_Jetpack)
+		if(!m_Core.m_Jetpack || !m_NinjaJetpack || m_Core.m_HasTelegunGun)
 		{
 			int Lifetime = (int)(GameWorld()->GameTickSpeed() * GetTuning(GetOverriddenTuneZone())->m_GunLifetime);
 

@@ -2758,6 +2758,8 @@ if(CLIENT)
     components/statboard.h
     components/system_media_controls.cpp
     components/system_media_controls.h
+    components/tclient/background_particles.cpp
+    components/tclient/background_particles.h
     components/tclient/bg_draw.cpp
     components/tclient/bg_draw.h
     components/tclient/bg_draw_file.cpp

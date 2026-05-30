@@ -82,6 +82,7 @@
 #include "components/spectator.h"
 #include "components/statboard.h"
 #include "components/system_media_controls.h"
+#include "components/tclient/background_particles.h"
 #include "components/tclient/bg_draw.h"
 #include "components/tclient/bindchat.h"
 #include "components/tclient/bindwheel.h"
@@ -245,6 +246,7 @@ public:
 	CMapLayers m_MapLayersBackground = CMapLayers{ERenderType::RENDERTYPE_BACKGROUND};
 	CMapLayers m_MapLayersForeground = CMapLayers{ERenderType::RENDERTYPE_FOREGROUND};
 	CBackground m_Background;
+	CBackgroundParticles m_BackgroundParticles;
 	CMenuBackground m_MenuBackground;
 	CUiEffects m_UiEffects;
 
@@ -831,7 +833,7 @@ public:
 
 	// actions
 	// TODO: move these
-	void SendSwitchTeam(int Team) const;
+	void SendSwitchTeam(int Team);
 	void SendStartInfo7(bool Dummy);
 	void SendSkinChange7(bool Dummy);
 	// Returns true if the requested skin change got applied by the server

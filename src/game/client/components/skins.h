@@ -165,14 +165,25 @@ public:
 	class CSkinListEntry
 	{
 	public:
+		class SColorKey
+		{
+		public:
+			bool m_UseCustomColor = false;
+			int m_ColorBody = 0;
+			int m_ColorFeet = 0;
+		};
+
 		CSkinListEntry() :
 			m_pSkinContainer(nullptr),
-			m_Favorite(false) {}
-		CSkinListEntry(CSkinContainer *pSkinContainer, bool Favorite, bool SelectedMain, bool SelectedDummy, std::optional<std::pair<int, int>> NameMatch) :
+			m_Favorite(false),
+			m_SelectedMain(false),
+			m_SelectedDummy(false) {}
+		CSkinListEntry(CSkinContainer *pSkinContainer, bool Favorite, bool SelectedMain, bool SelectedDummy, std::optional<SColorKey> ColorKey, std::optional<std::pair<int, int>> NameMatch) :
 			m_pSkinContainer(pSkinContainer),
 			m_Favorite(Favorite),
 			m_SelectedMain(SelectedMain),
 			m_SelectedDummy(SelectedDummy),
+			m_ColorKey(ColorKey),
 			m_NameMatch(NameMatch) {}
 
 		bool operator<(const CSkinListEntry &Other) const;
@@ -181,6 +192,7 @@ public:
 		bool IsFavorite() const { return m_Favorite; }
 		bool IsSelectedMain() const { return m_SelectedMain; }
 		bool IsSelectedDummy() const { return m_SelectedDummy; }
+		const std::optional<SColorKey> &ColorKey() const { return m_ColorKey; }
 		const std::optional<std::pair<int, int>> &NameMatch() const { return m_NameMatch; }
 
 		const void *ListItemId() const { return &m_ListItemId; }
@@ -197,6 +209,7 @@ public:
 		bool m_Favorite;
 		bool m_SelectedMain;
 		bool m_SelectedDummy;
+		std::optional<SColorKey> m_ColorKey;
 		std::optional<std::pair<int, int>> m_NameMatch;
 		char m_ListItemId;
 		char m_FavoriteButtonId;
@@ -215,6 +228,9 @@ public:
 	private:
 		std::vector<CSkinListEntry> m_vSkins;
 		int m_UnfilteredCount;
+		int m_Dummy = -1;
+		CSkinListEntry::SColorKey m_MainColorKey;
+		CSkinListEntry::SColorKey m_DummyColorKey;
 		bool m_NeedsUpdate = true;
 	};
 
@@ -242,7 +258,7 @@ public:
 	void RefreshEventSkins();
 	void Refresh(TSkinLoadedCallback &&SkinLoadedCallback);
 	CSkinLoadingStats LoadingStats() const;
-	CSkinList &SkinList();
+	CSkinList &SkinList(int Dummy);
 
 	const CSkinContainer *FindContainerOrNullptr(const char *pName);
 	const CSkin *FindOrNullptr(const char *pName);

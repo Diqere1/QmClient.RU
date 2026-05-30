@@ -102,6 +102,53 @@ static CSkins::CSkinQueueEntry MakeSkinQueueEntry(const CGameClient::CClientData
 	return Entry;
 }
 
+static CSkins::CSkinListEntry::SColorKey MakeSkinListColorKey(bool UseCustomColor, int ColorBody, int ColorFeet)
+{
+	CSkins::CSkinListEntry::SColorKey ColorKey;
+	ColorKey.m_UseCustomColor = UseCustomColor;
+	if(UseCustomColor)
+	{
+		ColorKey.m_ColorBody = ColorBody;
+		ColorKey.m_ColorFeet = ColorFeet;
+	}
+	return ColorKey;
+}
+
+static CSkins::CSkinListEntry::SColorKey MakeSkinListColorKey(int Dummy)
+{
+	return MakeSkinListColorKey(SkinUseCustomColorVar(Dummy) != 0, SkinBodyColorVar(Dummy), SkinFeetColorVar(Dummy));
+}
+
+static bool SkinListColorKeyEquals(const CSkins::CSkinListEntry::SColorKey &Lhs, const CSkins::CSkinListEntry::SColorKey &Rhs)
+{
+	if(Lhs.m_UseCustomColor != Rhs.m_UseCustomColor)
+	{
+		return false;
+	}
+	if(!Lhs.m_UseCustomColor)
+	{
+		return true;
+	}
+	return Lhs.m_ColorBody == Rhs.m_ColorBody && Lhs.m_ColorFeet == Rhs.m_ColorFeet;
+}
+
+static bool SkinListColorKeyLess(const CSkins::CSkinListEntry::SColorKey &Lhs, const CSkins::CSkinListEntry::SColorKey &Rhs)
+{
+	if(Lhs.m_UseCustomColor != Rhs.m_UseCustomColor)
+	{
+		return !Lhs.m_UseCustomColor;
+	}
+	if(!Lhs.m_UseCustomColor)
+	{
+		return false;
+	}
+	if(Lhs.m_ColorBody != Rhs.m_ColorBody)
+	{
+		return Lhs.m_ColorBody < Rhs.m_ColorBody;
+	}
+	return Lhs.m_ColorFeet < Rhs.m_ColorFeet;
+}
+
 CSkins::CAbstractSkinLoadJob::CAbstractSkinLoadJob(CSkins *pSkins, const char *pName) :
 	m_pSkins(pSkins)
 {
@@ -274,7 +321,24 @@ bool CSkins::CSkinListEntry::operator<(const CSkins::CSkinListEntry &Other) cons
 	{
 		return false;
 	}
-	return str_comp(m_pSkinContainer->Name(), Other.m_pSkinContainer->Name()) < 0;
+	const int NameCompare = str_comp(m_pSkinContainer->Name(), Other.m_pSkinContainer->Name());
+	if(NameCompare != 0)
+	{
+		return NameCompare < 0;
+	}
+	if(!m_ColorKey.has_value() && Other.m_ColorKey.has_value())
+	{
+		return true;
+	}
+	if(m_ColorKey.has_value() && !Other.m_ColorKey.has_value())
+	{
+		return false;
+	}
+	if(m_ColorKey.has_value() && Other.m_ColorKey.has_value())
+	{
+		return SkinListColorKeyLess(m_ColorKey.value(), Other.m_ColorKey.value());
+	}
+	return false;
 }
 
 void CSkins::CSkinListEntry::RequestLoad(bool Immediate)
@@ -868,6 +932,7 @@ void CSkins::SyncSkinQueueFromMapPlayers(int Dummy)
 	}
 
 	Queue = std::move(vMapSkins);
+	m_SkinList.ForceRefresh();
 
 	int &QueueIndex = SkinQueueIndexVar(Dummy);
 	if(Queue.empty())
@@ -1188,9 +1253,15 @@ CSkins::CSkinLoadingStats CSkins::LoadingStats() const
 	return Stats;
 }
 
-CSkins::CSkinList &CSkins::SkinList()
+CSkins::CSkinList &CSkins::SkinList(int Dummy)
 {
-	if(!m_SkinList.m_NeedsUpdate)
+	const CSkinListEntry::SColorKey CurrentColorKey = MakeSkinListColorKey(Dummy);
+	const CSkinListEntry::SColorKey MainColorKey = MakeSkinListColorKey(0);
+	const CSkinListEntry::SColorKey DummyColorKey = MakeSkinListColorKey(1);
+	if(!m_SkinList.m_NeedsUpdate &&
+		m_SkinList.m_Dummy == Dummy &&
+		SkinListColorKeyEquals(m_SkinList.m_MainColorKey, MainColorKey) &&
+		SkinListColorKeyEquals(m_SkinList.m_DummyColorKey, DummyColorKey))
 	{
 		return m_SkinList;
 	}
@@ -1204,27 +1275,42 @@ CSkins::CSkinList &CSkins::SkinList()
 		FindContainerOrNullptr(FavoriteSkin.c_str());
 	}
 
-	m_SkinList.m_vSkins.reserve(m_Skins.size());
-	for(const auto &[_, pSkinContainer] : m_Skins)
-	{
+	const auto EntryColorKey = [&](const CSkinListEntry &Entry) {
+		return Entry.ColorKey().value_or(CurrentColorKey);
+	};
+	const auto HasListEntry = [&](const CSkinContainer *pSkinContainer, const CSkinListEntry::SColorKey &ColorKey) {
+		return std::any_of(m_SkinList.m_vSkins.begin(), m_SkinList.m_vSkins.end(), [&](const CSkinListEntry &Entry) {
+			return Entry.SkinContainer() == pSkinContainer && SkinListColorKeyEquals(EntryColorKey(Entry), ColorKey);
+		});
+	};
+	const auto AddSkinListEntry = [&](CSkinContainer *pSkinContainer, std::optional<CSkinListEntry::SColorKey> ColorKey, bool ForceShowNotFound) {
 		if(pSkinContainer->IsSpecial())
 		{
-			continue;
+			return;
 		}
 
+		const CSkinListEntry::SColorKey EffectiveColorKey = ColorKey.value_or(CurrentColorKey);
 		const bool SelectedMain = str_comp(pSkinContainer->Name(), g_Config.m_ClPlayerSkin) == 0;
 		const bool SelectedDummy = str_comp(pSkinContainer->Name(), g_Config.m_ClDummySkin) == 0;
+		const bool SelectedMainColor = SelectedMain && SkinListColorKeyEquals(EffectiveColorKey, MainColorKey);
+		const bool SelectedDummyColor = SelectedDummy && SkinListColorKeyEquals(EffectiveColorKey, DummyColorKey);
 		const bool Favorite = IsFavorite(pSkinContainer->Name());
 
 		// Don't include skins in the list that couldn't be found in the database except the current player
 		// and dummy skins to avoid showing a lot of not-found entries while the user is typing a skin name.
 		if(pSkinContainer->m_State == CSkinContainer::EState::NOT_FOUND &&
 			!pSkinContainer->IsSpecial() &&
-			!SelectedMain &&
-			!SelectedDummy &&
-			!Favorite)
+			!SelectedMainColor &&
+			!SelectedDummyColor &&
+			!Favorite &&
+			!ForceShowNotFound)
 		{
-			continue;
+			return;
+		}
+
+		if(HasListEntry(pSkinContainer, EffectiveColorKey))
+		{
+			return;
 		}
 		m_SkinList.m_UnfilteredCount++;
 
@@ -1235,14 +1321,40 @@ CSkins::CSkinList &CSkins::SkinList()
 			const char *pNameMatchStart = str_utf8_find_nocase(pSkinContainer->Name(), g_Config.m_ClSkinFilterString, &pNameMatchEnd);
 			if(pNameMatchStart == nullptr)
 			{
-				continue;
+				return;
 			}
 			NameMatch = std::make_pair<int, int>(pNameMatchStart - pSkinContainer->Name(), pNameMatchEnd - pNameMatchStart);
 		}
-		m_SkinList.m_vSkins.emplace_back(pSkinContainer.get(), Favorite, SelectedMain, SelectedDummy, NameMatch);
+		m_SkinList.m_vSkins.emplace_back(pSkinContainer, Favorite, SelectedMainColor, SelectedDummyColor, ColorKey, NameMatch);
+	};
+
+	m_SkinList.m_vSkins.reserve(m_Skins.size() + m_aSkinQueue[Dummy].size());
+	for(const auto &[_, pSkinContainer] : m_Skins)
+	{
+		AddSkinListEntry(pSkinContainer.get(), std::nullopt, false);
+	}
+	for(const CSkinQueueEntry &QueueEntry : m_aSkinQueue[Dummy])
+	{
+		if(!CSkin::IsValidName(QueueEntry.m_SkinName.c_str()))
+		{
+			continue;
+		}
+		auto SkinIt = m_Skins.find(QueueEntry.m_SkinName);
+		if(SkinIt == m_Skins.end())
+		{
+			CSkinContainer SkinContainer(this, QueueEntry.m_SkinName.c_str(), CSkinContainer::EType::DOWNLOAD, IStorage::TYPE_SAVE);
+			auto &&pSkinContainer = std::make_unique<CSkinContainer>(std::move(SkinContainer));
+			pSkinContainer->SetState(pSkinContainer->DetermineInitialState());
+			SkinIt = m_Skins.insert({pSkinContainer->Name(), std::move(pSkinContainer)}).first;
+		}
+		const CSkinListEntry::SColorKey QueueColorKey = MakeSkinListColorKey(QueueEntry.m_UseCustomColor, QueueEntry.m_ColorBody, QueueEntry.m_ColorFeet);
+		AddSkinListEntry(SkinIt->second.get(), QueueColorKey, true);
 	}
 
 	std::sort(m_SkinList.m_vSkins.begin(), m_SkinList.m_vSkins.end());
+	m_SkinList.m_Dummy = Dummy;
+	m_SkinList.m_MainColorKey = MainColorKey;
+	m_SkinList.m_DummyColorKey = DummyColorKey;
 	m_SkinList.m_NeedsUpdate = false;
 	return m_SkinList;
 }
@@ -1377,6 +1489,7 @@ bool CSkins::AddSkinQueue(const char *pName, bool UseCustomColor, int ColorBody,
 
 	Queue.push_back(MakeSkinQueueEntry(pName, UseCustomColor, ColorBody, ColorFeet));
 	ClampSkinQueueIndex(Dummy);
+	m_SkinList.ForceRefresh();
 	return true;
 }
 
@@ -1407,6 +1520,7 @@ bool CSkins::RemoveSkinQueue(const CSkinQueueEntry &Entry, int Dummy)
 		QueueIndex--;
 	}
 	ClampSkinQueueIndex(Dummy);
+	m_SkinList.ForceRefresh();
 	return true;
 }
 
@@ -1446,6 +1560,7 @@ void CSkins::TrimSkinQueueToLimit(int Dummy)
 	if((int)Queue.size() > Limit)
 	{
 		Queue.resize(Limit);
+		m_SkinList.ForceRefresh();
 	}
 	ClampSkinQueueIndex(Dummy);
 }
@@ -1541,6 +1656,7 @@ bool CSkins::ApplySkinQueuePreset(size_t PresetIndex, int Dummy)
 	m_aSkinQueueElapsed[Dummy] = 0ns;
 	m_aSkinQueueLastUpdate[Dummy].reset();
 	ApplySkinQueueCurrent(Dummy);
+	m_SkinList.ForceRefresh();
 	return true;
 }
 

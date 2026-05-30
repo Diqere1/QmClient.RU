@@ -256,6 +256,7 @@ void CGameClient::OnConsoleInit()
 					      &m_MapSounds,
 					      &m_Censor,
 					      &m_Background, // render instead of m_MapLayersBackground when g_Config.m_ClOverlayEntities == 100
+					      &m_BackgroundParticles,
 					      &m_MapLayersBackground, // first to render
 					      &m_BgDraw,
 					      &m_Particles.m_RenderTrail,
@@ -5453,7 +5454,7 @@ void CGameClient::CClientData::CSixup::Reset()
 	}
 }
 
-void CGameClient::SendSwitchTeam(int Team) const
+void CGameClient::SendSwitchTeam(int Team)
 {
 #if defined(CONF_QM_LIVE_CLIENT)
 	if(Client()->QmLiveObserverActive())
@@ -5461,6 +5462,11 @@ void CGameClient::SendSwitchTeam(int Team) const
 	if(Client()->QmLiveCompatDirectorActive() && Team != TEAM_SPECTATORS)
 		return;
 #endif
+	if(Team == TEAM_SPECTATORS && m_FastPractice.Enabled())
+	{
+		m_FastPractice.ConsumeSpectatorCommand();
+		return;
+	}
 
 	CNetMsg_Cl_SetTeam Msg;
 	Msg.m_Team = Team;

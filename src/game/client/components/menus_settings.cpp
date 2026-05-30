@@ -991,8 +991,8 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	str_format(aBuf, sizeof(aBuf), "%s:", Localize("Your skin"));
 	Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
 
-	CSkins::CSkinList &SkinList = GameClient()->m_Skins.SkinList();
 	const int QueueDummy = m_Dummy;
+	CSkins::CSkinList &SkinList = GameClient()->m_Skins.SkinList(QueueDummy);
 	int &QueueInterval = m_Dummy ? g_Config.m_QmDummySkinQueueInterval : g_Config.m_QmSkinQueueInterval;
 	int &QueueLength = m_Dummy ? g_Config.m_QmDummySkinQueueLength : g_Config.m_QmSkinQueueLength;
 	int &QueueIndex = m_Dummy ? g_Config.m_QmDummySkinQueueIndex : g_Config.m_QmSkinQueueIndex;
@@ -1584,6 +1584,10 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	{
 		CSkins::CSkinListEntry &SkinListEntry = vSkinList[i];
 		const CSkins::CSkinContainer *pSkinContainer = vSkinList[i].SkinContainer();
+		const auto &EntryColorKey = SkinListEntry.ColorKey();
+		const bool EntryUseCustomColor = EntryColorKey.has_value() ? EntryColorKey->m_UseCustomColor : *pUseCustomColor != 0;
+		const int EntryColorBody = EntryColorKey.has_value() ? EntryColorKey->m_ColorBody : (int)*pColorBody;
+		const int EntryColorFeet = EntryColorKey.has_value() ? EntryColorKey->m_ColorFeet : (int)*pColorFeet;
 
 		if(!m_Dummy ? SkinListEntry.IsSelectedMain() : SkinListEntry.IsSelectedDummy())
 		{
@@ -1611,6 +1615,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		{
 			CTeeRenderInfo Info = OwnSkinInfo;
 			Info.Apply(pSkin);
+			Info.ApplyColors(EntryUseCustomColor, EntryColorBody, EntryColorFeet);
 			vec2 OffsetToMid;
 			CRenderTools::GetRenderTeeOffsetToRenderedTee(CAnimState::GetIdle(), &Info, OffsetToMid);
 			const vec2 TeeRenderPos = vec2(Button.x + Button.w / 2.0f, Button.y + Button.h / 2 + OffsetToMid.y);
@@ -1618,22 +1623,36 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		}
 
 		{
+			CUIRect LabelContent = Label;
+			if(EntryColorKey.has_value())
+			{
+				CUIRect Swatches, BodySwatch, FeetSwatch;
+				LabelContent.VSplitLeft(20.0f, &Swatches, &LabelContent);
+				Swatches.HMargin((Swatches.h - 16.0f) / 2.0f, &Swatches);
+				Swatches.VSplitLeft(8.0f, &BodySwatch, &Swatches);
+				Swatches.VSplitLeft(2.0f, nullptr, &Swatches);
+				Swatches.VSplitLeft(8.0f, &FeetSwatch, nullptr);
+				const ColorRGBA BodyColor = EntryUseCustomColor ? color_cast<ColorRGBA>(ColorHSLA(EntryColorBody).UnclampLighting(ColorHSLA::DARKEST_LGT)) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.45f);
+				const ColorRGBA FeetColor = EntryUseCustomColor ? color_cast<ColorRGBA>(ColorHSLA(EntryColorFeet).UnclampLighting(ColorHSLA::DARKEST_LGT)) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.45f);
+				BodySwatch.Draw(BodyColor, IGraphics::CORNER_ALL, 2.0f);
+				FeetSwatch.Draw(FeetColor, IGraphics::CORNER_ALL, 2.0f);
+			}
 			SLabelProperties Props;
-			Props.m_MaxWidth = Label.w - 5.0f;
+			Props.m_MaxWidth = LabelContent.w - 5.0f;
 			const auto &NameMatch = SkinListEntry.NameMatch();
 			if(NameMatch.has_value())
 			{
 				const auto [MatchStart, MatchLength] = NameMatch.value();
 				Props.m_vColorSplits.emplace_back(MatchStart, MatchLength, ColorRGBA(0.4f, 0.4f, 1.0f, 1.0f));
 			}
-			Ui()->DoLabel(&Label, pSkinContainer->Name(), 12.0f, TEXTALIGN_ML, Props);
+			Ui()->DoLabel(&LabelContent, pSkinContainer->Name(), 12.0f, TEXTALIGN_ML, Props);
 		}
 
 		if(g_Config.m_Debug)
 		{
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(*pUseCustomColor ? color_cast<ColorRGBA>(ColorHSLA(*pColorBody).UnclampLighting(ColorHSLA::DARKEST_LGT)) : pSkin->m_BloodColor);
+			Graphics()->SetColor(EntryUseCustomColor ? color_cast<ColorRGBA>(ColorHSLA(EntryColorBody).UnclampLighting(ColorHSLA::DARKEST_LGT)) : pSkin->m_BloodColor);
 			IGraphics::CQuadItem QuadItem(Label.x, Label.y, 12.0f, 12.0f);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
@@ -1646,17 +1665,17 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			IconRow.VSplitRight(20.0f, &IconRow, &FavIcon);
 			IconRow.VSplitRight(2.0f, &IconRow, nullptr);
 			IconRow.VSplitRight(20.0f, &IconRow, &QueueIcon);
-			const bool InQueue = GameClient()->m_Skins.IsInSkinQueue(pSkinContainer->Name(), *pUseCustomColor != 0, *pColorBody, *pColorFeet, QueueDummy);
+			const bool InQueue = GameClient()->m_Skins.IsInSkinQueue(pSkinContainer->Name(), EntryUseCustomColor, EntryColorBody, EntryColorFeet, QueueDummy);
 			const bool QueueFull = !InQueue && (int)SkinQueue.size() >= QueueLength;
 			if(DoButton_SkinQueue(&s_vQueueButtonIds[i], SkinListEntry.ListItemId(), InQueue, QueueFull, &QueueIcon))
 			{
 				if(InQueue)
 				{
-					GameClient()->m_Skins.RemoveSkinQueue(pSkinContainer->Name(), *pUseCustomColor != 0, *pColorBody, *pColorFeet, QueueDummy);
+					GameClient()->m_Skins.RemoveSkinQueue(pSkinContainer->Name(), EntryUseCustomColor, EntryColorBody, EntryColorFeet, QueueDummy);
 				}
 				else
 				{
-					GameClient()->m_Skins.AddSkinQueue(pSkinContainer->Name(), *pUseCustomColor != 0, *pColorBody, *pColorFeet, QueueDummy);
+					GameClient()->m_Skins.AddSkinQueue(pSkinContainer->Name(), EntryUseCustomColor, EntryColorBody, EntryColorFeet, QueueDummy);
 				}
 			}
 			const char *pQueueTooltip = QueueFull && !InQueue ? Localize("Queue is full") : (InQueue ? Localize("Remove from queue") : Localize("Add to queue"));
@@ -1681,7 +1700,18 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	const int NewSelected = s_ListBox.DoEnd();
 	if(OldSelected != NewSelected)
 	{
-		str_copy(pSkinName, vSkinList[NewSelected].SkinContainer()->Name(), SkinNameSize);
+		const CSkins::CSkinListEntry &SelectedSkinEntry = vSkinList[NewSelected];
+		str_copy(pSkinName, SelectedSkinEntry.SkinContainer()->Name(), SkinNameSize);
+		if(SelectedSkinEntry.ColorKey().has_value())
+		{
+			const auto &SelectedColorKey = SelectedSkinEntry.ColorKey().value();
+			*pUseCustomColor = SelectedColorKey.m_UseCustomColor ? 1 : 0;
+			if(SelectedColorKey.m_UseCustomColor)
+			{
+				*pColorBody = SelectedColorKey.m_ColorBody;
+				*pColorFeet = SelectedColorKey.m_ColorFeet;
+			}
+		}
 		SkinList.ForceRefresh();
 		SetNeedSendInfo();
 	}
@@ -1749,7 +1779,9 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	char aBuf[128];
 	bool CheckSettings = false;
 	const bool DeferHeavyGraphics = ShouldDeferSettingsTailSection(SETTINGS_GRAPHICS);
-	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "") {
+	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "", unsigned Flags = 0u, int InputMax = -1) {
+		const bool Infinite = Flags & CUi::SCROLLBAR_OPTION_INFINITE;
+		const bool NoClampValue = Flags & CUi::SCROLLBAR_OPTION_NOCLAMPVALUE;
 		CUIRect Label, Controls, Slider, Input, SuffixRect;
 		const float InputWidth = 58.0f;
 		const float GapWidth = 6.0f;
@@ -1770,12 +1802,22 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		Slider.VMargin(1.0f, &Slider);
 		Input.VMargin(1.0f, &Input);
 		Ui()->DoLabel(&Label, pStr, Label.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_ML);
-		*pOption = pScale->ToAbsolute(Ui()->DoScrollbarH(pId, &Slider, pScale->ToRelative(*pOption, Min, Max)), Min, Max);
+		int SliderMax = Infinite ? Max + 1 : Max;
+		int SliderValue = *pOption;
+		if(Infinite && SliderValue == 0)
+			SliderValue = SliderMax;
+		SliderValue = std::clamp(SliderValue, Min, SliderMax);
+		SliderValue = pScale->ToAbsolute(Ui()->DoScrollbarH(pId, &Slider, pScale->ToRelative(SliderValue, Min, SliderMax)), Min, SliderMax);
+		if(Infinite && SliderValue == SliderMax)
+			SliderValue = 0;
+		*pOption = SliderValue;
 		SValueSelectorProperties Props;
 		Props.m_UseScroll = false;
 		Props.m_TextAlign = TEXTALIGN_MC;
 		Props.m_SelectAllOnActivate = false;
-		const auto Result = Ui()->DoValueSelectorWithState(reinterpret_cast<const void *>((uintptr_t)pId ^ 0x1), &Input, "", *pOption, Min, Max, Props);
+		const int SelectorMin = Infinite ? 0 : Min;
+		const int SelectorMax = InputMax >= 0 ? InputMax : (NoClampValue ? Max : SliderMax);
+		const auto Result = Ui()->DoValueSelectorWithState(reinterpret_cast<const void *>((uintptr_t)pId ^ 0x1), &Input, "", *pOption, SelectorMin, SelectorMax, Props);
 		*pOption = (int)Result.m_Value;
 		if(SuffixWidth > 0.0f)
 			Ui()->DoLabel(&SuffixRect, pSuffix, SuffixRect.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
@@ -1995,7 +2037,7 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	MainView.HSplitTop(20.0f, &Button, &MainView);
 	str_copy(aBuf, " ");
 	str_append(aBuf, Localize("Hz", "Hertz"));
-	DoSliderWithValueInput(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, aBuf);
+	DoSliderWithValueInput(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, aBuf, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, 10000);
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	static CButtonContainer s_UiColorResetId;

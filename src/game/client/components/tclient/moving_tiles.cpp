@@ -40,6 +40,39 @@ static bool QuadName(const int *pInts, size_t NumInts, char *pStr, size_t StrSiz
 	return false;
 }
 
+static bool IsMovingWaterImageName(const char *pImageName)
+{
+	if(pImageName == nullptr || pImageName[0] == '\0')
+		return false;
+
+	return str_find_nocase(pImageName, "blackwater") != nullptr ||
+	       str_find_nocase(pImageName, "darkwater") != nullptr ||
+	       str_find_nocase(pImageName, "black_water") != nullptr ||
+	       str_find_nocase(pImageName, "dark_water") != nullptr ||
+	       str_find_nocase(pImageName, "water") != nullptr;
+}
+
+static bool QuadLayerUsesMovingWaterImage(IMap *pMap, const CMapItemLayerQuads *pQuadLayer)
+{
+	if(!pMap || !pQuadLayer)
+		return false;
+
+	int ImagesStart = 0;
+	int ImagesNum = 0;
+	pMap->GetType(MAPITEMTYPE_IMAGE, &ImagesStart, &ImagesNum);
+	if(pQuadLayer->m_Image < 0 || pQuadLayer->m_Image >= ImagesNum)
+		return false;
+
+	const auto *pImage = static_cast<const CMapItemImage_v2 *>(pMap->GetItem(ImagesStart + pQuadLayer->m_Image));
+	if(!pImage)
+		return false;
+
+	const char *pImageName = pMap->GetDataString(pImage->m_ImageName);
+	const bool IsMovingWater = IsMovingWaterImageName(pImageName);
+	pMap->UnloadData(pImage->m_ImageName);
+	return IsMovingWater;
+}
+
 void CMovingTiles::Reset()
 {
 	m_vQuads.clear();
@@ -79,30 +112,38 @@ void CMovingTiles::OnMapLoad()
 			CMapItemLayerQuads *pQuadLayer = reinterpret_cast<CMapItemLayerQuads *>(pLayer);
 			QuadName(pQuadLayer->m_aName, std::size(pQuadLayer->m_aName), aLayerName, sizeof(aLayerName));
 
+			EQType Type = EQType::NONE;
 			for(size_t NameIndex = 0; NameIndex < std::size(gs_aValidMovingTileQuadNames); NameIndex++)
 			{
 				if(str_comp(gs_aValidMovingTileQuadNames[NameIndex], aLayerName) != 0)
 					continue;
 
-				const EQType Type = static_cast<EQType>(NameIndex);
-				if(!m_RenderAbove && (Type == EQType::HOOKABLE || Type == EQType::UNHOOKABLE))
-					continue;
-				if(m_RenderAbove && Type != EQType::HOOKABLE && Type != EQType::UNHOOKABLE)
-					continue;
-
-				CQuad *pQuads = static_cast<CQuad *>(pMap->GetDataSwapped(pQuadLayer->m_Data));
-				for(int QuadIndex = 0; QuadIndex < pQuadLayer->m_NumQuads; QuadIndex++)
-				{
-					CQuadData QuadData;
-					QuadData.m_pQuad = &pQuads[QuadIndex];
-					QuadData.m_pGroup = pGroup;
-					QuadData.m_pLayer = pQuadLayer;
-					QuadData.m_Type = Type;
-					for(int PointIndex = 0; PointIndex < 5; PointIndex++)
-						QuadData.m_Pos[PointIndex] = vec2(fx2f(QuadData.m_pQuad->m_aPoints[PointIndex].x), fx2f(QuadData.m_pQuad->m_aPoints[PointIndex].y));
-					m_vQuads.push_back(QuadData);
-				}
+				Type = static_cast<EQType>(NameIndex);
 				break;
+			}
+			if(Type == EQType::NONE && IsMovingWaterImageName(aLayerName))
+				Type = EQType::FREEZE;
+			if(Type == EQType::NONE && QuadLayerUsesMovingWaterImage(pMap, pQuadLayer))
+				Type = EQType::FREEZE;
+			if(Type == EQType::NONE)
+				continue;
+
+			if(!m_RenderAbove && (Type == EQType::HOOKABLE || Type == EQType::UNHOOKABLE))
+				continue;
+			if(m_RenderAbove && Type != EQType::HOOKABLE && Type != EQType::UNHOOKABLE)
+				continue;
+
+			CQuad *pQuads = static_cast<CQuad *>(pMap->GetDataSwapped(pQuadLayer->m_Data));
+			for(int QuadIndex = 0; QuadIndex < pQuadLayer->m_NumQuads; QuadIndex++)
+			{
+				CQuadData QuadData;
+				QuadData.m_pQuad = &pQuads[QuadIndex];
+				QuadData.m_pGroup = pGroup;
+				QuadData.m_pLayer = pQuadLayer;
+				QuadData.m_Type = Type;
+				for(int PointIndex = 0; PointIndex < 5; PointIndex++)
+					QuadData.m_Pos[PointIndex] = vec2(fx2f(QuadData.m_pQuad->m_aPoints[PointIndex].x), fx2f(QuadData.m_pQuad->m_aPoints[PointIndex].y));
+				m_vQuads.push_back(QuadData);
 			}
 		}
 	}
