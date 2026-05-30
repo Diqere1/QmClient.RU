@@ -363,6 +363,16 @@ void CNetConnection::Drop(const char *pReason)
 	Reset();
 }
 
+void CNetConnection::SetTimedOut(const char *pReason)
+{
+	if(State() == EState::OFFLINE)
+		return;
+
+	m_State = EState::ERROR;
+	SetError(pReason);
+	m_TimeoutSituation = true;
+}
+
 void CNetConnection::DirectInit(const NETADDR &Addr, SECURITY_TOKEN SecurityToken, SECURITY_TOKEN Token, bool Sixup)
 {
 	Reset();
@@ -609,9 +619,7 @@ int CNetConnection::Update()
 		State() != EState::CONNECT &&
 		(Now - m_LastRecvTime) > time_freq() * g_Config.m_ConnTimeout)
 	{
-		m_State = EState::ERROR;
-		SetError("Timeout");
-		m_TimeoutSituation = true;
+		SetTimedOut("Timeout");
 	}
 
 	// fix resends
@@ -622,11 +630,9 @@ int CNetConnection::Update()
 		// check if we have some really old stuff laying around and abort if not acked
 		if(Now - pResend->m_FirstSendTime > time_freq() * g_Config.m_ConnTimeout)
 		{
-			m_State = EState::ERROR;
 			char aBuf[128];
 			str_format(aBuf, sizeof(aBuf), "Too weak connection (not acked for %d seconds)", g_Config.m_ConnTimeout);
-			SetError(aBuf);
-			m_TimeoutSituation = true;
+			SetTimedOut(aBuf);
 		}
 		else
 		{
