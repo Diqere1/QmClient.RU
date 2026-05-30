@@ -130,23 +130,31 @@ void CNetServer::Update()
 {
 	for(int i = 0; i < MaxClients(); i++)
 	{
-		if(m_aSlots[i].m_Transport == ENetTransport::KCP)
+		CSlot &Slot = m_aSlots[i];
+		if(Slot.m_Transport == ENetTransport::KCP)
 		{
-			m_aSlots[i].m_Kcp.Update();
-			m_aSlots[i].m_TransportStats = m_aSlots[i].m_Kcp.Stats();
-			if(m_aSlots[i].m_Kcp.TimedOut(g_Config.m_ConnTimeout))
+			Slot.m_Kcp.Update();
+			Slot.m_TransportStats = Slot.m_Kcp.Stats();
+			if(Slot.m_Kcp.TimedOut(g_Config.m_ConnTimeout))
 			{
-				Drop(i, "KCP timeout");
-				continue;
+				if(!Slot.m_Connection.m_TimeoutProtected)
+				{
+					Drop(i, "KCP timeout");
+					continue;
+				}
+
+				// Preserve timeout-protected tees on KCP the same way legacy UDP does.
+				Slot.m_Connection.SetTimedOut("Timeout");
+				DeactivateKcp(i);
 			}
 		}
 
-		m_aSlots[i].m_Connection.Update();
-		if(m_aSlots[i].m_Connection.State() == CNetConnection::EState::ERROR &&
-			(!m_aSlots[i].m_Connection.m_TimeoutProtected ||
-				!m_aSlots[i].m_Connection.m_TimeoutSituation))
+		Slot.m_Connection.Update();
+		if(Slot.m_Connection.State() == CNetConnection::EState::ERROR &&
+			(!Slot.m_Connection.m_TimeoutProtected ||
+				!Slot.m_Connection.m_TimeoutSituation))
 		{
-			Drop(i, m_aSlots[i].m_Connection.ErrorString());
+			Drop(i, Slot.m_Connection.ErrorString());
 		}
 	}
 }

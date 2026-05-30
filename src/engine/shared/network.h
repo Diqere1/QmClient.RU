@@ -390,6 +390,7 @@ public:
 	int Connect7(const NETADDR *pAddr, int NumAddrs);
 	void Disconnect(const char *pReason);
 	void Drop(const char *pReason);
+	void SetTimedOut(const char *pReason);
 
 	int Update();
 	int Flush();
