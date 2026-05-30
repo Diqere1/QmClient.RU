@@ -2071,6 +2071,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo 高级 gaoji advanced";
 		case EQmModuleId::DynamicIsland: return "灵动岛 lld lingdongdao dynamic island hud 顶部 dingbu 背景 beijing 颜色 yanse 透明度 touming 黑底 heidi 原版 yuanban 默认 moren classic old style";
 		case EQmModuleId::SystemMediaControls: return "系统媒体控制 xitong meiti kongzhi smtc media controls 启用系统媒体 qiyong 显示歌曲信息 gequ xinxi 上一个 shangyige 播放暂停 bofang zanting 下一个 xiayige";
+		case EQmModuleId::Background3D: return "3d背景 3d beijing background particles 粒子 lizi 方块 fangkuai cube 爱心 aixin heart 球体 qiuti sphere 金字塔 jinzita pyramid 钻石 zuanshi diamond 圆环 yuanhuan ring 星形 xingxing star 月牙 yueya crescent 混合 hunhe mixed 数量 shuliang 速度 sudu 尺寸 chicun 深度 shendu 透明度 touming 颜色 yanse 随机 suiji 自定义 zidingyi 辉光 huiguang 拖尾 tuowei trail 脉冲 maichong pulse 闪烁 shanshuo twinkle 推动 tuidong 碰撞 pengzhuang 淡入 danru 淡出 danchu";
 		case EQmModuleId::Info: return "贡献者 gongxianzhe 社区 shequ qq群 反馈 fankui 更新 gengxin 赞助 zanzhu 支持 zhichi 开发人员 kaifa sponsor supporters team";
 		}
 		return "";
@@ -2447,6 +2448,25 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			return s_aQmModuleLastHeights[Index] + LgCardSpacing;
 		if(pModule->m_Id == EQmModuleId::Coords)
 			return LgCardPadding * 2.0f + LgHeadlineSize + LgTipHeight + LgLineHeight * 8.0f + LgLineSpacing * 7.0f + LgCardSpacing;
+		if(pModule->m_Id == EQmModuleId::Background3D)
+		{
+			float RowCount = 1.0f;
+			if(g_Config.m_Qm3DParticles)
+			{
+				RowCount = 19.0f;
+				if(g_Config.m_Qm3DParticlesColorMode == 1)
+					RowCount += 1.0f;
+				if(g_Config.m_Qm3DParticlesGlow)
+					RowCount += 2.0f;
+				if(g_Config.m_Qm3DParticlesTrail)
+					RowCount += 2.0f;
+				if(g_Config.m_Qm3DParticlesPulse)
+					RowCount += 2.0f;
+				if(g_Config.m_Qm3DParticlesTwinkle)
+					RowCount += 1.0f;
+			}
+			return LgCardPadding * 2.0f + LgHeadlineSize + LgTipHeight + LgLineHeight * RowCount + LgLineSpacing * maximum(0.0f, RowCount - 1.0f) + LgCardSpacing;
+		}
 		return LgCardPadding * 2.0f + LgHeadlineSize + LgTipHeight + LgLineHeight * 6.0f + LgCardSpacing;
 	};
 
@@ -6307,6 +6327,160 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Ui()->DoLabel(&LabelColValue, Localize("分身小窗缩放"), LgBodySize, TEXTALIGN_ML);
 						static int s_QmDummyMiniViewZoomInputId;
 						RenderSliderWithValueInput(&s_QmDummyMiniViewZoomInputId, ControlColValue, &g_Config.m_QmDummyMiniViewZoom, 10, 300, "%");
+					}
+				}
+
+				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
+				Column.y = CardContent.y;
+				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
+				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
+				HandleModuleDragState(pModule, s_GlassCards.back());
+			}
+			break;
+			case EQmModuleId::Background3D:
+			{
+				// ========== 模块: 3D背景 ==========
+				Column.HSplitTop(LgCardSpacing, nullptr, &Column);
+				CUIRect CardBackground3DStart = Column;
+				s_GlassCards.push_back(CardBackground3DStart);
+
+				Column.HSplitTop(LgCardPadding, nullptr, &Column);
+				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
+				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
+				DoModuleHeadline(CardContent, 15, Localize("3D背景"), Localize("配置背景 3D 粒子效果"));
+
+				auto RenderIntOption = [&](const void *pId, const char *pLabel, int *pValue, int MinValue, int MaxValue, const char *pSuffix = "") {
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, pLabel, LgBodySize, TEXTALIGN_ML);
+					RenderSliderWithValueInput(pId, ControlCol, pValue, MinValue, MaxValue, pSuffix);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				};
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticles, Localize("启用 3D 背景粒子"), &g_Config.m_Qm3DParticles, &Row, LgLineHeight);
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+				if(g_Config.m_Qm3DParticles)
+				{
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("粒子类型"), LgBodySize, TEXTALIGN_ML);
+					std::array<const char *, 9> apQm3DParticleTypeNames = {
+						Localize("Cube"),
+						Localize("Heart"),
+						Localize("Sphere"),
+						Localize("Pyramid"),
+						Localize("Diamond"),
+						Localize("Ring"),
+						Localize("Star"),
+						Localize("Crescent"),
+						Localize("Mixed"),
+					};
+					const std::array<int, 9> aQm3DParticleTypeValues = {1, 2, 4, 5, 6, 7, 8, 9, 3};
+					int TypeIndex = 0;
+					for(size_t TypeValueIndex = 0; TypeValueIndex < aQm3DParticleTypeValues.size(); ++TypeValueIndex)
+					{
+						if(aQm3DParticleTypeValues[TypeValueIndex] == g_Config.m_Qm3DParticlesType)
+						{
+							TypeIndex = (int)TypeValueIndex;
+							break;
+						}
+					}
+					static CUi::SDropDownState s_Qm3DParticleTypeDropDownState;
+					static CScrollRegion s_Qm3DParticleTypeDropDownScrollRegion;
+					s_Qm3DParticleTypeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_Qm3DParticleTypeDropDownScrollRegion;
+					const int NewTypeIndex = Ui()->DoDropDown(&ControlCol, TypeIndex, apQm3DParticleTypeNames.data(), static_cast<int>(apQm3DParticleTypeNames.size()), s_Qm3DParticleTypeDropDownState);
+					if(NewTypeIndex >= 0 && NewTypeIndex < static_cast<int>(aQm3DParticleTypeValues.size()) && NewTypeIndex != TypeIndex)
+						g_Config.m_Qm3DParticlesType = aQm3DParticleTypeValues[NewTypeIndex];
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					static int s_Qm3DParticleCountInputId;
+					RenderIntOption(&s_Qm3DParticleCountInputId, Localize("Particle count"), &g_Config.m_Qm3DParticlesCount, 1, 200);
+					static int s_Qm3DParticleAlphaInputId;
+					RenderIntOption(&s_Qm3DParticleAlphaInputId, Localize("Particle alpha"), &g_Config.m_Qm3DParticlesAlpha, 1, 100, "%");
+					static int s_Qm3DParticleMinSizeInputId;
+					RenderIntOption(&s_Qm3DParticleMinSizeInputId, Localize("Min size"), &g_Config.m_Qm3DParticlesSizeMin, 2, 64);
+					if(g_Config.m_Qm3DParticlesSizeMax < g_Config.m_Qm3DParticlesSizeMin)
+						g_Config.m_Qm3DParticlesSizeMax = g_Config.m_Qm3DParticlesSizeMin;
+					static int s_Qm3DParticleMaxSizeInputId;
+					RenderIntOption(&s_Qm3DParticleMaxSizeInputId, Localize("Max size"), &g_Config.m_Qm3DParticlesSizeMax, g_Config.m_Qm3DParticlesSizeMin, 64);
+					static int s_Qm3DParticleSpeedInputId;
+					RenderIntOption(&s_Qm3DParticleSpeedInputId, Localize("Particle speed"), &g_Config.m_Qm3DParticlesSpeed, 1, 500);
+					static int s_Qm3DParticleDepthInputId;
+					RenderIntOption(&s_Qm3DParticleDepthInputId, Localize("Particle depth"), &g_Config.m_Qm3DParticlesDepth, 10, 1000);
+					static int s_Qm3DParticleViewMarginInputId;
+					RenderIntOption(&s_Qm3DParticleViewMarginInputId, Localize("View margin"), &g_Config.m_Qm3DParticlesViewMargin, 0, 1000);
+					static int s_Qm3DParticleFadeInInputId;
+					RenderIntOption(&s_Qm3DParticleFadeInInputId, Localize("Fade in"), &g_Config.m_Qm3DParticlesFadeInMs, 1, 5000, "ms");
+					static int s_Qm3DParticleFadeOutInputId;
+					RenderIntOption(&s_Qm3DParticleFadeOutInputId, Localize("Fade out"), &g_Config.m_Qm3DParticlesFadeOutMs, 1, 5000, "ms");
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesCollide, Localize("粒子碰撞"), &g_Config.m_Qm3DParticlesCollide, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					static int s_Qm3DParticlePushRadiusInputId;
+					RenderIntOption(&s_Qm3DParticlePushRadiusInputId, Localize("Push radius"), &g_Config.m_Qm3DParticlesPushRadius, 0, 1000);
+					static int s_Qm3DParticlePushStrengthInputId;
+					RenderIntOption(&s_Qm3DParticlePushStrengthInputId, Localize("Push strength"), &g_Config.m_Qm3DParticlesPushStrength, 0, 2000);
+
+					static std::vector<CButtonContainer> s_vQm3DParticleColorModeButtons = {{}, {}};
+					int ColorMode = g_Config.m_Qm3DParticlesColorMode;
+					if(DoLine_RadioMenu(CardContent, Localize("Particle color"), s_vQm3DParticleColorModeButtons, {Localize("Custom"), Localize("Random")}, {1, 2}, ColorMode))
+						g_Config.m_Qm3DParticlesColorMode = ColorMode;
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesColorMode == 1)
+					{
+						static CButtonContainer s_Qm3DParticleColorId;
+						DoLine_ColorPicker(&s_Qm3DParticleColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("Particle color"), &g_Config.m_Qm3DParticlesColor, ColorRGBA(0.56f, 0.72f, 0.62f, 1.0f), false, nullptr, true);
+					}
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesGlow, Localize("Particle glow"), &g_Config.m_Qm3DParticlesGlow, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesGlow)
+					{
+						static int s_Qm3DParticleGlowAlphaInputId;
+						RenderIntOption(&s_Qm3DParticleGlowAlphaInputId, Localize("Glow alpha"), &g_Config.m_Qm3DParticlesGlowAlpha, 1, 100, "%");
+						static int s_Qm3DParticleGlowOffsetInputId;
+						RenderIntOption(&s_Qm3DParticleGlowOffsetInputId, Localize("Glow offset"), &g_Config.m_Qm3DParticlesGlowOffset, 1, 20);
+					}
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesTrail, Localize("Particle trail"), &g_Config.m_Qm3DParticlesTrail, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesTrail)
+					{
+						static int s_Qm3DParticleTrailLengthInputId;
+						RenderIntOption(&s_Qm3DParticleTrailLengthInputId, Localize("Trail length"), &g_Config.m_Qm3DParticlesTrailLength, 2, 6);
+						static int s_Qm3DParticleTrailAlphaInputId;
+						RenderIntOption(&s_Qm3DParticleTrailAlphaInputId, Localize("Trail alpha"), &g_Config.m_Qm3DParticlesTrailAlpha, 1, 100, "%");
+					}
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesPulse, Localize("Particle pulse"), &g_Config.m_Qm3DParticlesPulse, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesPulse)
+					{
+						static int s_Qm3DParticlePulseStrengthInputId;
+						RenderIntOption(&s_Qm3DParticlePulseStrengthInputId, Localize("Pulse strength"), &g_Config.m_Qm3DParticlesPulseStrength, 0, 50, "%");
+						static int s_Qm3DParticlePulseSpeedInputId;
+						RenderIntOption(&s_Qm3DParticlePulseSpeedInputId, Localize("Pulse speed"), &g_Config.m_Qm3DParticlesPulseSpeed, 10, 300, "%");
+					}
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesTwinkle, Localize("Particle twinkle"), &g_Config.m_Qm3DParticlesTwinkle, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesTwinkle)
+					{
+						static int s_Qm3DParticleTwinkleStrengthInputId;
+						RenderIntOption(&s_Qm3DParticleTwinkleStrengthInputId, Localize("Twinkle strength"), &g_Config.m_Qm3DParticlesTwinkleStrength, 0, 100, "%");
 					}
 				}
 

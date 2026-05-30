@@ -6,10 +6,13 @@
 
 #include <game/client/component.h>
 
+#include <array>
 #include <vector>
 
 class CBackgroundParticles : public CComponent
 {
+	static constexpr int MAX_TRAIL_POINTS = 6;
+
 	struct SParticle
 	{
 		vec2 m_Pos = vec2(0.0f, 0.0f);
@@ -21,7 +24,12 @@ class CBackgroundParticles : public CComponent
 		vec3 m_RotationSpeed = vec3(0.0f, 0.0f, 0.0f);
 		float m_Age = 0.0f;
 		float m_Life = 1.0f;
+		float m_PulsePhase = 0.0f;
+		float m_TwinklePhase = 0.0f;
+		float m_TrailSample = 0.0f;
 		int m_Type = 1;
+		int m_TrailCount = 0;
+		std::array<vec2, MAX_TRAIL_POINTS> m_aTrailPos;
 		ColorRGBA m_Color = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
 	};
 
@@ -37,14 +45,24 @@ class CBackgroundParticles : public CComponent
 	void EnsureParticleCount(float Left, float Top, float Right, float Bottom);
 	void SpawnParticle(SParticle &Particle, bool Initial, float Left, float Top, float Right, float Bottom);
 	void UpdateParticle(SParticle &Particle, float Delta, float Left, float Top, float Right, float Bottom);
+	void ResetParticleTrail(SParticle &Particle) const;
+	void UpdateParticleTrail(SParticle &Particle, float Delta) const;
 	void ApplyPlayerPush(SParticle &Particle, float Delta) const;
 	void ApplyParticleCollisions(float Delta);
 	ColorRGBA ParticleColor() const;
 	int ParticleType() const;
 	float ParticleAlpha(const SParticle &Particle) const;
 	void RenderParticle(const SParticle &Particle, vec2 Center) const;
+	void RenderParticleTrail(const SParticle &Particle, vec2 Center, float Parallax, float Size, ColorRGBA Color) const;
+	void RenderShape(int Type, vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
 	void RenderCube(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
 	void RenderHeart(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
+	void RenderSphere(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
+	void RenderPyramid(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
+	void RenderDiamond(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
+	void RenderRing(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
+	void RenderStar(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
+	void RenderCrescent(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
 	void CurrentWorldView(float &Left, float &Top, float &Right, float &Bottom) const;
 
 public:
