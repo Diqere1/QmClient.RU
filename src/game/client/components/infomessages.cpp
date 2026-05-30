@@ -482,13 +482,11 @@ void CInfoMessages::OnRender()
 
 		if(InfoMsg.m_Type == EType::TYPE_KILL && g_Config.m_ClShowKillMessages)
 		{
-			Graphics()->DrawRect(StartX - 545.0f, y + 2.0f, 535.0f, ROW_HEIGHT - 4.0f, ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(0.80f), IGraphics::CORNER_ALL, ui_token::radius::BASE);
 			RenderKillMsg(InfoMsg, StartX, y);
 			y += ROW_HEIGHT;
 		}
 		else if(InfoMsg.m_Type == EType::TYPE_FINISH && g_Config.m_ClShowFinishMessages)
 		{
-			Graphics()->DrawRect(StartX - 545.0f, y + 2.0f, 535.0f, ROW_HEIGHT - 4.0f, ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(0.80f), IGraphics::CORNER_ALL, ui_token::radius::BASE);
 			RenderFinishMsg(InfoMsg, StartX, y);
 			y += ROW_HEIGHT;
 		}

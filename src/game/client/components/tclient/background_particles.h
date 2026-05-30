@@ -17,8 +17,8 @@ class CBackgroundParticles : public CComponent
 		vec2 m_PushVel = vec2(0.0f, 0.0f);
 		float m_Depth = 0.0f;
 		float m_Size = 1.0f;
-		float m_Rotation = 0.0f;
-		float m_RotationSpeed = 0.0f;
+		vec3 m_Rotation = vec3(0.0f, 0.0f, 0.0f);
+		vec3 m_RotationSpeed = vec3(0.0f, 0.0f, 0.0f);
 		float m_Age = 0.0f;
 		float m_Life = 1.0f;
 		int m_Type = 1;
@@ -43,9 +43,8 @@ class CBackgroundParticles : public CComponent
 	int ParticleType() const;
 	float ParticleAlpha(const SParticle &Particle) const;
 	void RenderParticle(const SParticle &Particle, vec2 Center) const;
-	void RenderCube(vec2 Pos, float Size, float Rotation, ColorRGBA Color) const;
-	void RenderHeart(vec2 Pos, float Size, float Rotation, ColorRGBA Color) const;
-	void RenderGlow(vec2 Pos, float Size, ColorRGBA Color) const;
+	void RenderCube(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
+	void RenderHeart(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const;
 	void CurrentWorldView(float &Left, float &Top, float &Right, float &Bottom) const;
 
 public:

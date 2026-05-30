@@ -53,6 +53,12 @@ void CNetClient::Disconnect(const char *pReason)
 	m_Connection.Disconnect(pReason);
 }
 
+void CNetClient::Drop(const char *pReason)
+{
+	DeactivateKcp();
+	m_Connection.Drop(pReason);
+}
+
 void CNetClient::Update()
 {
 	if(!m_Socket)

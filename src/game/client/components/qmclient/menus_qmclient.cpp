@@ -1270,6 +1270,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		Voice,
 		DynamicIsland,
 		SystemMediaControls,
+		Background3D,
 	};
 
 	enum class EQmModuleColumn
@@ -1310,6 +1311,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::Voice: return "voice";
 		case EQmModuleId::DynamicIsland: return "dynamic_island";
 		case EQmModuleId::SystemMediaControls: return "system_media_controls";
+		case EQmModuleId::Background3D: return "background_3d";
 		}
 		return "unknown";
 	};
@@ -1334,7 +1336,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const char *m_pKey;
 	};
 
-	constexpr size_t kQmModuleCount = 28;
+	constexpr size_t kQmModuleCount = 29;
 
 	// Layout string format: key:column:order; entries separated by ';'.
 	static const std::array<SQmModuleEntry, kQmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
@@ -1364,7 +1366,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::Voice, EQmModuleColumn::Right, 9, "voice"},
 		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 10, "dummy_miniview"},
 		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 11, "dynamic_island"},
-		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 12, "system_media_controls"}}};
+		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 12, "system_media_controls"},
+		{EQmModuleId::Background3D, EQmModuleColumn::Right, 13, "background_3d"}}};
 
 	static std::array<SQmModuleEntry, kQmModuleCount> s_aQmModuleLayout = s_aQmModuleDefaults;
 	static char s_aQmModuleLayoutConfigCache[sizeof(g_Config.m_QmSidebarCardOrder)] = {};
@@ -1512,7 +1515,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 		AppendBalancedGroup({EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi});
 		AppendBalancedGroup({EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::FocusMode, EQmModuleId::KeyBinds, EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist});
-		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls});
+		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls, EQmModuleId::Background3D});
 
 		for(size_t i = 0; i < s_aQmModuleLayout.size(); ++i)
 		{
@@ -2129,8 +2132,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::GoresActor: return "gores 演员 actor 掉水 diaoshui 自动发言 zidong fayan 表情 biaoqing 表情id emoticon 发送概率 gaolv";
 		case EQmModuleId::Gores: return "gores kog king of gores 锤枪切换 chuichang qiehuan 自动切枪 zidong qieqiang gun hammer prevweapon fire 开火后切锤 kaihuo qiechui 拿到其他武器停用 快速输入 kuaisu shuru fast input 快速输入其他玩家";
 		case EQmModuleId::FocusMode: return "禅模式 zhuanzhi moshi focus mode zen mode 隐藏 yincang hud 名字 mingzi 特效 texiao 计分板 jifenban 沉浸 chenjing 无干扰 wuganrao 聊天 liaotian chat 非必要UI";
-		case EQmModuleId::KeyBinds: return "按键绑定 anjian bangding bind 快捷键 kuaijiejian 常用绑定 changyong bangding";
-		case EQmModuleId::MiniFeatures: return "梦的小功能 meng xiaogongneng 粒子拖尾 lizi tuowei 远程粒子 yuancheng lizi 计分板查分 chafen 聊天框淡出 liaotian danchu 表情选择 biaoqing xuanze 动画优化 donghua youhua 复读 fudu 锤人换皮 chuiren huanpi 随机表情 suiji biaoqing 连击 lianji combo 说话不弹表情 shuo hua biaoqing 本地彩虹名字 caihong mingzi 武器弹道辅助线 dan dao fuzhuxian 位置跳跃提示 tiaoyue tishi";
+		case EQmModuleId::KeyBinds: return "按键绑定 anjian bangding bind 快捷键 kuaijiejian 常用绑定 changyong bangding 武器辅助线 fuzhuxian 异常断开 yichang duankai timeout disconnect";
+		case EQmModuleId::MiniFeatures: return "梦的小功能 meng xiaogongneng 粒子拖尾 lizi tuowei 远程粒子 yuancheng lizi 计分板查分 chafen 聊天框淡出 liaotian danchu 表情选择 biaoqing xuanze 动画优化 donghua youhua 复读 fudu 锤人换皮 chuiren huanpi 随机表情 suiji biaoqing 连击 lianji combo 说话不弹表情 shuo hua biaoqing 本地彩虹名字 caihong mingzi 武器弹道辅助线 dan dao fuzhuxian 线宽 xian kuan 透明度 toumingdu 始终显示 shizhong xianshi 位置跳跃提示 tiaoyue tishi";
 		case EQmModuleId::CameraView: return "镜头 jingtou camera drift 漂移 piaoyi dynamic fov 动态视野 dongtai shiye 纵横比 zonghengbi aspect ratio preset 预设 yushe 自定义 zidinyi 视野视角 shijiao";
 		case EQmModuleId::DummyMiniView: return "分身小窗 fenshen xiaochuang dummy mini view 预览 yulan 缩放 suofang 小窗大小 daxiao 离开视角 offscreen 自动显示 zidong xianshi";
 		case EQmModuleId::Coords: return "显示坐标 xianshi zuobiao coords position 自己坐标 ziji 他人坐标 taren 显示x xianshi x 显示y xianshi y 对齐提示 duiqi tishi 严格对齐 yange duiqi";
@@ -2152,6 +2155,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo 高级 gaoji advanced";
 		case EQmModuleId::DynamicIsland: return "灵动岛 lld lingdongdao dynamic island hud 顶部 dingbu 背景 beijing 颜色 yanse 透明度 touming 黑底 heidi 原版 yuanban 默认 moren classic old style";
 		case EQmModuleId::SystemMediaControls: return "系统媒体控制 xitong meiti kongzhi smtc media controls 启用系统媒体 qiyong 显示歌曲信息 gequ xinxi 上一个 shangyige 播放暂停 bofang zanting 下一个 xiayige";
+		case EQmModuleId::Background3D: return "3d背景 3d beijing background particles 粒子 lizi 方块 fangkuai cube 爱心 aixin heart 混合 hunhe mixed 数量 shuliang 速度 sudu 尺寸 chicun 深度 shendu 透明度 touming 颜色 yanse 随机 suiji 自定义 zidingyi 辉光 huiguang 推动 tuidong 碰撞 pengzhuang 淡入 danru 淡出 danchu";
 		case EQmModuleId::Info: return "贡献者 gongxianzhe 社区 shequ qq群 反馈 fankui 更新 gengxin 赞助 zanzhu 支持 zhichi 开发人员 kaifa sponsor supporters team";
 		}
 		return "";
@@ -2196,7 +2200,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			       Id == EQmModuleId::InputOverlay ||
 			       Id == EQmModuleId::Voice ||
 			       Id == EQmModuleId::DynamicIsland ||
-			       Id == EQmModuleId::SystemMediaControls;
+			       Id == EQmModuleId::SystemMediaControls ||
+			       Id == EQmModuleId::Background3D;
 		case QMCLIENT_SETTINGS_TAB_CONTRIBUTORS:
 			return false;
 		default:
@@ -2526,6 +2531,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			return {14, Localize("灵动岛"), Localize("Only Apple Can Do")};
 		case EQmModuleId::SystemMediaControls:
 			return {13, Localize("SMTC"), Localize("基于Win的一坨所拉的一泡")};
+		case EQmModuleId::Background3D:
+			return {15, Localize("3D背景"), Localize("配置背景 3D 粒子效果")};
 		case EQmModuleId::Info:
 			return {-1, "", ""};
 		}
@@ -2544,6 +2551,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			return s_aQmModuleLastHeights[Index] + LG_CardSpacing;
 		if(pModule->m_Id == EQmModuleId::Coords)
 			return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_LineHeight * 8.0f + LG_LineSpacing * 7.0f + LG_CardSpacing;
+		if(pModule->m_Id == EQmModuleId::Background3D)
+		{
+			const float RowCount = g_Config.m_Qm3DParticles ? (g_Config.m_Qm3DParticlesGlow ? 20.0f : 18.0f) : 1.0f;
+			return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_LineHeight * RowCount + LG_LineSpacing * maximum(0.0f, RowCount - 1.0f) + LG_CardSpacing;
+		}
 		return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_LineHeight * 6.0f + LG_CardSpacing;
 	};
 
@@ -3364,7 +3376,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					s_ReaderButton45Degrees, s_ClearButton45Degrees,
 					s_ReaderButtonSmallSens, s_ClearButtonSmallSens,
 					s_ReaderButtonLeftJump, s_ClearButtonLeftJump,
-					s_ReaderButtonRightJump, s_ClearButtonRightJump;
+					s_ReaderButtonRightJump, s_ClearButtonRightJump,
+					s_ReaderButtonWeaponTrajectory, s_ClearButtonWeaponTrajectory,
+					s_ReaderButtonTimeoutDisconnect, s_ClearButtonTimeoutDisconnect;
 				[[maybe_unused]] static CButtonContainer s_ReaderButtonDeepflyToggle, s_ClearButtonDeepflyToggle;
 
 				DoKeyBindRow(CardContent, s_ReaderButtonDummyPseudo, s_ClearButtonDummyPseudo,
@@ -3379,6 +3393,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					Localize("左跳"), "+jump; +left");
 				DoKeyBindRow(CardContent, s_ReaderButtonRightJump, s_ClearButtonRightJump,
 					Localize("右跳"), "+jump; +right");
+				DoKeyBindRow(CardContent, s_ReaderButtonWeaponTrajectory, s_ClearButtonWeaponTrajectory,
+					Localize("武器辅助线"), "+showweapontrajectory");
+				DoKeyBindRow(CardContent, s_ReaderButtonTimeoutDisconnect, s_ClearButtonTimeoutDisconnect,
+					Localize("异常断开"), "qm_timeout_disconnect");
 
 				CardContent.HSplitTop(LG_CardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;
@@ -3441,8 +3459,37 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmWeaponTrajectory, Localize("武器辅助线"), &g_Config.m_QmWeaponTrajectory, &Row, LG_LineHeight);
+					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("武器辅助线"), LG_BodySize, TEXTALIGN_ML);
+					static std::vector<const char *> s_WeaponTrajectoryModeNames;
+					s_WeaponTrajectoryModeNames = {Localize("关闭"), Localize("按键显示"), Localize("始终显示")};
+					static CUi::SDropDownState s_WeaponTrajectoryModeDropDownState;
+					static CScrollRegion s_WeaponTrajectoryModeDropDownScrollRegion;
+					s_WeaponTrajectoryModeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_WeaponTrajectoryModeDropDownScrollRegion;
+					const int WeaponTrajectoryModeNew = Ui()->DoDropDown(&ControlCol, std::clamp(g_Config.m_QmWeaponTrajectory, 0, 2), s_WeaponTrajectoryModeNames.data(), s_WeaponTrajectoryModeNames.size(), s_WeaponTrajectoryModeDropDownState);
+					if(g_Config.m_QmWeaponTrajectory != WeaponTrajectoryModeNew)
+						g_Config.m_QmWeaponTrajectory = WeaponTrajectoryModeNew;
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_QmWeaponTrajectory != 0)
+					{
+						static CButtonContainer s_WeaponTrajectoryColorId;
+						DoLine_ColorPicker(&s_WeaponTrajectoryColorId, LG_LineHeight, LG_BodySize, LG_LineSpacing, &CardContent, Localize("辅助线颜色"), &g_Config.m_QmWeaponTrajectoryColor, ColorRGBA(1.0f, 0.6f, 0.2f, 1.0f), false);
+
+						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+						Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+						Ui()->DoLabel(&LabelCol, Localize("线宽"), LG_BodySize, TEXTALIGN_ML);
+						static int s_QmWeaponTrajectoryWidthInputId;
+						RenderSliderWithValueInput(&s_QmWeaponTrajectoryWidthInputId, ControlCol, &g_Config.m_QmWeaponTrajectoryWidth, 1, 10);
+						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+						CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+						Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+						Ui()->DoLabel(&LabelCol, Localize("透明度"), LG_BodySize, TEXTALIGN_ML);
+						static int s_QmWeaponTrajectoryAlphaInputId;
+						RenderSliderWithValueInput(&s_QmWeaponTrajectoryAlphaInputId, ControlCol, &g_Config.m_QmWeaponTrajectoryAlpha, 0, 100, "%");
+						CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+					}
 
 					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcJumpHint, Localize("位置跳跃提示"), &g_Config.m_TcJumpHint, &Row, LG_LineHeight);
@@ -6274,6 +6321,100 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						Ui()->DoLabel(&LabelColValue, Localize("分身小窗缩放"), LG_BodySize, TEXTALIGN_ML);
 						static int s_QmDummyMiniViewZoomInputId;
 						RenderSliderWithValueInput(&s_QmDummyMiniViewZoomInputId, ControlColValue, &g_Config.m_QmDummyMiniViewZoom, 10, 300, "%");
+					}
+				}
+
+				CardContent.HSplitTop(LG_CardPadding, nullptr, &CardContent);
+				Column.y = CardContent.y;
+				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
+				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
+				HandleModuleDragState(pModule, s_GlassCards.back());
+			}
+			break;
+			case EQmModuleId::Background3D:
+			{
+				// ========== 模块: 3D背景 ==========
+				Column.HSplitTop(LG_CardSpacing, nullptr, &Column);
+				CUIRect CardBackground3DStart = Column;
+				s_GlassCards.push_back(CardBackground3DStart);
+
+				Column.HSplitTop(LG_CardPadding, nullptr, &Column);
+				Column.VSplitLeft(LG_CardPadding, nullptr, &CardContent);
+				CardContent.VSplitRight(LG_CardPadding, &CardContent, nullptr);
+				DoModuleHeadline(CardContent, 15, Localize("3D背景"), Localize("配置背景 3D 粒子效果"));
+
+				auto RenderIntOption = [&](const void *pId, const char *pLabel, int *pValue, int MinValue, int MaxValue, const char *pSuffix = "") {
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, pLabel, LG_BodySize, TEXTALIGN_ML);
+					RenderSliderWithValueInput(pId, ControlCol, pValue, MinValue, MaxValue, pSuffix);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+				};
+
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticles, Localize("启用 3D 背景粒子"), &g_Config.m_Qm3DParticles, &Row, LG_LineHeight);
+				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+				if(g_Config.m_Qm3DParticles)
+				{
+					static std::vector<CButtonContainer> s_vQm3DParticleTypeButtons = {{}, {}, {}};
+					int Type = g_Config.m_Qm3DParticlesType;
+					if(DoLine_RadioMenu(CardContent, Localize("粒子类型"), s_vQm3DParticleTypeButtons, {Localize("Cube"), Localize("Heart"), Localize("Mixed")}, {1, 2, 3}, Type))
+						g_Config.m_Qm3DParticlesType = Type;
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					static int s_Qm3DParticleCountInputId;
+					RenderIntOption(&s_Qm3DParticleCountInputId, Localize("Particle count"), &g_Config.m_Qm3DParticlesCount, 1, 200);
+					static int s_Qm3DParticleAlphaInputId;
+					RenderIntOption(&s_Qm3DParticleAlphaInputId, Localize("Particle alpha"), &g_Config.m_Qm3DParticlesAlpha, 1, 100, "%");
+					static int s_Qm3DParticleMinSizeInputId;
+					RenderIntOption(&s_Qm3DParticleMinSizeInputId, Localize("Min size"), &g_Config.m_Qm3DParticlesSizeMin, 2, 64);
+					if(g_Config.m_Qm3DParticlesSizeMax < g_Config.m_Qm3DParticlesSizeMin)
+						g_Config.m_Qm3DParticlesSizeMax = g_Config.m_Qm3DParticlesSizeMin;
+					static int s_Qm3DParticleMaxSizeInputId;
+					RenderIntOption(&s_Qm3DParticleMaxSizeInputId, Localize("Max size"), &g_Config.m_Qm3DParticlesSizeMax, g_Config.m_Qm3DParticlesSizeMin, 64);
+					static int s_Qm3DParticleSpeedInputId;
+					RenderIntOption(&s_Qm3DParticleSpeedInputId, Localize("Particle speed"), &g_Config.m_Qm3DParticlesSpeed, 1, 500);
+					static int s_Qm3DParticleDepthInputId;
+					RenderIntOption(&s_Qm3DParticleDepthInputId, Localize("Particle depth"), &g_Config.m_Qm3DParticlesDepth, 10, 1000);
+					static int s_Qm3DParticleViewMarginInputId;
+					RenderIntOption(&s_Qm3DParticleViewMarginInputId, Localize("View margin"), &g_Config.m_Qm3DParticlesViewMargin, 0, 1000);
+					static int s_Qm3DParticleFadeInInputId;
+					RenderIntOption(&s_Qm3DParticleFadeInInputId, Localize("Fade in"), &g_Config.m_Qm3DParticlesFadeInMs, 1, 5000, "ms");
+					static int s_Qm3DParticleFadeOutInputId;
+					RenderIntOption(&s_Qm3DParticleFadeOutInputId, Localize("Fade out"), &g_Config.m_Qm3DParticlesFadeOutMs, 1, 5000, "ms");
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesCollide, Localize("粒子碰撞"), &g_Config.m_Qm3DParticlesCollide, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					static int s_Qm3DParticlePushRadiusInputId;
+					RenderIntOption(&s_Qm3DParticlePushRadiusInputId, Localize("Push radius"), &g_Config.m_Qm3DParticlesPushRadius, 0, 1000);
+					static int s_Qm3DParticlePushStrengthInputId;
+					RenderIntOption(&s_Qm3DParticlePushStrengthInputId, Localize("Push strength"), &g_Config.m_Qm3DParticlesPushStrength, 0, 2000);
+
+					static std::vector<CButtonContainer> s_vQm3DParticleColorModeButtons = {{}, {}};
+					int ColorMode = g_Config.m_Qm3DParticlesColorMode;
+					if(DoLine_RadioMenu(CardContent, Localize("Particle color"), s_vQm3DParticleColorModeButtons, {Localize("Custom"), Localize("Random")}, {1, 2}, ColorMode))
+						g_Config.m_Qm3DParticlesColorMode = ColorMode;
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesColorMode == 1)
+					{
+						static CButtonContainer s_Qm3DParticleColorId;
+						DoLine_ColorPicker(&s_Qm3DParticleColorId, LG_LineHeight, LG_BodySize, LG_LineSpacing, &CardContent, Localize("Particle color"), &g_Config.m_Qm3DParticlesColor, ColorRGBA(0.56f, 0.72f, 0.62f, 1.0f), false, nullptr, true);
+					}
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesGlow, Localize("Particle glow"), &g_Config.m_Qm3DParticlesGlow, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesGlow)
+					{
+						static int s_Qm3DParticleGlowAlphaInputId;
+						RenderIntOption(&s_Qm3DParticleGlowAlphaInputId, Localize("Glow alpha"), &g_Config.m_Qm3DParticlesGlowAlpha, 1, 100, "%");
+						static int s_Qm3DParticleGlowOffsetInputId;
+						RenderIntOption(&s_Qm3DParticleGlowOffsetInputId, Localize("Glow offset"), &g_Config.m_Qm3DParticlesGlowOffset, 1, 20);
 					}
 				}
 

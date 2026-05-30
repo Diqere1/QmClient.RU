@@ -420,6 +420,7 @@ public:
 	void Connect(const char *pAddress, const char *pPassword = nullptr) override;
 	void DisconnectWithReason(const char *pReason);
 	void Disconnect() override;
+	void DropCurrentServerConnection();
 
 	void DummyDisconnect(const char *pReason) override;
 	void DummyConnect() override;
@@ -511,6 +512,7 @@ public:
 
 	static void Con_Connect(IConsole::IResult *pResult, void *pUserData);
 	static void Con_Disconnect(IConsole::IResult *pResult, void *pUserData);
+	static void Con_QmTimeoutDisconnect(IConsole::IResult *pResult, void *pUserData);
 
 	static void Con_DummyConnect(IConsole::IResult *pResult, void *pUserData);
 	static void Con_DummyDisconnect(IConsole::IResult *pResult, void *pUserData);

@@ -210,13 +210,15 @@ void CSkins::CSkinContainer::RequestLoad(bool Immediate)
 	// when quickly scrolling through lists or if a player with a new skin quickly joins and leaves.
 	if(m_State == EState::UNLOADED)
 	{
+		const std::chrono::nanoseconds Now = time_get_nanoseconds();
 		if(Immediate)
 		{
+			m_FirstLoadRequest = Now;
+			m_LastLoadRequest = Now;
 			m_State = EState::PENDING;
 		}
 		else
 		{
-			const std::chrono::nanoseconds Now = time_get_nanoseconds();
 			if(!m_FirstLoadRequest.has_value() ||
 				!m_LastLoadRequest.has_value() ||
 				Now - m_LastLoadRequest.value() > MAX_REQUESTED_TIME_FOR_PENDING)
@@ -278,7 +280,15 @@ void CSkins::CSkinContainer::SetState(EState State)
 			m_FirstLoadRequest = Now;
 		}
 		m_LastLoadRequest = Now;
-		if(!m_UsageEntryIterator.has_value())
+		if(m_AlwaysLoaded)
+		{
+			if(m_UsageEntryIterator.has_value())
+			{
+				m_pSkins->m_SkinsUsageList.erase(m_UsageEntryIterator.value());
+				m_UsageEntryIterator = std::nullopt;
+			}
+		}
+		else if(!m_UsageEntryIterator.has_value())
 		{
 			TouchUsage();
 		}
@@ -303,6 +313,15 @@ void CSkins::CSkinContainer::SetState(EState State)
 
 void CSkins::CSkinContainer::TouchUsage()
 {
+	if(m_AlwaysLoaded)
+	{
+		if(m_UsageEntryIterator.has_value())
+		{
+			m_UsageEntryIterator = std::nullopt;
+		}
+		m_pSkins->m_SkinsUsageList.remove(Name());
+		return;
+	}
 	if(m_UsageEntryIterator.has_value())
 	{
 		m_pSkins->m_SkinsUsageList.erase(m_UsageEntryIterator.value());
@@ -712,7 +731,10 @@ void CSkins::OnUpdate()
 	// Update loaded state of managed skins which are not retrieved with the FindOrNullptr function
 	GameClient()->CollectManagedTeeRenderInfos([&](const char *pSkinName) {
 		// This will update the loaded state of the container
-		dbg_assert(FindContainerOrNullptr(pSkinName) != nullptr, "No skin container found for managed tee render info: %s", pSkinName);
+		if(FindContainerOrNullptr(pSkinName) == nullptr)
+		{
+			log_error("skins", "Managed tee render info has invalid skin name: %s", pSkinName);
+		}
 	});
 	// Keep player and dummy skin loaded
 	FindContainerOrNullptr(g_Config.m_ClPlayerSkin);
@@ -977,13 +999,43 @@ void CSkins::UpdateUnloadSkins(CSkinLoadingStats &Stats)
 		}
 
 		auto SkinIt = m_Skins.find(SkinName);
-		dbg_assert(SkinIt != m_Skins.end(), "m_SkinsUsageList contains skin not in m_Skins");
+		if(SkinIt == m_Skins.end())
+		{
+			log_error("skins", "Removing stale skin '%s' from usage list", SkinName.c_str());
+			m_SkinsUsageList.remove(SkinName);
+			NumSkipped++;
+			continue;
+		}
 		auto &pSkinContainer = SkinIt->second;
-		dbg_assert(!pSkinContainer->m_AlwaysLoaded, "m_SkinsUsageList contains skins with m_AlwaysLoaded");
+		if(pSkinContainer->m_AlwaysLoaded)
+		{
+			m_SkinsUsageList.remove(SkinName);
+			pSkinContainer->m_UsageEntryIterator = std::nullopt;
+			NumSkipped++;
+			continue;
+		}
 		if(pSkinContainer->m_State != CSkinContainer::EState::PENDING &&
 			pSkinContainer->m_State != CSkinContainer::EState::LOADED)
 		{
-			dbg_assert(pSkinContainer->m_State == CSkinContainer::EState::LOADING, "m_SkinsUsageList contains skin which is not PENDING, LOADING or LOADED");
+			if(pSkinContainer->m_State != CSkinContainer::EState::LOADING)
+			{
+				log_error("skins", "Removing skin '%s' from usage list with invalid unload state", pSkinContainer->Name());
+				m_SkinsUsageList.remove(SkinName);
+				pSkinContainer->m_UsageEntryIterator = std::nullopt;
+				NumSkipped++;
+				continue;
+			}
+			NumSkipped++;
+			continue;
+		}
+		if(!pSkinContainer->m_LastLoadRequest.has_value())
+		{
+			log_error("skins", "Skin '%s' in usage list has no last load request", pSkinContainer->Name());
+			if(!pSkinContainer->m_FirstLoadRequest.has_value())
+			{
+				pSkinContainer->m_FirstLoadRequest = UnloadStart;
+			}
+			pSkinContainer->m_LastLoadRequest = UnloadStart;
 			NumSkipped++;
 			continue;
 		}

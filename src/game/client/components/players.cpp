@@ -559,16 +559,25 @@ void CPlayers::RenderWeaponTrajectory(
 	if(ShouldHideFocusGuideLines(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideGuideLines != 0))
 		return;
 
+	const int TrajectoryMode = std::clamp(g_Config.m_QmWeaponTrajectory, 0, 2);
 	const bool ManualTrajectoryVisible = GameClient()->m_Controls.m_aShowWeaponTrajectory[g_Config.m_ClDummy] != 0;
-	if(GameClient()->m_TClient.ShouldHideGoresGuides(ManualTrajectoryVisible))
+	const bool TrajectoryVisible = TrajectoryMode == 2 || (TrajectoryMode == 1 && ManualTrajectoryVisible);
+	if(GameClient()->m_TClient.ShouldHideGoresGuides(TrajectoryVisible))
 		return;
 
-	if(ClientId < 0 || !g_Config.m_QmWeaponTrajectory || !GameClient()->m_Controls.m_aShowWeaponTrajectory[g_Config.m_ClDummy])
+	if(ClientId < 0 || !TrajectoryVisible)
 		return;
 
 	const int Weapon = pPlayerChar->m_Weapon;
 	if(Weapon != WEAPON_GRENADE && Weapon != WEAPON_SHOTGUN && Weapon != WEAPON_LASER)
 		return;
+
+	const float TrajectoryAlpha = std::clamp(g_Config.m_QmWeaponTrajectoryAlpha / 100.0f, 0.0f, 1.0f);
+	if(TrajectoryAlpha <= 0.0f)
+		return;
+	const float TrajectoryHalfWidth = 0.5f + (float)(std::clamp(g_Config.m_QmWeaponTrajectoryWidth, 1, 10) - 1) * 0.3f;
+	ColorRGBA TrajectoryColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmWeaponTrajectoryColor));
+	TrajectoryColor.a = TrajectoryAlpha;
 
 	float Intra = GameClient()->m_aClients[ClientId].m_IsPredicted ? Client()->PredIntraGameTick(g_Config.m_ClDummy) : Client()->IntraGameTick(g_Config.m_ClDummy);
 	const float Angle = GetPlayerTargetAngle(pPrevChar, pPlayerChar, ClientId, Intra);
@@ -658,8 +667,8 @@ void CPlayers::RenderWeaponTrajectory(
 
 		Graphics()->TextureClear();
 		Graphics()->QuadsBegin();
-		const ColorRGBA BaseColor(1.0f, 0.6f, 0.2f, 1.0f);
-		const float StartSize = 4.0f;
+		const ColorRGBA BaseColor = TrajectoryColor;
+		const float StartSize = 2.5f + TrajectoryHalfWidth * 1.5f;
 		for(size_t i = 0; i < vPoints.size(); ++i)
 		{
 			const float T = vPoints.size() > 1 ? (float)i / (float)(vPoints.size() - 1) : 0.0f;
@@ -667,11 +676,11 @@ void CPlayers::RenderWeaponTrajectory(
 			if(Fade <= 0.0f)
 				continue;
 			float Size = StartSize * Fade;
-			if(Size < 0.5f)
-				Size = 0.5f;
+			if(Size < TrajectoryHalfWidth)
+				Size = TrajectoryHalfWidth;
 
 			ColorRGBA Color = BaseColor;
-			Color.a = 0.8f * Fade;
+			Color.a = TrajectoryAlpha * Fade;
 			Graphics()->SetColor(Color);
 			Graphics()->DrawCircle(vPoints[i].x, vPoints[i].y, Size, 12);
 		}
@@ -771,15 +780,41 @@ void CPlayers::RenderWeaponTrajectory(
 	if(vLineSegments.empty())
 		return;
 
-	const unsigned int ColorValue = Weapon == WEAPON_SHOTGUN ? g_Config.m_ClLaserShotgunOutlineColor : g_Config.m_ClLaserRifleOutlineColor;
-	ColorRGBA LineColor = color_cast<ColorRGBA>(ColorHSLA(ColorValue));
-	LineColor.a = 0.6f;
-
 	Graphics()->TextureClear();
-	Graphics()->LinesBegin();
-	Graphics()->SetColor(LineColor);
-	Graphics()->LinesDraw(vLineSegments.data(), vLineSegments.size());
-	Graphics()->LinesEnd();
+	if(g_Config.m_QmWeaponTrajectoryWidth > 1)
+	{
+		std::vector<IGraphics::CFreeformItem> vLineQuadSegments;
+		vLineQuadSegments.reserve(vLineSegments.size());
+		for(const IGraphics::CLineItem &LineSegment : vLineSegments)
+		{
+			const vec2 From(LineSegment.m_X0, LineSegment.m_Y0);
+			const vec2 To(LineSegment.m_X1, LineSegment.m_Y1);
+			const vec2 Delta = To - From;
+			if(length(Delta) < 0.0001f)
+				continue;
+			const vec2 Perp = normalize(vec2(-Delta.y, Delta.x));
+			vLineQuadSegments.emplace_back(
+				To + Perp * -TrajectoryHalfWidth,
+				To + Perp * TrajectoryHalfWidth,
+				From + Perp * -TrajectoryHalfWidth,
+				From + Perp * TrajectoryHalfWidth);
+		}
+
+		if(vLineQuadSegments.empty())
+			return;
+
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(TrajectoryColor);
+		Graphics()->QuadsDrawFreeform(vLineQuadSegments.data(), vLineQuadSegments.size());
+		Graphics()->QuadsEnd();
+	}
+	else
+	{
+		Graphics()->LinesBegin();
+		Graphics()->SetColor(TrajectoryColor);
+		Graphics()->LinesDraw(vLineSegments.data(), vLineSegments.size());
+		Graphics()->LinesEnd();
+	}
 }
 
 void CPlayers::RenderHook(

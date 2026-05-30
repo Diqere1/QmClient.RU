@@ -109,6 +109,62 @@ struct CBlockWordsCache
 	std::vector<std::string> m_Words;
 	std::vector<Regex> m_Regexes;
 };
+
+static constexpr const char *QM_CHAT_LOG_DIR = "qmclient/chat_log";
+static constexpr const char *QM_CHAT_LOG_PREFIX = "auto_chat_";
+static constexpr const char *QM_CHAT_LOG_EXTENSION = ".txt";
+
+struct SChatLogCleanupData
+{
+	IStorage *m_pStorage = nullptr;
+	time_t m_CutoffDate = 0;
+};
+
+static bool ExtractChatLogDate(const char *pFilename, time_t *pTimestamp)
+{
+	const char *pDate = str_startswith(pFilename, QM_CHAT_LOG_PREFIX);
+	if(pDate == nullptr || !str_endswith(pFilename, QM_CHAT_LOG_EXTENSION))
+		return false;
+
+	if(str_length(pFilename) != str_length(QM_CHAT_LOG_PREFIX) + 10 + str_length(QM_CHAT_LOG_EXTENSION))
+		return false;
+
+	char aDate[11];
+	str_truncate(aDate, sizeof(aDate), pDate, 10);
+	return timestamp_from_str(aDate, "%Y-%m-%d", pTimestamp);
+}
+
+static int ChatLogCleanupCallback(const char *pName, int IsDir, int DirType, void *pUser)
+{
+	if(IsDir)
+		return 0;
+
+	SChatLogCleanupData *pData = (SChatLogCleanupData *)pUser;
+	time_t FileDate = 0;
+	if(!ExtractChatLogDate(pName, &FileDate) || FileDate >= pData->m_CutoffDate)
+		return 0;
+
+	char aFilename[IO_MAX_PATH_LENGTH];
+	str_format(aFilename, sizeof(aFilename), "%s/%s", QM_CHAT_LOG_DIR, pName);
+	if(!pData->m_pStorage->RemoveFile(aFilename, DirType))
+		log_error("chat", "Failed to remove old chat log '%s'", aFilename);
+	return 0;
+}
+
+static const char *ChatLogKind(int ClientId, int Team)
+{
+	if(ClientId == -1)
+		return "system";
+	if(ClientId == -2)
+		return "client";
+	if(Team == TEAM_WHISPER_SEND)
+		return "whisper-send";
+	if(Team == TEAM_WHISPER_RECV)
+		return "whisper-recv";
+	if(Team == 1)
+		return "team";
+	return "public";
+}
 } // namespace
 
 static void UpdateBlockWordsCache(CBlockWordsCache &Cache)
@@ -391,6 +447,7 @@ CChat::CChat()
 {
 	m_Mode = MODE_NONE;
 	m_LastAnimUpdateTime = 0;
+	m_aChatLogLastCleanupDate[0] = '\0';
 
 	m_Input.SetCalculateOffsetCallback([this]() { return m_IsInputCensored; });
 	m_Input.SetDisplayTextCallback([this](char *pStr, size_t NumChars) {
@@ -1272,6 +1329,7 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 			AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
 		*/
 
+		SaveChatLogLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
 		AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
 
 		if(Client()->State() != IClient::STATE_DEMOPLAYBACK &&
@@ -1360,6 +1418,94 @@ void CChat::StoreSave(const char *pText)
 		CsvWrite(File, 4, SAVES_HEADER);
 	}
 	CsvWrite(File, 4, apColumns);
+	io_close(File);
+}
+
+bool CChat::EnsureChatLogFolder() const
+{
+	if(!Storage()->CreateFolder("qmclient", IStorage::TYPE_SAVE) && !Storage()->FolderExists("qmclient", IStorage::TYPE_SAVE))
+	{
+		log_error("chat", "Failed to create chat log root folder");
+		return false;
+	}
+	if(!Storage()->CreateFolder(QM_CHAT_LOG_DIR, IStorage::TYPE_SAVE) && !Storage()->FolderExists(QM_CHAT_LOG_DIR, IStorage::TYPE_SAVE))
+	{
+		log_error("chat", "Failed to create chat log folder '%s'", QM_CHAT_LOG_DIR);
+		return false;
+	}
+	return true;
+}
+
+void CChat::CleanupOldChatLogs(const char *pToday)
+{
+	if(g_Config.m_QmChatLogKeepDays <= 0 || str_comp(m_aChatLogLastCleanupDate, pToday) == 0)
+		return;
+
+	time_t TodayDate = 0;
+	if(!timestamp_from_str(pToday, "%Y-%m-%d", &TodayDate))
+		return;
+
+	SChatLogCleanupData Data;
+	Data.m_pStorage = Storage();
+	Data.m_CutoffDate = TodayDate - (time_t)maximum(g_Config.m_QmChatLogKeepDays - 1, 0) * 24 * 60 * 60;
+	Storage()->ListDirectory(IStorage::TYPE_SAVE, QM_CHAT_LOG_DIR, ChatLogCleanupCallback, &Data);
+	str_copy(m_aChatLogLastCleanupDate, pToday);
+}
+
+void CChat::SaveChatLogLine(int ClientId, int Team, const char *pLine)
+{
+	if(!g_Config.m_QmChatLogAutoSave || Client()->State() == IClient::STATE_DEMOPLAYBACK || pLine == nullptr || pLine[0] == '\0')
+		return;
+	if(!EnsureChatLogFolder())
+		return;
+
+	char aDate[11];
+	str_timestamp_format(aDate, sizeof(aDate), "%Y-%m-%d");
+	CleanupOldChatLogs(aDate);
+
+	char aTimestamp[20];
+	str_timestamp_format(aTimestamp, sizeof(aTimestamp), FORMAT_SPACE);
+
+	char aName[MAX_NAME_LENGTH];
+	if(ClientId == SERVER_MSG)
+	{
+		str_copy(aName, "server");
+	}
+	else if(ClientId == CLIENT_MSG)
+	{
+		str_copy(aName, "client");
+	}
+	else if(ClientId >= 0 && ClientId < MAX_CLIENTS && GameClient()->m_aClients[ClientId].m_aName[0] != '\0')
+	{
+		GameClient()->FormatStreamerName(ClientId, aName, sizeof(aName));
+	}
+	else
+	{
+		str_format(aName, sizeof(aName), "client %d", ClientId);
+	}
+	str_sanitize_cc(aName);
+
+	char aText[MAX_LINE_LENGTH];
+	str_copy(aText, pLine);
+	str_sanitize_cc(aText);
+
+	char aFilename[IO_MAX_PATH_LENGTH];
+	str_format(aFilename, sizeof(aFilename), "%s/%s%s%s", QM_CHAT_LOG_DIR, QM_CHAT_LOG_PREFIX, aDate, QM_CHAT_LOG_EXTENSION);
+	IOHANDLE File = Storage()->OpenFile(aFilename, IOFLAG_APPEND, IStorage::TYPE_SAVE);
+	if(!File)
+	{
+		log_error("chat", "Failed to open chat log '%s'", aFilename);
+		return;
+	}
+
+	char aLine[512];
+	if(ClientId == SERVER_MSG || ClientId == CLIENT_MSG)
+		str_format(aLine, sizeof(aLine), "[%s] [%s] %s", aTimestamp, ChatLogKind(ClientId, Team), aText);
+	else
+		str_format(aLine, sizeof(aLine), "[%s] [%s] %s: %s", aTimestamp, ChatLogKind(ClientId, Team), aName, aText);
+
+	io_write(File, aLine, str_length(aLine));
+	io_write_newline(File);
 	io_close(File);
 }
 

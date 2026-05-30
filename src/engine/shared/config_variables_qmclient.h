@@ -115,7 +115,10 @@ MACRO_CONFIG_INT(QmRepeatKey, qm_repeat_key, 278, 0, 512, CFGFLAG_CLIENT | CFGFL
 MACRO_CONFIG_INT(QmSayNoPop, qm_say_nopop, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "输入时不显示打字表情 (Hide typing emoticon while chatting)")
 MACRO_CONFIG_INT(QmHammerSwapSkin, qm_hammer_swap_skin, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "锤人换皮肤 (Copy target skin on hammer hit)")
 MACRO_CONFIG_INT(QmRandomEmoteOnHit, qm_random_emote_on_hit, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "被锤/榴弹击中时随机表情 (Random emote on hammer/grenade hit)")
-MACRO_CONFIG_INT(QmWeaponTrajectory, qm_weapon_trajectory, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用武器弹道辅助线 (Enable weapon trajectory)")
+MACRO_CONFIG_INT(QmWeaponTrajectory, qm_weapon_trajectory, 1, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "武器弹道辅助线显示模式（0=关闭，1=按键显示，2=始终显示）")
+MACRO_CONFIG_COL(QmWeaponTrajectoryColor, qm_weapon_trajectory_color, 16750899, CFGFLAG_CLIENT | CFGFLAG_SAVE, "武器弹道辅助线颜色")
+MACRO_CONFIG_INT(QmWeaponTrajectoryWidth, qm_weapon_trajectory_width, 2, 1, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "武器弹道辅助线宽度")
+MACRO_CONFIG_INT(QmWeaponTrajectoryAlpha, qm_weapon_trajectory_alpha, 70, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "武器弹道辅助线透明度")
 MACRO_CONFIG_INT(QmDeepflyMode, qm_deepfly_mode, 0, 0, 3, CFGFLAG_CLIENT, "Deepfly模式（0=正常，1=DF，2=HDF，3=自定义）")
 
 // Auto Unspec on Unfreeze / 解冻自动取消旁观

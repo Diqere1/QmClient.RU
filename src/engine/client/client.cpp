@@ -1118,6 +1118,20 @@ void CClient::Disconnect()
 	}
 }
 
+void CClient::DropCurrentServerConnection()
+{
+	if(m_State == IClient::STATE_OFFLINE || m_State == IClient::STATE_DEMOPLAYBACK)
+	{
+		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "not connected", gs_ClientNetworkErrPrintColor);
+		return;
+	}
+
+	static constexpr const char *pReason = "abnormal disconnect";
+	m_aNetClient[CONN_DUMMY].Drop(pReason);
+	m_aNetClient[CONN_MAIN].Drop(pReason);
+	DisconnectWithReason(pReason);
+}
+
 bool CClient::DummyConnected() const
 {
 	return m_DummyConnected;
@@ -4133,6 +4147,12 @@ void CClient::Con_Disconnect(IConsole::IResult *pResult, void *pUserData)
 	pSelf->Disconnect();
 }
 
+void CClient::Con_QmTimeoutDisconnect(IConsole::IResult *pResult, void *pUserData)
+{
+	CClient *pSelf = (CClient *)pUserData;
+	pSelf->DropCurrentServerConnection();
+}
+
 void CClient::Con_DummyConnect(IConsole::IResult *pResult, void *pUserData)
 {
 	CClient *pSelf = (CClient *)pUserData;
@@ -5258,6 +5278,7 @@ void CClient::RegisterCommands()
 	m_pConsole->Register("minimize", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Minimize, this, "Minimize the client");
 	m_pConsole->Register("connect", "r[host|ip]", CFGFLAG_CLIENT, Con_Connect, this, "Connect to the specified host/ip");
 	m_pConsole->Register("disconnect", "", CFGFLAG_CLIENT, Con_Disconnect, this, "Disconnect from the server");
+	m_pConsole->Register("qm_timeout_disconnect", "", CFGFLAG_CLIENT, Con_QmTimeoutDisconnect, this, "Silently drop the current server connection");
 	m_pConsole->Register("ping", "", CFGFLAG_CLIENT, Con_Ping, this, "Ping the current server");
 	m_pConsole->Register("screenshot", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Screenshot, this, "Take a screenshot");
 	m_pConsole->Register("net_reset", "", CFGFLAG_CLIENT, ConNetReset, this, "Rebinds the client's listening address and port");
