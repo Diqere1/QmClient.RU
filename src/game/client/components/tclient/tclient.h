@@ -126,7 +126,6 @@ class CTClient : public CComponent
 	float m_FinishTextTimeout = 0.0f;
 	void DoFinishCheck();
 	const char *CurrentCommunityIdForFinishCheck() const;
-	bool IsAxiomCommunity() const;
 	void ResetAxiomAutoLoginState();
 	void UpdateAxiomAutoLogin();
 	void HandleAxiomAutoLoginMessage(const char *pText);
@@ -381,6 +380,7 @@ public:
 	bool TryRemoveLocalSaveForLoadCommand(const char *pLine);
 	bool IsGoresMapProgressEnabled() const;
 	bool ShouldHideGoresGuides(bool ManualGuideVisible = false) const;
+	bool IsAxiomCommunity() const;
 	bool HasGoresMapProgress(int Dummy = 0) const
 	{
 		const int Idx = Dummy < 0 ? 0 : (Dummy >= NUM_DUMMIES ? NUM_DUMMIES - 1 : Dummy);

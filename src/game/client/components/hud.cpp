@@ -390,7 +390,7 @@ namespace
 
 		const float TeeSize = g_Config.m_TcFrozenHudTeeSize;
 		int MaxTees = (int)(8.3f * (HudWidth / HudHeight) * 13.0f / TeeSize);
-		if(!g_Config.m_ClShowfps && !g_Config.m_ClShowpred)
+		if(!g_Config.m_ClShowfps && !g_Config.m_ClShowpred && !g_Config.m_ClShowPacketLoss)
 			MaxTees = (int)(9.5f * (HudWidth / HudHeight) * 13.0f / TeeSize);
 		const int MaxRows = g_Config.m_TcFrozenMaxRows;
 		float StartPos = HudWidth / 2.0f + 38.0f * (HudWidth / HudHeight) / 1.78f;
@@ -1908,17 +1908,22 @@ void CHud::RenderTextInfo()
 	{
 		AnimState.m_FpsPositionInitialized = false;
 		AnimState.m_PredPositionInitialized = false;
+		AnimState.m_LossPositionInitialized = false;
 		AnimState.m_AlphaInitialized = false;
 	}
 
 	const uint64_t FpsNode = HudTextInfoNodeKey("fps");
 	const uint64_t PredNode = HudTextInfoNodeKey("pred");
+	const uint64_t LossNode = HudTextInfoNodeKey("loss");
+	const bool ShowLoss = g_Config.m_ClShowPacketLoss && Client()->State() != IClient::STATE_DEMOPLAYBACK;
 	if(UseV2TextInfoLayout && pAnimRuntime != nullptr && !AnimState.m_AlphaInitialized)
 	{
 		AnimState.m_FpsTargetAlpha = Showfps ? 1.0f : 0.0f;
 		AnimState.m_PredTargetAlpha = Showpred ? 1.0f : 0.0f;
+		AnimState.m_LossTargetAlpha = ShowLoss ? 1.0f : 0.0f;
 		pAnimRuntime->SetValue(FpsNode, EUiAnimProperty::ALPHA, AnimState.m_FpsTargetAlpha);
 		pAnimRuntime->SetValue(PredNode, EUiAnimProperty::ALPHA, AnimState.m_PredTargetAlpha);
+		pAnimRuntime->SetValue(LossNode, EUiAnimProperty::ALPHA, AnimState.m_LossTargetAlpha);
 		AnimState.m_AlphaInitialized = true;
 	}
 
@@ -1954,31 +1959,35 @@ void CHud::RenderTextInfo()
 		str_copy(AnimState.m_aLastPredText, aPredBuf);
 		AnimState.m_LastPredWidth = PredWidth;
 	}
-	const bool ShowLoss = Showpred;
 	const float PacketLoss = Client()->PacketLoss();
 	const ColorRGBA PredictionMarginColor = GetPredictionMarginColor(Client()->PredictionMarginState());
 	if(ShowLoss)
 	{
 		str_format(aLossBuf, sizeof(aLossBuf), "%.1f%%", PacketLoss);
 		LossWidth = TextRender()->TextWidth(TextInfoFontSize, aLossBuf, -1, -1.0f);
+		str_copy(AnimState.m_aLastLossText, aLossBuf);
+		AnimState.m_LastLossWidth = LossWidth;
 	}
 
 	float FpsAlpha = Showfps ? 1.0f : 0.0f;
 	float PredAlpha = Showpred ? 1.0f : 0.0f;
+	float LossAlpha = ShowLoss ? 1.0f : 0.0f;
 	if(UseV2TextInfoLayout && pAnimRuntime != nullptr)
 	{
 		FpsAlpha = ResolveAnimatedLayoutValue(*pAnimRuntime, FpsNode, EUiAnimProperty::ALPHA, Showfps ? 1.0f : 0.0f, AnimState.m_FpsTargetAlpha);
 		PredAlpha = ResolveAnimatedLayoutValue(*pAnimRuntime, PredNode, EUiAnimProperty::ALPHA, Showpred ? 1.0f : 0.0f, AnimState.m_PredTargetAlpha);
+		LossAlpha = ResolveAnimatedLayoutValue(*pAnimRuntime, LossNode, EUiAnimProperty::ALPHA, ShowLoss ? 1.0f : 0.0f, AnimState.m_LossTargetAlpha);
 	}
 
 	const bool RenderFps = Showfps || (UseV2TextInfoLayout && FpsAlpha > 0.01f && AnimState.m_aLastFpsText[0] != '\0');
 	const bool RenderPred = Showpred || (UseV2TextInfoLayout && PredAlpha > 0.01f && AnimState.m_aLastPredText[0] != '\0');
-	const bool RenderLoss = RenderPred && ShowLoss;
+	const bool RenderLoss = ShowLoss || (UseV2TextInfoLayout && LossAlpha > 0.01f && AnimState.m_aLastLossText[0] != '\0');
 	const float DisplayFpsWidth = Showfps ? FpsWidth : (RenderFps ? AnimState.m_LastFpsWidth : 0.0f);
 	const float DisplayPredWidth = Showpred ? PredWidth : (RenderPred ? AnimState.m_LastPredWidth : 0.0f);
-	const float DisplayLossWidth = RenderLoss ? LossWidth : 0.0f;
+	const float DisplayLossWidth = ShowLoss ? LossWidth : (RenderLoss ? AnimState.m_LastLossWidth : 0.0f);
 	const char *pFpsText = Showfps ? aFpsBuf : AnimState.m_aLastFpsText;
 	const char *pPredText = Showpred ? aPredBuf : AnimState.m_aLastPredText;
+	const char *pLossText = ShowLoss ? aLossBuf : AnimState.m_aLastLossText;
 	const bool UseMiniLayout = HasMiniMap && (RenderFps || RenderPred || RenderLoss);
 
 	SHudTextInfoLayout V2Layout;
@@ -2004,6 +2013,14 @@ void CHud::RenderTextInfo()
 			pAnimRuntime->SetValue(PredNode, EUiAnimProperty::POS_X, AnimState.m_PredTargetX);
 			pAnimRuntime->SetValue(PredNode, EUiAnimProperty::POS_Y, AnimState.m_PredTargetY);
 			AnimState.m_PredPositionInitialized = true;
+		}
+		if(RenderLoss && !AnimState.m_LossPositionInitialized)
+		{
+			AnimState.m_LossTargetX = V2Layout.m_LossX;
+			AnimState.m_LossTargetY = V2Layout.m_LossY;
+			pAnimRuntime->SetValue(LossNode, EUiAnimProperty::POS_X, AnimState.m_LossTargetX);
+			pAnimRuntime->SetValue(LossNode, EUiAnimProperty::POS_Y, AnimState.m_LossTargetY);
+			AnimState.m_LossPositionInitialized = true;
 		}
 	}
 
@@ -2214,8 +2231,16 @@ void CHud::RenderTextInfo()
 		float LossY = 0.0f;
 		if(UseV2TextInfoLayout)
 		{
-			LossX = V2Layout.m_LossX;
-			LossY = V2Layout.m_LossY;
+			if(pAnimRuntime != nullptr)
+			{
+				LossX = ResolveAnimatedLayoutValue(*pAnimRuntime, LossNode, EUiAnimProperty::POS_X, V2Layout.m_LossX, AnimState.m_LossTargetX);
+				LossY = ResolveAnimatedLayoutValue(*pAnimRuntime, LossNode, EUiAnimProperty::POS_Y, V2Layout.m_LossY, AnimState.m_LossTargetY);
+			}
+			else
+			{
+				LossX = V2Layout.m_LossX;
+				LossY = V2Layout.m_LossY;
+			}
 		}
 		else if(UseMiniLayout)
 		{
@@ -2232,11 +2257,11 @@ void CHud::RenderTextInfo()
 		ColorRGBA OldOutlineColor = TextRender()->GetTextOutlineColor();
 		ColorRGBA LossTextColor = GetPredictionNetworkColor(PacketLoss, Client()->ConnectionProblems());
 		ColorRGBA LossOutlineColor = TextRender()->DefaultTextOutlineColor();
-		LossTextColor.a *= PredAlpha;
-		LossOutlineColor.a *= PredAlpha;
+		LossTextColor.a *= LossAlpha;
+		LossOutlineColor.a *= LossAlpha;
 		TextRender()->TextColor(LossTextColor);
 		TextRender()->TextOutlineColor(LossOutlineColor);
-		TextRender()->Text(LossX, LossY, TextInfoFontSize, aLossBuf, -1.0f);
+		TextRender()->Text(LossX, LossY, TextInfoFontSize, pLossText, -1.0f);
 		TextRender()->TextColor(OldColor);
 		TextRender()->TextOutlineColor(OldOutlineColor);
 	}
@@ -2353,7 +2378,7 @@ void CHud::RenderTextInfo()
 			float ProgressiveOffset = 0.0f;
 			float TeeSize = g_Config.m_TcFrozenHudTeeSize;
 			int MaxTees = (int)(8.3f * (m_Width / m_Height) * 13.0f / TeeSize);
-			if(!g_Config.m_ClShowfps && !g_Config.m_ClShowpred)
+			if(!g_Config.m_ClShowfps && !g_Config.m_ClShowpred && !g_Config.m_ClShowPacketLoss)
 				MaxTees = (int)(9.5f * (m_Width / m_Height) * 13.0f / TeeSize);
 			int MaxRows = g_Config.m_TcFrozenMaxRows;
 			float StartPos = m_Width / 2.0f + 38.0f * (m_Width / m_Height) / 1.78f;

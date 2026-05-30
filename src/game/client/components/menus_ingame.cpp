@@ -337,6 +337,11 @@ void CMenus::StartReportScan()
 		GameClient()->Echo("需要先连接到服务器");
 		return;
 	}
+	if(GameClient()->m_TClient.IsAxiomCommunity())
+	{
+		GameClient()->Echo("Axiom 服务器内不可使用举报功能");
+		return;
+	}
 	if(g_Config.m_QmReportAppId[0] == '\0' || g_Config.m_QmReportSecret[0] == '\0')
 	{
 		GameClient()->Echo("请先设置 qm_report_app_id 和 qm_report_secret");
@@ -377,8 +382,15 @@ void CMenus::UpdateReportScan()
 		return;
 
 	const EHttpState RequestState = m_pReportScanRequest->State();
+	if(RequestState != EHttpState::DONE)
+	{
+		ResetReportScan();
+		GameClient()->Echo(RequestState == EHttpState::ABORTED ? "举报请求已取消" : "举报请求失败，网络请求异常");
+		return;
+	}
+
 	const int StatusCode = m_pReportScanRequest->StatusCode();
-	if(RequestState != EHttpState::DONE || StatusCode < 200 || StatusCode >= 300)
+	if(StatusCode < 200 || StatusCode >= 300)
 	{
 		char aBuf[128];
 		str_format(aBuf, sizeof(aBuf), "举报请求失败，HTTP 状态码：%d", StatusCode);
@@ -428,6 +440,7 @@ void CMenus::RenderGame(CUIRect MainView)
 	const bool Recording = DemoRecorder(RECORDER_MANUAL)->IsRecording();
 	const bool FastPracticeEnabled = GameClient()->m_FastPractice.Enabled();
 	const bool LiveDirectorActive = Client()->QmLiveDirectorActive();
+	const bool ReportDisabledOnAxiom = GameClient()->m_TClient.IsAxiomCommunity();
 
 	const char *pDisconnectButtonLabel = Localize("Disconnect");
 	const char *pDummyButtonLabel = nullptr;
@@ -708,6 +721,11 @@ void CMenus::RenderGame(CUIRect MainView)
 	{
 		DoButton_Menu(&s_ReportButton, pReportButtonLabel, 1, &Button);
 		GameClient()->m_Tooltips.DoToolTip(&s_ReportButton, &Button, "正在扫描当前服务器");
+	}
+	else if(ReportDisabledOnAxiom)
+	{
+		DoButton_Menu(&s_ReportButton, pReportButtonLabel, 1, &Button);
+		GameClient()->m_Tooltips.DoToolTip(&s_ReportButton, &Button, "Axiom 服务器内不可使用举报功能");
 	}
 	else if(DoButton_Menu(&s_ReportButton, pReportButtonLabel, 0, &Button))
 	{

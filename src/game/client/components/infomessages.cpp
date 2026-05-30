@@ -462,7 +462,8 @@ void CInfoMessages::OnRender()
 		Showfps = 0;
 #endif
 	const float StartX = Width - 10.0f;
-	float StartY = 30.0f + (Showfps ? 100.0f : 0.0f) + (g_Config.m_ClShowpred && Client()->State() != IClient::STATE_DEMOPLAYBACK ? 100.0f : 0.0f);
+	const bool HasTopRightTextInfo = (g_Config.m_ClShowpred || g_Config.m_ClShowPacketLoss) && Client()->State() != IClient::STATE_DEMOPLAYBACK;
+	float StartY = 30.0f + (Showfps ? 100.0f : 0.0f) + (HasTopRightTextInfo ? 100.0f : 0.0f);
 
 	float y = StartY;
 	for(int i = 1; i <= MAX_INFOMSGS; i++)
