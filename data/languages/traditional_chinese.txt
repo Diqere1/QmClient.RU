@@ -3093,10 +3093,10 @@ Trail width
 == 
 
 Trail length
-== 
+== 拖尾長度
 
 Trail alpha
-== 
+== 拖尾透明度
 
 Background Draw
 == 
@@ -3723,3 +3723,99 @@ Low to high
 
 High to low
 == 由高到低
+
+Cube
+== 方塊
+
+Heart
+== 愛心
+
+Sphere
+== 球體
+
+Pyramid
+== 金字塔
+
+Diamond
+== 鑽石
+
+Ring
+== 圓環
+
+Star
+== 星形
+
+Crescent
+== 月牙
+
+Mixed
+== 混合
+
+Particle count
+== 粒子數量
+
+Particle alpha
+== 粒子透明度
+
+Min size
+== 最小尺寸
+
+Max size
+== 最大尺寸
+
+Particle speed
+== 粒子速度
+
+Particle depth
+== 粒子深度
+
+View margin
+== 視野外邊距
+
+Fade in
+== 淡入
+
+Fade out
+== 淡出
+
+Push radius
+== 推動半徑
+
+Push strength
+== 推動強度
+
+Particle color
+== 粒子顏色
+
+Custom
+== 自訂
+
+Random
+== 隨機
+
+Particle glow
+== 粒子輝光
+
+Glow alpha
+== 輝光透明度
+
+Glow offset
+== 輝光偏移
+
+Particle trail
+== 粒子拖尾
+
+Particle pulse
+== 粒子脈衝
+
+Pulse strength
+== 脈衝強度
+
+Pulse speed
+== 脈衝速度
+
+Particle twinkle
+== 粒子閃爍
+
+Twinkle strength
+== 閃爍強度

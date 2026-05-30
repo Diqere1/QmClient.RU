@@ -20,6 +20,22 @@ constexpr float PROJ_DIST = 600.0f;
 constexpr int SHAPE_CUBE = 1;
 constexpr int SHAPE_HEART = 2;
 constexpr int SHAPE_MIXED = 3;
+constexpr int SHAPE_SPHERE = 4;
+constexpr int SHAPE_PYRAMID = 5;
+constexpr int SHAPE_DIAMOND = 6;
+constexpr int SHAPE_RING = 7;
+constexpr int SHAPE_STAR = 8;
+constexpr int SHAPE_CRESCENT = 9;
+constexpr int SHAPE_FIRST = SHAPE_CUBE;
+constexpr int SHAPE_LAST = SHAPE_CRESCENT;
+constexpr int REAL_SHAPE_COUNT = 8;
+constexpr int SPHERE_SEGMENTS = 24;
+constexpr int RING_SEGMENTS = 32;
+constexpr int RING_RADIALS = 8;
+constexpr int CRESCENT_SEGMENTS = 28;
+constexpr int STAR_POINTS = 10;
+constexpr int STAR_VERTICES = STAR_POINTS * 2;
+constexpr int STAR_EDGES = STAR_POINTS * 3;
 constexpr int HEART_POINTS = 96;
 constexpr int HEART_LOW_POINTS = 24;
 constexpr int HEART_LAYERS = 5;
@@ -49,6 +65,49 @@ const std::array<std::array<int, 2>, 12> s_aCubeEdges = { {
 	{ {1, 5} },
 	{ {2, 6} },
 	{ {3, 7} },
+} };
+
+const std::array<vec3, 5> s_aPyramidVertices = { {
+	vec3(-1.0f, -1.0f, -0.65f),
+	vec3(1.0f, -1.0f, -0.65f),
+	vec3(1.0f, 1.0f, -0.65f),
+	vec3(-1.0f, 1.0f, -0.65f),
+	vec3(0.0f, 0.0f, 1.15f),
+} };
+
+const std::array<std::array<int, 2>, 8> s_aPyramidEdges = { {
+	{ {0, 1} },
+	{ {1, 2} },
+	{ {2, 3} },
+	{ {3, 0} },
+	{ {0, 4} },
+	{ {1, 4} },
+	{ {2, 4} },
+	{ {3, 4} },
+} };
+
+const std::array<vec3, 6> s_aDiamondVertices = { {
+	vec3(0.0f, -1.25f, 0.0f),
+	vec3(1.0f, 0.0f, 0.0f),
+	vec3(0.0f, 0.0f, 1.0f),
+	vec3(-1.0f, 0.0f, 0.0f),
+	vec3(0.0f, 0.0f, -1.0f),
+	vec3(0.0f, 1.25f, 0.0f),
+} };
+
+const std::array<std::array<int, 2>, 12> s_aDiamondEdges = { {
+	{ {0, 1} },
+	{ {0, 2} },
+	{ {0, 3} },
+	{ {0, 4} },
+	{ {5, 1} },
+	{ {5, 2} },
+	{ {5, 3} },
+	{ {5, 4} },
+	{ {1, 2} },
+	{ {2, 3} },
+	{ {3, 4} },
+	{ {4, 1} },
 } };
 
 float ClampDelta(float Delta)
@@ -133,6 +192,85 @@ const std::array<vec3, HEART_LOW_POINTS> &HeartLowVertices()
 	}
 	return s_aVerts;
 }
+
+const std::array<vec3, STAR_VERTICES> &StarVertices()
+{
+	static std::array<vec3, STAR_VERTICES> s_aVerts;
+	static bool s_Initialized = false;
+	if(!s_Initialized)
+	{
+		for(int i = 0; i < STAR_POINTS; i++)
+		{
+			const float T = -0.5f * pi + 2.0f * pi * (float)i / (float)STAR_POINTS;
+			const float Radius = (i % 2) == 0 ? 1.18f : 0.48f;
+			const vec3 Front(std::cos(T) * Radius, std::sin(T) * Radius, -0.26f);
+			const vec3 Back(Front.x, Front.y, 0.26f);
+			s_aVerts[i] = Front;
+			s_aVerts[i + STAR_POINTS] = Back;
+		}
+		s_Initialized = true;
+	}
+	return s_aVerts;
+}
+
+const std::array<std::array<int, 2>, STAR_EDGES> &StarEdges()
+{
+	static std::array<std::array<int, 2>, STAR_EDGES> s_aEdges;
+	static bool s_Initialized = false;
+	if(!s_Initialized)
+	{
+		for(int i = 0; i < STAR_POINTS; i++)
+		{
+			const int Next = (i + 1) % STAR_POINTS;
+			s_aEdges[i] = { {i, Next} };
+			s_aEdges[i + STAR_POINTS] = { {i + STAR_POINTS, Next + STAR_POINTS} };
+			s_aEdges[i + STAR_POINTS * 2] = { {i, i + STAR_POINTS} };
+		}
+		s_Initialized = true;
+	}
+	return s_aEdges;
+}
+
+template<size_t NumVertices, size_t NumEdges>
+void RenderWireShape(IGraphics *pGraphics, vec2 CameraCenter, const std::array<vec3, NumVertices> &aVertices, const std::array<std::array<int, 2>, NumEdges> &aEdges, vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color)
+{
+	pGraphics->SetColor(Color);
+
+	const vec3 RenderPos(Pos.x, Pos.y, 0.0f);
+	std::array<vec2, NumVertices> aProjected;
+	for(size_t i = 0; i < NumVertices; i++)
+	{
+		const vec3 Vertex = RotateVec3(aVertices[i] * Size, Rotation) + RenderPos;
+		aProjected[i] = ProjectPoint(Vertex, CameraCenter);
+	}
+
+	std::array<IGraphics::CLineItem, NumEdges> aLines;
+	for(size_t i = 0; i < NumEdges; i++)
+	{
+		const auto &Edge = aEdges[i];
+		aLines[i] = IGraphics::CLineItem(aProjected[Edge[0]], aProjected[Edge[1]]);
+	}
+	pGraphics->LinesDraw(aLines.data(), aLines.size());
+}
+
+template<size_t NumVertices>
+void RenderWireLoop(IGraphics *pGraphics, vec2 CameraCenter, const std::array<vec3, NumVertices> &aVertices, vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color)
+{
+	pGraphics->SetColor(Color);
+
+	const vec3 RenderPos(Pos.x, Pos.y, 0.0f);
+	std::array<vec2, NumVertices> aProjected;
+	for(size_t i = 0; i < NumVertices; i++)
+	{
+		const vec3 Vertex = RotateVec3(aVertices[i] * Size, Rotation) + RenderPos;
+		aProjected[i] = ProjectPoint(Vertex, CameraCenter);
+	}
+
+	std::array<IGraphics::CLineItem, NumVertices> aLines;
+	for(size_t i = 0; i < NumVertices; i++)
+		aLines[i] = IGraphics::CLineItem(aProjected[i], aProjected[(i + 1) % NumVertices]);
+	pGraphics->LinesDraw(aLines.data(), aLines.size());
+}
 }
 
 void CBackgroundParticles::OnReset()
@@ -175,10 +313,22 @@ ColorRGBA CBackgroundParticles::ParticleColor() const
 
 int CBackgroundParticles::ParticleType() const
 {
-	const int Type = std::clamp(g_Config.m_Qm3DParticlesType, SHAPE_CUBE, SHAPE_MIXED);
+	const int Type = std::clamp(g_Config.m_Qm3DParticlesType, SHAPE_FIRST, SHAPE_LAST);
 	if(Type != SHAPE_MIXED)
 		return Type;
-	return random_float() < 0.5f ? SHAPE_CUBE : SHAPE_HEART;
+
+	const std::array<int, REAL_SHAPE_COUNT> aRealShapes = {
+		SHAPE_CUBE,
+		SHAPE_HEART,
+		SHAPE_SPHERE,
+		SHAPE_PYRAMID,
+		SHAPE_DIAMOND,
+		SHAPE_RING,
+		SHAPE_STAR,
+		SHAPE_CRESCENT,
+	};
+	const int ShapeIndex = std::clamp((int)random_float((float)REAL_SHAPE_COUNT), 0, REAL_SHAPE_COUNT - 1);
+	return aRealShapes[ShapeIndex];
 }
 
 void CBackgroundParticles::SpawnParticle(SParticle &Particle, bool Initial, float Left, float Top, float Right, float Bottom)
@@ -199,6 +349,9 @@ void CBackgroundParticles::SpawnParticle(SParticle &Particle, bool Initial, floa
 	Particle.m_PushVel = vec2(0.0f, 0.0f);
 	Particle.m_Age = 0.0f;
 	Particle.m_Life = random_float(8.0f, 18.0f);
+	Particle.m_PulsePhase = random_float(0.0f, 2.0f * pi);
+	Particle.m_TwinklePhase = random_float(0.0f, 2.0f * pi);
+	Particle.m_TrailSample = 0.0f;
 	Particle.m_Type = ParticleType();
 	Particle.m_Color = ParticleColor();
 
@@ -206,6 +359,7 @@ void CBackgroundParticles::SpawnParticle(SParticle &Particle, bool Initial, floa
 	{
 		Particle.m_Pos = vec2(random_float(Left - Margin, Right + Margin), random_float(Top - Margin, Bottom + Margin));
 		Particle.m_Age = random_float(0.0f, Particle.m_Life * 0.75f);
+		ResetParticleTrail(Particle);
 		return;
 	}
 
@@ -224,6 +378,7 @@ void CBackgroundParticles::SpawnParticle(SParticle &Particle, bool Initial, floa
 		Particle.m_Pos = vec2(random_float(Left - Margin, Right + Margin), Bottom + Margin);
 		break;
 	}
+	ResetParticleTrail(Particle);
 }
 
 void CBackgroundParticles::EnsureParticleCount(float Left, float Top, float Right, float Bottom)
@@ -243,6 +398,36 @@ void CBackgroundParticles::EnsureParticleCount(float Left, float Top, float Righ
 	m_vParticles.resize(Count);
 	for(size_t ParticleIndex = OldSize; ParticleIndex < m_vParticles.size(); ++ParticleIndex)
 		SpawnParticle(m_vParticles[ParticleIndex], true, Left, Top, Right, Bottom);
+}
+
+void CBackgroundParticles::ResetParticleTrail(SParticle &Particle) const
+{
+	Particle.m_TrailSample = 0.0f;
+	Particle.m_TrailCount = 0;
+	for(vec2 &TrailPos : Particle.m_aTrailPos)
+		TrailPos = Particle.m_Pos;
+}
+
+void CBackgroundParticles::UpdateParticleTrail(SParticle &Particle, float Delta) const
+{
+	if(!g_Config.m_Qm3DParticlesTrail)
+	{
+		Particle.m_TrailCount = 0;
+		Particle.m_TrailSample = 0.0f;
+		return;
+	}
+
+	const int TrailLength = std::clamp(g_Config.m_Qm3DParticlesTrailLength, 2, MAX_TRAIL_POINTS);
+	constexpr float SAMPLE_INTERVAL = 0.045f;
+	Particle.m_TrailSample += Delta;
+	if(Particle.m_TrailCount > 0 && Particle.m_TrailSample < SAMPLE_INTERVAL)
+		return;
+
+	Particle.m_TrailSample = 0.0f;
+	for(int TrailIndex = minimum(TrailLength - 1, Particle.m_TrailCount); TrailIndex > 0; --TrailIndex)
+		Particle.m_aTrailPos[TrailIndex] = Particle.m_aTrailPos[TrailIndex - 1];
+	Particle.m_aTrailPos[0] = Particle.m_Pos;
+	Particle.m_TrailCount = minimum(Particle.m_TrailCount + 1, TrailLength);
 }
 
 void CBackgroundParticles::ApplyPlayerPush(SParticle &Particle, float Delta) const
@@ -281,6 +466,7 @@ void CBackgroundParticles::UpdateParticle(SParticle &Particle, float Delta, floa
 	Particle.m_Pos += (Particle.m_DriftVel + Particle.m_PushVel) * Delta;
 	Particle.m_PushVel *= std::pow(0.12f, Delta);
 	Particle.m_Rotation += Particle.m_RotationSpeed * Delta;
+	UpdateParticleTrail(Particle, Delta);
 
 	const float Margin = (float)std::clamp(g_Config.m_Qm3DParticlesViewMargin, 0, 1000);
 	if(Particle.m_Pos.x < Left - Margin || Particle.m_Pos.x > Right + Margin ||
@@ -326,24 +512,7 @@ float CBackgroundParticles::ParticleAlpha(const SParticle &Particle) const
 
 void CBackgroundParticles::RenderCube(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
 {
-	Graphics()->SetColor(Color);
-
-	const vec3 RenderPos(Pos.x, Pos.y, 0.0f);
-	std::array<vec2, s_aCubeVertices.size()> aProjected;
-	for(size_t i = 0; i < s_aCubeVertices.size(); i++)
-	{
-		const vec3 Local = s_aCubeVertices[i] * Size;
-		const vec3 Vertex = RotateVec3(Local, Rotation) + RenderPos;
-		aProjected[i] = ProjectPoint(Vertex, GameClient()->m_Camera.m_Center);
-	}
-
-	std::array<IGraphics::CLineItem, s_aCubeEdges.size()> aLines;
-	for(size_t i = 0; i < s_aCubeEdges.size(); i++)
-	{
-		const auto &Edge = s_aCubeEdges[i];
-		aLines[i] = IGraphics::CLineItem(aProjected[Edge[0]], aProjected[Edge[1]]);
-	}
-	Graphics()->LinesDraw(aLines.data(), aLines.size());
+	RenderWireShape(Graphics(), GameClient()->m_Camera.m_Center, s_aCubeVertices, s_aCubeEdges, Pos, Size, Rotation, Color);
 }
 
 void CBackgroundParticles::RenderHeart(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
@@ -414,34 +583,178 @@ void CBackgroundParticles::RenderHeart(vec2 Pos, float Size, const vec3 &Rotatio
 	}
 }
 
+void CBackgroundParticles::RenderSphere(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
+{
+	std::array<vec3, SPHERE_SEGMENTS> aCircle;
+
+	for(int Axis = 0; Axis < 3; Axis++)
+	{
+		for(int i = 0; i < SPHERE_SEGMENTS; i++)
+		{
+			const float T = 2.0f * pi * (float)i / (float)SPHERE_SEGMENTS;
+			const float C = std::cos(T);
+			const float S = std::sin(T);
+			switch(Axis)
+			{
+			case 0: aCircle[i] = vec3(C, S, 0.0f); break;
+			case 1: aCircle[i] = vec3(C, 0.0f, S); break;
+			default: aCircle[i] = vec3(0.0f, C, S); break;
+			}
+		}
+		RenderWireLoop(Graphics(), GameClient()->m_Camera.m_Center, aCircle, Pos, Size, Rotation, Color);
+	}
+}
+
+void CBackgroundParticles::RenderPyramid(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
+{
+	RenderWireShape(Graphics(), GameClient()->m_Camera.m_Center, s_aPyramidVertices, s_aPyramidEdges, Pos, Size, Rotation, Color);
+}
+
+void CBackgroundParticles::RenderDiamond(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
+{
+	RenderWireShape(Graphics(), GameClient()->m_Camera.m_Center, s_aDiamondVertices, s_aDiamondEdges, Pos, Size, Rotation, Color);
+}
+
+void CBackgroundParticles::RenderRing(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
+{
+	constexpr int RING_VERTICES = RING_SEGMENTS * 2;
+	constexpr int RING_EDGES = RING_SEGMENTS * 2 + RING_RADIALS;
+	std::array<vec3, RING_VERTICES> aVertices;
+	std::array<std::array<int, 2>, RING_EDGES> aEdges;
+
+	for(int i = 0; i < RING_SEGMENTS; i++)
+	{
+		const float T = 2.0f * pi * (float)i / (float)RING_SEGMENTS;
+		const float C = std::cos(T);
+		const float S = std::sin(T);
+		aVertices[i] = vec3(C * 1.15f, S * 1.15f, 0.0f);
+		aVertices[i + RING_SEGMENTS] = vec3(C * 0.64f, S * 0.64f, 0.0f);
+		aEdges[i] = { {i, (i + 1) % RING_SEGMENTS} };
+		aEdges[i + RING_SEGMENTS] = { {i + RING_SEGMENTS, ((i + 1) % RING_SEGMENTS) + RING_SEGMENTS} };
+	}
+
+	for(int i = 0; i < RING_RADIALS; i++)
+	{
+		const int VertexIndex = (i * RING_SEGMENTS) / RING_RADIALS;
+		aEdges[RING_SEGMENTS * 2 + i] = { {VertexIndex, VertexIndex + RING_SEGMENTS} };
+	}
+
+	RenderWireShape(Graphics(), GameClient()->m_Camera.m_Center, aVertices, aEdges, Pos, Size, Rotation, Color);
+}
+
+void CBackgroundParticles::RenderStar(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
+{
+	RenderWireShape(Graphics(), GameClient()->m_Camera.m_Center, StarVertices(), StarEdges(), Pos, Size, Rotation, Color);
+}
+
+void CBackgroundParticles::RenderCrescent(vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
+{
+	constexpr int CRESCENT_VERTICES = CRESCENT_SEGMENTS * 2;
+	std::array<vec3, CRESCENT_VERTICES> aVertices;
+	constexpr float Start = -0.78f * pi;
+	constexpr float End = 0.78f * pi;
+
+	for(int i = 0; i < CRESCENT_SEGMENTS; i++)
+	{
+		const float T = Start + (End - Start) * (float)i / (float)(CRESCENT_SEGMENTS - 1);
+		aVertices[i] = vec3(std::cos(T), std::sin(T), 0.0f);
+	}
+	for(int i = 0; i < CRESCENT_SEGMENTS; i++)
+	{
+		const float T = End - (End - Start) * (float)i / (float)(CRESCENT_SEGMENTS - 1);
+		aVertices[i + CRESCENT_SEGMENTS] = vec3(std::cos(T) * 0.58f + 0.36f, std::sin(T) * 0.58f, 0.18f);
+	}
+
+	RenderWireLoop(Graphics(), GameClient()->m_Camera.m_Center, aVertices, Pos, Size, Rotation, Color);
+}
+
+void CBackgroundParticles::RenderShape(int Type, vec2 Pos, float Size, const vec3 &Rotation, ColorRGBA Color) const
+{
+	switch(Type)
+	{
+	case SHAPE_HEART:
+		RenderHeart(Pos, Size, Rotation, Color);
+		break;
+	case SHAPE_SPHERE:
+		RenderSphere(Pos, Size, Rotation, Color);
+		break;
+	case SHAPE_PYRAMID:
+		RenderPyramid(Pos, Size, Rotation, Color);
+		break;
+	case SHAPE_DIAMOND:
+		RenderDiamond(Pos, Size, Rotation, Color);
+		break;
+	case SHAPE_RING:
+		RenderRing(Pos, Size, Rotation, Color);
+		break;
+	case SHAPE_STAR:
+		RenderStar(Pos, Size, Rotation, Color);
+		break;
+	case SHAPE_CRESCENT:
+		RenderCrescent(Pos, Size, Rotation, Color);
+		break;
+	default:
+		RenderCube(Pos, Size, Rotation, Color);
+		break;
+	}
+}
+
+void CBackgroundParticles::RenderParticleTrail(const SParticle &Particle, vec2 Center, float Parallax, float Size, ColorRGBA Color) const
+{
+	if(!g_Config.m_Qm3DParticlesTrail || Particle.m_TrailCount <= 1)
+		return;
+
+	const int TrailLength = std::clamp(g_Config.m_Qm3DParticlesTrailLength, 2, MAX_TRAIL_POINTS);
+	const int TrailCount = minimum(Particle.m_TrailCount, TrailLength);
+	const float TrailAlpha = std::clamp(g_Config.m_Qm3DParticlesTrailAlpha, 1, 100) / 100.0f;
+
+	for(int TrailIndex = TrailCount - 1; TrailIndex >= 1; --TrailIndex)
+	{
+		const float Fade = (float)(TrailCount - TrailIndex) / (float)TrailCount;
+		const vec2 Pos = Center + (Particle.m_aTrailPos[TrailIndex] - Center) * Parallax;
+		const float TrailSize = Size * (0.82f + 0.18f * Fade);
+		RenderShape(Particle.m_Type, Pos, TrailSize, Particle.m_Rotation, Color.WithMultipliedAlpha(TrailAlpha * Fade));
+	}
+}
+
 void CBackgroundParticles::RenderParticle(const SParticle &Particle, vec2 Center) const
 {
 	const float DepthRange = (float)std::clamp(g_Config.m_Qm3DParticlesDepth, 10, 1000);
 	const float DepthFactor = std::clamp(Particle.m_Depth / DepthRange, 0.0f, 1.0f);
 	const float Parallax = 1.0f - DepthFactor * 0.72f;
 	const vec2 Pos = Center + (Particle.m_Pos - Center) * Parallax;
-	const float Size = minimum(Particle.m_Size, MAX_EFFECTIVE_SIZE) * (0.72f - DepthFactor * 0.25f);
-	const float Alpha = ParticleAlpha(Particle) * (1.0f - DepthFactor * 0.35f);
+	float Size = minimum(Particle.m_Size, MAX_EFFECTIVE_SIZE) * (0.72f - DepthFactor * 0.25f);
+	if(g_Config.m_Qm3DParticlesPulse)
+	{
+		const float PulseStrength = std::clamp(g_Config.m_Qm3DParticlesPulseStrength, 0, 50) / 100.0f;
+		const float PulseSpeed = std::clamp(g_Config.m_Qm3DParticlesPulseSpeed, 10, 300) / 100.0f;
+		Size *= maximum(0.2f, 1.0f + std::sin(Particle.m_Age * PulseSpeed * 2.0f * pi + Particle.m_PulsePhase) * PulseStrength);
+	}
+
+	float Alpha = ParticleAlpha(Particle) * (1.0f - DepthFactor * 0.35f);
+	if(g_Config.m_Qm3DParticlesTwinkle)
+	{
+		const float TwinkleStrength = std::clamp(g_Config.m_Qm3DParticlesTwinkleStrength, 0, 100) / 100.0f;
+		const float TwinkleWave = 0.5f + 0.5f * std::sin(Particle.m_Age * 3.2f + Particle.m_TwinklePhase);
+		const float TwinkleAlpha = 0.35f + 0.65f * TwinkleWave;
+		Alpha *= 1.0f + (TwinkleAlpha - 1.0f) * TwinkleStrength;
+	}
 	if(Alpha <= 0.01f || Size <= 0.5f)
 		return;
 
 	const ColorRGBA Color = Particle.m_Color.WithMultipliedAlpha(Alpha);
+	RenderParticleTrail(Particle, Center, Parallax, Size, Color);
+
 	if(g_Config.m_Qm3DParticlesGlow)
 	{
 		const float GlowAlpha = std::clamp(g_Config.m_Qm3DParticlesGlowAlpha, 1, 100) / 100.0f;
 		const float GlowOffset = (float)std::clamp(g_Config.m_Qm3DParticlesGlowOffset, 1, 20);
 		const vec2 GlowPos = Pos - vec2(GlowOffset, GlowOffset);
 		const ColorRGBA GlowColor = Color.WithMultipliedAlpha(GlowAlpha);
-		if(Particle.m_Type == SHAPE_HEART)
-			RenderHeart(GlowPos, Size, Particle.m_Rotation, GlowColor);
-		else
-			RenderCube(GlowPos, Size, Particle.m_Rotation, GlowColor);
+		RenderShape(Particle.m_Type, GlowPos, Size, Particle.m_Rotation, GlowColor);
 	}
 
-	if(Particle.m_Type == SHAPE_HEART)
-		RenderHeart(Pos, Size, Particle.m_Rotation, Color);
-	else
-		RenderCube(Pos, Size, Particle.m_Rotation, Color);
+	RenderShape(Particle.m_Type, Pos, Size, Particle.m_Rotation, Color);
 }
 
 void CBackgroundParticles::OnRender()

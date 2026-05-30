@@ -2155,7 +2155,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::Voice: return "语音 yuyin voice chat 麦克风 maikefeng mic 静音 jingyin 音量 yinliang 语音激活 vad 阈值 yuzhi 释放延迟 shifang yanchi 服务器 fuwuqi token 叠加层 diejiaceng 按住说话 ptt push to talk 全图收听 quantu 衰减 shuijian 距离 juli 半径 banjing 测试 ceshi 本地 bendi 回环 huihuan 设备 shebei 输入 shuru 左右声道定位 左右 zuoyou 声道 shengdao 立体声 stereo 高级 gaoji advanced";
 		case EQmModuleId::DynamicIsland: return "灵动岛 lld lingdongdao dynamic island hud 顶部 dingbu 背景 beijing 颜色 yanse 透明度 touming 黑底 heidi 原版 yuanban 默认 moren classic old style";
 		case EQmModuleId::SystemMediaControls: return "系统媒体控制 xitong meiti kongzhi smtc media controls 启用系统媒体 qiyong 显示歌曲信息 gequ xinxi 上一个 shangyige 播放暂停 bofang zanting 下一个 xiayige";
-		case EQmModuleId::Background3D: return "3d背景 3d beijing background particles 粒子 lizi 方块 fangkuai cube 爱心 aixin heart 混合 hunhe mixed 数量 shuliang 速度 sudu 尺寸 chicun 深度 shendu 透明度 touming 颜色 yanse 随机 suiji 自定义 zidingyi 辉光 huiguang 推动 tuidong 碰撞 pengzhuang 淡入 danru 淡出 danchu";
+		case EQmModuleId::Background3D: return "3d背景 3d beijing background particles 粒子 lizi 方块 fangkuai cube 爱心 aixin heart 球体 qiuti sphere 金字塔 jinzita pyramid 钻石 zuanshi diamond 圆环 yuanhuan ring 星形 xingxing star 月牙 yueya crescent 混合 hunhe mixed 数量 shuliang 速度 sudu 尺寸 chicun 深度 shendu 透明度 touming 颜色 yanse 随机 suiji 自定义 zidingyi 辉光 huiguang 拖尾 tuowei trail 脉冲 maichong pulse 闪烁 shanshuo twinkle 推动 tuidong 碰撞 pengzhuang 淡入 danru 淡出 danchu";
 		case EQmModuleId::Info: return "贡献者 gongxianzhe 社区 shequ qq群 反馈 fankui 更新 gengxin 赞助 zanzhu 支持 zhichi 开发人员 kaifa sponsor supporters team";
 		}
 		return "";
@@ -2553,7 +2553,21 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_LineHeight * 8.0f + LG_LineSpacing * 7.0f + LG_CardSpacing;
 		if(pModule->m_Id == EQmModuleId::Background3D)
 		{
-			const float RowCount = g_Config.m_Qm3DParticles ? (g_Config.m_Qm3DParticlesGlow ? 20.0f : 18.0f) : 1.0f;
+			float RowCount = 1.0f;
+			if(g_Config.m_Qm3DParticles)
+			{
+				RowCount = 19.0f;
+				if(g_Config.m_Qm3DParticlesColorMode == 1)
+					RowCount += 1.0f;
+				if(g_Config.m_Qm3DParticlesGlow)
+					RowCount += 2.0f;
+				if(g_Config.m_Qm3DParticlesTrail)
+					RowCount += 2.0f;
+				if(g_Config.m_Qm3DParticlesPulse)
+					RowCount += 2.0f;
+				if(g_Config.m_Qm3DParticlesTwinkle)
+					RowCount += 1.0f;
+			}
 			return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_LineHeight * RowCount + LG_LineSpacing * maximum(0.0f, RowCount - 1.0f) + LG_CardSpacing;
 		}
 		return LG_CardPadding * 2.0f + LG_HeadlineSize + LG_TipHeight + LG_LineHeight * 6.0f + LG_CardSpacing;
@@ -6357,10 +6371,36 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 				if(g_Config.m_Qm3DParticles)
 				{
-					static std::vector<CButtonContainer> s_vQm3DParticleTypeButtons = {{}, {}, {}};
-					int Type = g_Config.m_Qm3DParticlesType;
-					if(DoLine_RadioMenu(CardContent, Localize("粒子类型"), s_vQm3DParticleTypeButtons, {Localize("Cube"), Localize("Heart"), Localize("Mixed")}, {1, 2, 3}, Type))
-						g_Config.m_Qm3DParticlesType = Type;
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("粒子类型"), LG_BodySize, TEXTALIGN_ML);
+					std::array<const char *, 9> apQm3DParticleTypeNames = {
+						Localize("Cube"),
+						Localize("Heart"),
+						Localize("Sphere"),
+						Localize("Pyramid"),
+						Localize("Diamond"),
+						Localize("Ring"),
+						Localize("Star"),
+						Localize("Crescent"),
+						Localize("Mixed"),
+					};
+					const std::array<int, 9> aQm3DParticleTypeValues = {1, 2, 4, 5, 6, 7, 8, 9, 3};
+					int TypeIndex = 0;
+					for(size_t TypeValueIndex = 0; TypeValueIndex < aQm3DParticleTypeValues.size(); ++TypeValueIndex)
+					{
+						if(aQm3DParticleTypeValues[TypeValueIndex] == g_Config.m_Qm3DParticlesType)
+						{
+							TypeIndex = (int)TypeValueIndex;
+							break;
+						}
+					}
+					static CUi::SDropDownState s_Qm3DParticleTypeDropDownState;
+					static CScrollRegion s_Qm3DParticleTypeDropDownScrollRegion;
+					s_Qm3DParticleTypeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_Qm3DParticleTypeDropDownScrollRegion;
+					const int NewTypeIndex = Ui()->DoDropDown(&ControlCol, TypeIndex, apQm3DParticleTypeNames.data(), static_cast<int>(apQm3DParticleTypeNames.size()), s_Qm3DParticleTypeDropDownState);
+					if(NewTypeIndex >= 0 && NewTypeIndex < static_cast<int>(aQm3DParticleTypeValues.size()) && NewTypeIndex != TypeIndex)
+						g_Config.m_Qm3DParticlesType = aQm3DParticleTypeValues[NewTypeIndex];
 					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 					static int s_Qm3DParticleCountInputId;
@@ -6415,6 +6455,40 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						RenderIntOption(&s_Qm3DParticleGlowAlphaInputId, Localize("Glow alpha"), &g_Config.m_Qm3DParticlesGlowAlpha, 1, 100, "%");
 						static int s_Qm3DParticleGlowOffsetInputId;
 						RenderIntOption(&s_Qm3DParticleGlowOffsetInputId, Localize("Glow offset"), &g_Config.m_Qm3DParticlesGlowOffset, 1, 20);
+					}
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesTrail, Localize("Particle trail"), &g_Config.m_Qm3DParticlesTrail, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesTrail)
+					{
+						static int s_Qm3DParticleTrailLengthInputId;
+						RenderIntOption(&s_Qm3DParticleTrailLengthInputId, Localize("Trail length"), &g_Config.m_Qm3DParticlesTrailLength, 2, 6);
+						static int s_Qm3DParticleTrailAlphaInputId;
+						RenderIntOption(&s_Qm3DParticleTrailAlphaInputId, Localize("Trail alpha"), &g_Config.m_Qm3DParticlesTrailAlpha, 1, 100, "%");
+					}
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesPulse, Localize("Particle pulse"), &g_Config.m_Qm3DParticlesPulse, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesPulse)
+					{
+						static int s_Qm3DParticlePulseStrengthInputId;
+						RenderIntOption(&s_Qm3DParticlePulseStrengthInputId, Localize("Pulse strength"), &g_Config.m_Qm3DParticlesPulseStrength, 0, 50, "%");
+						static int s_Qm3DParticlePulseSpeedInputId;
+						RenderIntOption(&s_Qm3DParticlePulseSpeedInputId, Localize("Pulse speed"), &g_Config.m_Qm3DParticlesPulseSpeed, 10, 300, "%");
+					}
+
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesTwinkle, Localize("Particle twinkle"), &g_Config.m_Qm3DParticlesTwinkle, &Row, LG_LineHeight);
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+
+					if(g_Config.m_Qm3DParticlesTwinkle)
+					{
+						static int s_Qm3DParticleTwinkleStrengthInputId;
+						RenderIntOption(&s_Qm3DParticleTwinkleStrengthInputId, Localize("Twinkle strength"), &g_Config.m_Qm3DParticlesTwinkleStrength, 0, 100, "%");
 					}
 				}
 
