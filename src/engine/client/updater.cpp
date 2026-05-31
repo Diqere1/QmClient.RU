@@ -318,7 +318,7 @@ void CUpdater::ParseUpdate()
 		if(!pVersion)
 			continue;
 
-		if(str_comp(pVersion, TCLIENT_VERSION) == 0)
+		if(str_comp(pVersion, QMCLIENT_VERSION) == 0)
 			break;
 
 		if(json_boolean_get(json_object_get(pCurrent, "client")))

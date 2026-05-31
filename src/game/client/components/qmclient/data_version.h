@@ -24,7 +24,7 @@
 
 // static const std::pair<std::string, std::string> DOMAINS[] = {
 // 	{"DDNet", VersionNumberToString(DDNET_VERSION_NUMBER)},
-// 	{"TClient", TCLIENT_VERSION},
+// 	{"QmClient", QMCLIENT_VERSION},
 // };
 
 inline void CheckDataVersion(char *pError, int Length, IOHANDLE File)
