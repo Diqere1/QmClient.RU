@@ -3,6 +3,7 @@
 #define GAME_CLIENT_COMPONENTS_HUD_EDITOR_H
 
 #include <game/client/component.h>
+#include <game/client/lineinput.h>
 #include <game/client/ui_rect.h>
 
 #include <array>
@@ -22,6 +23,7 @@ enum class EHudEditorElement
 	TextInfo,
 	SpectatorCount,
 	MovementInfo,
+	JumpHint,
 	MapProgressBar,
 	SpectatorHud,
 	LocalTime,
@@ -99,6 +101,9 @@ private:
 	std::array<SElementState, ELEMENT_COUNT> m_aElementStates{};
 	std::vector<SVisibleElement> m_vVisibleElements;
 	bool m_InteractionUiActive = false;
+	bool m_JumpHintTextEditorActive = false;
+	bool m_JumpHintTextEditorNeedsFocus = false;
+	CLineInputBuffered<512> m_JumpHintTextInput;
 
 	void ResetRuntimeState();
 	void SyncLayoutConfig();
@@ -111,6 +116,12 @@ private:
 	int FindHoveredVisibleElement() const;
 	int FindVisibleElementIndex(EHudEditorElement Element) const;
 	void UpdateInteractionUi();
+	void OpenJumpHintTextEditor();
+	void SaveJumpHintTextEditor();
+	void CloseJumpHintTextEditor();
+	bool HandleElementDoubleClick(EHudEditorElement Element);
+	bool DoJumpHintTextArea(CLineInput *pLineInput, const CUIRect *pRect, float FontSize);
+	void RenderJumpHintTextEditor(const CUIRect &Screen);
 	static const char *ElementToken(EHudEditorElement Element);
 	static int ElementFromToken(const char *pToken);
 };

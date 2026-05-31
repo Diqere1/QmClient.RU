@@ -1181,6 +1181,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		Voice,
 		DynamicIsland,
 		SystemMediaControls,
+		Background3D,
+		WeaponTrajectory,
 	};
 
 	enum class EQmModuleColumn
@@ -1224,6 +1226,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::Voice: return "voice";
 		case EQmModuleId::DynamicIsland: return "dynamic_island";
 		case EQmModuleId::SystemMediaControls: return "system_media_controls";
+		case EQmModuleId::Background3D: return "background_3d";
+		case EQmModuleId::WeaponTrajectory: return "weapon_trajectory";
 		}
 		return "unknown";
 	};
@@ -1248,7 +1252,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const char *m_pKey;
 	};
 
-	constexpr size_t QmModuleCount = 32;
+	constexpr size_t QmModuleCount = 33;
 
 	// Layout string format: key:column:order; entries separated by ';'.
 	static const std::array<SQmModuleEntry, QmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
@@ -1259,14 +1263,15 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::Gores, EQmModuleColumn::Left, 4, "gores"},
 		{EQmModuleId::KeyBinds, EQmModuleColumn::Left, 5, "key_binds"},
 		{EQmModuleId::MiniFeatures, EQmModuleColumn::Left, 6, "mini_features"},
-		{EQmModuleId::Coords, EQmModuleColumn::Left, 7, "coords"},
-		{EQmModuleId::Streamer, EQmModuleColumn::Left, 8, "streamer"},
-		{EQmModuleId::FriendNotify, EQmModuleColumn::Left, 9, "friend_notify"},
-		{EQmModuleId::BlockWords, EQmModuleColumn::Left, 10, "block_words"},
-		{EQmModuleId::Translate, EQmModuleColumn::Left, 13, "translate"},
-		{EQmModuleId::TranslateUi, EQmModuleColumn::Left, 14, "translate_ui"},
-		{EQmModuleId::QiaFen, EQmModuleColumn::Left, 11, "qiafen"},
-		{EQmModuleId::PieMenu, EQmModuleColumn::Left, 12, "pie_menu"},
+		{EQmModuleId::WeaponTrajectory, EQmModuleColumn::Left, 7, "weapon_trajectory"},
+		{EQmModuleId::Coords, EQmModuleColumn::Left, 8, "coords"},
+		{EQmModuleId::Streamer, EQmModuleColumn::Left, 9, "streamer"},
+		{EQmModuleId::FriendNotify, EQmModuleColumn::Left, 10, "friend_notify"},
+		{EQmModuleId::BlockWords, EQmModuleColumn::Left, 11, "block_words"},
+		{EQmModuleId::Translate, EQmModuleColumn::Left, 14, "translate"},
+		{EQmModuleId::TranslateUi, EQmModuleColumn::Left, 15, "translate_ui"},
+		{EQmModuleId::QiaFen, EQmModuleColumn::Left, 12, "qiafen"},
+		{EQmModuleId::PieMenu, EQmModuleColumn::Left, 13, "pie_menu"},
 		{EQmModuleId::CameraView, EQmModuleColumn::Right, 0, "camera_view"},
 		{EQmModuleId::EntityOverlay, EQmModuleColumn::Right, 1, "entity_overlay"},
 		{EQmModuleId::Laser, EQmModuleColumn::Right, 2, "laser"},
@@ -1288,11 +1293,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::SkinTransition,
 		EQmModuleId::FocusMode, EQmModuleId::Streamer, EQmModuleId::EntityOverlay,
 		EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi};
-	static constexpr std::array<EQmModuleId, 11> s_aQmFunctionModules = {
+	static constexpr std::array<EQmModuleId, 12> s_aQmFunctionModules = {
 		EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::KeyBinds,
-		EQmModuleId::MiniFeatures, EQmModuleId::FriendNotify, EQmModuleId::BlockWords,
-		EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu,
-		EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist};
+		EQmModuleId::MiniFeatures, EQmModuleId::WeaponTrajectory, EQmModuleId::FriendNotify,
+		EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen,
+		EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist};
 	static constexpr std::array<EQmModuleId, 11> s_aQmHudModules = {
 		EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats,
 		EQmModuleId::SpeedrunTimer, EQmModuleId::DebugGraph, EQmModuleId::InputOverlay,
@@ -2048,6 +2053,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::MiniFeatures: return "梦的小功能 meng xiaogongneng 粒子拖尾 lizi tuowei 远程粒子 yuancheng lizi 计分板查分 chafen 聊天框淡出 liaotian danchu 表情选择 biaoqing xuanze 动画优化 donghua youhua 复读 fudu 随机表情 suiji biaoqing 连击 lianji combo 说话不弹表情 shuo hua biaoqing 本地彩虹名字 caihong mingzi 武器弹道辅助线 dan dao fuzhuxian 位置跳跃提示 tiaoyue tishi 新版UI xinban ui settings page shezhi yemian";
 		case EQmModuleId::SkinTransition:
 			return "皮肤切换 pifu qiehuan skin transition 换皮 huanpi 动画 donghua 类型 leixing 时长 shichang 锤中偷皮 chuizhong toupi";
+		case EQmModuleId::WeaponTrajectory: return "武器辅助线 wuqi fuzhuxian weapon trajectory 弹道辅助线 dandao fuzhuxian 线宽 xian kuan 透明度 toumingdu 始终显示 shizhong xianshi 按键显示 anjian xianshi";
 		case EQmModuleId::CameraView: return "镜头 jingtou camera drift 漂移 piaoyi dynamic fov 动态视野 dongtai shiye 纵横比 zonghengbi aspect ratio preset 预设 yushe 自定义 zidinyi 视野视角 shijiao";
 		case EQmModuleId::DummyMiniView: return "分身小窗 fenshen xiaochuang dummy mini view 预览 yulan 缩放 suofang 小窗大小 daxiao 离开视角 offscreen 自动显示 zidong xianshi";
 		case EQmModuleId::Coords: return "显示坐标 xianshi zuobiao coords position 自己坐标 ziji 他人坐标 taren 显示x xianshi x 显示y xianshi y 对齐提示 duiqi tishi 严格对齐 yange duiqi";
@@ -2382,6 +2388,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Localize("皮肤切换"),
 				Localize("调整锤中偷皮和换皮动画"),
 			};
+		case EQmModuleId::WeaponTrajectory:
+			return {2, Localize("武器辅助线"), Localize("显示枪榴弹和激光轨迹预览")};
 		case EQmModuleId::CameraView:
 			return {
 				10,
@@ -2430,6 +2438,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			return {14, Localize("灵动岛"), Localize("Only Apple Can Do")};
 		case EQmModuleId::SystemMediaControls:
 			return {13, Localize("SMTC"), Localize("基于Win的一坨所拉的一泡")};
+		case EQmModuleId::Background3D:
+			return {15, Localize("3D背景"), Localize("配置背景 3D 粒子效果")};
 		case EQmModuleId::Info:
 			return {-1, "", ""};
 		}
@@ -3364,11 +3374,59 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmWeaponTrajectory, Localize("武器辅助线"), &g_Config.m_QmWeaponTrajectory, &Row, LgLineHeight);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcJumpHint, Localize("位置跳跃提示"), &g_Config.m_TcJumpHint, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+				}
+
+				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
+				Column.y = CardContent.y;
+				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
+				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
+				HandleModuleDragState(pModule, s_GlassCards.back());
+			}
+			break;
+			case EQmModuleId::WeaponTrajectory:
+			{
+				// ========== 模块: 武器辅助线 ==========
+				Column.HSplitTop(LgCardSpacing, nullptr, &Column);
+				CUIRect CardWeaponTrajectoryStart = Column;
+				s_GlassCards.push_back(CardWeaponTrajectoryStart);
+
+				Column.HSplitTop(LgCardPadding, nullptr, &Column);
+				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
+				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
+				DoModuleHeadline(CardContent, 2, Localize("武器辅助线"), Localize("显示枪榴弹和激光轨迹预览"));
+
+				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+				Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+				Ui()->DoLabel(&LabelCol, Localize("显示模式"), LgBodySize, TEXTALIGN_ML);
+				static std::vector<const char *> s_WeaponTrajectoryModeNames;
+				s_WeaponTrajectoryModeNames = {Localize("关闭"), Localize("按键显示"), Localize("始终显示")};
+				static CUi::SDropDownState s_WeaponTrajectoryModeDropDownState;
+				static CScrollRegion s_WeaponTrajectoryModeDropDownScrollRegion;
+				s_WeaponTrajectoryModeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_WeaponTrajectoryModeDropDownScrollRegion;
+				const int WeaponTrajectoryModeNew = Ui()->DoDropDown(&ControlCol, std::clamp(g_Config.m_QmWeaponTrajectory, 0, 2), s_WeaponTrajectoryModeNames.data(), s_WeaponTrajectoryModeNames.size(), s_WeaponTrajectoryModeDropDownState);
+				if(g_Config.m_QmWeaponTrajectory != WeaponTrajectoryModeNew)
+					g_Config.m_QmWeaponTrajectory = WeaponTrajectoryModeNew;
+				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+				if(g_Config.m_QmWeaponTrajectory != 0)
+				{
+					static CButtonContainer s_WeaponTrajectoryColorId;
+					DoLine_ColorPicker(&s_WeaponTrajectoryColorId, LgLineHeight, LgBodySize, LgLineSpacing, &CardContent, Localize("辅助线颜色"), &g_Config.m_QmWeaponTrajectoryColor, ColorRGBA(1.0f, 0.6f, 0.2f, 1.0f), false);
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("线宽"), LgBodySize, TEXTALIGN_ML);
+					static int s_QmWeaponTrajectoryWidthInputId;
+					RenderSliderWithValueInput(&s_QmWeaponTrajectoryWidthInputId, ControlCol, &g_Config.m_QmWeaponTrajectoryWidth, 1, 10);
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcJumpHint, Localize("位置跳跃提示"), &g_Config.m_TcJumpHint, &Row, LgLineHeight);
+					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
+					Ui()->DoLabel(&LabelCol, Localize("透明度"), LgBodySize, TEXTALIGN_ML);
+					static int s_QmWeaponTrajectoryAlphaInputId;
+					RenderSliderWithValueInput(&s_QmWeaponTrajectoryAlphaInputId, ControlCol, &g_Config.m_QmWeaponTrajectoryAlpha, 0, 100, "%");
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				}
 

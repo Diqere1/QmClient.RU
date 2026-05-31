@@ -2722,6 +2722,8 @@ if(CLIENT)
     components/qmclient/voice_core.h
     components/qmclient/voice_utils.cpp
     components/qmclient/voice_utils.h
+    components/qmclient/weapon_trajectory.cpp
+    components/qmclient/weapon_trajectory.h
     components/race_demo.cpp
     components/race_demo.h
     components/scoreboard.cpp

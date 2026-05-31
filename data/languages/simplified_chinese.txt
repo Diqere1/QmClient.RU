@@ -3726,6 +3726,15 @@ Execute before connecting
 Voting
 == 投票
 
+Auto map vote
+== 自动地图投票
+
+Auto agree vote
+== 自动同意投票
+
+Auto reject vote
+== 自动拒绝投票
+
 Automatically vote no on map changes
 == 自动投票反对地图变更
 
