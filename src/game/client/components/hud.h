@@ -274,6 +274,7 @@ class CHud : public CComponent
 	void RenderDummyActions();
 	void RenderKeyStatus();
 	void RenderMovementInformation();
+	void RenderJumpHint();
 	void RenderMapProgressBar();
 
 	void UpdateMovementInformationTextContainer(STextContainerIndex &TextContainer, float FontSize, float Value, float &PrevValue);

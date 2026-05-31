@@ -74,6 +74,7 @@
 #include "components/qmclient/scripting.h"
 #include "components/qmclient/translate.h"
 #include "components/qmclient/voice_component.h"
+#include "components/qmclient/weapon_trajectory.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
 #include "components/skins.h"
@@ -268,6 +269,7 @@ public:
 	CBgDraw m_BgDraw;
 	CQmClient m_QmClient;
 	CQmMonitoring m_QmMonitoring;
+	CQmWeaponTrajectory m_QmWeaponTrajectory;
 	CTClient m_TClient;
 	CFastPractice m_FastPractice;
 	CVoiceComponent m_Voice;

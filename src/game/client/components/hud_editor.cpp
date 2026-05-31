@@ -19,6 +19,7 @@ namespace
 {
 constexpr float EPSILON = 0.001f;
 constexpr float HUD_EDITOR_SNAP_DISTANCE = 6.0f;
+constexpr const char *JUMP_HINT_DEFAULT_TEXT = "3 Tiles Edge Jump:\\nLeft Jump: .34|.31|.16\\nLeft Double Jump: .41|.28|.25|.13\\nRight Jump: .63|.66|.81\\nRight Double Jump: .56|.69|.72|.84";
 
 float Clamp01(float Value)
 {
@@ -46,6 +47,52 @@ float SnapHudEditorAxis(float Position, float Size, float ScreenStart, float Scr
 	TrySnap(ScreenEnd - Size, std::fabs(Position + Size - ScreenEnd));
 	TrySnap(ScreenCenter - Size * 0.5f, std::fabs(Position + Size * 0.5f - ScreenCenter));
 	return SnappedPosition;
+}
+
+void DecodeEscapedNewlines(const char *pInput, char *pOutput, size_t OutputSize)
+{
+	if(OutputSize == 0)
+		return;
+
+	size_t OutPos = 0;
+	for(size_t InPos = 0; pInput != nullptr && pInput[InPos] != '\0' && OutPos + 1 < OutputSize; ++InPos)
+	{
+		if(pInput[InPos] == '\\' && pInput[InPos + 1] == 'n')
+		{
+			pOutput[OutPos++] = '\n';
+			++InPos;
+		}
+		else
+		{
+			pOutput[OutPos++] = pInput[InPos];
+		}
+	}
+	pOutput[OutPos] = '\0';
+}
+
+void EncodeEscapedNewlines(const char *pInput, char *pOutput, size_t OutputSize)
+{
+	if(OutputSize == 0)
+		return;
+
+	size_t OutPos = 0;
+	for(size_t InPos = 0; pInput != nullptr && pInput[InPos] != '\0' && OutPos + 1 < OutputSize; ++InPos)
+	{
+		if(pInput[InPos] == '\r')
+			continue;
+		if(pInput[InPos] == '\n')
+		{
+			if(OutPos + 2 >= OutputSize)
+				break;
+			pOutput[OutPos++] = '\\';
+			pOutput[OutPos++] = 'n';
+		}
+		else
+		{
+			pOutput[OutPos++] = pInput[InPos];
+		}
+	}
+	pOutput[OutPos] = '\0';
 }
 }
 
@@ -101,6 +148,27 @@ bool CHudEditor::OnInput(const IInput::CEvent &Event)
 	if(!m_Active)
 		return false;
 
+	if(m_JumpHintTextEditorActive)
+	{
+		if((Event.m_Flags & IInput::FLAG_PRESS) != 0 && Event.m_Key == KEY_ESCAPE)
+		{
+			CloseJumpHintTextEditor();
+			return true;
+		}
+		if((Event.m_Flags & IInput::FLAG_PRESS) != 0 && (Event.m_Key == KEY_RETURN || Event.m_Key == KEY_KP_ENTER))
+		{
+			if(Input()->ModifierIsPressed())
+			{
+				SaveJumpHintTextEditor();
+			}
+			else if(m_JumpHintTextInput.IsActive())
+			{
+				m_JumpHintTextInput.SetRange("\n", m_JumpHintTextInput.GetSelectionStart(), m_JumpHintTextInput.GetSelectionEnd());
+			}
+			return true;
+		}
+	}
+
 	if((Event.m_Flags & IInput::FLAG_PRESS) != 0 && Event.m_Key == KEY_ESCAPE)
 	{
 		SetActive(false);
@@ -122,6 +190,7 @@ void CHudEditor::SetActive(bool Active)
 	Ui()->SetActiveItem(nullptr);
 	if(!m_Active)
 	{
+		CloseJumpHintTextEditor();
 		ResetRuntimeState();
 		if(m_DirtyLayout)
 			SaveLayoutConfig();
@@ -175,6 +244,7 @@ const char *CHudEditor::ElementToken(EHudEditorElement Element)
 	case EHudEditorElement::TextInfo: return "text_info";
 	case EHudEditorElement::SpectatorCount: return "spectator_count";
 	case EHudEditorElement::MovementInfo: return "movement_info";
+	case EHudEditorElement::JumpHint: return "jump_hint";
 	case EHudEditorElement::MapProgressBar: return "map_progress_bar";
 	case EHudEditorElement::SpectatorHud: return "spectator_hud";
 	case EHudEditorElement::LocalTime: return "local_time";
@@ -470,6 +540,199 @@ void CHudEditor::UpdateInteractionUi()
 	m_InteractionUiActive = true;
 }
 
+void CHudEditor::OpenJumpHintTextEditor()
+{
+	char aDecoded[sizeof(g_Config.m_TcJumpHintText)];
+	DecodeEscapedNewlines(g_Config.m_TcJumpHintText[0] != '\0' ? g_Config.m_TcJumpHintText : JUMP_HINT_DEFAULT_TEXT, aDecoded, sizeof(aDecoded));
+	m_JumpHintTextInput.Set(aDecoded);
+	m_JumpHintTextInput.SetEmptyText(Localize("Jump hint text"));
+	m_JumpHintTextInput.SelectAll();
+	m_JumpHintTextEditorActive = true;
+	m_JumpHintTextEditorNeedsFocus = true;
+	m_DraggingElement = -1;
+	m_DragGrabOffset = vec2(0.0f, 0.0f);
+}
+
+void CHudEditor::SaveJumpHintTextEditor()
+{
+	char aEncoded[sizeof(g_Config.m_TcJumpHintText)];
+	EncodeEscapedNewlines(m_JumpHintTextInput.GetString(), aEncoded, sizeof(aEncoded));
+	if(aEncoded[0] == '\0')
+		str_copy(aEncoded, JUMP_HINT_DEFAULT_TEXT, sizeof(aEncoded));
+	str_copy(g_Config.m_TcJumpHintText, aEncoded, sizeof(g_Config.m_TcJumpHintText));
+	ConfigManager()->Save();
+	CloseJumpHintTextEditor();
+}
+
+void CHudEditor::CloseJumpHintTextEditor()
+{
+	if(!m_JumpHintTextEditorActive)
+		return;
+
+	m_JumpHintTextEditorActive = false;
+	m_JumpHintTextEditorNeedsFocus = false;
+	Ui()->ReleaseActiveTextInput(&m_JumpHintTextInput);
+}
+
+bool CHudEditor::HandleElementDoubleClick(EHudEditorElement Element)
+{
+	if(!Ui()->DoDoubleClickLogic(&m_aElementStates[static_cast<int>(Element)]))
+		return false;
+
+	if(Element != EHudEditorElement::JumpHint)
+		return false;
+
+	OpenJumpHintTextEditor();
+	return true;
+}
+
+bool CHudEditor::DoJumpHintTextArea(CLineInput *pLineInput, const CUIRect *pRect, float FontSize)
+{
+	const bool Inside = Ui()->MouseHovered(pRect);
+	bool Active = Ui()->ActiveItem() == pLineInput || pLineInput->IsActive();
+	const bool Changed = pLineInput->WasChanged();
+	const bool CursorChanged = pLineInput->WasCursorChanged();
+	const bool ClickedOutside = (Ui()->MouseButtonClicked(0) || Ui()->MouseButtonClicked(1)) && !Inside;
+
+	CUIRect Textbox;
+	pRect->VMargin(3.0f, &Textbox);
+	Textbox.HMargin(3.0f, &Textbox);
+
+	bool JustGotActive = false;
+	if(Ui()->CheckActiveItem(pLineInput))
+	{
+		if(Ui()->MouseButton(0))
+		{
+			if(pLineInput->IsActive() && (Input()->HasComposition() || Input()->GetCandidateCount()))
+			{
+				Input()->StopTextInput();
+				Input()->StartTextInput();
+			}
+		}
+		else
+		{
+			Ui()->SetActiveItem(nullptr);
+		}
+	}
+	else if(Ui()->HotItem() == pLineInput)
+	{
+		if(Ui()->MouseButton(0))
+		{
+			if(!Active)
+				JustGotActive = true;
+			Ui()->SetActiveItem(pLineInput);
+		}
+	}
+
+	if(Inside && !Ui()->MouseButton(0))
+		Ui()->SetHotItem(pLineInput);
+
+	if(Active && ClickedOutside)
+	{
+		Ui()->ReleaseActiveTextInput(pLineInput);
+		Active = false;
+	}
+	if(Ui()->Enabled() && Active && !JustGotActive)
+		pLineInput->Activate(EInputPriority::UI);
+	else
+		pLineInput->Deactivate();
+
+	CLineInput::SMouseSelection *pMouseSelection = pLineInput->GetMouseSelection();
+	if(Inside && !pMouseSelection->m_Selecting && Ui()->MouseButtonClicked(0))
+	{
+		pMouseSelection->m_Selecting = true;
+		pMouseSelection->m_PressMouse = Ui()->MousePos();
+		pMouseSelection->m_Offset = vec2(0.0f, 0.0f);
+	}
+	if(pMouseSelection->m_Selecting)
+	{
+		pMouseSelection->m_ReleaseMouse = Ui()->MousePos();
+		if(!Ui()->MouseButton(0))
+		{
+			pMouseSelection->m_Selecting = false;
+			if(Active)
+				Input()->EnsureScreenKeyboardShown();
+		}
+	}
+
+	pRect->Draw(CUi::ms_LightButtonColorFunction.GetColor(Active, Ui()->HotItem() == pLineInput), IGraphics::CORNER_ALL, 4.0f);
+	Ui()->ClipEnable(pRect);
+	pLineInput->Render(&Textbox, FontSize, TEXTALIGN_TL, Changed || CursorChanged, Textbox.w, 2.0f);
+	Ui()->ClipDisable();
+	pLineInput->SetScrollOffset(0.0f);
+	pLineInput->SetScrollOffsetChange(0.0f);
+
+	return Changed;
+}
+
+void CHudEditor::RenderJumpHintTextEditor(const CUIRect &Screen)
+{
+	constexpr float PopupWidth = 260.0f;
+	constexpr float PopupHeight = 150.0f;
+	constexpr float Padding = 10.0f;
+	constexpr float ButtonHeight = 20.0f;
+	constexpr float ButtonWidth = 58.0f;
+	constexpr float FontSize = 8.0f;
+
+	Graphics()->DrawRect(Screen.x, Screen.y, Screen.w, Screen.h, ColorRGBA(0.0f, 0.0f, 0.0f, 0.42f), IGraphics::CORNER_NONE, 0.0f);
+
+	CUIRect Popup{
+		Screen.x + (Screen.w - PopupWidth) * 0.5f,
+		Screen.y + (Screen.h - PopupHeight) * 0.5f,
+		PopupWidth,
+		PopupHeight};
+	Popup.Draw(ColorRGBA(0.03f, 0.04f, 0.06f, 0.92f), IGraphics::CORNER_ALL, 7.0f);
+
+	CUIRect Content;
+	Popup.Margin(Padding, &Content);
+
+	CUIRect Title;
+	Content.HSplitTop(18.0f, &Title, &Content);
+	Ui()->DoLabel(&Title, Localize("位置跳跃提示"), 10.0f, TEXTALIGN_ML);
+	Content.HSplitTop(5.0f, nullptr, &Content);
+
+	CUIRect EditBox;
+	Content.HSplitBottom(ButtonHeight + 8.0f, &EditBox, &Content);
+	DoJumpHintTextArea(&m_JumpHintTextInput, &EditBox, FontSize);
+
+	if(m_JumpHintTextEditorNeedsFocus)
+	{
+		Ui()->SetActiveItem(&m_JumpHintTextInput);
+		m_JumpHintTextEditorNeedsFocus = false;
+	}
+
+	CUIRect Buttons = Content;
+	CUIRect CancelButton, SaveButton, ResetButton;
+	Buttons.VSplitRight(ButtonWidth, &Buttons, &SaveButton);
+	Buttons.VSplitRight(7.0f, &Buttons, nullptr);
+	Buttons.VSplitRight(ButtonWidth, &Buttons, &CancelButton);
+	Buttons.VSplitLeft(ButtonWidth, &ResetButton, nullptr);
+
+	static CButtonContainer s_ResetButton;
+	static CButtonContainer s_CancelButton;
+	static CButtonContainer s_SaveButton;
+
+	ResetButton.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f * Ui()->ButtonColorMul(&s_ResetButton)), IGraphics::CORNER_ALL, 4.0f);
+	CancelButton.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f * Ui()->ButtonColorMul(&s_CancelButton)), IGraphics::CORNER_ALL, 4.0f);
+	SaveButton.Draw(ColorRGBA(0.25f, 0.62f, 1.0f, 0.22f * Ui()->ButtonColorMul(&s_SaveButton)), IGraphics::CORNER_ALL, 4.0f);
+	Ui()->DoLabel(&ResetButton, Localize("Reset"), FontSize, TEXTALIGN_MC);
+	Ui()->DoLabel(&CancelButton, Localize("Cancel"), FontSize, TEXTALIGN_MC);
+	Ui()->DoLabel(&SaveButton, Localize("Save"), FontSize, TEXTALIGN_MC);
+
+	if(Ui()->DoButtonLogic(&s_ResetButton, 0, &ResetButton, BUTTONFLAG_LEFT) != 0)
+	{
+		char aDecoded[sizeof(g_Config.m_TcJumpHintText)];
+		DecodeEscapedNewlines(JUMP_HINT_DEFAULT_TEXT, aDecoded, sizeof(aDecoded));
+		m_JumpHintTextInput.Set(aDecoded);
+		m_JumpHintTextInput.SelectAll();
+		Ui()->SetActiveItem(&m_JumpHintTextInput);
+	}
+	if(Ui()->DoButtonLogic(&s_CancelButton, 0, &CancelButton, BUTTONFLAG_LEFT) != 0)
+		CloseJumpHintTextEditor();
+	if(Ui()->DoButtonLogic(&s_SaveButton, 0, &SaveButton, BUTTONFLAG_LEFT) != 0)
+		SaveJumpHintTextEditor();
+}
+
 void CHudEditor::OnRender()
 {
 	if(!m_Active)
@@ -480,6 +743,22 @@ void CHudEditor::OnRender()
 		return;
 
 	UpdateInteractionUi();
+
+	if(m_JumpHintTextEditorActive)
+	{
+		float PrevX0 = 0.0f;
+		float PrevY0 = 0.0f;
+		float PrevX1 = 0.0f;
+		float PrevY1 = 0.0f;
+		Graphics()->GetScreen(&PrevX0, &PrevY0, &PrevX1, &PrevY1);
+		Graphics()->MapScreen(pUiScreen->x, pUiScreen->y, pUiScreen->x + pUiScreen->w, pUiScreen->y + pUiScreen->h);
+		RenderJumpHintTextEditor(*pUiScreen);
+		RenderTools()->RenderCursor(Ui()->MousePos(), 24.0f);
+		Graphics()->MapScreen(PrevX0, PrevY0, PrevX1, PrevY1);
+		Ui()->FinishCheck();
+		m_InteractionUiActive = false;
+		return;
+	}
 
 	constexpr float ResetButtonWidth = 68.0f;
 	constexpr float ResetButtonHeight = 18.0f;
@@ -510,8 +789,12 @@ void CHudEditor::OnRender()
 
 	if(HoveredIndex >= 0 && m_DraggingElement < 0 && Ui()->MouseButtonClicked(0) && Ui()->ActiveItem() == nullptr)
 	{
-		m_DraggingElement = static_cast<int>(m_vVisibleElements[HoveredIndex].m_Element);
-		m_DragGrabOffset = vec2(Ui()->MouseX() - m_vVisibleElements[HoveredIndex].m_Rect.x, Ui()->MouseY() - m_vVisibleElements[HoveredIndex].m_Rect.y);
+		const EHudEditorElement Element = m_vVisibleElements[HoveredIndex].m_Element;
+		if(!HandleElementDoubleClick(Element))
+		{
+			m_DraggingElement = static_cast<int>(Element);
+			m_DragGrabOffset = vec2(Ui()->MouseX() - m_vVisibleElements[HoveredIndex].m_Rect.x, Ui()->MouseY() - m_vVisibleElements[HoveredIndex].m_Rect.y);
+		}
 	}
 
 	if(m_DraggingElement >= 0 && Ui()->MouseButton(0))

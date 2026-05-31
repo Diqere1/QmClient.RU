@@ -1623,7 +1623,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 			{
 				static std::vector<CButtonContainer> s_vAutoMapVoteButtons = {{}, {}, {}};
 				int AutoMapVote = std::clamp(g_Config.m_TcAutoVoteWhenFar, 0, 2);
-				if(DoLine_RadioMenu(CurrentColumn, Localize("Auto map vote"), s_vAutoMapVoteButtons, {Localize("Off"), Localize("Agree"), Localize("Reject")}, {0, 2, 1}, AutoMapVote))
+				if(DoLine_RadioMenu(CurrentColumn, Localize("Auto map vote"), s_vAutoMapVoteButtons, {Localize("Off"), Localize("Auto agree vote"), Localize("Auto reject vote")}, {0, 2, 1}, AutoMapVote))
 					g_Config.m_TcAutoVoteWhenFar = AutoMapVote;
 			}
 			else

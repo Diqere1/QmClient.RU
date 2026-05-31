@@ -957,33 +957,6 @@ public:
 		CNamePlatePartText(This) {}
 };
 
-class CNamePlatePartQmClientMark : public CNamePlatePartText
-{
-private:
-	float m_FontSize = -INFINITY;
-
-protected:
-	bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
-	{
-		m_Visible = g_Config.m_QmClientShowBadge && Data.m_InGame && Data.m_ShowName && This.GetQ1menGClientQid(Data.m_ClientId)[0] != '\0';
-		if(!m_Visible)
-			return false;
-		m_Color = ColorRGBA(0.38f, 0.89f, 1.0f, Data.m_Color.a);
-		return m_FontSize != Data.m_FontSize;
-	}
-	void UpdateText(CGameClient &This, const CNamePlateData &Data) override
-	{
-		m_FontSize = Data.m_FontSize;
-		CTextCursor Cursor;
-		Cursor.m_FontSize = m_FontSize;
-		This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, "Qm");
-	}
-
-public:
-	CNamePlatePartQmClientMark(CGameClient &This) :
-		CNamePlatePartText(This) {}
-};
-
 // ***** Name Plates *****
 
 class CNamePlate
@@ -1140,7 +1113,6 @@ private:
 	{
 		AddPart<CNamePlatePartCountry>(This); // TClient
 		AddPart<CNamePlatePartPing>(This); // TClient
-		AddPart<CNamePlatePartQmClientMark>(This);
 		AddPart<CNamePlatePartIgnoreMark>(This); // TClient
 		AddPart<CNamePlatePartFriendMark>(This);
 		AddPart<CNamePlatePartClientId>(This, false);

@@ -267,6 +267,7 @@ void CGameClient::OnConsoleInit()
 					      &m_Ghost,
 					      &m_QmClient,
 					      &m_QmMonitoring,
+					      &m_QmWeaponTrajectory,
 					      &m_TClient, // Must be before chat and players
 					      &m_FastPractice,
 					      &m_Voice,

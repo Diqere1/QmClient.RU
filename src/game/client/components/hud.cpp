@@ -35,6 +35,31 @@
 
 namespace
 {
+constexpr const char *JUMP_HINT_DEFAULT_TEXT = "3 Tiles Edge Jump:\\nLeft Jump: .34|.31|.16\\nLeft Double Jump: .41|.28|.25|.13\\nRight Jump: .63|.66|.81\\nRight Double Jump: .56|.69|.72|.84";
+constexpr int JUMP_HINT_DEFAULT_COLOR = 255;
+constexpr int JUMP_HINT_LEGACY_BLACK_COLOR = 256;
+
+void DecodeEscapedNewlines(const char *pInput, char *pOutput, size_t OutputSize)
+{
+	if(OutputSize == 0)
+		return;
+
+	size_t OutPos = 0;
+	for(size_t InPos = 0; pInput != nullptr && pInput[InPos] != '\0' && OutPos + 1 < OutputSize; ++InPos)
+	{
+		if(pInput[InPos] == '\\' && pInput[InPos + 1] == 'n')
+		{
+			pOutput[OutPos++] = '\n';
+			++InPos;
+		}
+		else
+		{
+			pOutput[OutPos++] = pInput[InPos];
+		}
+	}
+	pOutput[OutPos] = '\0';
+}
+
 bool IsVulkanAmdBackend(IGraphics *pGraphics)
 {
 	if(str_comp_nocase(g_Config.m_GfxBackend, "Vulkan") != 0 || pGraphics == nullptr)
@@ -4579,10 +4604,6 @@ inline float CHud::GetMovementInformationBoxHeight()
 	if(GameClient()->m_Snap.m_SpecInfo.m_Active && (GameClient()->m_Snap.m_SpecInfo.m_SpectatorId == SPEC_FREEVIEW || GameClient()->m_aClients[GameClient()->m_Snap.m_SpecInfo.m_SpectatorId].m_SpecCharPresent))
 		return g_Config.m_ClShowhudPlayerPosition ? 3.0f * MOVEMENT_INFORMATION_LINE_HEIGHT + 2.0f : 0.0f;
 	float BoxHeight = 3.0f * MOVEMENT_INFORMATION_LINE_HEIGHT * (g_Config.m_ClShowhudPlayerPosition + g_Config.m_ClShowhudPlayerSpeed) + 2.0f * MOVEMENT_INFORMATION_LINE_HEIGHT * g_Config.m_ClShowhudPlayerAngle;
-	if(g_Config.m_TcJumpHint)
-	{
-		BoxHeight += 5.0f * MOVEMENT_INFORMATION_LINE_HEIGHT;
-	}
 	// 新增玩家统计显示行（3行：存活时长、救醒/落水、出钩比例）
 	if(g_Config.m_QmPlayerStatsHud)
 	{
@@ -4680,9 +4701,8 @@ void CHud::RenderMovementInformation()
 	const bool ShowPosition = g_Config.m_ClShowhudPlayerPosition;
 	const bool ShowSpeed = !PosOnly && g_Config.m_ClShowhudPlayerSpeed;
 	const bool ShowAngle = !PosOnly && g_Config.m_ClShowhudPlayerAngle;
-	const bool ShowJumpHint = !PosOnly && g_Config.m_TcJumpHint;
 	const bool ShowStats = !PosOnly && g_Config.m_QmPlayerStatsHud;
-	const bool ShowMovementInfo = ShowPosition || ShowSpeed || ShowAngle || ShowJumpHint || ShowStats;
+	const bool ShowMovementInfo = ShowPosition || ShowSpeed || ShowAngle || ShowStats;
 
 	const float LineSpacer = 1.0f; // above and below each entry
 	const float Fontsize = 6.0f;
@@ -4744,24 +4764,6 @@ void CHud::RenderMovementInformation()
 		MovementBoxHeight += 1.0f * MOVEMENT_INFORMATION_LINE_HEIGHT;
 
 	float BoxWidth = 62.0f;
-	if(ShowJumpHint)
-	{
-		const float TitleWidth = TextRender()->TextWidth(Fontsize, "三格edge:");
-		const float LeftJumpWidth = TextRender()->TextWidth(Fontsize, "左跳");
-		const float LeftDoubleJumpWidth = TextRender()->TextWidth(Fontsize, "左二跳");
-		const float RightJumpWidth = TextRender()->TextWidth(Fontsize, "右跳");
-		const float RightDoubleJumpWidth = TextRender()->TextWidth(Fontsize, "右二跳");
-		const float LeftJumpValueWidth = TextRender()->TextWidth(Fontsize, ".34|.31|.16");
-		const float LeftDoubleJumpValueWidth = TextRender()->TextWidth(Fontsize, ".41|.28|.25|.13");
-		const float RightJumpValueWidth = TextRender()->TextWidth(Fontsize, ".63|.66|.81");
-		const float RightDoubleJumpValueWidth = TextRender()->TextWidth(Fontsize, ".56|.69|.72|.84");
-		const float NeededWidth = maximum(
-			TitleWidth + 4.0f,
-			maximum(LeftJumpWidth + LeftJumpValueWidth, LeftDoubleJumpWidth + LeftDoubleJumpValueWidth) + 6.0f,
-			maximum(RightJumpWidth + RightJumpValueWidth, RightDoubleJumpWidth + RightDoubleJumpValueWidth) + 6.0f);
-		BoxWidth = maximum(BoxWidth, NeededWidth);
-	}
-
 	BoxWidth = maximum(BoxWidth, KeyStatusLayout.m_W);
 
 	float BoxHeight = 0.0f;
@@ -4912,33 +4914,6 @@ void CHud::RenderMovementInformation()
 				}
 			}
 
-			if(ShowJumpHint)
-			{
-				TextRender()->Text(LeftX, y, Fontsize, Localize("3 Tiles Edge Jump:"), -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-
-				const char *pLeftJump = ".34|.31|.16";
-				const char *pLeftDoubleJump = ".41|.28|.25|.13";
-				const char *pRightJump = ".63|.66|.81";
-				const char *pRightDoubleJump = ".56|.69|.72|.84";
-
-				TextRender()->Text(LeftX, y, Fontsize, Localize("Left Jump:"), -1.0f);
-				TextRender()->Text(RightX - TextRender()->TextWidth(Fontsize, pLeftJump), y, Fontsize, pLeftJump, -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-
-				TextRender()->Text(LeftX, y, Fontsize, Localize("Left Double Jump:"), -1.0f);
-				TextRender()->Text(RightX - TextRender()->TextWidth(Fontsize, pLeftDoubleJump), y, Fontsize, pLeftDoubleJump, -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-
-				TextRender()->Text(LeftX, y, Fontsize, Localize("Right Jump:"), -1.0f);
-				TextRender()->Text(RightX - TextRender()->TextWidth(Fontsize, pRightJump), y, Fontsize, pRightJump, -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-
-				TextRender()->Text(LeftX, y, Fontsize, Localize("Right Double Jump:"), -1.0f);
-				TextRender()->Text(RightX - TextRender()->TextWidth(Fontsize, pRightDoubleJump), y, Fontsize, pRightDoubleJump, -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-			}
-
 			// 玩家统计HUD显示
 			if(ShowStats)
 			{
@@ -5051,6 +5026,42 @@ void CHud::RenderMovementInformation()
 		TextRender()->TextColor(TextRender()->DefaultTextColor());
 	}
 
+	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
+}
+
+void CHud::RenderJumpHint()
+{
+	if(!g_Config.m_TcJumpHint)
+		return;
+
+	char aText[sizeof(g_Config.m_TcJumpHintText)];
+	DecodeEscapedNewlines(g_Config.m_TcJumpHintText[0] != '\0' ? g_Config.m_TcJumpHintText : JUMP_HINT_DEFAULT_TEXT, aText, sizeof(aText));
+	if(aText[0] == '\0')
+		return;
+
+	constexpr float PaddingX = 4.0f;
+	constexpr float PaddingY = 3.0f;
+	constexpr float LineSpacing = 0.0f;
+	const float FontSize = std::clamp((float)g_Config.m_TcJumpHintSize, 1.0f, 50.0f);
+	const STextBoundingBox TextBox = TextRender()->TextBoundingBox(FontSize, aText, -1, -1.0f, LineSpacing);
+	const float BoxWidth = maximum(24.0f, TextBox.m_W + PaddingX * 2.0f);
+	const float BoxHeight = maximum(FontSize + PaddingY * 2.0f, TextBox.m_H + PaddingY * 2.0f);
+	const float MaxX = maximum(0.0f, m_Width - BoxWidth);
+	const float MaxY = maximum(0.0f, m_Height - BoxHeight);
+	const float StartX = std::clamp(m_Width * std::clamp(g_Config.m_TcJumpHintX, 0, 100) / 100.0f, 0.0f, MaxX);
+	const float StartY = std::clamp(m_Height * std::clamp(g_Config.m_TcJumpHintY, 0, 100) / 100.0f, 0.0f, MaxY);
+
+	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::JumpHint, {StartX, StartY, BoxWidth, BoxHeight});
+	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::BASE);
+
+	CTextCursor Cursor;
+	Cursor.SetPosition(vec2(StartX + PaddingX, StartY + PaddingY));
+	Cursor.m_FontSize = FontSize;
+	Cursor.m_LineSpacing = LineSpacing;
+	const int TextColorConfig = g_Config.m_TcJumpHintColor == JUMP_HINT_LEGACY_BLACK_COLOR ? JUMP_HINT_DEFAULT_COLOR : g_Config.m_TcJumpHintColor;
+	TextRender()->TextColor(color_cast<ColorRGBA>(ColorHSLA(TextColorConfig)));
+	TextRender()->TextEx(&Cursor, aText);
+	TextRender()->TextColor(TextRender()->DefaultTextColor());
 	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 }
 
@@ -5614,6 +5625,7 @@ void CHud::OnRender()
 					RenderSpectatorCount();
 				RenderMovementInformation();
 			}
+			RenderJumpHint();
 			RenderDDRaceEffects();
 		}
 		else if(GameClient()->m_Snap.m_SpecInfo.m_Active)
@@ -5641,6 +5653,7 @@ void CHud::OnRender()
 				GameClient()->m_HudEditor.EndTransform(HudPlayerStateScope);
 			}
 			RenderMovementInformation();
+			RenderJumpHint();
 			RenderSpectatorHud();
 		}
 
