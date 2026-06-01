@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <limits>
 #include <vector>
 
 using namespace FontIcons;
@@ -514,6 +515,8 @@ static const CImageInfo *AssetsEditorGetCachedImage(int Type, const char *pAsset
 	}
 
 	ConvertToRgba(Loaded);
+	if(Loaded.m_pData == nullptr || Loaded.m_Format != CImageInfo::FORMAT_RGBA)
+		return nullptr;
 
 	SAssetsEditorImageCacheEntry &NewEntry = gs_vAssetsEditorImageCache.emplace_back();
 	NewEntry.m_Type = Type;
@@ -1126,6 +1129,8 @@ static bool AssetsEditorExtractSubImage(const CImageInfo &Src, CImageInfo &Dst, 
 		return false;
 	if(X < 0 || Y < 0 || X + W > (int)Src.m_Width || Y + H > (int)Src.m_Height)
 		return false;
+	if((size_t)W > std::numeric_limits<size_t>::max() / (size_t)H / 4)
+		return false;
 
 	Dst = CImageInfo();
 	Dst.m_Width = W;
@@ -1168,8 +1173,24 @@ bool CMenus::AssetsEditorComposeImage(CImageInfo &OutputImage)
 
 	CImageInfo BaseImageStable = pBaseImage->DeepCopy();
 	OutputImage = BaseImageStable.DeepCopy();
+	if(BaseImageStable.m_pData == nullptr || OutputImage.m_pData == nullptr)
+	{
+		BaseImageStable.Free();
+		OutputImage.Free();
+		str_copy(m_AssetsEditorState.m_aStatusMessage, Localize("Failed to copy main asset image."));
+		m_AssetsEditorState.m_StatusIsError = true;
+		return false;
+	}
 	if(OutputImage.m_Format != CImageInfo::FORMAT_RGBA)
 		ConvertToRgba(OutputImage);
+	if(OutputImage.m_pData == nullptr || OutputImage.m_Format != CImageInfo::FORMAT_RGBA)
+	{
+		BaseImageStable.Free();
+		OutputImage.Free();
+		str_copy(m_AssetsEditorState.m_aStatusMessage, Localize("Failed to prepare main asset image."));
+		m_AssetsEditorState.m_StatusIsError = true;
+		return false;
+	}
 
 	struct SPreparedDonor
 	{
@@ -1201,8 +1222,12 @@ bool CMenus::AssetsEditorComposeImage(CImageInfo &OutputImage)
 		SPreparedDonor &Prepared = vPreparedDonors.emplace_back();
 		str_copy(Prepared.m_aName, pName);
 		Prepared.m_Image = pCachedDonor->DeepCopy();
+		if(Prepared.m_Image.m_pData == nullptr)
+			return nullptr;
 		if(Prepared.m_Image.m_Format != CImageInfo::FORMAT_RGBA)
 			ConvertToRgba(Prepared.m_Image);
+		if(Prepared.m_Image.m_pData == nullptr || Prepared.m_Image.m_Format != CImageInfo::FORMAT_RGBA)
+			return nullptr;
 		return &Prepared.m_Image;
 	};
 

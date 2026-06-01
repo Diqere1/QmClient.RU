@@ -116,6 +116,14 @@ void CSkins7::CSkinPartLoadJob::Run()
 	}
 
 	CImageInfo GrayscaleImage = OriginalImage.DeepCopy();
+	if(GrayscaleImage.m_pData == nullptr)
+	{
+		log_error("skins7", "Failed to copy skin part '%s'", m_Path.c_str());
+		OriginalImage.Free();
+		CLockScope Lock(m_Mutex);
+		m_Completed = true;
+		return;
+	}
 	ConvertToGrayscale(GrayscaleImage);
 
 	ColorRGBA BloodColor = DetermineBloodColorFromInfo(OriginalImage);

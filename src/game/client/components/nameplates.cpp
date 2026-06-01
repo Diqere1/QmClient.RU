@@ -123,10 +123,22 @@ static float ResolveChatBubbleAnimValue(
 
 static constexpr int NAMEPLATE_FREE_MOVE_OFFSET_MIN = -300;
 static constexpr int NAMEPLATE_FREE_MOVE_OFFSET_MAX = 300;
+// Multiplier applied to the baseline frame to give users more room to move
+// nameplate elements around. Width and height are both scaled by this factor
+// around the baseline frame's center.
+static constexpr float NAMEPLATE_FREE_MOVE_FRAME_SCALE = 3.0f;
+
+static void ScaleFrameAroundCenter(vec2 &Min, vec2 &Max, float Scale)
+{
+	const vec2 Center = (Min + Max) * 0.5f;
+	const vec2 HalfExtent = (Max - Min) * 0.5f * Scale;
+	Min = Center - HalfExtent;
+	Max = Center + HalfExtent;
+}
 
 static bool NameplateFreeMoveEnabled()
 {
-	return g_Config.m_QmNameplateFreeMoveX != 0 || g_Config.m_QmNameplateFreeMoveY != 0;
+	return g_Config.m_QmNameplateFreeMove != 0 || g_Config.m_QmNameplateFreeMoveX != 0 || g_Config.m_QmNameplateFreeMoveY != 0;
 }
 
 static int *NameplateCoreRowOffsetX(ENameplateCoreRow Row)
@@ -171,10 +183,12 @@ static int *NameplateCoreRowOffsetY(ENameplateCoreRow Row)
 
 static vec2 NameplateCoreRowOffset(ENameplateCoreRow Row)
 {
+	if(!NameplateFreeMoveEnabled())
+		return vec2(0.0f, 0.0f);
 	int *pOffsetX = NameplateCoreRowOffsetX(Row);
 	int *pOffsetY = NameplateCoreRowOffsetY(Row);
-	const float OffsetX = g_Config.m_QmNameplateFreeMoveX != 0 && pOffsetX != nullptr ? (float)*pOffsetX : 0.0f;
-	const float OffsetY = g_Config.m_QmNameplateFreeMoveY != 0 && pOffsetY != nullptr ? (float)*pOffsetY : 0.0f;
+	const float OffsetX = pOffsetX != nullptr ? (float)*pOffsetX : 0.0f;
+	const float OffsetY = pOffsetY != nullptr ? (float)*pOffsetY : 0.0f;
 	return vec2(OffsetX, OffsetY);
 }
 
@@ -1075,34 +1089,58 @@ private:
 		}
 		RenderLine(This, Position, LineSize, Start, m_vpParts.begin() + EndIndex);
 	}
-	void CollectFreeMoveBounds(vec2 PositionBottomMiddle, bool &HasBounds, vec2 &BoundsMin, vec2 &BoundsMax) const
+public:
+	// Compute the baseline rect of the row TargetRow (offset = 0), and its
+	// center. Also returns the nameplate's baseline frame (Min/Max), which is
+	// the stack bbox of all visible rows with offsets ignored. The frame is
+	// stable regardless of how rows are dragged; rows are clamped to it.
+	void ComputeBaselineLayout(vec2 PositionBottomMiddle, ENameplateCoreRow TargetRow,
+		bool &HasFrame, vec2 &FrameMin, vec2 &FrameMax,
+		bool &HasTargetRow, vec2 &TargetRowCenter, vec2 &TargetRowSize) const
 	{
+		HasFrame = false;
+		HasTargetRow = false;
 		vec2 Position = PositionBottomMiddle;
 		for(const SCoreRowParts &CoreRow : m_vCoreRows)
 		{
 			const vec2 Size = RangeSize(CoreRow.m_Start, CoreRow.m_End);
 			if(Size.x > 0.0f && Size.y > 0.0f)
 			{
-				const vec2 RowPosition = Position + NameplateCoreRowOffset(CoreRow.m_Row);
-				const vec2 RowMin = vec2(RowPosition.x - Size.x / 2.0f, RowPosition.y - Size.y);
-				const vec2 RowMax = vec2(RowPosition.x + Size.x / 2.0f, RowPosition.y);
-				if(!HasBounds)
+				// Baseline rect (no offset).
+				const vec2 RowMin = vec2(Position.x - Size.x / 2.0f, Position.y - Size.y);
+				const vec2 RowMax = vec2(Position.x + Size.x / 2.0f, Position.y);
+				if(!HasFrame)
 				{
-					BoundsMin = RowMin;
-					BoundsMax = RowMax;
-					HasBounds = true;
+					FrameMin = RowMin;
+					FrameMax = RowMax;
+					HasFrame = true;
 				}
 				else
 				{
-					BoundsMin.x = std::min(BoundsMin.x, RowMin.x);
-					BoundsMin.y = std::min(BoundsMin.y, RowMin.y);
-					BoundsMax.x = std::max(BoundsMax.x, RowMax.x);
-					BoundsMax.y = std::max(BoundsMax.y, RowMax.y);
+					FrameMin.x = std::min(FrameMin.x, RowMin.x);
+					FrameMin.y = std::min(FrameMin.y, RowMin.y);
+					FrameMax.x = std::max(FrameMax.x, RowMax.x);
+					FrameMax.y = std::max(FrameMax.y, RowMax.y);
+				}
+				if(CoreRow.m_Row == TargetRow)
+				{
+					TargetRowCenter = vec2(Position.x, Position.y - Size.y / 2.0f);
+					TargetRowSize = Size;
+					HasTargetRow = true;
 				}
 			}
 			Position.y -= Size.y;
 		}
 	}
+	// Returns the baseline frame only.
+	void ComputeBaselineFrame(vec2 PositionBottomMiddle, bool &HasFrame, vec2 &FrameMin, vec2 &FrameMax) const
+	{
+		bool DummyHasRow = false;
+		vec2 DummyCenter, DummySize;
+		ComputeBaselineLayout(PositionBottomMiddle, ENameplateCoreRow::NUM_ROWS,
+			HasFrame, FrameMin, FrameMax, DummyHasRow, DummyCenter, DummySize);
+	}
+private:
 	template<typename PartType, typename... ArgsType>
 	void AddPart(CGameClient &This, ArgsType &&...Args)
 	{
@@ -1228,12 +1266,16 @@ public:
 		dbg_assert(m_Inited, "Tried to render uninited nameplate");
 		if(NameplateFreeMoveEnabled())
 		{
-			vec2 Position = PositionBottomMiddle;
+			// Each row is positioned independently from PositionBottomMiddle:
+			// row top = baseline top (stack default) + Offset(row). This
+			// guarantees moving one row never shifts another.
+			vec2 BaselinePos = PositionBottomMiddle;
 			for(const SCoreRowParts &CoreRow : m_vCoreRows)
 			{
 				const vec2 Size = RangeSize(CoreRow.m_Start, CoreRow.m_End);
-				RenderRange(This, Position + NameplateCoreRowOffset(CoreRow.m_Row), CoreRow.m_Start, CoreRow.m_End);
-				Position.y -= Size.y;
+				if(Size.x > 0.0f && Size.y > 0.0f)
+					RenderRange(This, BaselinePos + NameplateCoreRowOffset(CoreRow.m_Row), CoreRow.m_Start, CoreRow.m_End);
+				BaselinePos.y -= Size.y;
 			}
 			This.Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 			return;
@@ -1250,15 +1292,15 @@ public:
 		dbg_assert(m_Inited, "Tried to get top of uninited nameplate");
 		if(NameplateFreeMoveEnabled())
 		{
-			vec2 Position = PositionBottomMiddle;
-			float Top = Position.y;
-			for(const SCoreRowParts &CoreRow : m_vCoreRows)
-			{
-				const vec2 Size = RangeSize(CoreRow.m_Start, CoreRow.m_End);
-				Top = std::min(Top, RangeTopY(Position + NameplateCoreRowOffset(CoreRow.m_Row), CoreRow.m_Start, CoreRow.m_End));
-				Position.y -= Size.y;
-			}
-			return Top;
+			// Use the baseline frame top so chat bubbles etc. anchor to a
+			// stable, drag-independent position. The drag area is visually
+			// larger (see NAMEPLATE_FREE_MOVE_FRAME_SCALE), but TopY is for
+			// layout neighbors that should hug the actual content.
+			bool HasFrame = false;
+			vec2 FrameMin = vec2(0.0f, 0.0f);
+			vec2 FrameMax = vec2(0.0f, 0.0f);
+			ComputeBaselineFrame(PositionBottomMiddle, HasFrame, FrameMin, FrameMax);
+			return HasFrame ? FrameMin.y : PositionBottomMiddle.y;
 		}
 
 		return RangeTopY(PositionBottomMiddle, 0, m_vpParts.size());
@@ -1268,11 +1310,14 @@ public:
 		dbg_assert(m_Inited, "Tried to get size of uninited nameplate");
 		if(NameplateFreeMoveEnabled())
 		{
-			bool HasBounds = false;
-			vec2 BoundsMin = vec2(0.0f, 0.0f);
-			vec2 BoundsMax = vec2(0.0f, 0.0f);
-			CollectFreeMoveBounds(vec2(0.0f, 0.0f), HasBounds, BoundsMin, BoundsMax);
-			return HasBounds ? BoundsMax - BoundsMin : vec2(0.0f, 0.0f);
+			// Reported size stays at the baseline stack bbox so layout code
+			// (chat bubbles, preview-page tee placement) hugs the actual
+			// content. The drag area is scaled separately at draw time.
+			bool HasFrame = false;
+			vec2 FrameMin = vec2(0.0f, 0.0f);
+			vec2 FrameMax = vec2(0.0f, 0.0f);
+			ComputeBaselineFrame(vec2(0.0f, 0.0f), HasFrame, FrameMin, FrameMax);
+			return HasFrame ? FrameMax - FrameMin : vec2(0.0f, 0.0f);
 		}
 		return RangeSize(0, m_vpParts.size());
 	}
@@ -1281,20 +1326,20 @@ public:
 		for(SNameplateCoreRowRect &Rect : aRects)
 			Rect = SNameplateCoreRowRect();
 
-		vec2 Position = PositionBottomMiddle;
+		vec2 BaselinePos = PositionBottomMiddle;
 		for(const SCoreRowParts &CoreRow : m_vCoreRows)
 		{
 			const vec2 Size = RangeSize(CoreRow.m_Start, CoreRow.m_End);
 			if(Size.x > 0.0f && Size.y > 0.0f)
 			{
 				SNameplateCoreRowRect &Rect = aRects[static_cast<int>(CoreRow.m_Row)];
-				const vec2 RowPosition = Position + NameplateCoreRowOffset(CoreRow.m_Row);
+				const vec2 RowPosition = BaselinePos + NameplateCoreRowOffset(CoreRow.m_Row);
 				Rect.m_Row = CoreRow.m_Row;
 				Rect.m_Min = vec2(RowPosition.x - Size.x / 2.0f, RowPosition.y - Size.y);
 				Rect.m_Max = vec2(RowPosition.x + Size.x / 2.0f, RowPosition.y);
 				Rect.m_Visible = true;
 			}
-			Position.y -= Size.y;
+			BaselinePos.y -= Size.y;
 		}
 	}
 };
@@ -1596,63 +1641,66 @@ void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
 	const float FontSizeDirection = 18.0f + 20.0f * g_Config.m_ClDirectionSize / 100.0f;
 	const float FontSizeHookStrongWeak = 18.0f + 20.0f * g_Config.m_ClNamePlatesStrongSize / 100.0f;
 
+	auto BuildPreviewData = [&](int DummyIdx, CNamePlateData &Data) {
+		Data.m_InGame = false;
+		Data.m_Color = g_Config.m_ClNamePlatesTeamcolors ? GameClient()->GetDDTeamColor(13, 0.75f) : TextRender()->DefaultTextColor();
+		Data.m_Color.a = 1.0f;
+
+		Data.m_ShowName = g_Config.m_ClNamePlates || g_Config.m_ClNamePlatesOwn;
+		const char *pName = DummyIdx == 0 ? Client()->PlayerName() : Client()->DummyName();
+		str_copy(Data.m_aName, str_utf8_skip_whitespaces(pName));
+		str_utf8_trim_right(Data.m_aName);
+		Data.m_FontSize = FontSize;
+
+		Data.m_ShowFriendMark = Data.m_ShowName && g_Config.m_ClNamePlatesFriendMark;
+
+		Data.m_ShowClientId = Data.m_ShowName && (g_Config.m_Debug || g_Config.m_ClNamePlatesIds);
+		Data.m_ClientId = DummyIdx;
+		Data.m_ClientIdSeparateLine = g_Config.m_ClNamePlatesIdsSeparateLine;
+		Data.m_FontSizeClientId = Data.m_ClientIdSeparateLine ? (18.0f + 20.0f * g_Config.m_ClNamePlatesIdsSize / 100.0f) : Data.m_FontSize;
+
+		Data.m_ShowClan = Data.m_ShowName && g_Config.m_ClNamePlatesClan;
+		const char *pClan = DummyIdx == 0 ? g_Config.m_PlayerClan : g_Config.m_ClDummyClan;
+		str_copy(Data.m_aClan, str_utf8_skip_whitespaces(pClan));
+		str_utf8_trim_right(Data.m_aClan);
+		if(Data.m_aClan[0] == '\0')
+			str_copy(Data.m_aClan, "Clan Name");
+		Data.m_FontSizeClan = FontSizeClan;
+
+		Data.m_ShowCoordX = g_Config.m_QmNameplateCoordX != 0;
+		Data.m_ShowCoordY = g_Config.m_QmNameplateCoordY != 0;
+		Data.m_ShowCoords = g_Config.m_QmNameplateCoords || g_Config.m_QmNameplateCoordsOwn;
+		Data.m_Coords = vec2(12.34f + DummyIdx, 56.78f + DummyIdx);
+		Data.m_FontSizeCoords = FontSizeCoords;
+		Data.m_CoordXAlignHint = false;
+		Data.m_CoordXAlignHintStrict = false;
+		Data.m_CoordXAligned = false;
+		Data.m_CoordXAlignColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmNameplateCoordXAlignHintColor));
+
+		Data.m_ShowDirection = g_Config.m_ClShowDirection != 0 ? true : false;
+		Data.m_DirLeft = Data.m_DirJump = Data.m_DirRight = true;
+		Data.m_FontSizeDirection = FontSizeDirection;
+
+		Data.m_FontSizeHookStrongWeak = FontSizeHookStrongWeak;
+		Data.m_HookStrongWeakId = Data.m_ClientId;
+		Data.m_ShowHookStrongWeakId = g_Config.m_ClNamePlatesStrong == 2;
+		if(DummyIdx == g_Config.m_ClDummy)
+		{
+			Data.m_HookStrongWeakState = EHookStrongWeakState::NEUTRAL;
+			Data.m_ShowHookStrongWeak = Data.m_ShowHookStrongWeakId;
+		}
+		else
+		{
+			Data.m_HookStrongWeakState = Data.m_HookStrongWeakId == 2 ? EHookStrongWeakState::STRONG : EHookStrongWeakState::WEAK;
+			Data.m_ShowHookStrongWeak = g_Config.m_ClNamePlatesStrong > 0;
+		}
+
+		// TClient
+		Data.m_Local = false;
+	};
+
 	CNamePlateData Data;
-
-	Data.m_InGame = false;
-	Data.m_Color = g_Config.m_ClNamePlatesTeamcolors ? GameClient()->GetDDTeamColor(13, 0.75f) : TextRender()->DefaultTextColor();
-	Data.m_Color.a = 1.0f;
-
-	Data.m_ShowName = g_Config.m_ClNamePlates || g_Config.m_ClNamePlatesOwn;
-	const char *pName = Dummy == 0 ? Client()->PlayerName() : Client()->DummyName();
-	str_copy(Data.m_aName, str_utf8_skip_whitespaces(pName));
-	str_utf8_trim_right(Data.m_aName);
-	Data.m_FontSize = FontSize;
-
-	Data.m_ShowFriendMark = Data.m_ShowName && g_Config.m_ClNamePlatesFriendMark;
-
-	Data.m_ShowClientId = Data.m_ShowName && (g_Config.m_Debug || g_Config.m_ClNamePlatesIds);
-	Data.m_ClientId = Dummy;
-	Data.m_ClientIdSeparateLine = g_Config.m_ClNamePlatesIdsSeparateLine;
-	Data.m_FontSizeClientId = Data.m_ClientIdSeparateLine ? (18.0f + 20.0f * g_Config.m_ClNamePlatesIdsSize / 100.0f) : Data.m_FontSize;
-
-	Data.m_ShowClan = Data.m_ShowName && g_Config.m_ClNamePlatesClan;
-	const char *pClan = Dummy == 0 ? g_Config.m_PlayerClan : g_Config.m_ClDummyClan;
-	str_copy(Data.m_aClan, str_utf8_skip_whitespaces(pClan));
-	str_utf8_trim_right(Data.m_aClan);
-	if(Data.m_aClan[0] == '\0')
-		str_copy(Data.m_aClan, "Clan Name");
-	Data.m_FontSizeClan = FontSizeClan;
-
-	Data.m_ShowCoordX = g_Config.m_QmNameplateCoordX != 0;
-	Data.m_ShowCoordY = g_Config.m_QmNameplateCoordY != 0;
-	Data.m_ShowCoords = g_Config.m_QmNameplateCoords || g_Config.m_QmNameplateCoordsOwn;
-	Data.m_Coords = vec2(12.34f + Dummy, 56.78f + Dummy);
-	Data.m_FontSizeCoords = FontSizeCoords;
-	Data.m_CoordXAlignHint = false;
-	Data.m_CoordXAlignHintStrict = false;
-	Data.m_CoordXAligned = false;
-	Data.m_CoordXAlignColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmNameplateCoordXAlignHintColor));
-
-	Data.m_ShowDirection = g_Config.m_ClShowDirection != 0 ? true : false;
-	Data.m_DirLeft = Data.m_DirJump = Data.m_DirRight = true;
-	Data.m_FontSizeDirection = FontSizeDirection;
-
-	Data.m_FontSizeHookStrongWeak = FontSizeHookStrongWeak;
-	Data.m_HookStrongWeakId = Data.m_ClientId;
-	Data.m_ShowHookStrongWeakId = g_Config.m_ClNamePlatesStrong == 2;
-	if(Dummy == g_Config.m_ClDummy)
-	{
-		Data.m_HookStrongWeakState = EHookStrongWeakState::NEUTRAL;
-		Data.m_ShowHookStrongWeak = Data.m_ShowHookStrongWeakId;
-	}
-	else
-	{
-		Data.m_HookStrongWeakState = Data.m_HookStrongWeakId == 2 ? EHookStrongWeakState::STRONG : EHookStrongWeakState::WEAK;
-		Data.m_ShowHookStrongWeak = g_Config.m_ClNamePlatesStrong > 0;
-	}
-
-	// TClient
-	Data.m_Local = false;
+	BuildPreviewData(Dummy, Data);
 
 	CTeeRenderInfo TeeRenderInfo;
 	if(Dummy == 0)
@@ -1668,15 +1716,61 @@ void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
 	TeeRenderInfo.m_Size = 64.0f;
 
 	CNamePlate NamePlate(*GameClient(), Data);
-	Position.y += NamePlate.Size().y / 2.0f;
+
+	// To keep the drag area visually identical when toggling between
+	// player/dummy preview, take the union of both sides' baseline frame
+	// sizes and use that as the unified size for sizing/anchoring/clamping.
+	vec2 UnifiedFrameSize = NamePlate.Size();
+	if(NameplateFreeMoveEnabled())
+	{
+		CNamePlateData OtherData;
+		BuildPreviewData(Dummy == 0 ? 1 : 0, OtherData);
+		CNamePlate OtherNamePlate(*GameClient(), OtherData);
+		const vec2 OtherSize = OtherNamePlate.Size();
+		UnifiedFrameSize.x = std::max(UnifiedFrameSize.x, OtherSize.x);
+		UnifiedFrameSize.y = std::max(UnifiedFrameSize.y, OtherSize.y);
+		OtherNamePlate.Reset(*GameClient());
+	}
+
+	Position.y += UnifiedFrameSize.y / 2.0f;
 	Position.y += (float)g_Config.m_ClNamePlatesOffset / 2.0f;
+
+	// Free-move preview: the tee stays at the original preview position (the
+	// same relative offset to the nameplate content as in-game), so what the
+	// user sees in the preview matches the actual in-game layout. The frame
+	// (used for clamping the drag area) is still computed below, but it does
+	// not move the tee.
+	const vec2 TeeRenderPosition = Position;
+	const vec2 NameplateBottomMiddle = Position - vec2(0.0f, (float)g_Config.m_ClNamePlatesOffset);
+	bool HasFrame = false;
+	vec2 FrameMin = vec2(0.0f, 0.0f);
+	vec2 FrameMax = vec2(0.0f, 0.0f);
+	if(NameplateFreeMoveEnabled())
+	{
+		// Anchor the unified frame at this preview's baseline-frame center,
+		// then expand to the unified size and apply the visual scale.
+		bool BaseHasFrame = false;
+		vec2 BaseFrameMin = vec2(0.0f, 0.0f);
+		vec2 BaseFrameMax = vec2(0.0f, 0.0f);
+		NamePlate.ComputeBaselineFrame(NameplateBottomMiddle, BaseHasFrame, BaseFrameMin, BaseFrameMax);
+		if(BaseHasFrame)
+		{
+			const vec2 Center = (BaseFrameMin + BaseFrameMax) * 0.5f;
+			const vec2 HalfUnified = UnifiedFrameSize * 0.5f;
+			FrameMin = Center - HalfUnified;
+			FrameMax = Center + HalfUnified;
+			ScaleFrameAroundCenter(FrameMin, FrameMax, NAMEPLATE_FREE_MOVE_FRAME_SCALE);
+			HasFrame = true;
+		}
+	}
+
 	// tee looking towards cursor, and it is happy when you touch it
-	const vec2 DeltaPosition = Ui()->MousePos() - Position;
+	const vec2 DeltaPosition = Ui()->MousePos() - TeeRenderPosition;
 	const float Distance = length(DeltaPosition);
 	const float InteractionDistance = 20.0f;
 	const vec2 TeeDirection = Distance < InteractionDistance ? normalize(vec2(DeltaPosition.x, maximum(DeltaPosition.y, 0.5f))) : normalize(DeltaPosition);
 	const int TeeEmote = Distance < InteractionDistance ? EMOTE_HAPPY : (Dummy ? g_Config.m_ClDummyDefaultEyes : g_Config.m_ClPlayerDefaultEyes);
-	RenderTools()->RenderTee(CAnimState::GetIdle(), &TeeRenderInfo, TeeEmote, TeeDirection, Position);
+	RenderTools()->RenderTee(CAnimState::GetIdle(), &TeeRenderInfo, TeeEmote, TeeDirection, TeeRenderPosition);
 	Position.y -= (float)g_Config.m_ClNamePlatesOffset;
 	if(NameplateFreeMoveEnabled())
 	{
@@ -1711,18 +1805,74 @@ void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
 		{
 			int *pOffsetX = NameplateCoreRowOffsetX(m_pData->m_FreeMoveDragRow);
 			int *pOffsetY = NameplateCoreRowOffsetY(m_pData->m_FreeMoveDragRow);
-			if(g_Config.m_QmNameplateFreeMoveX != 0 && pOffsetX != nullptr)
+
+			// Offset range = (FrameMin - BaselineRowMin, FrameMax - BaselineRowMax),
+			// where BaselineRowMin/Max derive from row center & size at offset=0.
+			// The frame here is the SAME unified+scaled frame the outline is
+			// drawn from, so clamp matches the visible drag area exactly.
+			bool DragHasRow = false;
+			bool DragIgnoreFrame = false;
+			vec2 DragIgnoreFrameMin = vec2(0.0f, 0.0f);
+			vec2 DragIgnoreFrameMax = vec2(0.0f, 0.0f);
+			vec2 DragRowCenter = vec2(0.0f, 0.0f);
+			vec2 DragRowSize = vec2(0.0f, 0.0f);
+			NamePlate.ComputeBaselineLayout(Position, m_pData->m_FreeMoveDragRow,
+				DragIgnoreFrame, DragIgnoreFrameMin, DragIgnoreFrameMax,
+				DragHasRow, DragRowCenter, DragRowSize);
+			const vec2 DragFrameMin = FrameMin;
+			const vec2 DragFrameMax = FrameMax;
+			const bool DragHasFrame = HasFrame;
+
+			int LimitMinX = NAMEPLATE_FREE_MOVE_OFFSET_MIN;
+			int LimitMaxX = NAMEPLATE_FREE_MOVE_OFFSET_MAX;
+			int LimitMinY = NAMEPLATE_FREE_MOVE_OFFSET_MIN;
+			int LimitMaxY = NAMEPLATE_FREE_MOVE_OFFSET_MAX;
+			if(DragHasFrame && DragHasRow)
 			{
-				const int NewOffsetX = std::clamp(round_to_int(m_pData->m_FreeMoveDragStartOffset.x + MousePosition.x - m_pData->m_FreeMoveDragStartMouse.x), NAMEPLATE_FREE_MOVE_OFFSET_MIN, NAMEPLATE_FREE_MOVE_OFFSET_MAX);
+				const vec2 BaselineRowMin = vec2(DragRowCenter.x - DragRowSize.x / 2.0f, DragRowCenter.y - DragRowSize.y / 2.0f);
+				const vec2 BaselineRowMax = vec2(DragRowCenter.x + DragRowSize.x / 2.0f, DragRowCenter.y + DragRowSize.y / 2.0f);
+				const float MinX = DragFrameMin.x - BaselineRowMin.x;
+				const float MaxX = DragFrameMax.x - BaselineRowMax.x;
+				const float MinY = DragFrameMin.y - BaselineRowMin.y;
+				const float MaxY = DragFrameMax.y - BaselineRowMax.y;
+				if(MinX <= MaxX)
+				{
+					LimitMinX = std::max(LimitMinX, round_to_int(MinX));
+					LimitMaxX = std::min(LimitMaxX, round_to_int(MaxX));
+				}
+				else
+				{
+					LimitMinX = 0;
+					LimitMaxX = 0;
+				}
+				if(MinY <= MaxY)
+				{
+					LimitMinY = std::max(LimitMinY, round_to_int(MinY));
+					LimitMaxY = std::min(LimitMaxY, round_to_int(MaxY));
+				}
+				else
+				{
+					LimitMinY = 0;
+					LimitMaxY = 0;
+				}
+			}
+
+			if(pOffsetX != nullptr)
+			{
+				const int NewOffsetX = std::clamp(round_to_int(m_pData->m_FreeMoveDragStartOffset.x + MousePosition.x - m_pData->m_FreeMoveDragStartMouse.x), LimitMinX, LimitMaxX);
 				*pOffsetX = NewOffsetX;
 			}
-			if(g_Config.m_QmNameplateFreeMoveY != 0 && pOffsetY != nullptr)
+			if(pOffsetY != nullptr)
 			{
-				const int NewOffsetY = std::clamp(round_to_int(m_pData->m_FreeMoveDragStartOffset.y + MousePosition.y - m_pData->m_FreeMoveDragStartMouse.y), NAMEPLATE_FREE_MOVE_OFFSET_MIN, NAMEPLATE_FREE_MOVE_OFFSET_MAX);
+				const int NewOffsetY = std::clamp(round_to_int(m_pData->m_FreeMoveDragStartOffset.y + MousePosition.y - m_pData->m_FreeMoveDragStartMouse.y), LimitMinY, LimitMaxY);
 				*pOffsetY = NewOffsetY;
 			}
 			NamePlate.CollectCoreRowRects(Position, aEditorRects);
 		}
+
+		// Frame is intentionally invisible to the user. FrameMin/FrameMax are
+		// still used to anchor the tee and clamp drag offsets — only the
+		// outline drawing is suppressed.
 
 		Graphics()->TextureClear();
 		Graphics()->QuadsBegin();

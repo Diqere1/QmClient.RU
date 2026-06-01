@@ -546,6 +546,11 @@ bool CSkins::LoadSkinData(const char *pName, CSkinLoadData &Data) const
 	CheckMetrics(Data.m_Metrics.m_Feet, Data.m_Info.m_pData, Pitch, FeetOutlineOffsetX, FeetOutlineOffsetY, FeetOutlineWidth, FeetOutlineHeight);
 
 	Data.m_InfoGrayscale = Data.m_Info.DeepCopy();
+	if(Data.m_InfoGrayscale.m_pData == nullptr)
+	{
+		Data.m_Info.Free();
+		return false;
+	}
 	ConvertToGrayscale(Data.m_InfoGrayscale);
 
 	int aFreq[256] = {0};

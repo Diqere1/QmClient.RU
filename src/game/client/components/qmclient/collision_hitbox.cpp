@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
+#include <base/log.h>
 #include <base/math.h>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
@@ -105,6 +107,7 @@ public:
 
 // 地图层顺序
 static constexpr CHitboxLayer HITBOX_LAYERS[] = {{HitboxLayer::GAME}, {HitboxLayer::FRONT}};
+static constexpr size_t MAX_HITBOX_MAP_TILES = 4096 * 4096;
 
 float CCollisionHitbox::HitboxAlpha() const
 {
@@ -298,11 +301,7 @@ bool CCollisionHitbox::GetProjectileRenderPosition(const CProjectileData &Projec
 
 void CCollisionHitbox::OnMapLoad()
 {
-	if(m_pMapData)
-	{
-		delete[] m_pMapData;
-		m_pMapData = nullptr;
-	}
+	m_vMapData.clear();
 
 	// 查找有效的图层并计算尺寸
 	std::vector<const CHitboxLayer *> vValidLayers;
@@ -321,20 +320,34 @@ void CCollisionHitbox::OnMapLoad()
 	if(m_MapDataSize.x <= 0 || m_MapDataSize.y <= 0)
 		return;
 
-	m_pMapData = new int[m_MapDataSize.x * m_MapDataSize.y]();
-	for(int i = 0; i < m_MapDataSize.x * m_MapDataSize.y; ++i)
-		m_pMapData[i] = HITBOX_NONE;
+	const size_t MapWidth = (size_t)m_MapDataSize.x;
+	const size_t MapHeight = (size_t)m_MapDataSize.y;
+	if(MapWidth > std::numeric_limits<size_t>::max() / MapHeight)
+	{
+		log_warn("collision_hitbox", "Map size overflow for hitbox cache: %dx%d", m_MapDataSize.x, m_MapDataSize.y);
+		m_MapDataSize = {0, 0};
+		return;
+	}
+	const size_t NumTiles = MapWidth * MapHeight;
+	if(NumTiles > MAX_HITBOX_MAP_TILES)
+	{
+		log_warn("collision_hitbox", "Map too large for hitbox cache: %dx%d", m_MapDataSize.x, m_MapDataSize.y);
+		m_MapDataSize = {0, 0};
+		return;
+	}
+
+	m_vMapData.assign(NumTiles, HITBOX_NONE);
 
 	// 填充碰撞数据
 	for(const auto *pLayer : vValidLayers)
 	{
-		pLayer->SetData(GameClient(), m_pMapData, m_MapDataSize);
+		pLayer->SetData(GameClient(), m_vMapData.data(), m_MapDataSize);
 	}
 }
 
 void CCollisionHitbox::RenderTileHitboxes()
 {
-	if(!m_pMapData)
+	if(m_vMapData.empty())
 		return;
 
 	const float Scale = 32.0f;
@@ -365,7 +378,7 @@ void CCollisionHitbox::RenderTileHitboxes()
 	auto GetTile = [&](int x, int y) -> int {
 		if(x < 0 || x >= m_MapDataSize.x || y < 0 || y >= m_MapDataSize.y)
 			return HITBOX_NONE;
-		return m_pMapData[y * m_MapDataSize.x + x];
+		return m_vMapData[y * m_MapDataSize.x + x];
 	};
 
 	Graphics()->TextureClear();

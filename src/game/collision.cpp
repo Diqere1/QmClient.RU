@@ -228,11 +228,23 @@ void CCollision::FillAntibot(CAntibotMapData *pMapData) const
 		return;
 	}
 
-	pMapData->m_pTiles = (unsigned char *)malloc((size_t)m_Width * m_Height);
+	if((size_t)m_Width > std::numeric_limits<size_t>::max() / (size_t)m_Height)
+	{
+		pMapData->m_pTiles = nullptr;
+		return;
+	}
+	const size_t TileCount = (size_t)m_Width * (size_t)m_Height;
+	if(TileCount > (size_t)std::numeric_limits<int>::max())
+	{
+		pMapData->m_pTiles = nullptr;
+		return;
+	}
+
+	pMapData->m_pTiles = (unsigned char *)malloc(TileCount);
 	if(!pMapData->m_pTiles)
 		return;
 
-	for(int i = 0; i < m_Width * m_Height; i++)
+	for(size_t i = 0; i < TileCount; i++)
 	{
 		pMapData->m_pTiles[i] = 0;
 		if(m_pTiles[i].m_Index >= TILE_SOLID && m_pTiles[i].m_Index <= TILE_NOLASER)

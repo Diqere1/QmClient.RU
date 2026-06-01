@@ -2503,12 +2503,41 @@ protected:
 		return 4;
 	}
 
+	[[nodiscard]] bool TextureDataSize(size_t Width, size_t Height, size_t Depth, size_t PixelSize, size_t &DataSize) const
+	{
+		if(Width == 0 || Height == 0 || Depth == 0 || PixelSize == 0)
+		{
+			DataSize = 0;
+			return false;
+		}
+		if(Width > std::numeric_limits<size_t>::max() / Height)
+		{
+			DataSize = 0;
+			return false;
+		}
+		const size_t PlaneSize = Width * Height;
+		if(PlaneSize > std::numeric_limits<size_t>::max() / Depth)
+		{
+			DataSize = 0;
+			return false;
+		}
+		const size_t PixelCount = PlaneSize * Depth;
+		if(PixelCount > std::numeric_limits<size_t>::max() / PixelSize)
+		{
+			DataSize = 0;
+			return false;
+		}
+		DataSize = PixelCount * PixelSize;
+		return true;
+	}
+
 	[[nodiscard]] bool UpdateTexture(size_t TextureSlot, VkFormat Format, uint8_t *&pData, int64_t XOff, int64_t YOff, size_t Width, size_t Height)
 	{
-		const size_t ImageSize = Width * Height * VulkanFormatToPixelSize(Format);
-		SMemoryBlock<STAGING_BUFFER_IMAGE_CACHE_ID> StagingBuffer;
-		if(!GetStagingBufferImage(StagingBuffer, pData, ImageSize))
+		size_t ImageSize = 0;
+		if(!TextureDataSize(Width, Height, 1, VulkanFormatToPixelSize(Format), ImageSize))
 			return false;
+		SMemoryBlock<STAGING_BUFFER_IMAGE_CACHE_ID> StagingBuffer;
+		bool StagingBufferInitialized = false;
 
 		auto &Tex = m_vTextures[TextureSlot];
 
@@ -2528,27 +2557,30 @@ protected:
 			uint8_t *pTmpData = ResizeImage(pData, OldWidth, OldHeight, Width, Height, VulkanFormatToPixelSize(Format));
 			free(pData);
 			pData = pTmpData;
-		}
-
-		if(!ImageBarrier(Tex.m_Img, 0, Tex.m_MipMapCount, 0, 1, Format, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL))
-			return false;
-		if(!CopyBufferToImage(StagingBuffer.m_Buffer, StagingBuffer.m_HeapData.m_OffsetToAlign, Tex.m_Img, XOff, YOff, Width, Height, 1))
-			return false;
-
-		if(Tex.m_MipMapCount > 1)
-		{
-			if(!BuildMipmaps(Tex.m_Img, Format, Width, Height, 1, Tex.m_MipMapCount))
-				return false;
-		}
-		else
-		{
-			if(!ImageBarrier(Tex.m_Img, 0, 1, 0, 1, Format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL))
+			if(pData == nullptr)
 				return false;
 		}
 
-		UploadAndFreeStagingImageMemBlock(StagingBuffer);
+		if(!TextureDataSize(Width, Height, 1, VulkanFormatToPixelSize(Format), ImageSize) ||
+			!GetStagingBufferImage(StagingBuffer, pData, ImageSize))
+			return false;
+		StagingBufferInitialized = true;
 
-		return true;
+		bool Success = ImageBarrier(Tex.m_Img, 0, Tex.m_MipMapCount, 0, 1, Format, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) &&
+			       CopyBufferToImage(StagingBuffer.m_Buffer, StagingBuffer.m_HeapData.m_OffsetToAlign, Tex.m_Img, XOff, YOff, Width, Height, 1);
+
+		if(Success && Tex.m_MipMapCount > 1)
+		{
+			Success = BuildMipmaps(Tex.m_Img, Format, Width, Height, 1, Tex.m_MipMapCount);
+		}
+		else if(Success)
+		{
+			Success = ImageBarrier(Tex.m_Img, 0, 1, 0, 1, Format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		}
+
+		if(StagingBufferInitialized)
+			UploadAndFreeStagingImageMemBlock(StagingBuffer);
+		return Success;
 	}
 
 	[[nodiscard]] bool CreateTextureCMD(
@@ -2584,6 +2616,8 @@ protected:
 			uint8_t *pTmpData = ResizeImage(pData, OldWidth, OldHeight, Width, Height, PixelSize);
 			free(pData);
 			pData = pTmpData;
+			if(pData == nullptr)
+				return false;
 		}
 
 		bool Requires2DTexture = (Flags & TextureFlag::NO_2D_TEXTURE) == 0;
@@ -2643,10 +2677,14 @@ protected:
 
 				free(pData);
 				pData = pNewTexData;
+				if(pData == nullptr)
+					return false;
 			}
 
 			bool Needs3DTexDel = false;
 			uint8_t *pTexData3D = static_cast<uint8_t *>(malloc((size_t)PixelSize * ConvertWidth * ConvertHeight));
+			if(pTexData3D == nullptr)
+				return false;
 			if(!Texture2DTo3D(pData, ConvertWidth, ConvertHeight, PixelSize, 16, 16, pTexData3D, Image3DWidth, Image3DHeight))
 			{
 				free(pTexData3D);
@@ -2666,7 +2704,10 @@ protected:
 				}
 
 				if(!CreateTextureImage(ImageIndex, Texture.m_Img3D, Texture.m_Img3DMem, pTexData3D, Format, Image3DWidth, Image3DHeight, ImageDepth2DArray, PixelSize, MipMapLevelCount))
+				{
+					free(pTexData3D);
 					return false;
+				}
 				VkFormat ImgFormat = Format;
 				VkImageView ImgView = CreateTextureImageView(Texture.m_Img3D, ImgFormat, VK_IMAGE_VIEW_TYPE_2D_ARRAY, ImageDepth2DArray, MipMapLevelCount);
 				Texture.m_Img3DView = ImgView;
@@ -2674,7 +2715,10 @@ protected:
 				Texture.m_Sampler3D = ImgSampler;
 
 				if(!CreateNew3DTexturedStandardDescriptorSets(ImageIndex))
+				{
+					free(pTexData3D);
 					return false;
+				}
 
 				if(Needs3DTexDel)
 					free(pTexData3D);
@@ -6729,7 +6773,10 @@ public:
 		uint8_t *pData = pCommand->m_pData;
 
 		if(!CreateTextureCMD(Slot, Width, Height, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, Flags, pData))
+		{
+			free(pData);
 			return false;
+		}
 
 		free(pData);
 
@@ -6742,7 +6789,10 @@ public:
 		uint8_t *pData = pCommand->m_pData;
 
 		if(!UpdateTexture(IndexTex, VK_FORMAT_R8G8B8A8_UNORM, pData, pCommand->m_X, pCommand->m_Y, pCommand->m_Width, pCommand->m_Height))
+		{
+			free(pData);
 			return false;
+		}
 
 		free(pData);
 
@@ -6760,12 +6810,24 @@ public:
 		uint8_t *pTmpData2 = pCommand->m_pTextOutlineData;
 
 		if(!CreateTextureCMD(Slot, Width, Height, VK_FORMAT_R8_UNORM, VK_FORMAT_R8_UNORM, TextureFlag::NO_MIPMAPS, pTmpData))
+		{
+			free(pTmpData);
+			free(pTmpData2);
 			return false;
+		}
 		if(!CreateTextureCMD(SlotOutline, Width, Height, VK_FORMAT_R8_UNORM, VK_FORMAT_R8_UNORM, TextureFlag::NO_MIPMAPS, pTmpData2))
+		{
+			free(pTmpData);
+			free(pTmpData2);
 			return false;
+		}
 
 		if(!CreateNewTextDescriptorSets(Slot, SlotOutline))
+		{
+			free(pTmpData);
+			free(pTmpData2);
 			return false;
+		}
 
 		free(pTmpData);
 		free(pTmpData2);
@@ -6794,7 +6856,10 @@ public:
 		uint8_t *pData = pCommand->m_pData;
 
 		if(!UpdateTexture(IndexTex, VK_FORMAT_R8_UNORM, pData, pCommand->m_X, pCommand->m_Y, pCommand->m_Width, pCommand->m_Height))
+		{
+			free(pData);
 			return false;
+		}
 
 		free(pData);
 

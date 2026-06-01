@@ -413,9 +413,17 @@ private:
 		const size_t NewTextureSize = m_TextureDimension * m_TextureDimension;
 		uint8_t *pTmpTextFillData = static_cast<uint8_t *>(malloc(NewTextureSize));
 		uint8_t *pTmpTextOutlineData = static_cast<uint8_t *>(malloc(NewTextureSize));
+		if(pTmpTextFillData == nullptr || pTmpTextOutlineData == nullptr)
+		{
+			free(pTmpTextFillData);
+			free(pTmpTextOutlineData);
+			log_error("textrender", "Failed to allocate text texture upload buffers.");
+			return;
+		}
 		mem_copy(pTmpTextFillData, m_apTextureData[FONT_TEXTURE_FILL], NewTextureSize);
 		mem_copy(pTmpTextOutlineData, m_apTextureData[FONT_TEXTURE_OUTLINE], NewTextureSize);
-		Graphics()->LoadTextTextures(m_TextureDimension, m_TextureDimension, m_aTextures[FONT_TEXTURE_FILL], m_aTextures[FONT_TEXTURE_OUTLINE], pTmpTextFillData, pTmpTextOutlineData);
+		if(!Graphics()->LoadTextTextures(m_TextureDimension, m_TextureDimension, m_aTextures[FONT_TEXTURE_FILL], m_aTextures[FONT_TEXTURE_OUTLINE], pTmpTextFillData, pTmpTextOutlineData))
+			log_error("textrender", "Failed to create text textures.");
 	}
 
 	void UnloadTextures()
@@ -572,6 +580,13 @@ private:
 			const size_t GlyphDataSize = (size_t)Width * Height * sizeof(uint8_t);
 			uint8_t *pGlyphDataFill = static_cast<uint8_t *>(malloc(GlyphDataSize));
 			uint8_t *pGlyphDataOutline = static_cast<uint8_t *>(malloc(GlyphDataSize));
+			if(pGlyphDataFill == nullptr || pGlyphDataOutline == nullptr)
+			{
+				free(pGlyphDataFill);
+				free(pGlyphDataOutline);
+				log_debug("textrender", "Failed to allocate glyph data. Chr=%d GlyphIndex=%u", Glyph.m_Chr, Glyph.m_GlyphIndex);
+				return false;
+			}
 			mem_zero(pGlyphDataFill, GlyphDataSize);
 			for(unsigned py = 0; py < pBitmap->rows; ++py)
 			{

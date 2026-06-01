@@ -2,6 +2,8 @@
 
 #include <engine/image.h>
 
+#include <limits>
+
 CImageInfo::CImageInfo(CImageInfo &&Other)
 {
 	*this = std::move(Other);
@@ -9,6 +11,10 @@ CImageInfo::CImageInfo(CImageInfo &&Other)
 
 CImageInfo &CImageInfo::operator=(CImageInfo &&Other)
 {
+	if(this == &Other)
+		return *this;
+
+	Free();
 	m_Width = Other.m_Width;
 	m_Height = Other.m_Height;
 	m_Format = Other.m_Format;
@@ -38,7 +44,7 @@ size_t CImageInfo::PixelSize(EImageFormat Format)
 
 const char *CImageInfo::FormatName(EImageFormat Format)
 {
-	static const char *s_apNames[] = {"UNDEFINED", "RGBA", "RGB", "R", "RA"};
+	static const char *s_apNames[] = {"UNDEFINED", "RGB", "RGBA", "R", "RA"};
 	return s_apNames[(int)Format + 1];
 }
 
@@ -54,7 +60,33 @@ const char *CImageInfo::FormatName() const
 
 size_t CImageInfo::DataSize() const
 {
-	return m_Width * m_Height * PixelSize(m_Format);
+	size_t Size = 0;
+	const bool ValidSize = DataSize(Size);
+	dbg_assert(ValidSize, "Image data size overflow");
+	return ValidSize ? Size : 0;
+}
+
+bool CImageInfo::DataSize(size_t &Size) const
+{
+	if(m_Format == FORMAT_UNDEFINED)
+	{
+		Size = 0;
+		return false;
+	}
+	const size_t FormatPixelSize = PixelSize(m_Format);
+	if(m_Height != 0 && m_Width > std::numeric_limits<size_t>::max() / m_Height)
+	{
+		Size = 0;
+		return false;
+	}
+	const size_t PixelCount = m_Width * m_Height;
+	if(FormatPixelSize != 0 && PixelCount > std::numeric_limits<size_t>::max() / FormatPixelSize)
+	{
+		Size = 0;
+		return false;
+	}
+	Size = PixelCount * FormatPixelSize;
+	return true;
 }
 
 bool CImageInfo::DataEquals(const CImageInfo &Other) const
@@ -139,13 +171,20 @@ void CImageInfo::CopyRectFrom(const CImageInfo &SrcImage, size_t SrcX, size_t Sr
 
 CImageInfo CImageInfo::DeepCopy() const
 {
-	const size_t Size = DataSize();
+	size_t Size = 0;
+	if(m_pData == nullptr || !DataSize(Size))
+		return CImageInfo();
 
 	CImageInfo Copy;
 	Copy.m_Width = m_Width;
 	Copy.m_Height = m_Height;
 	Copy.m_Format = m_Format;
 	Copy.m_pData = static_cast<uint8_t *>(malloc(Size));
+	if(Copy.m_pData == nullptr)
+	{
+		Copy.Free();
+		return CImageInfo();
+	}
 	mem_copy(Copy.m_pData, m_pData, Size);
 	return Copy;
 }

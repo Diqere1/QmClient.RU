@@ -145,7 +145,7 @@ private:
 		bool Loaded = LoadBackgroundImageData(pFileData, FileSize, m_IconPath.c_str(), Image);
 		free(pFileData);
 		if(Loaded)
-			ConvertToRgba(Image);
+			Loaded = ConvertToRgba(Image) || (Image.m_pData != nullptr && Image.m_Format == CImageInfo::FORMAT_RGBA);
 
 		const CLockScope Lock(m_Lock);
 		if(Loaded)

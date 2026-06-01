@@ -94,7 +94,7 @@ class CSound : public IEngineSound
 	int *m_pMixBuffer = nullptr;
 
 	CSample *AllocSample() REQUIRES(!m_SoundLock);
-	void RateConvert(CSample &Sample) const;
+	bool RateConvert(CSample &Sample) const;
 
 	// pContextName used for error
 	bool DecodeOpus(CSample &Sample, const void *pData, unsigned DataSize, const char *pContextName) const;

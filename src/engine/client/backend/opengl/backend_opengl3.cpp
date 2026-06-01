@@ -549,6 +549,8 @@ void CCommandProcessorFragment_OpenGL3_3::TextureUpdate(int Slot, int X, int Y, 
 		uint8_t *pTmpData = ResizeImage(pTexData, OldWidth, OldHeight, Width, Height, GLFormatToPixelSize(GLFormat));
 		free(pTexData);
 		pTexData = pTmpData;
+		if(pTexData == nullptr)
+			return;
 	}
 
 	glTexSubImage2D(GL_TEXTURE_2D, 0, X, Y, Width, Height, GLFormat, GL_UNSIGNED_BYTE, pTexData);
@@ -586,6 +588,8 @@ void CCommandProcessorFragment_OpenGL3_3::TextureCreate(int Slot, int Width, int
 			uint8_t *pTmpData = ResizeImage(pTexData, OldWidth, OldHeight, Width, Height, GLFormatToPixelSize(GLFormat));
 			free(pTexData);
 			pTexData = pTmpData;
+			if(pTexData == nullptr)
+				return;
 		}
 	}
 	m_vTextures[Slot].m_Width = Width;
@@ -658,9 +662,6 @@ void CCommandProcessorFragment_OpenGL3_3::TextureCreate(int Slot, int Width, int
 				glSamplerParameterf(m_vTextures[Slot].m_Sampler2DArray, GL_TEXTURE_LOD_BIAS, ((GLfloat)m_OpenGLTextureLodBIAS / 1000.0f));
 #endif
 
-			uint8_t *pImageData3D = static_cast<uint8_t *>(malloc((size_t)Width * (size_t)Height * PixelSize));
-			if(!pImageData3D)
-				return;
 			int Image3DWidth, Image3DHeight;
 
 			int ConvertWidth = Width;
@@ -678,6 +679,23 @@ void CCommandProcessorFragment_OpenGL3_3::TextureCreate(int Slot, int Width, int
 
 				free(pTexData);
 				pTexData = pNewTexData;
+				if(pTexData == nullptr)
+				{
+					return;
+				}
+			}
+
+			size_t Image3DDataSize = 0;
+			if(!TextureBufferSize(ConvertWidth, ConvertHeight, PixelSize, Image3DDataSize))
+			{
+				free(pTexData);
+				return;
+			}
+			uint8_t *pImageData3D = static_cast<uint8_t *>(malloc(Image3DDataSize));
+			if(!pImageData3D)
+			{
+				free(pTexData);
+				return;
 			}
 
 			if(Texture2DTo3D(pTexData, ConvertWidth, ConvertHeight, PixelSize, 16, 16, pImageData3D, Image3DWidth, Image3DHeight))

@@ -15,6 +15,8 @@
 #include <engine/client/backend/backend_base.h>
 #include <engine/client/graphics_defines.h>
 
+#include <limits>
+
 class CGLSLTWProgram;
 class CGLSLPrimitiveProgram;
 class CGLSLTileProgram;
@@ -82,6 +84,27 @@ protected:
 	bool GetPresentedImageData(uint32_t &Width, uint32_t &Height, CImageInfo::EImageFormat &Format, std::vector<uint8_t> &vDstData) override;
 
 	static size_t GLFormatToPixelSize(int GLFormat);
+	static bool TextureBufferSize(size_t Width, size_t Height, size_t PixelSize, size_t &BufferSize)
+	{
+		if(Width == 0 || Height == 0 || PixelSize == 0)
+		{
+			BufferSize = 0;
+			return false;
+		}
+		if(Width > std::numeric_limits<size_t>::max() / Height)
+		{
+			BufferSize = 0;
+			return false;
+		}
+		const size_t PixelCount = Width * Height;
+		if(PixelCount > std::numeric_limits<size_t>::max() / PixelSize)
+		{
+			BufferSize = 0;
+			return false;
+		}
+		BufferSize = PixelCount * PixelSize;
+		return true;
+	}
 
 	void TextureUpdate(int Slot, int X, int Y, int Width, int Height, int GLFormat, uint8_t *pTexData);
 	void TextureCreate(int Slot, int Width, int Height, int GLFormat, int GLStoreFormat, int Flags, uint8_t *pTexData);

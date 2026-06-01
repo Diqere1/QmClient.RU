@@ -18,6 +18,7 @@
 
 #include <game/localization.h>
 
+#include <limits>
 #include <thread>
 
 #if defined(CONF_VIDEORECORDER)
@@ -416,35 +417,68 @@ void CGraphics_Threaded::UnloadTexture(CTextureHandle *pIndex)
 	FreeTextureIndex(pIndex);
 }
 
+static bool GetSpriteImageRect(const CImageInfo &ImageInfo, const CDataSprite *pSprite, size_t &x, size_t &y, size_t &w, size_t &h);
+
 IGraphics::CTextureHandle CGraphics_Threaded::LoadSpriteTexture(const CImageInfo &FromImageInfo, const CDataSprite *pSprite)
 {
-	int ImageGridX = FromImageInfo.m_Width / pSprite->m_pSet->m_Gridx;
-	int ImageGridY = FromImageInfo.m_Height / pSprite->m_pSet->m_Gridy;
-	int x = pSprite->m_X * ImageGridX;
-	int y = pSprite->m_Y * ImageGridY;
-	int w = pSprite->m_W * ImageGridX;
-	int h = pSprite->m_H * ImageGridY;
+	const char *pSpriteName = pSprite && pSprite->m_pName ? pSprite->m_pName : "(no name)";
+	size_t x = 0;
+	size_t y = 0;
+	size_t w = 0;
+	size_t h = 0;
+	if(FromImageInfo.m_pData == nullptr || !GetSpriteImageRect(FromImageInfo, pSprite, x, y, w, h))
+	{
+		log_error("graphics/texture", "Ignoring invalid sprite texture '%s'.", pSpriteName);
+		return m_NullTexture;
+	}
 
 	CImageInfo SpriteInfo;
 	SpriteInfo.m_Width = w;
 	SpriteInfo.m_Height = h;
 	SpriteInfo.m_Format = FromImageInfo.m_Format;
-	SpriteInfo.m_pData = static_cast<uint8_t *>(malloc(SpriteInfo.DataSize()));
+	size_t SpriteDataSize = 0;
+	if(!SpriteInfo.DataSize(SpriteDataSize))
+	{
+		log_error("graphics/texture", "Ignoring sprite texture '%s' with invalid data size.", pSpriteName);
+		return m_NullTexture;
+	}
+	SpriteInfo.m_pData = static_cast<uint8_t *>(malloc(SpriteDataSize));
+	if(SpriteInfo.m_pData == nullptr)
+	{
+		log_error("graphics/texture", "Failed to allocate sprite texture '%s'.", pSpriteName);
+		SpriteInfo.Free();
+		return m_NullTexture;
+	}
 	SpriteInfo.CopyRectFrom(FromImageInfo, x, y, w, h, 0, 0);
-	return LoadTextureRawMove(SpriteInfo, 0, pSprite->m_pName);
+	return LoadTextureRawMove(SpriteInfo, 0, pSpriteName);
 }
 
 bool CGraphics_Threaded::IsImageSubFullyTransparent(const CImageInfo &FromImageInfo, int x, int y, int w, int h)
 {
 	if(FromImageInfo.m_Format == CImageInfo::FORMAT_R || FromImageInfo.m_Format == CImageInfo::FORMAT_RA || FromImageInfo.m_Format == CImageInfo::FORMAT_RGBA)
 	{
+		if(FromImageInfo.m_pData == nullptr || x < 0 || y < 0 || w <= 0 || h <= 0)
+			return false;
+		if(static_cast<size_t>(x) > FromImageInfo.m_Width || static_cast<size_t>(y) > FromImageInfo.m_Height ||
+			static_cast<size_t>(w) > FromImageInfo.m_Width - static_cast<size_t>(x) ||
+			static_cast<size_t>(h) > FromImageInfo.m_Height - static_cast<size_t>(y))
+		{
+			return false;
+		}
+		size_t ImageDataSize = 0;
+		if(!FromImageInfo.DataSize(ImageDataSize))
+			return false;
 		const uint8_t *pImgData = FromImageInfo.m_pData;
 		const size_t PixelSize = FromImageInfo.PixelSize();
 		for(int iy = 0; iy < h; ++iy)
 		{
 			for(int ix = 0; ix < w; ++ix)
 			{
-				const size_t RealOffset = (x + ix) * PixelSize + (y + iy) * PixelSize * FromImageInfo.m_Width;
+				const size_t PixelX = static_cast<size_t>(x) + static_cast<size_t>(ix);
+				const size_t PixelY = static_cast<size_t>(y) + static_cast<size_t>(iy);
+				const size_t RealOffset = (PixelY * FromImageInfo.m_Width + PixelX) * PixelSize;
+				if(RealOffset >= ImageDataSize || PixelSize - 1 >= ImageDataSize - RealOffset)
+					return false;
 				if(pImgData[RealOffset + (PixelSize - 1)] > 0)
 					return false;
 			}
@@ -457,13 +491,17 @@ bool CGraphics_Threaded::IsImageSubFullyTransparent(const CImageInfo &FromImageI
 
 bool CGraphics_Threaded::IsSpriteTextureFullyTransparent(const CImageInfo &FromImageInfo, const CDataSprite *pSprite)
 {
-	int ImageGridX = FromImageInfo.m_Width / pSprite->m_pSet->m_Gridx;
-	int ImageGridY = FromImageInfo.m_Height / pSprite->m_pSet->m_Gridy;
-	int x = pSprite->m_X * ImageGridX;
-	int y = pSprite->m_Y * ImageGridY;
-	int w = pSprite->m_W * ImageGridX;
-	int h = pSprite->m_H * ImageGridY;
-	return IsImageSubFullyTransparent(FromImageInfo, x, y, w, h);
+	size_t x = 0;
+	size_t y = 0;
+	size_t w = 0;
+	size_t h = 0;
+	if(!GetSpriteImageRect(FromImageInfo, pSprite, x, y, w, h) ||
+		x > (size_t)std::numeric_limits<int>::max() || y > (size_t)std::numeric_limits<int>::max() ||
+		w > (size_t)std::numeric_limits<int>::max() || h > (size_t)std::numeric_limits<int>::max())
+	{
+		return false;
+	}
+	return IsImageSubFullyTransparent(FromImageInfo, (int)x, (int)y, (int)w, (int)h);
 }
 
 void CGraphics_Threaded::LoadTextureAddWarning(size_t Width, size_t Height, int Flags, const char *pTexName)
@@ -501,6 +539,73 @@ static CCommandBuffer::SCommand_Texture_Create LoadTextureCreateCommand(int Text
 	return Cmd;
 }
 
+static bool TextureDataSizeRgba(size_t Width, size_t Height, size_t &DataSize)
+{
+	if(Width == 0 || Height == 0 || Width > std::numeric_limits<size_t>::max() / Height)
+	{
+		DataSize = 0;
+		return false;
+	}
+	const size_t PixelCount = Width * Height;
+	if(PixelCount > std::numeric_limits<size_t>::max() / 4)
+	{
+		DataSize = 0;
+		return false;
+	}
+	DataSize = PixelCount * 4;
+	return true;
+}
+
+static bool TextureDataSizeGrayscale(size_t Width, size_t Height, size_t &DataSize)
+{
+	if(Width == 0 || Height == 0 || Width > std::numeric_limits<size_t>::max() / Height)
+	{
+		DataSize = 0;
+		return false;
+	}
+	DataSize = Width * Height;
+	return true;
+}
+
+static bool GetSpriteImageRect(const CImageInfo &ImageInfo, const CDataSprite *pSprite, size_t &x, size_t &y, size_t &w, size_t &h)
+{
+	if(pSprite == nullptr || pSprite->m_pSet == nullptr || pSprite->m_pSet->m_Gridx <= 0 || pSprite->m_pSet->m_Gridy <= 0 ||
+		pSprite->m_X < 0 || pSprite->m_Y < 0 || pSprite->m_W <= 0 || pSprite->m_H <= 0)
+	{
+		return false;
+	}
+
+	const size_t Gridx = pSprite->m_pSet->m_Gridx;
+	const size_t Gridy = pSprite->m_pSet->m_Gridy;
+	if(ImageInfo.m_Width == 0 || ImageInfo.m_Height == 0 || ImageInfo.m_Width % Gridx != 0 || ImageInfo.m_Height % Gridy != 0)
+		return false;
+
+	const size_t GridWidth = ImageInfo.m_Width / Gridx;
+	const size_t GridHeight = ImageInfo.m_Height / Gridy;
+	const size_t SpriteX = pSprite->m_X;
+	const size_t SpriteY = pSprite->m_Y;
+	const size_t SpriteW = pSprite->m_W;
+	const size_t SpriteH = pSprite->m_H;
+	if(SpriteX > std::numeric_limits<size_t>::max() / GridWidth ||
+		SpriteY > std::numeric_limits<size_t>::max() / GridHeight ||
+		SpriteW > std::numeric_limits<size_t>::max() / GridWidth ||
+		SpriteH > std::numeric_limits<size_t>::max() / GridHeight)
+	{
+		return false;
+	}
+
+	x = SpriteX * GridWidth;
+	y = SpriteY * GridHeight;
+	w = SpriteW * GridWidth;
+	h = SpriteH * GridHeight;
+	if(w == 0 || h == 0 || x > ImageInfo.m_Width || y > ImageInfo.m_Height ||
+		w > ImageInfo.m_Width - x || h > ImageInfo.m_Height - y)
+	{
+		return false;
+	}
+	return true;
+}
+
 IGraphics::CTextureHandle CGraphics_Threaded::LoadTextureRaw(const CImageInfo &Image, int Flags, const char *pTexName)
 {
 	dbg_assert(IsMainThread(), "GPU texture upload must be called from main thread");
@@ -509,16 +614,27 @@ IGraphics::CTextureHandle CGraphics_Threaded::LoadTextureRaw(const CImageInfo &I
 
 	if(Image.m_Width == 0 || Image.m_Height == 0)
 		return IGraphics::CTextureHandle();
-
-	IGraphics::CTextureHandle TextureHandle = FindFreeTextureIndex();
-	CCommandBuffer::SCommand_Texture_Create Cmd = LoadTextureCreateCommand(TextureHandle.Id(), Image.m_Width, Image.m_Height, Flags);
+	if(Image.m_pData == nullptr)
+	{
+		log_error("graphics", "Texture '%s' has no image data.", pTexName ? pTexName : "(no name)");
+		return IGraphics::CTextureHandle();
+	}
 
 	// Copy texture data and convert if necessary
-	uint8_t *pTmpData;
-	if(!ConvertToRgbaAlloc(pTmpData, Image))
+	uint8_t *pTmpData = nullptr;
+	const bool AlreadyRgba = ConvertToRgbaAlloc(pTmpData, Image);
+	if(pTmpData == nullptr)
+	{
+		log_error("graphics", "Failed to allocate texture data for '%s'.", pTexName ? pTexName : "(no name)");
+		return IGraphics::CTextureHandle();
+	}
+	if(!AlreadyRgba)
 	{
 		log_warn("graphics", "Converted image '%s' to RGBA, consider making its file format RGBA.", pTexName ? pTexName : "(no name)");
 	}
+
+	IGraphics::CTextureHandle TextureHandle = FindFreeTextureIndex();
+	CCommandBuffer::SCommand_Texture_Create Cmd = LoadTextureCreateCommand(TextureHandle.Id(), Image.m_Width, Image.m_Height, Flags);
 	Cmd.m_pData = pTmpData;
 
 	AddCmd(Cmd);
@@ -541,7 +657,16 @@ IGraphics::CTextureHandle CGraphics_Threaded::LoadTextureRawMove(CImageInfo &Ima
 	LoadTextureAddWarning(Image.m_Width, Image.m_Height, Flags, pTexName);
 
 	if(Image.m_Width == 0 || Image.m_Height == 0)
+	{
+		Image.Free();
 		return IGraphics::CTextureHandle();
+	}
+	if(Image.m_pData == nullptr)
+	{
+		log_error("graphics", "Texture '%s' has no image data.", pTexName ? pTexName : "(no name)");
+		Image.Free();
+		return IGraphics::CTextureHandle();
+	}
 
 	IGraphics::CTextureHandle TextureHandle = FindFreeTextureIndex();
 	CCommandBuffer::SCommand_Texture_Create Cmd = LoadTextureCreateCommand(TextureHandle.Id(), Image.m_Width, Image.m_Height, Flags);
@@ -587,8 +712,14 @@ IGraphics::CTextureHandle CGraphics_Threaded::LoadTexture(const char *pFilename,
 
 bool CGraphics_Threaded::LoadTextTextures(size_t Width, size_t Height, CTextureHandle &TextTexture, CTextureHandle &TextOutlineTexture, uint8_t *pTextData, uint8_t *pTextOutlineData)
 {
-	if(Width == 0 || Height == 0)
+	size_t MemSize = 0;
+	if(pTextData == nullptr || pTextOutlineData == nullptr || !TextureDataSizeGrayscale(Width, Height, MemSize))
+	{
+		free(pTextData);
+		free(pTextOutlineData);
+		log_error("graphics/texture", "Ignoring text texture create with invalid data or size.");
 		return false;
+	}
 
 	TextTexture = FindFreeTextureIndex();
 	TextOutlineTexture = FindFreeTextureIndex();
@@ -614,6 +745,15 @@ bool CGraphics_Threaded::UnloadTextTextures(CTextureHandle &TextTexture, CTextur
 
 bool CGraphics_Threaded::UpdateTextTexture(CTextureHandle TextureId, int x, int y, size_t Width, size_t Height, uint8_t *pData, bool IsMovedPointer)
 {
+	size_t MemSize = 0;
+	if(pData == nullptr || !TextureDataSizeGrayscale(Width, Height, MemSize))
+	{
+		if(IsMovedPointer)
+			free(pData);
+		log_error("graphics/texture", "Ignoring text texture update with invalid data or size.");
+		return false;
+	}
+
 	if(!IsTextureHandleAllocated(TextureId))
 	{
 		if(IsMovedPointer)
@@ -636,8 +776,12 @@ bool CGraphics_Threaded::UpdateTextTexture(CTextureHandle TextureId, int x, int 
 	}
 	else
 	{
-		const size_t MemSize = Width * Height;
 		uint8_t *pTmpData = static_cast<uint8_t *>(malloc(MemSize));
+		if(pTmpData == nullptr)
+		{
+			log_error("graphics/texture", "Failed to allocate text texture update buffer.");
+			return false;
+		}
 		mem_copy(pTmpData, pData, MemSize);
 		Cmd.m_pData = pTmpData;
 	}
@@ -648,6 +792,15 @@ bool CGraphics_Threaded::UpdateTextTexture(CTextureHandle TextureId, int x, int 
 
 bool CGraphics_Threaded::UpdateTexture(CTextureHandle TextureId, int x, int y, size_t Width, size_t Height, uint8_t *pData, bool IsMovedPointer)
 {
+	size_t MemSize = 0;
+	if(pData == nullptr || !TextureDataSizeRgba(Width, Height, MemSize))
+	{
+		if(IsMovedPointer)
+			free(pData);
+		log_error("graphics/texture", "Ignoring texture update with invalid data or size.");
+		return false;
+	}
+
 	if(!IsTextureHandleAllocated(TextureId))
 	{
 		if(IsMovedPointer)
@@ -670,8 +823,12 @@ bool CGraphics_Threaded::UpdateTexture(CTextureHandle TextureId, int x, int y, s
 	}
 	else
 	{
-		const size_t MemSize = Width * Height * 4;
 		uint8_t *pTmpData = static_cast<uint8_t *>(malloc(MemSize));
+		if(pTmpData == nullptr)
+		{
+			log_error("graphics/texture", "Failed to allocate texture update buffer.");
+			return false;
+		}
 		mem_copy(pTmpData, pData, MemSize);
 		Cmd.m_pData = pTmpData;
 	}
@@ -783,7 +940,11 @@ bool CGraphics_Threaded::CheckImageDivisibility(const char *pContextName, CImage
 			NewWidth = (NewHeight / DivY) * DivX;
 		}
 		ResizeImage(Image, NewWidth, NewHeight);
-		ImageIsValid = true;
+		ImageIsValid = Image.m_pData != nullptr && Image.m_Width == (size_t)NewWidth && Image.m_Height == (size_t)NewHeight;
+		if(!ImageIsValid)
+		{
+			log_error("graphics", "Failed to resize image '%s'.", pContextName);
+		}
 	}
 
 	return ImageIsValid;

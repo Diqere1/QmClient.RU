@@ -5,6 +5,8 @@
 
 #include <game/client/component.h>
 
+#include <vector>
+
 class CTile;
 class CTeleTile;
 
@@ -22,7 +24,7 @@ class CCollisionHitbox : public CComponent
 {
 private:
 	ivec2 m_MapDataSize;
-	int *m_pMapData = nullptr;
+	std::vector<int> m_vMapData;
 
 	float HitboxAlpha() const;
 	bool HitboxModeEnabled() const;
@@ -51,7 +53,6 @@ public:
 	int Sizeof() const override { return sizeof(*this); }
 	void OnMapLoad() override;
 	void OnRender() override;
-	~CCollisionHitbox() override { delete[] m_pMapData; }
 };
 
 #endif

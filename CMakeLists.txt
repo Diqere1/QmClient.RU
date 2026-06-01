@@ -946,7 +946,7 @@ add_dependencies(rust-bridge-shared generate_protocol)
 list(APPEND TARGETS_OWN rust-bridge-shared)
 
 set(CARGO_BUILD_ENV CARGO_TARGET_DIR=${PROJECT_BINARY_DIR} DDNET_TEST_NO_LINK=1)
-set(CARGO_TEST_ENV CARGO_TARGET_DIR=${PROJECT_BINARY_DIR} "DDNET_TEST_LIBRARIES_FILE=${PROJECT_BINARY_DIR}/rust_test_libraries.txt")
+set(CARGO_TEST_ENV --unset=DDNET_TEST_NO_LINK CARGO_TARGET_DIR=${PROJECT_BINARY_DIR} "DDNET_TEST_LIBRARIES_FILE=${PROJECT_BINARY_DIR}/rust_test_libraries.txt")
 if(APPLE)
   list(APPEND CARGO_BUILD_ENV MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
   list(APPEND CARGO_TEST_ENV MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
@@ -3606,6 +3606,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     git_revision_test.cpp
     hash_test.cpp
     huffman_test.cpp
+    image_test.cpp
     io_test.cpp
     jobs_test.cpp
     json_test.cpp
