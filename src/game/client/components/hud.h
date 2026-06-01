@@ -28,6 +28,7 @@ struct SScoreInfo
 		m_TextRankContainerIndex.Reset();
 		m_TextScoreContainerIndex.Reset();
 		m_RoundRectQuadContainerIndex = -1;
+		m_RoundRectCorners = -1;
 		m_OptionalNameTextContainerIndex.Reset();
 		m_aScoreText[0] = 0;
 		m_aRankText[0] = 0;
@@ -43,6 +44,7 @@ struct SScoreInfo
 	char m_aRankText[16];
 	char m_aPlayerNameText[MAX_NAME_LENGTH];
 	int m_RoundRectQuadContainerIndex;
+	int m_RoundRectCorners;
 	STextContainerIndex m_OptionalNameTextContainerIndex;
 
 	bool m_Initialized;

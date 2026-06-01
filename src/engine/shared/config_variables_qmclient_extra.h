@@ -8,6 +8,7 @@
 #endif
 
 // QmClient specific variables
+MACRO_CONFIG_INT(QmShowOutdatedVersionWarning, qm_show_outdated_version_warning, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示版本过旧提示")
 
 // Nameplate
 MACRO_CONFIG_INT(QmNameplateFreeMove, qm_nameplate_free_move, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "名字板元素允许在框内自由移动")

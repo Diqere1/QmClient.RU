@@ -332,7 +332,12 @@ static void FormatServerbrowserPing(char (&aBuffer)[N], const CServerInfo *pInfo
 		Localizable("SA"), // LOC_SOUTH_AMERICA
 		Localizable("CHN"), // LOC_CHINA
 	};
-	dbg_assert(0 <= pInfo->m_Location && pInfo->m_Location < CServerInfo::NUM_LOCS, "location out of range");
+	if(pInfo->m_Location < 0 || pInfo->m_Location >= CServerInfo::NUM_LOCS)
+	{
+		log_warn("serverbrowser", "Invalid estimated ping location %d", pInfo->m_Location);
+		str_copy(aBuffer, Localize(LOCATION_NAMES[CServerInfo::LOC_UNKNOWN]));
+		return;
+	}
 	str_copy(aBuffer, Localize(LOCATION_NAMES[pInfo->m_Location]));
 }
 

@@ -37,23 +37,31 @@ class COutLineLayer
 private:
 	CMapItemLayerTilemap *GetLayer(CGameClient *pThis) const
 	{
-		if(m_Type == OutlineLayer::GAME)
+		switch(m_Type)
+		{
+		case OutlineLayer::GAME:
 			return pThis->Layers()->GameLayer();
-		if(m_Type == OutlineLayer::FRONT)
+		case OutlineLayer::FRONT:
 			return pThis->Layers()->FrontLayer();
-		if(m_Type == OutlineLayer::TELE)
+		case OutlineLayer::TELE:
 			return pThis->Layers()->TeleLayer();
-		dbg_assert(false, "Invalid value for m_Type");
+		default:
+			return nullptr;
+		}
 	}
 	int GetLayerData(CGameClient *pThis) const
 	{
-		if(m_Type == OutlineLayer::GAME)
+		switch(m_Type)
+		{
+		case OutlineLayer::GAME:
 			return pThis->Layers()->GameLayer()->m_Data;
-		if(m_Type == OutlineLayer::FRONT)
+		case OutlineLayer::FRONT:
 			return pThis->Layers()->FrontLayer()->m_Front;
-		if(m_Type == OutlineLayer::TELE)
+		case OutlineLayer::TELE:
 			return pThis->Layers()->TeleLayer()->m_Tele;
-		dbg_assert(false, "Invalid value for m_Type");
+		default:
+			return -1;
+		}
 	}
 
 public:
@@ -73,7 +81,11 @@ public:
 	void SetData(CGameClient *pThis, int *pData, const ivec2 &Size) const
 	{
 		const auto *pLayer = GetLayer(pThis);
+		if(!pLayer)
+			return;
 		const auto *pTiles = (CTile *)pThis->Layers()->Map()->GetData(GetLayerData(pThis));
+		if(!pTiles)
+			return;
 		for(int y = 0; y < pLayer->m_Height; ++y)
 		{
 			for(int x = 0; x < pLayer->m_Width; ++x)
@@ -205,9 +217,9 @@ void COutlines::OnRender()
 			class COutlineConfig
 			{
 			public:
-				const int &m_Enable;
-				const int &m_Width;
-				const unsigned int &m_Color;
+				int m_Enable;
+				int m_Width;
+				unsigned int m_Color;
 			};
 			const COutlineConfig Config = [&]() -> COutlineConfig {
 				if(Type == OUTLINE_SOLID)
@@ -224,7 +236,13 @@ void COutlines::OnRender()
 					return {g_Config.m_TcOutlineKill, g_Config.m_TcOutlineWidthKill, g_Config.m_TcOutlineColorKill};
 				if(Type == OUTLINE_TELE)
 					return {g_Config.m_TcOutlineTele, g_Config.m_TcOutlineWidthTele, g_Config.m_TcOutlineColorTele};
-				dbg_assert(false, "Invalid value for Type at %d, %d/%d, %d", x, y, m_MapDataSize.x, m_MapDataSize.y);
+				static bool s_InvalidOutlineTypeWarned = false;
+				if(!s_InvalidOutlineTypeWarned)
+				{
+					s_InvalidOutlineTypeWarned = true;
+					log_warn("outlines", "Invalid outline type %d at %d,%d on %dx%d map", Type, x, y, m_MapDataSize.x, m_MapDataSize.y);
+				}
+				return {0, 0, 0};
 			}();
 			if(!Config.m_Enable || Config.m_Width <= 0)
 				continue;

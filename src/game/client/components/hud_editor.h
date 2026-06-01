@@ -6,6 +6,8 @@
 #include <game/client/lineinput.h>
 #include <game/client/ui_rect.h>
 
+#include <engine/graphics.h>
+
 #include <array>
 #include <vector>
 
@@ -48,6 +50,12 @@ public:
 		float m_ScreenX1 = 0.0f;
 		float m_ScreenY1 = 0.0f;
 		CUIRect m_TargetRect{};
+		CUIRect m_VisibleRect{};
+		int m_Corners = IGraphics::CORNER_ALL;
+		bool m_AnchoredLeft = false;
+		bool m_AnchoredRight = false;
+		bool m_AnchoredTop = false;
+		bool m_AnchoredBottom = false;
 	};
 
 	CHudEditor();

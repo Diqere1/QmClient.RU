@@ -71,6 +71,16 @@ namespace
 			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
 	}
 
+	ColorRGBA SettingsUiColorSurface(float AlphaScale, float ColorScale)
+	{
+		const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
+		return ColorRGBA(
+			std::clamp(UiColor.r * ColorScale, 0.0f, 1.0f),
+			std::clamp(UiColor.g * ColorScale, 0.0f, 1.0f),
+			std::clamp(UiColor.b * ColorScale, 0.0f, 1.0f),
+			std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f));
+	}
+
 }
 
 bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLabel, unsigned *pBaseColor, char *pGradient, int GradientSize, ColorRGBA DefaultColor, CButtonContainer *pResetButton, CButtonContainer *pAddButton, CButtonContainer *pRemoveButton, unsigned *pColorValues, bool CheckBoxSpacing, int *pCheckBoxValue)
@@ -3491,12 +3501,16 @@ void CMenus::RenderSettings(CUIRect MainView)
 	// render background
 	CUIRect Button, TabBar, RestartBar;
 	const float TabBarWidth = std::clamp(MainView.w * 0.16f, 132.0f, 168.0f);
-	MainView.Draw(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.85f), IGraphics::CORNER_B, ui_token::radius::CARD);
+	const ColorRGBA SettingsBackingColor = SettingsUiColorSurface(0.38f, 0.16f);
+	const ColorRGBA SettingsTabBarColor = SettingsUiColorSurface(0.82f, 0.18f);
+	const ColorRGBA SettingsContentColor = SettingsUiColorSurface(0.70f, 0.16f);
+	const ColorRGBA SettingsAccentColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
+	MainView.Draw(SettingsBackingColor, IGraphics::CORNER_B, ui_token::radius::CARD);
 	MainView.Margin(std::clamp(MainView.w * 0.012f, 8.0f, 14.0f), &MainView);
 	MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
 	MainView.VSplitRight(12.0f, &MainView, nullptr);
-	TabBar.Draw(ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	MainView.Draw(ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	TabBar.Draw(SettingsTabBarColor, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+	MainView.Draw(SettingsContentColor, IGraphics::CORNER_ALL, ui_token::radius::CARD);
 	const float ContentMargin = std::clamp(MainView.w * 0.018f, 14.0f, 22.0f);
 	MainView.Margin(ContentMargin, &MainView);
 
@@ -3529,7 +3543,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 			const uint64_t NodeKey = BuildUiAnimNodeKey(MakeUiScopeHash("settings_v2_nav"), reinterpret_cast<uint64_t>(&m_aSettingsTabButtons[i]));
 			const float NavStrength = std::clamp(ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::ALPHA, (Active || Hovered) ? 1.0f : 0.0f, ui_token::motion::BTN_HOVER.m_DurationSec, ui_token::motion::BTN_HOVER.m_Easing), 0.0f, 1.0f);
 			ColorRGBA DefaultColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(0.25f + NavStrength * 0.85f);
-			ColorRGBA ActiveColor = ui_token::color::ACCENT_PRIMARY_DIM.WithMultipliedAlpha(1.35f);
+			ColorRGBA ActiveColor = SettingsAccentColor.WithAlpha(std::clamp(SettingsAccentColor.a * 0.24f, 0.0f, 1.0f));
 			ColorRGBA HoverColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(1.35f);
 			if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], &DefaultColor, &ActiveColor, &HoverColor, ui_token::radius::BASE, nullptr, &m_aSettingsTabLabelElements[i]))
 				g_Config.m_UiSettingsPage = i;
@@ -3538,7 +3552,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 				CUIRect Accent = Button;
 				Accent.VSplitLeft(3.0f, &Accent, nullptr);
 				Accent.HMargin(5.0f, &Accent);
-				Accent.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_ALL, 2.0f);
+				Accent.Draw(SettingsAccentColor, IGraphics::CORNER_ALL, 2.0f);
 			}
 		}
 
@@ -4603,22 +4617,6 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		LeftView.HSplitTop(LineSize, &Button, &LeftView);
 		if(g_Config.m_ClShowDirection > 0)
 			Ui()->DoScrollbarOption(&g_Config.m_ClDirectionSize, &g_Config.m_ClDirectionSize, &Button, Localize("Size of key press icons"), -50, 100);
-
-		// ***** Name Plate Free Move ***** //
-		Ui()->DoLabel_AutoLineSize(Localize("Free move"), HeadlineFontSize, TEXTALIGN_ML, &RightView, HeadlineHeight);
-		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
-
-		RightView.HSplitTop(LineSize, &Button, &RightView);
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateFreeMoveX, Localize("X free move"), &g_Config.m_QmNameplateFreeMoveX, &Button, LineSize);
-		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
-
-		RightView.HSplitTop(LineSize, &Button, &RightView);
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateFreeMoveY, Localize("Y free move"), &g_Config.m_QmNameplateFreeMoveY, &Button, LineSize);
-		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
-
-		Ui()->DoLabel_AutoLineSize(Localize("Enable an axis, then drag visible nameplate rows in the preview."), 12.0f, TEXTALIGN_ML, &RightView, LineSize * 2.0f);
-
-		RightView.HSplitTop(MarginBetweenViews, nullptr, &RightView);
 
 		// ***** Name Plate Preview ***** //
 		Ui()->DoLabel_AutoLineSize(Localize("Preview"), HeadlineFontSize,

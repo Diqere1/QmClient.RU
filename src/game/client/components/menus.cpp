@@ -72,6 +72,22 @@ namespace
 		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 	}
 
+	ColorRGBA MenuUiColorSurface(float AlphaScale, float ColorScale)
+	{
+		const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
+		return ColorRGBA(
+			std::clamp(UiColor.r * ColorScale, 0.0f, 1.0f),
+			std::clamp(UiColor.g * ColorScale, 0.0f, 1.0f),
+			std::clamp(UiColor.b * ColorScale, 0.0f, 1.0f),
+			std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f));
+	}
+
+	ColorRGBA MenuUiColorAccent(float AlphaScale)
+	{
+		const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
+		return UiColor.WithAlpha(std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f));
+	}
+
 	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 	{
 		if(!PerfDebugEnabled())
@@ -817,15 +833,15 @@ int CMenus::DoMenuTabV2(CButtonContainer *pButtonContainer, const char *pText, b
 {
 	// Compose target background color from active / hover / idle states. Custom
 	// overrides are honored when supplied (Quit red, Home news green, favorite
-	// community appear-fade etc.); otherwise we fall back to feat-003 tokens.
+	// community appear-fade etc.); otherwise tab buttons are tinted by ui_color.
 	const bool Hover = Ui()->HotItem() == static_cast<const void *>(pButtonContainer);
 	ColorRGBA Target;
 	if(Active)
-		Target = pCustomActive != nullptr ? *pCustomActive : ui_token::color::ACCENT_PRIMARY_DIM;
+		Target = pCustomActive != nullptr ? *pCustomActive : MenuUiColorSurface(0.82f, 0.22f);
 	else if(Hover)
-		Target = pCustomHover != nullptr ? *pCustomHover : ui_token::color::SURFACE_HIGHLIGHT;
+		Target = pCustomHover != nullptr ? *pCustomHover : MenuUiColorSurface(0.62f, 0.20f);
 	else
-		Target = pCustomDefault != nullptr ? *pCustomDefault : ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f);
+		Target = pCustomDefault != nullptr ? *pCustomDefault : MenuUiColorSurface(0.45f, 0.16f);
 
 	const uint64_t NodeKey = BuildUiAnimNodeKey(MakeUiScopeHash("menubar_v2_tab"), reinterpret_cast<uint64_t>(pButtonContainer));
 	CUiV2AnimationRuntime &AnimRt = GameClient()->UiRuntimeV2()->AnimRuntime();
@@ -868,8 +884,8 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		dbg_assert_failed("Client state %d is invalid for RenderMenubar", ClientState);
 	}
 
-	// feat-004: track the rect of whichever tab matches ActivePage so we can
-	// paint a Steam-blue underline indicator after all tabs are rendered.
+	// Track the rect of whichever tab matches ActivePage so we can paint the
+	// ui_color underline indicator after all tabs are rendered.
 	CUIRect MenubarActiveRect = {0.0f, 0.0f, 0.0f, 0.0f};
 	bool MenubarHaveActive = false;
 	auto MenubarTrackActive = [&](int Page, const CUIRect &R) {
@@ -1090,9 +1106,9 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			AnimatedButton.x += (Button.w - RevealWidth) * 0.5f;
 			AnimatedButton.w = RevealWidth;
 
-			ColorRGBA InactiveColor = ms_ColorTabbarInactive;
-			ColorRGBA ActiveColor = ms_ColorTabbarActive;
-			ColorRGBA HoverColor = ms_ColorTabbarHover;
+			ColorRGBA InactiveColor = MenuUiColorSurface(0.45f, 0.16f);
+			ColorRGBA ActiveColor = MenuUiColorSurface(0.82f, 0.22f);
+			ColorRGBA HoverColor = MenuUiColorSurface(0.62f, 0.20f);
 			InactiveColor.a *= AppearStrength;
 			ActiveColor.a *= AppearStrength;
 			HoverColor.a *= AppearStrength;
@@ -1201,10 +1217,9 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		}
 	}
 
-	// feat-004: draw a 2px ACCENT_PRIMARY underline below the active tab. The
-	// X/W position eases between tabs via the v2 runtime so changing pages
-	// glides instead of snapping. Indicator is omitted when there is no
-	// determinable active tab (e.g. on the home start screen).
+	// Draw a 2px ui_color underline below the active tab. The X/W position
+	// eases between tabs via the v2 runtime so changing pages glides instead of
+	// snapping. Indicator is omitted when there is no determinable active tab.
 	if(MenubarHaveActive)
 	{
 		CUIRect IndicatorTarget;
@@ -1216,7 +1231,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		const uint64_t IndicatorNode = BuildUiAnimNodeKey(MakeUiScopeHash("menubar_v2_indicator"), static_cast<uint64_t>(ClientState));
 		CUiV2AnimationRuntime &AnimRt = GameClient()->UiRuntimeV2()->AnimRuntime();
 		const CUIRect IndicatorRect = ResolveUiAnimValueRect(AnimRt, IndicatorNode, IndicatorTarget, ui_curve::EMPHASIZED.m_DurationSec, ui_curve::EMPHASIZED.m_Easing);
-		IndicatorRect.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_NONE, 0.0f);
+		IndicatorRect.Draw(MenuUiColorAccent(1.0f), IGraphics::CORNER_NONE, 0.0f);
 	}
 
 	if(NewPage != -1)
@@ -1783,10 +1798,8 @@ void CMenus::Render()
 		{
 			RenderBackground();
 		}
-		// feat-004: deep glass overlay on the menu background so feat-003 cards
-		// and the modern nav widgets read with adequate contrast. Fades in
-		// over 0.4s on first entry so the transition out of the loading screen
-		// is not abrupt.
+		// Keep this overlay neutral so the UI color setting does not tint the
+		// start menu background image.
 		{
 			const uint64_t OverlayKey = BuildUiAnimNodeKey(MakeUiScopeHash("menu_bg_overlay"), 0);
 			const float FadeIn = ResolveUiAnimValue(GameClient()->UiRuntimeV2()->AnimRuntime(), OverlayKey, EUiAnimProperty::ALPHA, 1.0f, ui_curve::DECELERATE.m_DurationSec + 0.1f, ui_curve::DECELERATE.m_Easing);
@@ -3229,22 +3242,9 @@ void CMenus::UpdateColors()
 	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f);
 	ms_ColorTabbarHoverOutgame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f);
 
-	const float ColorIngameScaleI = 0.5f;
-	const float ColorIngameScaleA = 0.2f;
-
-	ms_ColorTabbarInactiveIngame = ColorRGBA(
-		ms_GuiColor.r * ColorIngameScaleI,
-		ms_GuiColor.g * ColorIngameScaleI,
-		ms_GuiColor.b * ColorIngameScaleI,
-		ms_GuiColor.a * 0.8f);
-
-	ms_ColorTabbarActiveIngame = ColorRGBA(
-		ms_GuiColor.r * ColorIngameScaleA,
-		ms_GuiColor.g * ColorIngameScaleA,
-		ms_GuiColor.b * ColorIngameScaleA,
-		ms_GuiColor.a);
-
-	ms_ColorTabbarHoverIngame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.75f);
+	ms_ColorTabbarInactiveIngame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f);
+	ms_ColorTabbarActiveIngame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f);
+	ms_ColorTabbarHoverIngame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f);
 }
 
 void CMenus::RenderBackground()

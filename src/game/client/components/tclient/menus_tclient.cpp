@@ -2597,7 +2597,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 
 			CurrentColumn.HSplitTop(MarginExtraSmall, nullptr, &CurrentColumn);
 			static std::vector<const char *> s_TrailDropDownNames;
-			s_TrailDropDownNames = {Localize("Solid"), Localize("Tee"), Localize("Rainbow"), Localize("Speed")};
+			s_TrailDropDownNames = {Localize("Solid"), Localize("Tee"), Localize("Rainbow"), Localize("Speed"), Localize("Random")};
 			static CUi::SDropDownState s_TrailDropDownState;
 			static CScrollRegion s_TrailDropDownScrollRegion;
 			s_TrailDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_TrailDropDownScrollRegion;
