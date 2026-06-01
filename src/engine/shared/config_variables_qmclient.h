@@ -16,6 +16,7 @@ MACRO_CONFIG_INT(QmPerfDebugThresholdMs, qm_perf_debug_threshold_ms, 4, 1, 1000,
 MACRO_CONFIG_INT(QmUiRuntimeV2Debug, qm_ui_runtime_v2_debug, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用 UI 运行时 v2 调试日志")
 MACRO_CONFIG_INT(DbgQmUiDogfood, dbg_qm_ui_dogfood, 0, 0, 1, CFGFLAG_CLIENT, "展示 feat-003 共享 UI 原语 dogfood 页面（接管 QmClient 设置页，用于视觉验证 11 个原语 + spring/easing 动画）")
 MACRO_CONFIG_INT(QmNewUi, qm_new_ui, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用新版设置页面 UI")
+MACRO_CONFIG_INT(QmShowOutdatedVersionWarning, qm_show_outdated_version_warning, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示版本过旧提示")
 
 // Report / 举报
 MACRO_CONFIG_STR(QmReportEndpoint, qm_report_endpoint, 128, "http://124.222.146.111:8790", CFGFLAG_CLIENT | CFGFLAG_SAVE, "举报服务地址")

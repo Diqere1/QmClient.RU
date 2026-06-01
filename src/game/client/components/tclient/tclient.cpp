@@ -2010,7 +2010,7 @@ void CTClient::OnUpdate()
 				}
 				m_AutoUpdateAfterCheck = false;
 			}
-			else if(InfoOk && m_FetchedTClientInfo && NeedUpdate())
+			else if(g_Config.m_QmShowOutdatedVersionWarning && InfoOk && m_FetchedTClientInfo && NeedUpdate())
 			{
 				Client()->AddWarning(SWarning(Localize("更新提示"), Localize("当前版本不是最新版，请前往 QQ 群更新最新版")));
 			}
@@ -3395,7 +3395,7 @@ void CTClient::RenderMiniVoteHud(bool HudEditorPreview)
 {
 	CUIRect View = {0.0f, 60.0f, 70.0f, 35.0f};
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::Voting, View);
-	View.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_R, 3.0f);
+	View.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), HudEditorScope.m_Corners, 3.0f);
 	View.Margin(3.0f, &View);
 
 	SLabelProperties Props;

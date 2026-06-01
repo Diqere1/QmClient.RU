@@ -365,7 +365,7 @@ LEVEL IConsole::ToLogLevel(int Level)
 	case IConsole::OUTPUT_LEVEL_DEBUG:
 		return LEVEL_TRACE;
 	}
-	dbg_assert(0, "invalid log level");
+	log_warn("console", "Invalid log level %d", Level);
 	return LEVEL_INFO;
 }
 
@@ -373,7 +373,8 @@ int IConsole::ToLogLevelFilter(int Level)
 {
 	if(!(-3 <= Level && Level <= 2))
 	{
-		dbg_assert(0, "invalid log level filter");
+		log_warn("console", "Invalid log level filter %d", Level);
+		return 0;
 	}
 	return Level + 2;
 }

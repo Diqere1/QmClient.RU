@@ -1,5 +1,8 @@
 #include "trails.h"
 
+#include <base/log.h>
+#include <base/math.h>
+
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 
@@ -7,6 +10,16 @@
 #include <game/client/components/effects.h>
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
+
+namespace
+{
+constexpr int TRAIL_HISTORY_SIZE = 200;
+
+int TrailHistoryIndex(int Tick)
+{
+	return ((Tick % TRAIL_HISTORY_SIZE) + TRAIL_HISTORY_SIZE) % TRAIL_HISTORY_SIZE;
+}
+} // namespace
 
 bool CTrails::ShouldPredictPlayer(int ClientId)
 {
@@ -25,7 +38,7 @@ void CTrails::ClearAllHistory()
 }
 void CTrails::ClearHistory(int ClientId)
 {
-	for(int i = 0; i < 200; ++i)
+	for(int i = 0; i < TRAIL_HISTORY_SIZE; ++i)
 		m_History[ClientId][i] = {{}, -1};
 	m_HistoryValid[ClientId] = false;
 }
@@ -172,7 +185,7 @@ void CTrails::OnRender()
 
 		const vec2 CurServerPos = vec2(GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur.m_X, GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur.m_Y);
 		const vec2 PrevServerPos = vec2(GameClient()->m_Snap.m_aCharacters[ClientId].m_Prev.m_X, GameClient()->m_Snap.m_aCharacters[ClientId].m_Prev.m_Y);
-		m_History[ClientId][GameTick % 200] = {
+		m_History[ClientId][TrailHistoryIndex(GameTick)] = {
 			mix(PrevServerPos, CurServerPos, IntraTick),
 			GameTick,
 		};
@@ -219,19 +232,20 @@ void CTrails::OnRender()
 		{
 			CTrailPart Part;
 			int PosTick = StartTick - i;
+			const int HistoryIndex = TrailHistoryIndex(PosTick);
 			if(PredictPlayer)
 			{
-				if(GameClient()->m_aClients[ClientId].m_aPredTick[PosTick % 200] != PosTick)
+				if(GameClient()->m_aClients[ClientId].m_aPredTick[HistoryIndex] != PosTick)
 					continue;
-				Part.m_Pos = GameClient()->m_aClients[ClientId].m_aPredPos[PosTick % 200];
+				Part.m_Pos = GameClient()->m_aClients[ClientId].m_aPredPos[HistoryIndex];
 				if(i == TrailLength - 1)
 					TrailFull = true;
 			}
 			else
 			{
-				if(m_History[ClientId][PosTick % 200].m_Tick != PosTick)
+				if(m_History[ClientId][HistoryIndex].m_Tick != PosTick)
 					continue;
-				Part.m_Pos = m_History[ClientId][PosTick % 200].m_Pos;
+				Part.m_Pos = m_History[ClientId][HistoryIndex].m_Pos;
 				if(i == TrailLength - 2 || i == TrailLength - 3)
 					TrailFull = true;
 			}
@@ -303,9 +317,25 @@ void CTrails::OnRender()
 				Part.m_Col = color_cast<ColorRGBA>(ColorHSLA(65280 * ((int)(Speed * Speed / 12.5f) + 1)).UnclampLighting(ColorHSLA::DARKEST_LGT));
 				break;
 			}
+			case COLORMODE_RANDOM:
+			{
+				const unsigned Seed = (unsigned)ClientId * 0x45d9f3bu + (unsigned)Part.m_Tick * 0x119de1f3u;
+				const float Hue = (Seed & 0xffff) / 65535.0f;
+				const float Lightness = 0.45f + ((Seed >> 16) & 0xff) / 255.0f * 0.25f;
+				Part.m_Col = color_cast<ColorRGBA>(ColorHSLA(Hue, 1.0f, Lightness));
+				break;
+			}
 			default:
-				dbg_assert(false, "Invalid value for g_Config.m_TcTeeTrailColorMode");
-				dbg_break();
+			{
+				static int s_LastInvalidColorMode = 0;
+				if(s_LastInvalidColorMode != g_Config.m_TcTeeTrailColorMode)
+				{
+					s_LastInvalidColorMode = g_Config.m_TcTeeTrailColorMode;
+					log_warn("trail", "Invalid tee trail color mode %d, falling back to solid color", g_Config.m_TcTeeTrailColorMode);
+				}
+				Part.m_Col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_TcTeeTrailColor));
+				break;
+			}
 			}
 
 			Part.m_Col.a = Alpha;

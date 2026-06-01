@@ -1101,7 +1101,7 @@ void CHud::RenderGameTimer()
 	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT);
 	TextRender()->TextOutlineColor(0.0f, 0.0f, 0.0f, 0.42f);
 
-	DrawSmoothRoundedRect(Graphics(), TimerBoxX, TimerCapsule.m_BoxY, CombinedWidth, TimerCapsule.m_BoxH, TimerRadius, ColorRGBA(0.04f, 0.05f, 0.07f, 0.80f));
+	DrawSmoothRoundedRect(Graphics(), TimerBoxX, TimerCapsule.m_BoxY, CombinedWidth, TimerCapsule.m_BoxH, TimerRadius, ColorRGBA(0.04f, 0.05f, 0.07f, 0.80f), HudEditorScope.m_Corners);
 	if(TimerCapsule.m_IsCritical)
 		TextRender()->TextColor(1.0f, 0.25f, 0.25f, TimerCapsule.m_Alpha);
 	else
@@ -1171,6 +1171,7 @@ void CHud::RenderScoreHud()
 	if(!(GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_GAMEOVER))
 	{
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::ScoreHud, {m_Width - 150.0f, 229.0f, 150.0f, 56.0f});
+		const int ScoreHudCorners = HudEditorScope.m_Corners;
 		float StartY = 229.0f; // the height of this display is 56, so EndY is 285
 
 		const float ScoreSingleBoxHeight = 18.0f;
@@ -1193,6 +1194,8 @@ void CHud::RenderScoreHud()
 			bool RecreateRect = ForceScoreInfoInit;
 			for(int t = 0; t < 2; t++)
 			{
+				if(m_aScoreInfo[t].m_RoundRectCorners != ScoreHudCorners)
+					RecreateRect = true;
 				if(aRecreateTeamScore[t])
 				{
 					m_aScoreInfo[t].m_ScoreTextWidth = TextRender()->TextWidth(14.0f, aScoreTeam[t == 0 ? TEAM_RED : TEAM_BLUE], -1, -1.0f);
@@ -1216,7 +1219,8 @@ void CHud::RenderScoreHud()
 						Graphics()->SetColor(0.975f, 0.17f, 0.17f, 0.3f);
 					else
 						Graphics()->SetColor(0.17f, 0.46f, 0.975f, 0.3f);
-					m_aScoreInfo[t].m_RoundRectQuadContainerIndex = Graphics()->CreateRectQuadContainer(m_Width - ScoreWidthMax - ImageSize - 2 * Split, StartY + t * 20, ScoreWidthMax + ImageSize + 2 * Split, ScoreSingleBoxHeight, 5.0f, IGraphics::CORNER_L);
+					m_aScoreInfo[t].m_RoundRectQuadContainerIndex = Graphics()->CreateRectQuadContainer(m_Width - ScoreWidthMax - ImageSize - 2 * Split, StartY + t * 20, ScoreWidthMax + ImageSize + 2 * Split, ScoreSingleBoxHeight, 5.0f, ScoreHudCorners);
+					m_aScoreInfo[t].m_RoundRectCorners = ScoreHudCorners;
 				}
 				Graphics()->TextureClear();
 				Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1350,6 +1354,8 @@ void CHud::RenderScoreHud()
 			bool RecreateRect = ForceScoreInfoInit;
 			for(int t = 0; t < 2; t++)
 			{
+				if(m_aScoreInfo[t].m_RoundRectCorners != ScoreHudCorners)
+					RecreateRect = true;
 				if(RecreateScores)
 				{
 					m_aScoreInfo[t].m_ScoreTextWidth = TextRender()->TextWidth(14.0f, aScore[t], -1, -1.0f);
@@ -1396,7 +1402,8 @@ void CHud::RenderScoreHud()
 						Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.25f);
 					else
 						Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.25f);
-					m_aScoreInfo[t].m_RoundRectQuadContainerIndex = Graphics()->CreateRectQuadContainer(m_Width - ScoreWidthMax - ImageSize - 2 * Split - PosSize, StartY + t * 20, ScoreWidthMax + ImageSize + 2 * Split + PosSize, ScoreSingleBoxHeight, 5.0f, IGraphics::CORNER_L);
+					m_aScoreInfo[t].m_RoundRectQuadContainerIndex = Graphics()->CreateRectQuadContainer(m_Width - ScoreWidthMax - ImageSize - 2 * Split - PosSize, StartY + t * 20, ScoreWidthMax + ImageSize + 2 * Split + PosSize, ScoreSingleBoxHeight, 5.0f, ScoreHudCorners);
+					m_aScoreInfo[t].m_RoundRectCorners = ScoreHudCorners;
 				}
 				Graphics()->TextureClear();
 				Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1753,9 +1760,9 @@ void CHud::RenderDummyMiniMap()
 	const SHudDummyMiniViewState ViewState = BuildHudDummyMiniViewState(*GameClient(), *Client(), GameClient()->m_HudEditor.IsActive(), DummyClientId, MiniViewClientId);
 
 	const float Radius = std::clamp(MiniH * 0.11f, 5.0f, 7.5f);
-	DrawSmoothRoundedRect(Graphics(), MiniX + 0.8f, MiniY + 1.2f, MiniW, MiniH, Radius, ColorRGBA(0.0f, 0.0f, 0.0f, 0.18f));
-	DrawSmoothRoundedRect(Graphics(), MiniX, MiniY, MiniW, MiniH, Radius, ColorRGBA(0.02f, 0.03f, 0.05f, 0.92f));
-	DrawSmoothRoundedRect(Graphics(), MiniX + 0.75f, MiniY + 0.75f, maximum(0.0f, MiniW - 1.5f), maximum(0.0f, MiniH - 1.5f), maximum(0.0f, Radius - 0.55f), ViewState.m_TargetAccent.WithAlpha(0.16f));
+	DrawSmoothRoundedRect(Graphics(), MiniX + 0.8f, MiniY + 1.2f, MiniW, MiniH, Radius, ColorRGBA(0.0f, 0.0f, 0.0f, 0.18f), HudEditorScope.m_Corners);
+	DrawSmoothRoundedRect(Graphics(), MiniX, MiniY, MiniW, MiniH, Radius, ColorRGBA(0.02f, 0.03f, 0.05f, 0.92f), HudEditorScope.m_Corners);
+	DrawSmoothRoundedRect(Graphics(), MiniX + 0.75f, MiniY + 0.75f, maximum(0.0f, MiniW - 1.5f), maximum(0.0f, MiniH - 1.5f), maximum(0.0f, Radius - 0.55f), ViewState.m_TargetAccent.WithAlpha(0.16f), HudEditorScope.m_Corners);
 
 	const float FrameInset = 1.45f;
 	const float FrameX = MiniX + FrameInset;
@@ -3593,7 +3600,7 @@ void CHud::RenderMediaIsland()
 	IslandBackgroundColor.a = std::clamp(g_Config.m_QmHudIslandBgOpacity / 100.0f, 0.0f, 1.0f);
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::MediaIsland, EditorTransformRect, EditorVisibleRect);
 
-	DrawSmoothRoundedRect(Graphics(), IslandX, IslandY, UnifiedWidth, AnimatedIslandHeight, Radius, IslandBackgroundColor);
+	DrawSmoothRoundedRect(Graphics(), IslandX, IslandY, UnifiedWidth, AnimatedIslandHeight, Radius, IslandBackgroundColor, HudEditorScope.m_Corners);
 
 	if(ShowCover && !MediaState.m_AlbumArt.IsValid())
 	{
@@ -4327,7 +4334,7 @@ void CHud::RenderSpectatorCount()
 		StartY = maximum(0.0f, StartY);
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::SpectatorCount, {StartX, StartY, BoxWidth, BoxHeight});
 
-		Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_L, ui_token::radius::BASE);
+		Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 		const float y = StartY + BoxHeight / 3.0f;
 		const float x = StartX + 2.0f;
@@ -4357,7 +4364,7 @@ void CHud::RenderSpectatorCount()
 		StartY = 0.0f;
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::SpectatorCount, {StartX, StartY, BoxWidth, BoxHeight});
 
-		Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_B, ui_token::radius::BASE);
+		Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 		const float y = StartY + (BoxHeight - Fontsize) / 2.0f;
 		float x = StartX + 5.0f;
@@ -4393,7 +4400,7 @@ void CHud::RenderDummyActions()
 
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::DummyActions, {StartX, StartY, BoxWidth, BoxHeight});
 
-	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_L, ui_token::radius::BASE);
+	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 	float y = StartY + 2;
 	float x = StartX + 2;
@@ -4801,7 +4808,7 @@ void CHud::RenderMovementInformation()
 	m_MovementInfoBoxH = BoxHeight;
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::MovementInfo, {StartX, StartY, BoxWidth, BoxHeight});
 
-	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_L, ui_token::radius::BASE);
+	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 	const bool HasMovementContent = ShowMovementInfo && MovementBoxHeight > 0.0f;
 	if(HasMovementContent)
@@ -5052,7 +5059,7 @@ void CHud::RenderJumpHint()
 	const float StartY = std::clamp(m_Height * std::clamp(g_Config.m_TcJumpHintY, 0, 100) / 100.0f, 0.0f, MaxY);
 
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::JumpHint, {StartX, StartY, BoxWidth, BoxHeight});
-	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::BASE);
+	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 	CTextCursor Cursor;
 	Cursor.SetPosition(vec2(StartX + PaddingX, StartY + PaddingY));
@@ -5123,9 +5130,9 @@ void CHud::RenderMapProgressBar()
 	const float TextY = std::round(std::clamp(BarY - TextSize - TextGap, 2.0f, maximum(2.0f, m_Height - TextSize - 2.0f)));
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::MapProgressBar, {BarX, TextY, BarWidth, BarY + BarHeight - TextY});
 
-	DrawSmoothRoundedRect(Graphics(), BarX, BarY, BarWidth, BarHeight, BarRadius, TrackColor);
+	DrawSmoothRoundedRect(Graphics(), BarX, BarY, BarWidth, BarHeight, BarRadius, TrackColor, HudEditorScope.m_Corners);
 	if(FillWidth > 0.0f)
-		DrawSmoothRoundedRect(Graphics(), BarX, BarY, FillWidth, BarHeight, BarRadius, FillColor);
+		DrawSmoothRoundedRect(Graphics(), BarX, BarY, FillWidth, BarHeight, BarRadius, FillColor, HudEditorScope.m_Corners);
 
 	const unsigned int PrevTextFlags = TextRender()->GetRenderFlags();
 	const ColorRGBA PrevTextColor = TextRender()->GetTextColor();
@@ -5190,7 +5197,7 @@ void CHud::RenderSpectatorHud()
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::SpectatorHud, {m_Width - 180.0f, BoundsTop, 180.0f, BoundsBottom - BoundsTop});
 
 	// draw the box
-	Graphics()->DrawRect(m_Width - 180.0f, AdjustedHeight - 15.0f, 180.0f, 15.0f, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_TL, ui_token::radius::BASE);
+	Graphics()->DrawRect(m_Width - 180.0f, AdjustedHeight - 15.0f, 180.0f, 15.0f, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 	// draw the text
 	char aBuf[128];
@@ -5254,7 +5261,7 @@ void CHud::RenderLocalTime(float x)
 		char aTimeStr[6];
 		str_timestamp_format(aTimeStr, sizeof(aTimeStr), "%H:%M");
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::LocalTime, {x - 30.0f, 0.0f, 25.0f, 12.5f});
-		Graphics()->DrawRect(x - 30.0f, 0.0f, 25.0f, 12.5f, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_B, ui_token::radius::BASE);
+		Graphics()->DrawRect(x - 30.0f, 0.0f, 25.0f, 12.5f, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 		TextRender()->Text(x - 25.0f, (12.5f - 5.f) / 2.f, 5.0f, aTimeStr, -1.0f);
 		GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 		return;
@@ -5276,7 +5283,7 @@ void CHud::RenderLocalTime(float x)
 	if(!UseV2LocalTime)
 	{
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::LocalTime, {x - (TextWidth + 15.0f), 0.0f, TextWidth + 10.0f, 12.5f});
-		Graphics()->DrawRect(x - (TextWidth + 15.0f), 0.0f, TextWidth + 10.0f, 12.5f, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_B, ui_token::radius::BASE);
+		Graphics()->DrawRect(x - (TextWidth + 15.0f), 0.0f, TextWidth + 10.0f, 12.5f, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 		TextRender()->Text(x - (TextWidth + 10.0f), (12.5f - 5.f) / 2.f, 5.0f, aTimeStr, -1.0f);
 		GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 		return;
@@ -5332,7 +5339,7 @@ void CHud::RenderLocalTime(float x)
 	}
 
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::LocalTime, {BoxX, 0.0f, BoxW, 12.5f});
-	Graphics()->DrawRect(BoxX, 0.0f, BoxW, 12.5f, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_B, ui_token::radius::BASE);
+	Graphics()->DrawRect(BoxX, 0.0f, BoxW, 12.5f, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 	TextRender()->Text(TextX, TextY, 5.0f, aTimeStr, -1.0f);
 	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 
@@ -5382,7 +5389,7 @@ float CHud::RenderLegacyMediaInfoAt(float AnchorX, float CenterY)
 	const float ContentBottomTarget = HasLyric ? maximum(IslandY + IslandHeight, LyricY + LyricHeight) : (IslandY + IslandHeight);
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::LegacyMediaInfo, {IslandX, IslandY, IslandWidth, ContentBottomTarget - IslandY});
 
-	Graphics()->DrawRect(IslandX, IslandY, IslandWidth, IslandHeight, ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f), IGraphics::CORNER_ALL, 4.0f);
+	Graphics()->DrawRect(IslandX, IslandY, IslandWidth, IslandHeight, ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f), HudEditorScope.m_Corners, 4.0f);
 
 	const float CoverX = IslandX + PaddingX;
 	const float CoverY = IslandY + (IslandHeight - CoverSize) * 0.5f;

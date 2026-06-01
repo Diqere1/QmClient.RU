@@ -61,7 +61,7 @@ void CQmWeaponTrajectory::Render(
 		TuneZone = Collision()->IsTune(Collision()->GetMapIndex(Position));
 	const CTuningParams *pTuning = GameClient()->GetTuning(TuneZone);
 
-	auto FindBlockingTee = [&](const vec2 &From, const vec2 &To, vec2 &OutPos) -> bool {
+	auto FindBlockingTee = [&](const vec2 &From, const vec2 &To, bool IgnoreShooterAtStart, vec2 &OutPos) -> bool {
 		const float SelfIgnoreDistance = CCharacterCore::PhysicalSize() * 0.5f;
 		float ClosestDistance = distance(From, To) + 1.0f;
 		bool Found = false;
@@ -85,7 +85,7 @@ void CQmWeaponTrajectory::Render(
 				if(distance(TeePos, ClosestPoint) < CCharacterCore::PhysicalSize())
 				{
 					const float Dist = distance(From, ClosestPoint);
-					if(i == ClientId && Dist <= SelfIgnoreDistance)
+					if(i == ClientId && IgnoreShooterAtStart && Dist <= SelfIgnoreDistance)
 						continue;
 					if(Dist < ClosestDistance)
 					{
@@ -120,7 +120,16 @@ void CQmWeaponTrajectory::Render(
 			if(i > 0)
 			{
 				vec2 ColPos, BeforePos;
-				if(Collision()->IntersectLine(PrevPos, Pos, &ColPos, &BeforePos))
+				const bool CollidesWithWorld = Collision()->IntersectLine(PrevPos, Pos, &ColPos, &BeforePos);
+				const vec2 SegmentEnd = CollidesWithWorld ? ColPos : Pos;
+				vec2 TeeHitPos;
+				if(FindBlockingTee(PrevPos, SegmentEnd, true, TeeHitPos))
+				{
+					vPoints.push_back(TeeHitPos);
+					LandingPos = TeeHitPos;
+					break;
+				}
+				if(CollidesWithWorld)
 				{
 					vPoints.push_back(ColPos);
 					LandingPos = ColPos;
@@ -200,7 +209,9 @@ void CQmWeaponTrajectory::Render(
 		int Res = Collision()->IntersectLineTeleWeapon(From, To, &ColTile, &HitPos);
 		vec2 SegmentEnd = Res ? HitPos : To;
 		vec2 TeeHitPos;
-		if(FindBlockingTee(From, SegmentEnd, TeeHitPos))
+		const bool IgnoreShooterAtStart =
+			Bounces == 0 || g_Config.m_SvOldLaser || !GameClient()->m_GameWorld.m_WorldConfig.m_IsDDRace;
+		if(FindBlockingTee(From, SegmentEnd, IgnoreShooterAtStart, TeeHitPos))
 		{
 			vLineSegments.emplace_back(From, TeeHitPos);
 			break;

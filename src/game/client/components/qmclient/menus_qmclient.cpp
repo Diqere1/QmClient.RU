@@ -2050,7 +2050,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::Gores: return "gores kog king of gores 锤枪切换 chuichang qiehuan 自动切枪 zidong qieqiang gun hammer prevweapon fire 开火后切锤 kaihuo qiechui 拿到其他武器停用 快速输入 kuaisu shuru fast input 快速输入其他玩家";
 		case EQmModuleId::FocusMode: return "禅模式 zhuanzhi moshi focus mode zen mode 隐藏 yincang hud 名字 mingzi 特效 texiao 计分板 jifenban 沉浸 chenjing 无干扰 wuganrao 聊天 liaotian chat 非必要UI";
 		case EQmModuleId::KeyBinds: return "按键绑定 anjian bangding bind 快捷键 kuaijiejian 常用绑定 changyong bangding";
-		case EQmModuleId::MiniFeatures: return "梦的小功能 meng xiaogongneng 粒子拖尾 lizi tuowei 远程粒子 yuancheng lizi 计分板查分 chafen 聊天框淡出 liaotian danchu 表情选择 biaoqing xuanze 动画优化 donghua youhua 复读 fudu 随机表情 suiji biaoqing 连击 lianji combo 说话不弹表情 shuo hua biaoqing 本地彩虹名字 caihong mingzi 武器弹道辅助线 dan dao fuzhuxian 位置跳跃提示 tiaoyue tishi 新版UI xinban ui settings page shezhi yemian";
+		case EQmModuleId::MiniFeatures: return "梦的小功能 meng xiaogongneng 粒子拖尾 lizi tuowei 远程粒子 yuancheng lizi 计分板查分 chafen 聊天框淡出 liaotian danchu 表情选择 biaoqing xuanze 动画优化 donghua youhua 复读 fudu 随机表情 suiji biaoqing 连击 lianji combo 说话不弹表情 shuo hua biaoqing 本地彩虹名字 caihong mingzi 武器弹道辅助线 dan dao fuzhuxian 位置跳跃提示 tiaoyue tishi 新版UI xinban ui settings page shezhi yemian 更新 gengxin 版本 banben 过旧 guojiu 提示 tishi outdated version warning";
 		case EQmModuleId::SkinTransition:
 			return "皮肤切换 pifu qiehuan skin transition 换皮 huanpi 动画 donghua 类型 leixing 时长 shichang 锤中偷皮 chuizhong toupi";
 		case EQmModuleId::WeaponTrajectory: return "武器辅助线 wuqi fuzhuxian weapon trajectory 弹道辅助线 dandao fuzhuxian 线宽 xian kuan 透明度 toumingdu 始终显示 shizhong xianshi 按键显示 anjian xianshi";
@@ -3343,6 +3343,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmClientShowBadge, Localize("显示Qm标识"), &g_Config.m_QmClientShowBadge, &Row, LgLineHeight);
+					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
+
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmShowOutdatedVersionWarning, Localize("显示版本过旧提示"), &g_Config.m_QmShowOutdatedVersionWarning, &Row, LgLineHeight);
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);

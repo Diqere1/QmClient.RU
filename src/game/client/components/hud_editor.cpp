@@ -19,6 +19,7 @@ namespace
 {
 constexpr float EPSILON = 0.001f;
 constexpr float HUD_EDITOR_SNAP_DISTANCE = 6.0f;
+constexpr float HUD_EDITOR_EDGE_ANCHOR_DISTANCE = EPSILON;
 constexpr const char *JUMP_HINT_DEFAULT_TEXT = "3 Tiles Edge Jump:\\nLeft Jump: .34|.31|.16\\nLeft Double Jump: .41|.28|.25|.13\\nRight Jump: .63|.66|.81\\nRight Double Jump: .56|.69|.72|.84";
 
 float Clamp01(float Value)
@@ -43,8 +44,6 @@ float SnapHudEditorAxis(float Position, float Size, float ScreenStart, float Scr
 		}
 	};
 
-	TrySnap(ScreenStart, std::fabs(Position - ScreenStart));
-	TrySnap(ScreenEnd - Size, std::fabs(Position + Size - ScreenEnd));
 	TrySnap(ScreenCenter - Size * 0.5f, std::fabs(Position + Size * 0.5f - ScreenCenter));
 	return SnappedPosition;
 }
@@ -399,6 +398,8 @@ void CHudEditor::ClampStateToScreen(SElementState &State, float BaseWidth, float
 	const float Scale = std::clamp(State.m_ScalePercent / 100.0f, MIN_SCALE_PERCENT / 100.0f, MAX_SCALE_PERCENT / 100.0f);
 	const float Width = BaseWidth * Scale;
 	const float Height = BaseHeight * Scale;
+	const bool AnchorRight = State.m_PosXPermille >= POSITION_SCALE;
+	const bool AnchorBottom = State.m_PosYPermille >= POSITION_SCALE;
 	const float XNorm = Clamp01(State.m_PosXPermille / (float)POSITION_SCALE);
 	const float YNorm = Clamp01(State.m_PosYPermille / (float)POSITION_SCALE);
 	float X = pScreen->x + XNorm * pScreen->w;
@@ -411,8 +412,8 @@ void CHudEditor::ClampStateToScreen(SElementState &State, float BaseWidth, float
 	X = std::clamp(X, MinX, MaxX);
 	Y = std::clamp(Y, MinY, MaxY);
 
-	State.m_PosXPermille = std::clamp(round_to_int((X - pScreen->x) / pScreen->w * POSITION_SCALE), 0, POSITION_SCALE);
-	State.m_PosYPermille = std::clamp(round_to_int((Y - pScreen->y) / pScreen->h * POSITION_SCALE), 0, POSITION_SCALE);
+	State.m_PosXPermille = AnchorRight ? POSITION_SCALE : std::clamp(round_to_int((X - pScreen->x) / pScreen->w * POSITION_SCALE), 0, POSITION_SCALE);
+	State.m_PosYPermille = AnchorBottom ? POSITION_SCALE : std::clamp(round_to_int((Y - pScreen->y) / pScreen->h * POSITION_SCALE), 0, POSITION_SCALE);
 }
 
 CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element, const CUIRect &DefaultRect, bool Scalable, bool ApplyMapScreen)
@@ -464,6 +465,17 @@ CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element
 	const float MinAnchorY = ScreenY0 - VisibleOffsetY;
 	const float MaxAnchorX = VisibleWidth >= ScreenW ? MinAnchorX : ScreenX0 + ScreenW - VisibleWidth - VisibleOffsetX;
 	const float MaxAnchorY = VisibleHeight >= ScreenH ? MinAnchorY : ScreenY0 + ScreenH - VisibleHeight - VisibleOffsetY;
+	if(SavedState.m_HasCustom)
+	{
+		if(SavedState.m_PosXPermille <= 0)
+			AnchorX = MinAnchorX;
+		else if(SavedState.m_PosXPermille >= POSITION_SCALE)
+			AnchorX = MaxAnchorX;
+		if(SavedState.m_PosYPermille <= 0)
+			AnchorY = MinAnchorY;
+		else if(SavedState.m_PosYPermille >= POSITION_SCALE)
+			AnchorY = MaxAnchorY;
+	}
 	AnchorX = std::clamp(AnchorX, MinAnchorX, MaxAnchorX);
 	AnchorY = std::clamp(AnchorY, MinAnchorY, MaxAnchorY);
 
@@ -481,6 +493,19 @@ CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element
 	Visible.m_Scalable = Scalable;
 	m_vVisibleElements.push_back(Visible);
 	Scope.m_TargetRect = {AnchorX, AnchorY, TransformWidth, TransformHeight};
+	Scope.m_VisibleRect = {AnchorX + VisibleOffsetX, AnchorY + VisibleOffsetY, VisibleWidth, VisibleHeight};
+	Scope.m_AnchoredLeft = std::fabs(Scope.m_VisibleRect.x - ScreenX0) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+	Scope.m_AnchoredRight = std::fabs(Scope.m_VisibleRect.x + Scope.m_VisibleRect.w - ScreenX1) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+	Scope.m_AnchoredTop = std::fabs(Scope.m_VisibleRect.y - ScreenY0) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+	Scope.m_AnchoredBottom = std::fabs(Scope.m_VisibleRect.y + Scope.m_VisibleRect.h - ScreenY1) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+	if(Scope.m_AnchoredLeft)
+		Scope.m_Corners &= ~IGraphics::CORNER_L;
+	if(Scope.m_AnchoredRight)
+		Scope.m_Corners &= ~IGraphics::CORNER_R;
+	if(Scope.m_AnchoredTop)
+		Scope.m_Corners &= ~IGraphics::CORNER_T;
+	if(Scope.m_AnchoredBottom)
+		Scope.m_Corners &= ~IGraphics::CORNER_B;
 
 	const bool Transformed =
 		std::fabs(AnchorX - TransformRect.x) > EPSILON ||
@@ -546,7 +571,6 @@ void CHudEditor::OpenJumpHintTextEditor()
 	DecodeEscapedNewlines(g_Config.m_TcJumpHintText[0] != '\0' ? g_Config.m_TcJumpHintText : JUMP_HINT_DEFAULT_TEXT, aDecoded, sizeof(aDecoded));
 	m_JumpHintTextInput.Set(aDecoded);
 	m_JumpHintTextInput.SetEmptyText(Localize("Jump hint text"));
-	m_JumpHintTextInput.SelectAll();
 	m_JumpHintTextEditorActive = true;
 	m_JumpHintTextEditorNeedsFocus = true;
 	m_DraggingElement = -1;
@@ -724,7 +748,6 @@ void CHudEditor::RenderJumpHintTextEditor(const CUIRect &Screen)
 		char aDecoded[sizeof(g_Config.m_TcJumpHintText)];
 		DecodeEscapedNewlines(JUMP_HINT_DEFAULT_TEXT, aDecoded, sizeof(aDecoded));
 		m_JumpHintTextInput.Set(aDecoded);
-		m_JumpHintTextInput.SelectAll();
 		Ui()->SetActiveItem(&m_JumpHintTextInput);
 	}
 	if(Ui()->DoButtonLogic(&s_CancelButton, 0, &CancelButton, BUTTONFLAG_LEFT) != 0)
@@ -810,8 +833,12 @@ void CHudEditor::OnRender()
 			const float Height = Visible.m_BaseHeight * Scale;
 			const float X = SnapHudEditorAxis(Ui()->MouseX() - m_DragGrabOffset.x, Width, pUiScreen->x, pUiScreen->w);
 			const float Y = SnapHudEditorAxis(Ui()->MouseY() - m_DragGrabOffset.y, Height, pUiScreen->y, pUiScreen->h);
-			State.m_PosXPermille = std::clamp(round_to_int((X - Visible.m_StateOffsetX * Scale - pUiScreen->x) / pUiScreen->w * POSITION_SCALE), 0, POSITION_SCALE);
-			State.m_PosYPermille = std::clamp(round_to_int((Y - Visible.m_StateOffsetY * Scale - pUiScreen->y) / pUiScreen->h * POSITION_SCALE), 0, POSITION_SCALE);
+			const bool SnapLeft = std::fabs(X - pUiScreen->x) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+			const bool SnapRight = std::fabs(X + Width - (pUiScreen->x + pUiScreen->w)) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+			const bool SnapTop = std::fabs(Y - pUiScreen->y) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+			const bool SnapBottom = std::fabs(Y + Height - (pUiScreen->y + pUiScreen->h)) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+			State.m_PosXPermille = SnapLeft ? 0 : (SnapRight ? POSITION_SCALE : std::clamp(round_to_int((X - Visible.m_StateOffsetX * Scale - pUiScreen->x) / pUiScreen->w * POSITION_SCALE), 0, POSITION_SCALE));
+			State.m_PosYPermille = SnapTop ? 0 : (SnapBottom ? POSITION_SCALE : std::clamp(round_to_int((Y - Visible.m_StateOffsetY * Scale - pUiScreen->y) / pUiScreen->h * POSITION_SCALE), 0, POSITION_SCALE));
 			m_DirtyLayout = true;
 		}
 	}
