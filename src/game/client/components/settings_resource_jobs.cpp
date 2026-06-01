@@ -1,26 +1,13 @@
 #include <game/client/components/settings_resource_jobs.h>
+#include <game/client/components/menus.h>
 
 #include <algorithm>
+#include <cmath>
 
 float SettingsSkinPreviewSize(float RowHeight, float PreviewWidth, float RequestedSize)
 {
 	const float MaxSize = std::max(0.0f, std::min(RowHeight, PreviewWidth) - 10.0f);
 	return std::clamp(RequestedSize, 0.0f, MaxSize);
-}
-
-float SettingsSkinPreviewSize(float RowHeight, float PreviewWidth, float RequestedSize, float RenderedWidthAtRequestedSize, float RenderedHeightAtRequestedSize)
-{
-	const float MaxWidth = std::max(0.0f, PreviewWidth - 10.0f);
-	const float MaxHeight = std::max(0.0f, RowHeight - 10.0f);
-	if(RenderedWidthAtRequestedSize <= 0.0f || RenderedHeightAtRequestedSize <= 0.0f)
-		return SettingsSkinPreviewSize(RowHeight, PreviewWidth, RequestedSize);
-	const float Scale = std::min({1.0f, MaxWidth / RenderedWidthAtRequestedSize, MaxHeight / RenderedHeightAtRequestedSize});
-	return std::clamp(RequestedSize * Scale, 0.0f, RequestedSize);
-}
-
-float SettingsSkinPreviewCenterOffset(float RenderedMin, float RenderedMax)
-{
-	return -(RenderedMin + RenderedMax) * 0.5f;
 }
 
 SSettingsSkinListPlan BuildSettingsSkinListPlan(std::vector<SSettingsSkinListEntry> vEntries)
@@ -132,9 +119,111 @@ bool SettingsSkinListShouldPublishMergedList(size_t Cursor, size_t Total)
 	return Cursor >= Total;
 }
 
-bool SettingsSkinListShouldRequestImmediateLoad(bool Visible)
+bool SettingsSkinListShouldReplacePublishedEntries(int PublishedEntries, int PendingEntries, bool DirectoryScanPending, bool MergeComplete)
 {
-	return Visible;
+	(void)PublishedEntries;
+	(void)PendingEntries;
+	(void)DirectoryScanPending;
+	return MergeComplete;
+}
+
+bool SettingsSkinListHasPendingMergeWork(bool HasPendingPlan, size_t PendingNames, size_t PendingEntries, size_t Cursor)
+{
+	if(!HasPendingPlan)
+		return false;
+	return PendingNames == 0 || Cursor < PendingNames || PendingEntries < PendingNames;
+}
+
+int SettingsSkinListFirstPageWarmupEntries(float ListHeight, float RowHeight, int ItemsPerRow, int ExtraRows)
+{
+	if(ListHeight <= 0.0f || RowHeight <= 0.0f || ItemsPerRow <= 0)
+		return 0;
+
+	const int VisibleRows = std::max(1, (int)std::ceil(ListHeight / RowHeight));
+	const int WarmRows = std::max(1, VisibleRows + std::max(0, ExtraRows));
+	return WarmRows * ItemsPerRow;
+}
+
+int SettingsSkinListPrefetchCount(int FirstVisibleIndex, int LastVisibleIndex, int ItemsPerRow, int PrefetchRows, int TotalEntries)
+{
+	if(FirstVisibleIndex < 0 || LastVisibleIndex < FirstVisibleIndex || ItemsPerRow <= 0 || PrefetchRows <= 0 || TotalEntries <= 0)
+		return 0;
+
+	const int PrefetchItems = ItemsPerRow * PrefetchRows;
+	const int PrefetchStart = LastVisibleIndex + 1;
+	if(PrefetchStart >= TotalEntries)
+		return 0;
+	const int Remaining = TotalEntries - PrefetchStart;
+	return std::min(PrefetchItems, Remaining);
+}
+
+int SettingsSkinListBackgroundWarmupCount(int TotalEntries, int MaxEntriesPerFrame)
+{
+	if(TotalEntries <= 0 || MaxEntriesPerFrame <= 0)
+		return 0;
+	return std::min(TotalEntries, MaxEntriesPerFrame);
+}
+
+bool SettingsSkinBackgroundWarmupShouldRun(bool PageVisible, bool VisibleBacklog, bool InputActive, bool PreviewCacheMaintenanceAllowed)
+{
+	(void)PreviewCacheMaintenanceAllowed;
+	return PageVisible && !VisibleBacklog && !InputActive;
+}
+
+bool SettingsSkinBackgroundWarmupWindowFull(size_t Loaded, size_t Loading, size_t Pending, int LoadedMax)
+{
+	return LoadedMax > 0 && Loaded + Loading + Pending >= (size_t)LoadedMax;
+}
+
+bool SettingsSkinListHasProgressiveWarmEntries(int PublishedEntries, int RequestedEntries, int PlannedEntries)
+{
+	if(PublishedEntries <= 0)
+		return false;
+	if(RequestedEntries <= 0)
+		return true;
+	if(PlannedEntries > 0 && PublishedEntries >= PlannedEntries)
+		return true;
+	return PublishedEntries >= RequestedEntries;
+}
+bool SettingsSkinListSelectionStillValid(int SelectedIndex, int EntryCount)
+{
+	return SelectedIndex < 0 || (SelectedIndex >= 0 && SelectedIndex < EntryCount);
+}
+
+bool SettingsSkinListScrollResetNeeded(int PreviousCount, int CurrentCount, bool ListActive, bool ScrollbarActive)
+{
+	if(CurrentCount >= PreviousCount)
+		return false;
+	if(ScrollbarActive)
+		return false;
+	return !ListActive;
+}
+
+
+bool SettingsSkinListShouldRequestImmediateLoad(bool Visible, bool Prefetched)
+{
+	return Visible || Prefetched;
+}
+
+int SettingsSkinFinalizeMaxPerFrame(bool TeeSettingsActive)
+{
+	return TeeSettingsActive ? 24 : 12;
+}
+
+int SettingsSkinGpuUploadUnits(bool TeeSettingsActive)
+{
+	return TeeSettingsActive ? 28 : 14;
+}
+
+void SettingsApplyActiveTeeSkinFrameBudget(SSettingsWarmupFrameBudget &Budget, bool TeeSettingsActive)
+{
+	if(!TeeSettingsActive)
+		return;
+
+	Budget.m_MaxGpuUploads = SettingsSkinGpuUploadUnits(true);
+	Budget.m_MaxGpuReadbacks = 1;
+	Budget.m_MaxPreviewCacheIo = 1;
+	Budget.m_MaxJobResultMerges = 2;
 }
 
 bool SettingsSkinFinalizeShouldDeferBackgroundSweep(bool ProcessedHighPrioritySkin, int ProcessedThisFrame, int MaxPerFrame)
@@ -180,14 +269,98 @@ bool SettingsResourceCanUseHighPriorityBudget(int StartedThisFrame, int NormalBu
 	return HighPriority && StartedThisFrame < HighPriorityBudget;
 }
 
-bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord)
+int SettingsResourceFrameStageBudget(const SSettingsResourceFrameContext &Context, ESettingsResourcePriority Priority, int NormalBudget, int ScrollActiveVisibleBudget)
 {
-	return CacheMatches && RenderTargetValid && ResourcesReadyAtRecord;
+	if(!Context.m_ScrollActive)
+		return std::max(0, NormalBudget);
+	if(Priority != ESettingsResourcePriority::VISIBLE)
+		return 0;
+	return std::max(0, ScrollActiveVisibleBudget);
 }
 
-bool SettingsPageCanUsePageFbo(int Page, int AssetsPage)
+int SettingsScrollInteractionCooldown(bool ActiveThisFrame, int CurrentCooldownFrames, int CooldownFrames)
 {
-	return Page >= 0 && Page != AssetsPage;
+	if(ActiveThisFrame)
+		return std::max(0, CooldownFrames);
+	if(CurrentCooldownFrames <= 0)
+		return 0;
+	return CurrentCooldownFrames - 1;
+}
+
+int SettingsScrollInteractionRecovery(bool ScrollActiveThisFrame, int PreviousCooldownFrames, int CurrentCooldownFrames, int CurrentRecoveryFrames, int RecoveryFrames)
+{
+	if(ScrollActiveThisFrame || CurrentCooldownFrames > 0)
+		return 0;
+	if(PreviousCooldownFrames > 0)
+		return std::max(0, RecoveryFrames);
+	if(CurrentRecoveryFrames <= 0)
+		return 0;
+	return CurrentRecoveryFrames - 1;
+}
+
+int SettingsResourceSharedHeavyBudget(const SSettingsResourceFrameContext &Context, int NormalBudget, int RecoveryBudget)
+{
+	if(Context.m_ScrollActive)
+		return 0;
+	if(Context.m_PostScrollRecoveryFrames > 0)
+		return std::max(0, RecoveryBudget);
+	return std::max(0, NormalBudget);
+}
+
+bool SettingsResourceConsumeSharedHeavyBudget(int &RemainingBudget)
+{
+	if(RemainingBudget <= 0)
+		return false;
+	--RemainingBudget;
+	return true;
+}
+
+bool SettingsResourceUploadWithinByteBudget(int UploadedThisFrame, size_t UploadedBytesThisFrame, size_t ItemBytes, size_t MaxBytesPerFrame)
+{
+	if(MaxBytesPerFrame == 0)
+		return false;
+	if(ItemBytes > MaxBytesPerFrame)
+		return UploadedThisFrame == 0;
+	return UploadedThisFrame == 0 || UploadedBytesThisFrame + ItemBytes <= MaxBytesPerFrame;
+}
+
+std::string SettingsAssetPreviewHandleKey(const SSettingsAssetPreviewHandle &Handle)
+{
+	return std::to_string(Handle.m_Tab) + ":" + std::to_string(Handle.m_Epoch) + ":" + std::to_string(Handle.m_Index) + ":" + Handle.m_Name;
+}
+
+bool SettingsAssetPreviewHandleMatches(const SSettingsAssetPreviewHandle &Handle, int CurrentTab, unsigned CurrentEpoch, size_t CurrentIndex, const char *pName)
+{
+	return pName != nullptr &&
+	       Handle.m_Tab == CurrentTab &&
+	       Handle.m_Epoch == CurrentEpoch &&
+	       Handle.m_Index == CurrentIndex &&
+	       Handle.m_Name == pName;
+}
+
+bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord, bool DependenciesReadyAtRecord)
+{
+	return CacheMatches && RenderTargetValid && ResourcesReadyAtRecord && DependenciesReadyAtRecord;
+}
+
+ESettingsWarmupMissReason SettingsPageRecordedCacheMissReason(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord, bool DependenciesReadyAtRecord)
+{
+	if(SettingsPageCacheCanUseRecordedResources(CacheMatches, RenderTargetValid, ResourcesReadyAtRecord, DependenciesReadyAtRecord))
+		return ESettingsWarmupMissReason::NONE;
+	if(CacheMatches && RenderTargetValid)
+	{
+		if(!DependenciesReadyAtRecord)
+			return ESettingsWarmupMissReason::DEPENDENCY_NOT_READY;
+		if(!ResourcesReadyAtRecord)
+			return ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING;
+	}
+	return ESettingsWarmupMissReason::PAGE_FBO_NOT_READY;
+}
+
+bool SettingsPageCanUsePageFbo(int Page, int AssetsPage, int DynamicPreviewPage, int Tab)
+{
+	const bool IsTClientSettingsPage = Page == CMenus::SETTINGS_TCLIENT && Tab == 0;
+	return Page >= 0 && Page != AssetsPage && Page != DynamicPreviewPage && !IsTClientSettingsPage;
 }
 
 const char *SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason StopReason)
@@ -198,6 +371,8 @@ const char *SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason Sto
 	case ESettingsWarmupStopReason::TEXT_BUDGET: return "text_budget";
 	case ESettingsWarmupStopReason::FBO_BUDGET: return "fbo_budget";
 	case ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET: return "gpu_upload_budget";
+	case ESettingsWarmupStopReason::GPU_READBACK_BUDGET: return "gpu_readback_budget";
+	case ESettingsWarmupStopReason::PREVIEW_CACHE_IO_BUDGET: return "preview_cache_io_budget";
 	case ESettingsWarmupStopReason::MERGE_BUDGET: return "merge_budget";
 	case ESettingsWarmupStopReason::ACTIVE_ITEM: return "active_item";
 	}

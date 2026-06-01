@@ -358,7 +358,28 @@ enum
 	TEE_EFFECT_FROZEN = 1,
 	TEE_NO_WEAPON = 2,
 	TEE_EFFECT_SPARKLE = 4,
+	TEE_PREVIEW_LAYER_BODY_OUTLINE = 1 << 8,
+	TEE_PREVIEW_LAYER_BACK_FEET_OUTLINE = 1 << 9,
+	TEE_PREVIEW_LAYER_FRONT_FEET_OUTLINE = 1 << 10,
+	TEE_PREVIEW_LAYER_OUTLINE = TEE_PREVIEW_LAYER_BODY_OUTLINE | TEE_PREVIEW_LAYER_BACK_FEET_OUTLINE | TEE_PREVIEW_LAYER_FRONT_FEET_OUTLINE,
+	TEE_PREVIEW_LAYER_BODY = 1 << 11,
+	TEE_PREVIEW_LAYER_BACK_FEET = 1 << 12,
+	TEE_PREVIEW_LAYER_FRONT_FEET = 1 << 13,
+	TEE_PREVIEW_LAYER_FEET = TEE_PREVIEW_LAYER_BACK_FEET | TEE_PREVIEW_LAYER_FRONT_FEET,
+	TEE_PREVIEW_LAYER_EYES = 1 << 14,
+	TEE_PREVIEW_LAYER_ALL = TEE_PREVIEW_LAYER_OUTLINE | TEE_PREVIEW_LAYER_BODY | TEE_PREVIEW_LAYER_FEET | TEE_PREVIEW_LAYER_EYES,
 };
+
+inline int ResolveTeePreviewLayers(int TeeRenderFlags)
+{
+	const int PreviewLayers = TeeRenderFlags & TEE_PREVIEW_LAYER_ALL;
+	return PreviewLayers != 0 ? PreviewLayers : TEE_PREVIEW_LAYER_ALL;
+}
+
+inline bool HasTeePreviewLayer(int TeeRenderFlags, int PreviewLayer)
+{
+	return (ResolveTeePreviewLayers(TeeRenderFlags) & PreviewLayer) != 0;
+}
 
 class CRenderTools
 {
@@ -370,6 +391,8 @@ class CRenderTools
 
 	static void GetRenderTeeBodyScale(float BaseSize, float &BodyScale);
 	static void GetRenderTeeFeetScale(float BaseSize, float &FeetScaleWidth, float &FeetScaleHeight);
+	static void GetRenderTeeBodyBounds(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, float AssumedScale, float AnimScale, float &MinX, float &MinY, float &MaxX, float &MaxY);
+	static void ExpandRenderTeeFeetBounds(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, float AssumedScale, float AnimScale, float &MinX, float &MaxX, float &MaxY);
 
 	void RenderTee6(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, float Alpha = 1.0f, vec2 BodyScale = vec2(1.0f, 1.0f), vec2 FeetScale = vec2(1.0f, 1.0f), float BodyAngle = 0.0f, float FeetAngle = 0.0f) const;
 	void RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, float Alpha = 1.0f, vec2 BodyScale = vec2(1.0f, 1.0f), vec2 FeetScale = vec2(1.0f, 1.0f), float BodyAngle = 0.0f, float FeetAngle = 0.0f) const;
@@ -395,6 +418,7 @@ public:
 	static void GetRenderTeeOffsetToRenderedTee(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, vec2 &TeeOffsetToMid);
 	// object render methods
 	void RenderTee(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, float Alpha = 1.0f) const;
+	void RenderTee(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, int TeeRenderFlags, float Alpha = 1.0f) const;
 	void RenderTee(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, float Alpha, vec2 BodyScale, vec2 FeetScale, float BodyAngle, float FeetAngle) const;
 	void RenderTeeWithSkinChangeTransition(const CAnimState *pAnim, const CTeeRenderInfo *pPreviousInfo, const CTeeRenderInfo *pCurrentInfo, int Emote, vec2 Dir, vec2 Pos, float Progress, float Alpha = 1.0f, vec2 BodyScale = vec2(1.0f, 1.0f), vec2 FeetScale = vec2(1.0f, 1.0f), float BodyAngle = 0.0f, float FeetAngle = 0.0f) const;
 };

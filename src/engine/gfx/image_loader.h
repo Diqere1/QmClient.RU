@@ -58,6 +58,9 @@ public:
 
 	static bool SavePng(CByteBufferWriter &Writer, const CImageInfo &Image);
 	static bool SavePng(IOHANDLE File, const char *pFilename, const CImageInfo &Image);
+
+	static bool SaveWebP(CByteBufferWriter &Writer, const CImageInfo &Image);
+	static bool SaveWebP(IOHANDLE File, const char *pFilename, const CImageInfo &Image);
 };
 
 #endif // ENGINE_GFX_IMAGE_LOADER_H

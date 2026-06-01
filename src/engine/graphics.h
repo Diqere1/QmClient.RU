@@ -244,6 +244,37 @@ public:
 		void Invalidate() { m_Id = -1; }
 	};
 
+	enum class ERenderTargetReadbackState
+	{
+		INVALID = 0,
+		PENDING,
+		READY,
+		FAILED,
+	};
+
+	class CRenderTargetReadbackHandle
+	{
+		friend class IGraphics;
+		int m_Id;
+		uint32_t m_Generation;
+
+	public:
+		CRenderTargetReadbackHandle() :
+			m_Id(-1),
+			m_Generation(0)
+		{
+		}
+
+		bool IsValid() const { return Id() >= 0; }
+		int Id() const { return m_Id; }
+		uint32_t Generation() const { return m_Generation; }
+		void Invalidate()
+		{
+			m_Id = -1;
+			m_Generation = 0;
+		}
+	};
+
 	int ScreenWidth() const { return m_ScreenWidth; }
 	int ScreenHeight() const { return m_ScreenHeight; }
 	float ScreenAspect() const { return m_ScreenAspectOverride > 0.0f ? m_ScreenAspectOverride : (float)ScreenWidth() / (float)ScreenHeight(); }
@@ -322,11 +353,17 @@ public:
 	void TextureClear() { TextureSet(CTextureHandle()); }
 
 	virtual bool IsRenderTargetSupported() const = 0;
+	virtual const char *RenderTargetSupportReason() const = 0;
 	virtual CRenderTargetHandle CreateRenderTarget(int Width, int Height) = 0;
 	virtual void DestroyRenderTarget(CRenderTargetHandle *pTarget) = 0;
 	virtual bool BeginRenderTarget(CRenderTargetHandle Target, ColorRGBA ClearColor) = 0;
 	virtual void EndRenderTarget() = 0;
 	virtual void DrawRenderTarget(CRenderTargetHandle Target, float X, float Y, float W, float H) = 0;
+	virtual CRenderTargetReadbackHandle BeginRenderTargetReadback(CRenderTargetHandle Target) = 0;
+	virtual ERenderTargetReadbackState PollRenderTargetReadback(CRenderTargetReadbackHandle Handle) = 0;
+	virtual bool ResolveRenderTargetReadback(CRenderTargetReadbackHandle *pHandle, CImageInfo &Image) = 0;
+	virtual void CancelRenderTargetReadback(CRenderTargetReadbackHandle *pHandle) = 0;
+	virtual bool ReadRenderTarget(CRenderTargetHandle Target, CImageInfo &Image) = 0;
 
 	// pTextData & pTextOutlineData are automatically free'd
 	virtual bool LoadTextTextures(size_t Width, size_t Height, CTextureHandle &TextTexture, CTextureHandle &TextOutlineTexture, uint8_t *pTextData, uint8_t *pTextOutlineData) = 0;
@@ -653,6 +690,14 @@ protected:
 		CRenderTargetHandle Target;
 		Target.m_Id = Index;
 		return Target;
+	}
+
+	CRenderTargetReadbackHandle CreateRenderTargetReadbackHandle(int Index, uint32_t Generation)
+	{
+		CRenderTargetReadbackHandle Readback;
+		Readback.m_Id = Index;
+		Readback.m_Generation = Generation;
+		return Readback;
 	}
 
 public:

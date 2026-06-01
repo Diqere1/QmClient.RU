@@ -1,4 +1,5 @@
 #include "image_loader.h"
+#include "image_manipulation.h"
 
 #include <base/log.h>
 #include <base/system.h>
@@ -6,6 +7,7 @@
 #include <png.h>
 #if defined(CONF_WEBP)
 #include <webp/decode.h>
+#include <webp/encode.h>
 #endif
 
 #include <array>
@@ -413,6 +415,68 @@ bool CImageLoader::SavePng(IOHANDLE File, const char *pFilename, const CImageInf
 	if(!WriteSuccess)
 	{
 		log_error("png", "failed to write PNG data to file. filename='%s'", pFilename);
+	}
+	io_close(File);
+	return WriteSuccess;
+}
+
+bool CImageLoader::SaveWebP(CByteBufferWriter &Writer, const CImageInfo &Image)
+{
+#if defined(CONF_WEBP)
+	CImageInfo RgbaImage;
+	const CImageInfo *pEncodeImage = &Image;
+	if(Image.m_Format != CImageInfo::FORMAT_RGBA)
+	{
+		RgbaImage = Image.DeepCopy();
+		ConvertToRgba(RgbaImage);
+		pEncodeImage = &RgbaImage;
+	}
+
+	uint8_t *pOutput = nullptr;
+	const size_t EncodedSize = WebPEncodeLosslessRGBA(
+		pEncodeImage->m_pData,
+		(int)pEncodeImage->m_Width,
+		(int)pEncodeImage->m_Height,
+		(int)(pEncodeImage->m_Width * 4),
+		&pOutput);
+	if(RgbaImage.m_pData != nullptr)
+		RgbaImage.Free();
+	if(EncodedSize == 0 || pOutput == nullptr)
+	{
+		log_error("webp", "failed to encode WebP image");
+		return false;
+	}
+
+	Writer.Write(pOutput, EncodedSize);
+	WebPFree(pOutput);
+	return true;
+#else
+	(void)Writer;
+	(void)Image;
+	log_error("webp", "cannot save WebP: client was built without libwebp support");
+	return false;
+#endif
+}
+
+bool CImageLoader::SaveWebP(IOHANDLE File, const char *pFilename, const CImageInfo &Image)
+{
+	if(!File)
+	{
+		log_error("webp", "failed to open file for writing. filename='%s'", pFilename);
+		return false;
+	}
+
+	CByteBufferWriter Writer;
+	if(!CImageLoader::SaveWebP(Writer, Image))
+	{
+		io_close(File);
+		return false;
+	}
+
+	const bool WriteSuccess = io_write(File, Writer.Data(), Writer.Size()) == Writer.Size();
+	if(!WriteSuccess)
+	{
+		log_error("webp", "failed to write WebP data to file. filename='%s'", pFilename);
 	}
 	io_close(File);
 	return WriteSuccess;

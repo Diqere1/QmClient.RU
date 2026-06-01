@@ -4,7 +4,7 @@
 #include <algorithm>
 
 inline constexpr int LOCAL_ASSET_PREVIEW_MAX_TEXTURE_SIZE = 4096;
-inline constexpr int WORKSHOP_ASSET_PREVIEW_MAX_TEXTURE_SIZE = 512;
+inline constexpr int WORKSHOP_ASSET_PREVIEW_MAX_TEXTURE_SIZE = 2048;
 inline constexpr int LOCAL_ASSET_PREVIEW_MAX_FILE_SIZE = 64 * 1024 * 1024;
 
 struct SPreviewTargetSize

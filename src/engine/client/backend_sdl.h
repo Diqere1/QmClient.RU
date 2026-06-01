@@ -120,6 +120,7 @@ struct SBackendCapabilities
 	bool m_2DArrayTexturesAsExtension;
 	bool m_ShaderSupport;
 	bool m_RenderTargets;
+	const char *m_pRenderTargetSupportReason = "not_initialized";
 
 	// use quads as much as possible, even if the user config says otherwise
 	bool m_TrianglesAsQuads;
@@ -271,6 +272,7 @@ public:
 	bool HasTextBuffering() override { return m_Capabilities.m_TextBuffering; }
 	bool HasQuadContainerBuffering() override { return m_Capabilities.m_QuadContainerBuffering; }
 	bool HasRenderTargets() override { return m_Capabilities.m_RenderTargets; }
+	const char *RenderTargetSupportReason() override { return m_Capabilities.m_RenderTargets ? "supported" : m_Capabilities.m_pRenderTargetSupportReason; }
 	bool Uses2DTextureArrays() override { return m_Capabilities.m_2DArrayTextures; }
 	bool HasTextureArraysSupport() override { return m_Capabilities.m_2DArrayTextures || m_Capabilities.m_3DTextures; }
 

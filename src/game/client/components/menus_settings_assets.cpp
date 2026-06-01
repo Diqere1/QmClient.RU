@@ -1209,6 +1209,8 @@ namespace
 	{
 		std::vector<SWorkshopHudAsset> m_vAssets;
 		std::unordered_map<std::string, std::string> m_vEntityBgPreviewExtByName;
+		std::deque<std::string> m_vDecodeThumbQueue;
+		std::unordered_set<std::string> m_vDecodeThumbQueued;
 		std::deque<std::string> m_vReadyThumbQueue;
 		std::unordered_set<std::string> m_vReadyThumbQueued;
 		std::shared_ptr<CHttpRequest> m_pListTask;
@@ -1341,7 +1343,7 @@ namespace
 		if(!vPossiblePaths.empty())
 		{
 			// 创建全异步 Job，在后台线程完成文件读取和解码
-			Asset.m_pDecodeJob = std::make_shared<CFullAsyncImageLoadJob>(std::move(vPossiblePaths), pStorage, Asset.m_Name.c_str(), IStorage::TYPE_SAVE);
+			Asset.m_pDecodeJob = std::make_shared<CFullAsyncImageLoadJob>(std::move(vPossiblePaths), pStorage, Asset.m_Name.c_str(), IStorage::TYPE_SAVE, WORKSHOP_ASSET_PREVIEW_MAX_TEXTURE_SIZE);
 			pEngine->AddJob(Asset.m_pDecodeJob);
 		}
 	}
@@ -1365,6 +1367,52 @@ namespace
 				return &Asset;
 		}
 		return nullptr;
+	}
+
+	static void ClearWorkshopDecodeThumbQueue(SWorkshopHudState &State)
+	{
+		State.m_vDecodeThumbQueue.clear();
+		State.m_vDecodeThumbQueued.clear();
+	}
+
+	static void QueueWorkshopDecodeThumb(SWorkshopHudState &State, SWorkshopHudAsset &Asset, int CurTab)
+	{
+		if(State.m_vDecodeThumbQueued.insert(Asset.m_Id).second)
+		{
+			if(Asset.m_ThumbHighPriority)
+				State.m_vDecodeThumbQueue.push_front(Asset.m_Id);
+			else
+				State.m_vDecodeThumbQueue.push_back(Asset.m_Id);
+			char aExtra[160];
+			str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s queue_size=%d",
+				CurTab, Asset.m_Name.c_str(), (int)State.m_vDecodeThumbQueue.size());
+			LogAssetsPerfStage("assets_workshop_thumb_decode_queue_push", 0.0, true, aExtra);
+		}
+		else if(Asset.m_ThumbHighPriority)
+		{
+			auto It = std::find(State.m_vDecodeThumbQueue.begin(), State.m_vDecodeThumbQueue.end(), Asset.m_Id);
+			if(It != State.m_vDecodeThumbQueue.end())
+			{
+				State.m_vDecodeThumbQueue.erase(It);
+				State.m_vDecodeThumbQueue.push_front(Asset.m_Id);
+			}
+		}
+	}
+
+	static void PruneWorkshopDecodeThumbQueue(SWorkshopHudState &State)
+	{
+		std::deque<std::string> vQueue;
+		std::unordered_set<std::string> vQueued;
+		for(const std::string &Id : State.m_vDecodeThumbQueue)
+		{
+			SWorkshopHudAsset *pAsset = FindWorkshopAssetById(State, Id);
+			if(pAsset == nullptr || !pAsset->m_pDecodeJob)
+				continue;
+			if(vQueued.insert(Id).second)
+				vQueue.push_back(Id);
+		}
+		State.m_vDecodeThumbQueue = std::move(vQueue);
+		State.m_vDecodeThumbQueued = std::move(vQueued);
 	}
 
 	static void ClearWorkshopReadyThumbQueue(SWorkshopHudState &State)
@@ -2098,6 +2146,7 @@ namespace
 		WorkshopState.m_vAssets.clear();
 		WorkshopState.m_vEntityBgPreviewExtByName.clear();
 		WorkshopState.m_EntityBgPreviewBaseUrl.clear();
+		ClearWorkshopDecodeThumbQueue(WorkshopState);
 		ClearWorkshopReadyThumbQueue(WorkshopState);
 		WorkshopState.m_Requested = false;
 		WorkshopState.m_EntityBgPreviewRequested = false;
@@ -2172,6 +2221,7 @@ namespace
 			return false;
 
 		WorkshopState.m_vAssets.clear();
+		ClearWorkshopDecodeThumbQueue(WorkshopState);
 		ClearWorkshopReadyThumbQueue(WorkshopState);
 		for(unsigned i = 0; i < pJson->u.array.length; ++i)
 		{
@@ -2326,6 +2376,31 @@ static const CMenus::SCustomItem *GetCustomItem(int CurTab, size_t Index)
 	dbg_assert_failed("Invalid CurTab: %d", CurTab);
 }
 
+static size_t GetCustomItemCount(int CurTab)
+{
+	if(CurTab == ASSETS_TAB_ENTITIES)
+		return gs_vpSearchEntitiesList.size();
+	if(CurTab == ASSETS_TAB_GAME)
+		return gs_vpSearchGamesList.size();
+	if(CurTab == ASSETS_TAB_EMOTICONS)
+		return gs_vpSearchEmoticonsList.size();
+	if(CurTab == ASSETS_TAB_PARTICLES)
+		return gs_vpSearchParticlesList.size();
+	if(CurTab == ASSETS_TAB_HUD)
+		return gs_vpSearchHudList.size();
+	if(CurTab == ASSETS_TAB_GUI_CURSOR)
+		return gs_vpSearchGuiCursorList.size();
+	if(CurTab == ASSETS_TAB_ARROW)
+		return gs_vpSearchArrowList.size();
+	if(CurTab == ASSETS_TAB_STRONG_WEAK)
+		return gs_vpSearchStrongWeakList.size();
+	if(CurTab == ASSETS_TAB_ENTITY_BG)
+		return gs_vpSearchEntityBgList.size();
+	if(CurTab == ASSETS_TAB_EXTRAS)
+		return gs_vpSearchExtrasList.size();
+	dbg_assert_failed("Invalid CurTab: %d", CurTab);
+}
+
 static CMenus::SCustomItem *GetCustomItemMutable(int CurTab, size_t Index)
 {
 	return const_cast<CMenus::SCustomItem *>(GetCustomItem(CurTab, Index));
@@ -2337,6 +2412,7 @@ static void ResetCustomItemPreviewState(CMenus::SCustomItem &Item)
 	Item.m_PreviewImage.Free();
 	Item.m_PreviewState = CMenus::SCustomItem::PREVIEW_STATE_UNLOADED;
 	Item.m_PreviewEpoch = 0;
+	Item.m_PreviewListIndex = 0;
 	Item.m_PreviewBytes = 0;
 	Item.m_PreviewResized = false;
 	Item.m_PreviewHighPriority = false;
@@ -3455,12 +3531,12 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	const SAssetResourceCategory *pCurrentCategory = AssetResourceCategoryByTab(s_CurCustomTab);
 	SMenuAssetScanUser LazyLoadUser;
 	LazyLoadUser.m_pUser = this;
-	constexpr int MaxPreviewUploadsPerFrame = 2;
-	constexpr size_t MaxPreviewUploadBytesPerFrame = 4 * 1024 * 1024;
+	constexpr int MaxPreviewUploadsPerFrame = 1;
+	constexpr size_t MaxPreviewUploadBytesPerFrame = 1 * 1024 * 1024;
 	constexpr int MaxPreviewDecodeStartsPerFrame = 6;
 	constexpr int MaxPreviewHighPriorityDecodeStartsPerFrame = 12;
-	constexpr int MaxPreviewDecodeFinalizesPerFrame = 2;
-	constexpr double MaxPreviewDecodeFinalizeMsPerFrame = 4.0;
+	constexpr int MaxPreviewDecodeFinalizesPerFrame = 1;
+	constexpr double MaxPreviewDecodeFinalizeMsPerFrame = 2.0;
 	constexpr int PreviewPrefetchRows = 2;
 	int UploadedPreviewsThisFrame = 0;
 	int ResizedPreviewsThisFrame = 0;
@@ -3471,14 +3547,45 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	auto &vReadyQueue = m_aaCustomPreviewReadyQueue[s_CurCustomTab];
 	auto &vReadyQueued = m_aaCustomPreviewReadyQueued[s_CurCustomTab];
 	const unsigned PreviewEpoch = m_aCustomPreviewEpoch[s_CurCustomTab];
+	static bool s_AssetsScrollActiveLastFrame = false;
+	static int s_AssetsScrollCooldownFrames = 0;
+	static int s_AssetsPostScrollRecoveryFrames = 0;
+	const bool AssetsScrollInteraction = m_SettingsScrollActive || s_AssetsScrollActiveLastFrame;
+	const int PreviousAssetsScrollCooldownFrames = s_AssetsScrollCooldownFrames;
+	s_AssetsScrollCooldownFrames = SettingsScrollInteractionCooldown(AssetsScrollInteraction, s_AssetsScrollCooldownFrames, 3);
+	s_AssetsPostScrollRecoveryFrames = SettingsScrollInteractionRecovery(
+		AssetsScrollInteraction, PreviousAssetsScrollCooldownFrames, s_AssetsScrollCooldownFrames, s_AssetsPostScrollRecoveryFrames, 2);
+	const SSettingsResourceFrameContext ResourceFrameContext = {
+		s_AssetsScrollCooldownFrames > 0,
+		s_AssetsPostScrollRecoveryFrames,
+	};
+	int RemainingHeavyResourceBatches = SettingsResourceSharedHeavyBudget(ResourceFrameContext, 4, 1);
+
+	auto MakePreviewHandle = [&](const SCustomItem &Item) {
+		SSettingsAssetPreviewHandle Handle;
+		Handle.m_Tab = s_CurCustomTab;
+		Handle.m_Epoch = PreviewEpoch;
+		Handle.m_Index = Item.m_PreviewListIndex;
+		Handle.m_Name = Item.m_aName;
+		return Handle;
+	};
+
+	auto FindCustomItemByPreviewHandle = [&](const SSettingsAssetPreviewHandle &Handle) -> SCustomItem * {
+		if(Handle.m_Tab < ASSETS_TAB_ENTITIES || Handle.m_Tab >= NUMBER_OF_ASSETS_TABS || Handle.m_Index >= GetCustomItemCount(Handle.m_Tab))
+			return nullptr;
+		SCustomItem *pItem = GetCustomItemMutable(Handle.m_Tab, Handle.m_Index);
+		return pItem != nullptr && SettingsAssetPreviewHandleMatches(Handle, Handle.m_Tab, Handle.m_Epoch, Handle.m_Index, pItem->m_aName) ? pItem : nullptr;
+	};
 
 	auto QueueReadyPreview = [&](SCustomItem *pItem) {
-		if(vReadyQueued.insert(pItem).second)
+		const SSettingsAssetPreviewHandle Handle = MakePreviewHandle(*pItem);
+		const std::string Key = SettingsAssetPreviewHandleKey(Handle);
+		if(vReadyQueued.insert(Key).second)
 		{
 			if(pItem->m_PreviewHighPriority)
-				vReadyQueue.push_front(pItem);
+				vReadyQueue.push_front(Handle);
 			else
-				vReadyQueue.push_back(pItem);
+				vReadyQueue.push_back(Handle);
 			char aExtra[160];
 			str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s queue_size=%d bytes=%u",
 				s_CurCustomTab, pItem->m_aName, (int)vReadyQueue.size(), (unsigned)pItem->m_PreviewBytes);
@@ -3486,14 +3593,15 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		}
 		else if(pItem->m_PreviewHighPriority)
 		{
-			auto It = std::find_if(vReadyQueue.begin(), vReadyQueue.end(), [pItem](const SCustomItem *pQueuedItem) {
-				return pQueuedItem == pItem;
+			auto It = std::find_if(vReadyQueue.begin(), vReadyQueue.end(), [&](const SSettingsAssetPreviewHandle &QueuedHandle) {
+				return SettingsAssetPreviewHandleMatches(QueuedHandle, s_CurCustomTab, PreviewEpoch, pItem->m_PreviewListIndex, pItem->m_aName);
 			});
+			const SCustomItem *pFrontItem = !vReadyQueue.empty() ? FindCustomItemByPreviewHandle(vReadyQueue.front()) : nullptr;
 			if(It != vReadyQueue.end() && !vReadyQueue.empty() &&
-				SettingsAssetPreviewShouldUploadHighPriorityFirst(vReadyQueue.front()->m_PreviewHighPriority, pItem->m_PreviewHighPriority))
+				SettingsAssetPreviewShouldUploadHighPriorityFirst(pFrontItem != nullptr && pFrontItem->m_PreviewHighPriority, pItem->m_PreviewHighPriority))
 			{
 				vReadyQueue.erase(It);
-				vReadyQueue.push_front(pItem);
+				vReadyQueue.push_front(Handle);
 			}
 		}
 	};
@@ -3517,11 +3625,14 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			if(HighPriority)
 			{
 				pItem->m_PreviewHighPriority = true;
-				auto It = std::find(vDecodeQueue.begin(), vDecodeQueue.end(), pItem);
+				auto It = std::find_if(vDecodeQueue.begin(), vDecodeQueue.end(), [&](const SSettingsAssetPreviewHandle &QueuedHandle) {
+					return SettingsAssetPreviewHandleMatches(QueuedHandle, CurTab, PreviewEpoch, pItem->m_PreviewListIndex, pItem->m_aName);
+				});
 				if(It != vDecodeQueue.end())
 				{
+					const SSettingsAssetPreviewHandle Handle = *It;
 					vDecodeQueue.erase(It);
-					vDecodeQueue.push_front(pItem);
+					vDecodeQueue.push_front(Handle);
 				}
 			}
 			return;
@@ -3531,6 +3642,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			return;
 		pItem->m_PreviewImage.Free();
 		pItem->m_PreviewEpoch = PreviewEpoch;
+		pItem->m_PreviewListIndex = Index;
 		pItem->m_PreviewState = SCustomItem::PREVIEW_STATE_LOADING;
 		pItem->m_PreviewBytes = 0;
 		pItem->m_PreviewResized = false;
@@ -3587,10 +3699,11 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		}
 		if(pItem->m_pDecodeJob)
 		{
+			const SSettingsAssetPreviewHandle Handle = MakePreviewHandle(*pItem);
 			if(HighPriority)
-				vDecodeQueue.push_front(pItem);
+				vDecodeQueue.push_front(Handle);
 			else
-				vDecodeQueue.push_back(pItem);
+				vDecodeQueue.push_back(Handle);
 			++PreviewDecodeStartsThisFrame;
 		}
 		else
@@ -3836,19 +3949,30 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		int ReadyCount = 0;
 		int DroppedStale = 0;
 		int DeferredCompleted = 0;
+		constexpr size_t MaxPreviewDecodePollsPerFrame = 24;
 		const size_t PendingCount = vDecodeQueue.size();
-		for(size_t i = 0; i < PendingCount; ++i)
+		const size_t DecodePolls = minimum(PendingCount, MaxPreviewDecodePollsPerFrame);
+		for(size_t i = 0; i < DecodePolls; ++i)
 		{
-			SCustomItem *pItem = vDecodeQueue.front();
+			const SSettingsAssetPreviewHandle Handle = vDecodeQueue.front();
 			vDecodeQueue.pop_front();
+			if(Handle.m_Tab != s_CurCustomTab || Handle.m_Epoch != PreviewEpoch)
+			{
+				++DroppedStale;
+				char aDropExtra[160];
+				str_format(aDropExtra, sizeof(aDropExtra), "tab=%d asset=%s epoch=%u current_epoch=%u",
+					Handle.m_Tab, Handle.m_Name.c_str(), Handle.m_Epoch, PreviewEpoch);
+				LogAssetsPerfStage("assets_preview_decode_drop_stale", 0.0, true, aDropExtra);
+				continue;
+			}
+			SCustomItem *pItem = FindCustomItemByPreviewHandle(Handle);
 			if(pItem == nullptr)
 				continue;
-			if(pItem->m_PreviewEpoch != PreviewEpoch)
+			if(pItem->m_PreviewEpoch != Handle.m_Epoch || !SettingsAssetPreviewHandleMatches(Handle, s_CurCustomTab, PreviewEpoch, pItem->m_PreviewListIndex, pItem->m_aName))
 			{
-				ResetCustomItemPreviewState(*pItem);
 				++DroppedStale;
 				char aDropExtra[128];
-				str_format(aDropExtra, sizeof(aDropExtra), "tab=%d asset=%s", s_CurCustomTab, pItem->m_aName);
+				str_format(aDropExtra, sizeof(aDropExtra), "tab=%d asset=%s", s_CurCustomTab, Handle.m_Name.c_str());
 				LogAssetsPerfStage("assets_preview_decode_drop_stale", 0.0, true, aDropExtra);
 				continue;
 			}
@@ -3862,13 +3986,21 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			auto pDecodeJob = std::static_pointer_cast<CFullAsyncImageLoadJob>(pItem->m_pDecodeJob);
 			if(!pDecodeJob->IsCompleted())
 			{
-				vDecodeQueue.push_back(pItem);
+				vDecodeQueue.push_back(Handle);
 				continue;
 			}
 
-			if(SettingsAssetPreviewShouldDeferFinalize(PreviewDecodeFinalizesThisFrame, DecodeFinalizeTimer.ElapsedMs(), MaxPreviewDecodeFinalizesPerFrame, MaxPreviewDecodeFinalizeMsPerFrame))
+			const ESettingsResourcePriority FinalizePriority = pItem->m_PreviewHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND;
+			const int MaxFinalizesForFrame = SettingsResourceFrameStageBudget(ResourceFrameContext, FinalizePriority, MaxPreviewDecodeFinalizesPerFrame, 0);
+			if(SettingsAssetPreviewShouldDeferFinalize(PreviewDecodeFinalizesThisFrame, DecodeFinalizeTimer.ElapsedMs(), MaxFinalizesForFrame, MaxPreviewDecodeFinalizeMsPerFrame))
 			{
-				vDecodeQueue.push_back(pItem);
+				vDecodeQueue.push_back(Handle);
+				++DeferredCompleted;
+				continue;
+			}
+			if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
+			{
+				vDecodeQueue.push_back(Handle);
 				++DeferredCompleted;
 				continue;
 			}
@@ -3930,8 +4062,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			LogAssetsPerfStage("assets_preview_decode_finalize_batch", DecodeFinalizeBatchTimer.ElapsedMs(), false, aFinalizeExtra);
 		}
 		char aFinalizeTotalExtra[160];
-		str_format(aFinalizeTotalExtra, sizeof(aFinalizeTotalExtra), "tab=%d finalized=%d deferred=%d pending_after=%d budget_ms=%.1f used_ms=%.3f",
-			s_CurCustomTab, PreviewDecodeFinalizesThisFrame, DeferredCompleted, (int)vDecodeQueue.size(),
+		str_format(aFinalizeTotalExtra, sizeof(aFinalizeTotalExtra), "tab=%d finalized=%d deferred=%d polled=%d pending_after=%d budget_ms=%.1f used_ms=%.3f",
+			s_CurCustomTab, PreviewDecodeFinalizesThisFrame, DeferredCompleted, (int)DecodePolls, (int)vDecodeQueue.size(),
 			MaxPreviewDecodeFinalizeMsPerFrame, DecodeFinalizeTimer.ElapsedMs());
 		LogAssetsPerfStage("assets_preview_decode_finalize_total", DecodeFinalizeTimer.ElapsedMs(), false, aFinalizeTotalExtra);
 
@@ -3940,28 +4072,47 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		UploadBudget.m_MaxGpuUploads = MaxPreviewUploadsPerFrame - UploadedPreviewsThisFrame;
 		while(!vReadyQueue.empty() && UploadedPreviewsThisFrame < MaxPreviewUploadsPerFrame && GameClient()->GpuUploadLimiter()->CanUpload())
 		{
-			SCustomItem *pItem = vReadyQueue.front();
+			const SSettingsAssetPreviewHandle Handle = vReadyQueue.front();
+			vReadyQueue.pop_front();
+			vReadyQueued.erase(SettingsAssetPreviewHandleKey(Handle));
+			if(Handle.m_Tab != s_CurCustomTab || Handle.m_Epoch != PreviewEpoch)
+				continue;
+			SCustomItem *pItem = FindCustomItemByPreviewHandle(Handle);
 			if(pItem == nullptr)
+				continue;
+			if(pItem->m_PreviewEpoch != Handle.m_Epoch || !SettingsAssetPreviewHandleMatches(Handle, s_CurCustomTab, PreviewEpoch, pItem->m_PreviewListIndex, pItem->m_aName) ||
+				pItem->m_PreviewState != SCustomItem::PREVIEW_STATE_READY || !pItem->m_PreviewImage.m_pData)
 			{
-				vReadyQueue.pop_front();
+				if(pItem->m_PreviewEpoch == Handle.m_Epoch)
+					ResetCustomItemPreviewState(*pItem);
 				continue;
 			}
-
-			const size_t ItemBytes = pItem->m_PreviewBytes;
-			if(UploadedPreviewsThisFrame > 0 && UploadedBytesThisFrame + ItemBytes > MaxPreviewUploadBytesPerFrame)
-				break;
-
-			vReadyQueue.pop_front();
-			vReadyQueued.erase(pItem);
-			if(pItem->m_PreviewEpoch != PreviewEpoch || pItem->m_PreviewState != SCustomItem::PREVIEW_STATE_READY || !pItem->m_PreviewImage.m_pData)
+			const ESettingsResourcePriority UploadPriority = pItem->m_PreviewHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND;
+			const int MaxUploadsForFrame = SettingsResourceFrameStageBudget(ResourceFrameContext, UploadPriority, MaxPreviewUploadsPerFrame, 0);
+			if(UploadedPreviewsThisFrame >= MaxUploadsForFrame)
 			{
-				ResetCustomItemPreviewState(*pItem);
-				continue;
+				vReadyQueue.push_front(Handle);
+				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
+				break;
+			}
+			const size_t ItemBytes = pItem->m_PreviewBytes;
+			if(!SettingsResourceUploadWithinByteBudget(UploadedPreviewsThisFrame, UploadedBytesThisFrame, ItemBytes, MaxPreviewUploadBytesPerFrame))
+			{
+				vReadyQueue.push_front(Handle);
+				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
+				break;
+			}
+			if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
+			{
+				vReadyQueue.push_front(Handle);
+				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
+				break;
 			}
 			if(!SettingsResourceConsumeGpuUpload(UploadBudget, SettingsFrameBudget()))
 			{
-				vReadyQueue.push_front(pItem);
-				vReadyQueued.insert(pItem);
+				vReadyQueue.push_front(Handle);
+				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
+				++RemainingHeavyResourceBatches;
 				break;
 			}
 
@@ -3995,10 +4146,10 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		LogAssetsPerfStage("assets_preview_upload_queue_drain", 0.0, true, aDrainExtra);
 
 		char aExtra[192];
-		str_format(aExtra, sizeof(aExtra), "tab=%d search_list=%d decode_pending=%d ready_queue=%d ready=%d dropped_stale=%d uploads=%d resized=%d finalized=%d deferred=%d finalize_budget_ms=%.1f",
+		str_format(aExtra, sizeof(aExtra), "tab=%d search_list=%d decode_pending=%d ready_queue=%d ready=%d dropped_stale=%d uploads=%d resized=%d finalized=%d deferred=%d finalize_budget_ms=%.1f scroll_cooldown=%d recovery_frames=%d heavy_batches_left=%d",
 			s_CurCustomTab, (int)SearchListSize, (int)vDecodeQueue.size(), (int)vReadyQueue.size(),
 			ReadyCount, DroppedStale, UploadedPreviewsThisFrame, ResizedPreviewsThisFrame, PreviewDecodeFinalizesThisFrame, DeferredCompleted,
-			MaxPreviewDecodeFinalizeMsPerFrame);
+			MaxPreviewDecodeFinalizeMsPerFrame, s_AssetsScrollCooldownFrames, s_AssetsPostScrollRecoveryFrames, RemainingHeavyResourceBatches);
 		LogAssetsPerfStage("assets_preview_gpu_upload_scan", ScanTimer.ElapsedMs(), false, aExtra);
 	}
 
@@ -4137,6 +4288,9 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		}
 
 		const int NewSelected = s_ListBox.DoEnd();
+		const bool ListScrollActive = s_ListBox.ScrollbarActive() || s_ListBox.ScrollbarAnimating();
+		m_SettingsScrollActive = m_SettingsScrollActive || ListScrollActive;
+		s_AssetsScrollActiveLastFrame = ListScrollActive;
 		auto ResetSelectedAssetToDefault = [&](const char *pDeletedName) {
 			if(s_CurCustomTab == ASSETS_TAB_ENTITIES && str_comp(g_Config.m_ClAssetsEntities, pDeletedName) == 0)
 			{
@@ -4522,6 +4676,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 
 				if(s_CurCustomTab == ASSETS_TAB_ENTITY_BG)
 					ApplyEntityBgPreviewThumbUrls(WorkshopState);
+				PruneWorkshopDecodeThumbQueue(WorkshopState);
 				PruneWorkshopReadyThumbQueue(WorkshopState);
 
 				WorkshopState.m_Requested = true;
@@ -4549,70 +4704,90 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 
 		bool RefreshLocalList = false;
 
-		constexpr int MaxWorkshopThumbDecodeFinalizesPerFrame = 2;
-		constexpr int MaxWorkshopThumbUploadsPerFrame = 2;
-		constexpr size_t MaxWorkshopThumbUploadBytesPerFrame = 4 * 1024 * 1024;
+		constexpr int MaxWorkshopThumbDecodeFinalizesPerFrame = 1;
+		constexpr int MaxWorkshopThumbUploadsPerFrame = 1;
+		constexpr size_t MaxWorkshopThumbUploadBytesPerFrame = 1 * 1024 * 1024;
+		constexpr double MaxWorkshopThumbDecodeFinalizeMsPerFrame = 1.0;
 		int WorkshopGpuUploadsThisFrame = 0;
 		int WorkshopThumbFinalizesThisFrame = 0;
 		int DeferredWorkshopThumbs = 0;
 		size_t WorkshopThumbUploadedBytesThisFrame = 0;
+		CPerfTimer WorkshopDecodeFinalizeTimer;
+		constexpr size_t MaxWorkshopThumbDecodePollsPerFrame = 24;
+		const size_t PendingWorkshopDecodes = WorkshopState.m_vDecodeThumbQueue.size();
+		const size_t WorkshopDecodePolls = minimum(PendingWorkshopDecodes, MaxWorkshopThumbDecodePollsPerFrame);
+		for(size_t Poll = 0; Poll < WorkshopDecodePolls; ++Poll)
+		{
+			const std::string AssetId = WorkshopState.m_vDecodeThumbQueue.front();
+			WorkshopState.m_vDecodeThumbQueue.pop_front();
+			WorkshopState.m_vDecodeThumbQueued.erase(AssetId);
+
+			SWorkshopHudAsset *pAsset = FindWorkshopAssetById(WorkshopState, AssetId);
+			if(pAsset == nullptr || !pAsset->m_pDecodeJob)
+				continue;
+			if(!pAsset->m_pDecodeJob->IsCompleted())
+			{
+				QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
+				continue;
+			}
+			if(pAsset->m_ThumbTexture.IsValid())
+			{
+				pAsset->m_pDecodeJob.reset();
+				continue;
+			}
+
+			const ESettingsResourcePriority FinalizePriority = pAsset->m_ThumbHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND;
+			const int MaxFinalizesForFrame = SettingsResourceFrameStageBudget(ResourceFrameContext, FinalizePriority, MaxWorkshopThumbDecodeFinalizesPerFrame, 0);
+			if(SettingsAssetPreviewShouldDeferFinalize(WorkshopThumbFinalizesThisFrame, WorkshopDecodeFinalizeTimer.ElapsedMs(), MaxFinalizesForFrame, MaxWorkshopThumbDecodeFinalizeMsPerFrame))
+			{
+				QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
+				++DeferredWorkshopThumbs;
+				continue;
+			}
+			if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
+			{
+				QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
+				++DeferredWorkshopThumbs;
+				continue;
+			}
+
+			CPerfTimer DecodeFinalizeBatchTimer;
+			CFullAsyncImageLoadJob::SResult Result = pAsset->m_pDecodeJob->GetResult();
+			pAsset->m_pDecodeJob.reset();
+			if(Result.m_Success && Result.m_Image.m_pData)
+			{
+				const bool WasHighPriority = pAsset->m_ThumbHighPriority;
+				const bool ResizedPreview = Result.m_Resized;
+				ResetWorkshopThumbReadyState(*pAsset);
+				pAsset->m_ThumbHighPriority = WasHighPriority;
+				pAsset->m_ThumbImage = std::move(Result.m_Image);
+				pAsset->m_ThumbBytes = pAsset->m_ThumbImage.DataSize();
+				pAsset->m_ThumbResized = ResizedPreview;
+				QueueWorkshopReadyThumb(WorkshopState, *pAsset, s_CurCustomTab);
+				++WorkshopThumbFinalizesThisFrame;
+				char aDecodeExtra[160];
+				str_format(aDecodeExtra, sizeof(aDecodeExtra), "tab=%d asset=%s resized=%d finalized=%d w=%u h=%u",
+					s_CurCustomTab, pAsset->m_Name.c_str(), ResizedPreview ? 1 : 0, WorkshopThumbFinalizesThisFrame,
+					(unsigned)pAsset->m_ThumbImage.m_Width, (unsigned)pAsset->m_ThumbImage.m_Height);
+				LogAssetsPerfStage("assets_workshop_thumb_decode_finalize_batch", DecodeFinalizeBatchTimer.ElapsedMs(), false, aDecodeExtra);
+			}
+			else
+			{
+				Result.m_Image.Free();
+				const bool DecodeFromRemote = pAsset->m_ThumbDecodeFromRemote;
+				pAsset->m_ThumbDecodeFromRemote = false;
+				pAsset->m_ThumbCacheFailed = true;
+				if(!pAsset->m_ThumbCachePath.empty())
+				{
+					Storage()->RemoveFile(pAsset->m_ThumbCachePath.c_str(), IStorage::TYPE_SAVE);
+				}
+				if(DecodeFromRemote)
+					pAsset->m_ThumbRemoteFailed = true;
+			}
+		}
 
 		for(SWorkshopHudAsset &Asset : WorkshopState.m_vAssets)
 		{
-			if(Asset.m_pDecodeJob && Asset.m_pDecodeJob->IsCompleted())
-			{
-				if(Asset.m_ThumbTexture.IsValid())
-				{
-					Asset.m_pDecodeJob.reset();
-				}
-				else if(WorkshopThumbFinalizesThisFrame < MaxWorkshopThumbDecodeFinalizesPerFrame)
-				{
-					CPerfTimer DecodeFinalizeBatchTimer;
-					bool ResizedPreview = false;
-					CFullAsyncImageLoadJob::SResult Result = Asset.m_pDecodeJob->GetResult();
-					Asset.m_pDecodeJob.reset();
-					if(Result.m_Success && Result.m_Image.m_pData)
-					{
-						const bool WasHighPriority = Asset.m_ThumbHighPriority;
-						const SPreviewTargetSize TargetSize = ComputePreviewTargetSize(Result.m_Image.m_Width, Result.m_Image.m_Height, WORKSHOP_ASSET_PREVIEW_MAX_TEXTURE_SIZE);
-						if(TargetSize.m_Resized)
-						{
-							ResizeImage(Result.m_Image, TargetSize.m_Width, TargetSize.m_Height);
-							ResizedPreview = true;
-						}
-						ResetWorkshopThumbReadyState(Asset);
-						Asset.m_ThumbHighPriority = WasHighPriority;
-						Asset.m_ThumbImage = std::move(Result.m_Image);
-						Asset.m_ThumbBytes = Asset.m_ThumbImage.DataSize();
-						Asset.m_ThumbResized = ResizedPreview;
-						QueueWorkshopReadyThumb(WorkshopState, Asset, s_CurCustomTab);
-						++WorkshopThumbFinalizesThisFrame;
-						char aDecodeExtra[160];
-						str_format(aDecodeExtra, sizeof(aDecodeExtra), "tab=%d asset=%s resized=%d finalized=%d w=%u h=%u",
-							s_CurCustomTab, Asset.m_Name.c_str(), ResizedPreview ? 1 : 0, WorkshopThumbFinalizesThisFrame,
-							(unsigned)Asset.m_ThumbImage.m_Width, (unsigned)Asset.m_ThumbImage.m_Height);
-						LogAssetsPerfStage("assets_workshop_thumb_decode_finalize_batch", DecodeFinalizeBatchTimer.ElapsedMs(), false, aDecodeExtra);
-					}
-					else
-					{
-						Result.m_Image.Free();
-						const bool DecodeFromRemote = Asset.m_ThumbDecodeFromRemote;
-						Asset.m_ThumbDecodeFromRemote = false;
-						Asset.m_ThumbCacheFailed = true;
-						if(!Asset.m_ThumbCachePath.empty())
-						{
-							Storage()->RemoveFile(Asset.m_ThumbCachePath.c_str(), IStorage::TYPE_SAVE);
-						}
-						if(DecodeFromRemote)
-							Asset.m_ThumbRemoteFailed = true;
-					}
-				}
-				else
-				{
-					++DeferredWorkshopThumbs;
-				}
-			}
-
 			if(Asset.m_pThumbTask && Asset.m_pThumbTask->Done())
 			{
 				const bool ThumbOk = Asset.m_pThumbTask->State() == EHttpState::DONE && Asset.m_pThumbTask->StatusCode() == 200;
@@ -4628,6 +4803,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 						Asset.m_ThumbDecodeFromRemote = false;
 						Asset.m_ThumbRemoteFailed = true;
 					}
+					else
+						QueueWorkshopDecodeThumb(WorkshopState, Asset, s_CurCustomTab);
 				}
 				else if(!ThumbOk)
 				{
@@ -4668,7 +4845,20 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 
 			CPerfTimer UploadBatchTimer;
 			const size_t AssetBytes = pAsset->m_ThumbBytes;
-			if(WorkshopGpuUploadsThisFrame > 0 && WorkshopThumbUploadedBytesThisFrame + AssetBytes > MaxWorkshopThumbUploadBytesPerFrame)
+			const int MaxUploadsForFrame = SettingsResourceFrameStageBudget(ResourceFrameContext, pAsset->m_ThumbHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND, MaxWorkshopThumbUploadsPerFrame, 0);
+			if(WorkshopGpuUploadsThisFrame >= MaxUploadsForFrame)
+			{
+				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
+				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+				break;
+			}
+			if(!SettingsResourceUploadWithinByteBudget(WorkshopGpuUploadsThisFrame, WorkshopThumbUploadedBytesThisFrame, AssetBytes, MaxWorkshopThumbUploadBytesPerFrame))
+			{
+				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
+				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+				break;
+			}
+			if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
 			{
 				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
 				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
@@ -4678,6 +4868,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			{
 				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
 				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+				++RemainingHeavyResourceBatches;
 				break;
 			}
 			pAsset->m_ThumbTexture = Graphics()->LoadTextureRawMove(pAsset->m_ThumbImage, 0, pAsset->m_Name.c_str());
@@ -4693,8 +4884,9 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		}
 		LogSettingsResourcePerf(SETTINGS_ASSETS, "upload", (int)WorkshopThumbUploadedBytesThisFrame, (int)MaxWorkshopThumbUploadBytesPerFrame, (int)WorkshopState.m_vReadyThumbQueue.size(), WorkshopState.m_vReadyThumbQueue.empty() ? ESettingsWarmupMissReason::NONE : ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
 		char aWorkshopFinalizeExtra[160];
-		str_format(aWorkshopFinalizeExtra, sizeof(aWorkshopFinalizeExtra), "tab=%d finalized=%d deferred=%d ready_queue=%d",
-			s_CurCustomTab, WorkshopThumbFinalizesThisFrame, DeferredWorkshopThumbs, (int)WorkshopState.m_vReadyThumbQueue.size());
+		str_format(aWorkshopFinalizeExtra, sizeof(aWorkshopFinalizeExtra), "tab=%d finalized=%d deferred=%d ready_queue=%d recovery_frames=%d heavy_batches_left=%d",
+			s_CurCustomTab, WorkshopThumbFinalizesThisFrame, DeferredWorkshopThumbs, (int)WorkshopState.m_vReadyThumbQueue.size(),
+			s_AssetsPostScrollRecoveryFrames, RemainingHeavyResourceBatches);
 		LogAssetsPerfStage("assets_workshop_thumb_decode_finalize_total", 0.0, WorkshopThumbFinalizesThisFrame > 0 || DeferredWorkshopThumbs > 0 || !WorkshopState.m_vReadyThumbQueue.empty(), aWorkshopFinalizeExtra);
 		if(DeferredWorkshopThumbs > 0)
 		{
@@ -4832,7 +5024,12 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					QueueWorkshopReadyThumb(WorkshopState, Asset, s_CurCustomTab);
 					return false;
 				}
-				if(Asset.m_pDecodeJob || Asset.m_pThumbTask)
+				if(Asset.m_pDecodeJob)
+				{
+					QueueWorkshopDecodeThumb(WorkshopState, Asset, s_CurCustomTab);
+					return false;
+				}
+				if(Asset.m_pThumbTask)
 					return false;
 				if(!SettingsResourceCanUseHighPriorityBudget(ThumbStartsThisFrame, MaxThumbStartsPerFrame, MaxHighPriorityThumbStartsPerFrame, HighPriority))
 					return false;
@@ -4846,6 +5043,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					StartBackgroundDecode(Asset, Storage(), Engine());
 					if(Asset.m_pDecodeJob)
 					{
+						QueueWorkshopDecodeThumb(WorkshopState, Asset, s_CurCustomTab);
 						++ThumbStartsThisFrame;
 						char aExtra[160];
 						str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s started=%d source=%s",
@@ -5184,6 +5382,9 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			LogAssetsPerfStage("assets_preview_draw_workshop_cards", WorkshopCardsTimer.ElapsedMs(), false, aExtra);
 
 			const int NewCombinedSelected = s_WorkshopAssetsListBox.DoEnd();
+			const bool WorkshopListScrollActive = s_WorkshopAssetsListBox.ScrollbarActive() || s_WorkshopAssetsListBox.ScrollbarAnimating();
+			m_SettingsScrollActive = m_SettingsScrollActive || WorkshopListScrollActive;
+			s_AssetsScrollActiveLastFrame = WorkshopListScrollActive;
 			if(DeleteLocalRequested)
 			{
 				str_copy(s_aWorkshopPendingDeleteName, aDeleteLocalName, sizeof(s_aWorkshopPendingDeleteName));

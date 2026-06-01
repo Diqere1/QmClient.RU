@@ -201,6 +201,35 @@ void CRenderTools::GetRenderTeeFeetSize(const CAnimState *pAnim, const CTeeRende
 	FeetOffset.y = pInfo->m_SkinMetrics.m_Feet.OffsetYNormalized() * 32.0f * FeetScaleHeight;
 }
 
+void CRenderTools::GetRenderTeeBodyBounds(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, float AssumedScale, float AnimScale, float &MinX, float &MinY, float &MaxX, float &MaxY)
+{
+	const vec2 BodyPos = vec2(pAnim->GetBody()->m_X, pAnim->GetBody()->m_Y) * AnimScale;
+	vec2 BodyOffset;
+	float BodyWidth, BodyHeight;
+	GetRenderTeeBodySize(pAnim, pInfo, BodyOffset, BodyWidth, BodyHeight);
+	MinX = -32.0f * AssumedScale + BodyPos.x + BodyOffset.x;
+	MinY = -32.0f * AssumedScale + BodyPos.y + BodyOffset.y;
+	MaxX = MinX + BodyWidth;
+	MaxY = MinY + BodyHeight;
+}
+
+void CRenderTools::ExpandRenderTeeFeetBounds(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, float AssumedScale, float AnimScale, float &MinX, float &MaxX, float &MaxY)
+{
+	vec2 FeetOffset;
+	float FeetWidth, FeetHeight;
+	GetRenderTeeFeetSize(pAnim, pInfo, FeetOffset, FeetWidth, FeetHeight);
+	const vec2 FeetPos[2] = {
+		vec2(pAnim->GetFrontFoot()->m_X, pAnim->GetFrontFoot()->m_Y) * AnimScale,
+		vec2(pAnim->GetBackFoot()->m_X, pAnim->GetBackFoot()->m_Y) * AnimScale,
+	};
+	for(const vec2 &FootPos : FeetPos)
+	{
+		const float FootMinX = -32.0f * AssumedScale + FootPos.x + FeetOffset.x;
+		MinX = minimum(MinX, FootMinX);
+		MaxX = maximum(MaxX, FootMinX + FeetWidth);
+		MaxY = maximum(MaxY, -16.0f * AssumedScale + FootPos.y + FeetOffset.y + FeetHeight);
+	}
+}
 void CRenderTools::GetRenderTeeOffsetToRenderedTee(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, vec2 &TeeOffsetToMid)
 {
 	if(pInfo->m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_BODY).IsValid())
@@ -211,53 +240,24 @@ void CRenderTools::GetRenderTeeOffsetToRenderedTee(const CAnimState *pAnim, cons
 
 	float AnimScale, BaseSize;
 	GetRenderTeeAnimScaleAndBaseSize(pInfo, AnimScale, BaseSize);
-	vec2 BodyPos = vec2(pAnim->GetBody()->m_X, pAnim->GetBody()->m_Y) * AnimScale;
-
-	float AssumedScale = BaseSize / 64.0f;
-
-	// just use the lowest feet
-	vec2 FeetPos;
-	const CAnimKeyframe *pFoot = pAnim->GetFrontFoot();
-	FeetPos = vec2(pFoot->m_X * AnimScale, pFoot->m_Y * AnimScale);
-	pFoot = pAnim->GetBackFoot();
-	FeetPos = vec2(FeetPos.x, maximum(FeetPos.y, pFoot->m_Y * AnimScale));
-
-	vec2 BodyOffset;
-	float BodyWidth, BodyHeight;
-	GetRenderTeeBodySize(pAnim, pInfo, BodyOffset, BodyWidth, BodyHeight);
-
-	// -32 is the assumed min relative position for the quad
-	float MinY = -32.0f * AssumedScale;
-	// the body pos shifts the body away from center
-	MinY += BodyPos.y;
-	// the actual body is smaller though, because it doesn't use the full skin image in most cases
-	MinY += BodyOffset.y;
-
-	vec2 FeetOffset;
-	float FeetWidth, FeetHeight;
-	GetRenderTeeFeetSize(pAnim, pInfo, FeetOffset, FeetWidth, FeetHeight);
-
-	// MaxY builds up from the MinY
-	float MaxY = MinY + BodyHeight;
-	// if the body is smaller than the total feet offset, use feet
-	// since feet are smaller in height, respect the assumed relative position
-	MaxY = maximum(MaxY, (-16.0f * AssumedScale + FeetPos.y) + FeetOffset.y + FeetHeight);
-
-	// now we got the full rendered size
-	float FullHeight = (MaxY - MinY);
-
-	// next step is to calculate the offset that was created compared to the assumed relative position
-	float MidOfRendered = MinY + FullHeight / 2.0f;
-
-	// TODO: x coordinate is ignored for now, bcs it's not really used yet anyway
-	TeeOffsetToMid.x = 0;
-	// negative value, because the calculation that uses this offset should work with addition.
-	TeeOffsetToMid.y = -MidOfRendered;
+	const float AssumedScale = BaseSize / 64.0f;
+	float MinX, MinY, MaxX, MaxY;
+	GetRenderTeeBodyBounds(pAnim, pInfo, AssumedScale, AnimScale, MinX, MinY, MaxX, MaxY);
+	ExpandRenderTeeFeetBounds(pAnim, pInfo, AssumedScale, AnimScale, MinX, MaxX, MaxY);
+	TeeOffsetToMid.x = 0.0f;
+	TeeOffsetToMid.y = -(MinY + (MaxY - MinY) / 2.0f);
 }
 
 void CRenderTools::RenderTee(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, float Alpha) const
 {
 	RenderTee(pAnim, pInfo, Emote, Dir, Pos, Alpha, vec2(1.0f, 1.0f), vec2(1.0f, 1.0f), 0.0f, 0.0f);
+}
+
+void CRenderTools::RenderTee(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, int TeeRenderFlags, float Alpha) const
+{
+	CTeeRenderInfo Info = *pInfo;
+	Info.m_TeeRenderFlags = (Info.m_TeeRenderFlags & ~TEE_PREVIEW_LAYER_ALL) | TeeRenderFlags;
+	RenderTee(pAnim, &Info, Emote, Dir, Pos, Alpha);
 }
 
 void CRenderTools::RenderTeeWithSkinChangeTransition(const CAnimState *pAnim, const CTeeRenderInfo *pPreviousInfo, const CTeeRenderInfo *pCurrentInfo, int Emote, vec2 Dir, vec2 Pos, float Progress, float Alpha, vec2 BodyScale, vec2 FeetScale, float BodyAngle, float FeetAngle) const
@@ -307,6 +307,8 @@ void CRenderTools::RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 	for(int Pass = 0; Pass < 2; Pass++)
 	{
 		bool OutLine = Pass == 0;
+		if(OutLine && !HasTeePreviewLayer(pInfo->m_TeeRenderFlags, TEE_PREVIEW_LAYER_OUTLINE))
+			continue;
 
 		for(int Filling = 0; Filling < 2; Filling++)
 		{
@@ -317,8 +319,10 @@ void CRenderTools::RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 				vec2 BodyPos = Position + vec2(pAnim->GetBody()->m_X, pAnim->GetBody()->m_Y) * AnimScale;
 				IGraphics::CQuadItem BodyItem(BodyPos.x, BodyPos.y, BaseSize * BodyScale.x, BaseSize * BodyScale.y);
 				IGraphics::CQuadItem Item;
+				const bool DrawBody = HasTeePreviewLayer(pInfo->m_TeeRenderFlags, OutLine ? TEE_PREVIEW_LAYER_BODY_OUTLINE : TEE_PREVIEW_LAYER_BODY);
+				const bool DrawEyes = !OutLine && HasTeePreviewLayer(pInfo->m_TeeRenderFlags, TEE_PREVIEW_LAYER_EYES);
 
-				if(IsBot && !OutLine)
+				if(DrawBody && IsBot && !OutLine)
 				{
 					IGraphics::CQuadItem BotItem(BodyPos.x + (2.f / 3.f) * AnimScale, BodyPos.y + (-16 + 2.f / 3.f) * AnimScale, BaseSize * BodyScale.x, BaseSize * BodyScale.y); // x+0.66, y+0.66 to correct some rendering bug
 
@@ -347,7 +351,7 @@ void CRenderTools::RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 
 				// draw decoration
 				const IGraphics::CTextureHandle &DecorationTexture = pInfo->m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_DECORATION);
-				if(DecorationTexture.IsValid())
+				if(DrawBody && DecorationTexture.IsValid())
 				{
 					Graphics()->TextureSet(DecorationTexture);
 					Graphics()->QuadsBegin();
@@ -361,26 +365,29 @@ void CRenderTools::RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 
 				// draw body (behind marking)
 				const IGraphics::CTextureHandle &BodyTexture = pInfo->m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_BODY);
-				Graphics()->TextureSet(BodyTexture);
-				Graphics()->QuadsBegin();
-				Graphics()->QuadsSetRotation(pAnim->GetBody()->m_Angle * pi * 2 + BodyAngle);
-				if(OutLine)
+				if(DrawBody)
 				{
-					Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
-					Graphics()->SelectSprite7(client_data7::SPRITE_TEE_BODY_OUTLINE);
+					Graphics()->TextureSet(BodyTexture);
+					Graphics()->QuadsBegin();
+					Graphics()->QuadsSetRotation(pAnim->GetBody()->m_Angle * pi * 2 + BodyAngle);
+					if(OutLine)
+					{
+						Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
+						Graphics()->SelectSprite7(client_data7::SPRITE_TEE_BODY_OUTLINE);
+					}
+					else
+					{
+						Graphics()->SetColor(pInfo->m_aSixup[g_Config.m_ClDummy].m_aColors[protocol7::SKINPART_BODY].WithAlpha(Alpha));
+						Graphics()->SelectSprite7(client_data7::SPRITE_TEE_BODY);
+					}
+					Item = BodyItem;
+					Graphics()->QuadsDraw(&Item, 1);
+					Graphics()->QuadsEnd();
 				}
-				else
-				{
-					Graphics()->SetColor(pInfo->m_aSixup[g_Config.m_ClDummy].m_aColors[protocol7::SKINPART_BODY].WithAlpha(Alpha));
-					Graphics()->SelectSprite7(client_data7::SPRITE_TEE_BODY);
-				}
-				Item = BodyItem;
-				Graphics()->QuadsDraw(&Item, 1);
-				Graphics()->QuadsEnd();
 
 				// draw marking
 				const IGraphics::CTextureHandle &MarkingTexture = pInfo->m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_MARKING);
-				if(MarkingTexture.IsValid() && !OutLine)
+				if(DrawBody && MarkingTexture.IsValid() && !OutLine)
 				{
 					Graphics()->TextureSet(MarkingTexture);
 					Graphics()->QuadsBegin();
@@ -394,7 +401,7 @@ void CRenderTools::RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 				}
 
 				// draw body (in front of marking)
-				if(!OutLine)
+				if(DrawBody && !OutLine)
 				{
 					Graphics()->TextureSet(BodyTexture);
 					Graphics()->QuadsBegin();
@@ -410,20 +417,20 @@ void CRenderTools::RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 				}
 
 				// draw eyes
-				Graphics()->TextureSet(pInfo->m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_EYES));
-				Graphics()->QuadsBegin();
-				Graphics()->QuadsSetRotation(pAnim->GetBody()->m_Angle * pi * 2 + BodyAngle);
-				if(IsBot)
+				if(DrawEyes)
 				{
-					Graphics()->SetColor(pInfo->m_aSixup[g_Config.m_ClDummy].m_BotColor.WithAlpha(Alpha));
-					Emote = EMOTE_SURPRISE;
-				}
-				else
-				{
-					Graphics()->SetColor(pInfo->m_aSixup[g_Config.m_ClDummy].m_aColors[protocol7::SKINPART_EYES].WithAlpha(Alpha));
-				}
-				if(Pass == 1)
-				{
+					Graphics()->TextureSet(pInfo->m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_EYES));
+					Graphics()->QuadsBegin();
+					Graphics()->QuadsSetRotation(pAnim->GetBody()->m_Angle * pi * 2 + BodyAngle);
+					if(IsBot)
+					{
+						Graphics()->SetColor(pInfo->m_aSixup[g_Config.m_ClDummy].m_BotColor.WithAlpha(Alpha));
+						Emote = EMOTE_SURPRISE;
+					}
+					else
+					{
+						Graphics()->SetColor(pInfo->m_aSixup[g_Config.m_ClDummy].m_aColors[protocol7::SKINPART_EYES].WithAlpha(Alpha));
+					}
 					switch(Emote)
 					{
 					case EMOTE_PAIN:
@@ -448,11 +455,11 @@ void CRenderTools::RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 					vec2 Offset = vec2(Direction.x * 0.125f, -0.05f + Direction.y * 0.10f) * BaseSize;
 					IGraphics::CQuadItem QuadItem(BodyPos.x + Offset.x, BodyPos.y + Offset.y, EyeScale, h);
 					Graphics()->QuadsDraw(&QuadItem, 1);
+					Graphics()->QuadsEnd();
 				}
-				Graphics()->QuadsEnd();
 
 				// draw xmas hat
-				if(!OutLine && pInfo->m_aSixup[g_Config.m_ClDummy].m_HatTexture.IsValid())
+				if(DrawBody && !OutLine && pInfo->m_aSixup[g_Config.m_ClDummy].m_HatTexture.IsValid())
 				{
 					Graphics()->TextureSet(pInfo->m_aSixup[g_Config.m_ClDummy].m_HatTexture);
 					Graphics()->QuadsBegin();
@@ -480,6 +487,11 @@ void CRenderTools::RenderTee7(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 			}
 
 			// draw feet
+			const int FootLayer = Filling ? TEE_PREVIEW_LAYER_FRONT_FEET : TEE_PREVIEW_LAYER_BACK_FEET;
+			const int FootOutlineLayer = Filling ? TEE_PREVIEW_LAYER_FRONT_FEET_OUTLINE : TEE_PREVIEW_LAYER_BACK_FEET_OUTLINE;
+			if((OutLine && !HasTeePreviewLayer(pInfo->m_TeeRenderFlags, FootOutlineLayer)) ||
+				(!OutLine && !HasTeePreviewLayer(pInfo->m_TeeRenderFlags, FootLayer)))
+				continue;
 			Graphics()->TextureSet(pInfo->m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_FEET));
 			Graphics()->QuadsBegin();
 			const CAnimKeyframe *pFoot = Filling ? pAnim->GetFrontFoot() : pAnim->GetBackFoot();
@@ -534,6 +546,8 @@ void CRenderTools::RenderTee6(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 	for(int Pass = 0; Pass < 2; Pass++)
 	{
 		int OutLine = Pass == 0 ? 1 : 0;
+		if(OutLine && !HasTeePreviewLayer(pInfo->m_TeeRenderFlags, TEE_PREVIEW_LAYER_OUTLINE))
+			continue;
 
 		for(int Filling = 0; Filling < 2; Filling++)
 		{
@@ -548,18 +562,21 @@ void CRenderTools::RenderTee6(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 
 			if(Filling == 1)
 			{
-				Graphics()->QuadsSetRotation(pAnim->GetBody()->m_Angle * pi * 2 + BodyAngle);
-
-				// draw body
-				Graphics()->SetColor(pInfo->m_ColorBody.r, pInfo->m_ColorBody.g, pInfo->m_ColorBody.b, Alpha);
 				vec2 BodyPos = Position + vec2(pAnim->GetBody()->m_X, pAnim->GetBody()->m_Y) * AnimScale;
 				float RenderBodyScale;
 				GetRenderTeeBodyScale(BaseSize, RenderBodyScale);
-				Graphics()->TextureSet(OutLine == 1 ? pSkinTextures->m_BodyOutline : pSkinTextures->m_Body);
-				Graphics()->RenderQuadContainerAsSprite(m_TeeQuadContainerIndex, OutLine, BodyPos.x, BodyPos.y, RenderBodyScale * BodyScale.x, RenderBodyScale * BodyScale.y);
+				if(HasTeePreviewLayer(pInfo->m_TeeRenderFlags, OutLine ? TEE_PREVIEW_LAYER_BODY_OUTLINE : TEE_PREVIEW_LAYER_BODY))
+				{
+					Graphics()->QuadsSetRotation(pAnim->GetBody()->m_Angle * pi * 2 + BodyAngle);
+
+					// draw body
+					Graphics()->SetColor(pInfo->m_ColorBody.r, pInfo->m_ColorBody.g, pInfo->m_ColorBody.b, Alpha);
+					Graphics()->TextureSet(OutLine == 1 ? pSkinTextures->m_BodyOutline : pSkinTextures->m_Body);
+					Graphics()->RenderQuadContainerAsSprite(m_TeeQuadContainerIndex, OutLine, BodyPos.x, BodyPos.y, RenderBodyScale * BodyScale.x, RenderBodyScale * BodyScale.y);
+				}
 
 				// draw eyes
-				if(Pass == 1)
+				if(Pass == 1 && HasTeePreviewLayer(pInfo->m_TeeRenderFlags, TEE_PREVIEW_LAYER_EYES))
 				{
 					int QuadOffset = 2;
 					int EyeQuadOffset = 0;
@@ -598,6 +615,12 @@ void CRenderTools::RenderTee6(const CAnimState *pAnim, const CTeeRenderInfo *pIn
 					Graphics()->RenderQuadContainerAsSprite(m_TeeQuadContainerIndex, QuadOffset + EyeQuadOffset, BodyPos.x + EyeSeparation + Offset.x, BodyPos.y + Offset.y, -EyeScale / (64.f * 0.4f), h / (64.f * 0.4f));
 				}
 			}
+
+			const int FootLayer = Filling ? TEE_PREVIEW_LAYER_FRONT_FEET : TEE_PREVIEW_LAYER_BACK_FEET;
+			const int FootOutlineLayer = Filling ? TEE_PREVIEW_LAYER_FRONT_FEET_OUTLINE : TEE_PREVIEW_LAYER_BACK_FEET_OUTLINE;
+			if((OutLine && !HasTeePreviewLayer(pInfo->m_TeeRenderFlags, FootOutlineLayer)) ||
+				(!OutLine && !HasTeePreviewLayer(pInfo->m_TeeRenderFlags, FootLayer)))
+				continue;
 
 			if(TinyTee)
 			{

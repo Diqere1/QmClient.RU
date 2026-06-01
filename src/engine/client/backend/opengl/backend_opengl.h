@@ -114,6 +114,7 @@ protected:
 	virtual void Cmd_RenderTarget_Begin(const CCommandBuffer::SCommand_RenderTarget_Begin *pCommand);
 	virtual void Cmd_RenderTarget_End(const CCommandBuffer::SCommand_RenderTarget_End *pCommand);
 	virtual void Cmd_RenderTarget_Draw(const CCommandBuffer::SCommand_RenderTarget_Draw *pCommand);
+	virtual void Cmd_RenderTarget_Readback(const CCommandBuffer::SCommand_RenderTarget_Readback *pCommand);
 	virtual void Cmd_ReadPixel(const CCommandBuffer::SCommand_TrySwapAndReadPixel *pCommand);
 	virtual void Cmd_Screenshot(const CCommandBuffer::SCommand_TrySwapAndScreenshot *pCommand);
 

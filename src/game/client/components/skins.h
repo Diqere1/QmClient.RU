@@ -3,6 +3,7 @@
 #ifndef GAME_CLIENT_COMPONENTS_SKINS_H
 #define GAME_CLIENT_COMPONENTS_SKINS_H
 
+#include <base/hash.h>
 #include <base/lock.h>
 
 #include <engine/client/enums.h>
@@ -19,12 +20,14 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <deque>
 #include <limits>
 #include <list>
 #include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -43,6 +46,7 @@ private:
 		CImageInfo m_InfoGrayscale;
 		CSkin::CSkinMetrics m_Metrics;
 		ColorRGBA m_BloodColor;
+		char m_aSettingsPreviewCacheContentHash[SHA256_MAXSTRSIZE] = {};
 	};
 
 	/**
@@ -153,6 +157,8 @@ public:
 		bool IsAlwaysLoaded() const { return m_AlwaysLoaded; }
 		EState State() const { return m_State; }
 		const std::unique_ptr<CSkin> &Skin() const { return m_pSkin; }
+		const char *SettingsPreviewCacheContentHash() const { return m_aSettingsPreviewCacheContentHash; }
+		bool IsSettingsPreviewCachePinned() const { return m_SettingsPreviewCachePinCount > 0; }
 		struct SUsageTrackingUpdate
 		{
 			bool m_ShouldTouch = false;
@@ -163,26 +169,41 @@ public:
 			return !AlwaysLoaded &&
 			       (State == EState::PENDING || State == EState::LOADING || State == EState::LOADED);
 		}
+		static bool TracksPriorityUsage(EState State, bool AlwaysLoaded, ESettingsResourcePriority Priority)
+		{
+			return Priority != ESettingsResourcePriority::BACKGROUND && TracksUsage(State, AlwaysLoaded);
+		}
 		static SUsageTrackingUpdate UsageTrackingUpdate(EState State, bool AlwaysLoaded, bool HasUsageEntry)
 		{
 			const bool ShouldTrack = TracksUsage(State, AlwaysLoaded);
+			return {ShouldTrack && !HasUsageEntry, !ShouldTrack && HasUsageEntry};
+		}
+		static SUsageTrackingUpdate UsageTrackingUpdate(EState State, bool AlwaysLoaded, bool HasUsageEntry, ESettingsResourcePriority Priority)
+		{
+			const bool ShouldTrack = TracksPriorityUsage(State, AlwaysLoaded, Priority);
 			return {ShouldTrack && !HasUsageEntry, !ShouldTrack && HasUsageEntry};
 		}
 		static bool ShouldDiscardUsageEntryBeforeUnload(bool ExistsInSkinMap, EState State, bool AlwaysLoaded)
 		{
 			return !ExistsInSkinMap || !TracksUsage(State, AlwaysLoaded);
 		}
+		static bool StateChangeRequiresListRefresh(EState OldState, EState NewState)
+		{
+			return (OldState == EState::NOT_FOUND) != (NewState == EState::NOT_FOUND);
+		}
 
 		/**
 		 * Request that this skin should be loaded and should stay loaded.
 		 */
 		void RequestLoad(bool Immediate = false);
+		void RequestLoad(ESettingsResourcePriority Priority);
 
 	private:
 		CSkins *m_pSkins;
 		char m_aName[MAX_SKIN_LENGTH];
 		EType m_Type;
 		int m_StorageType;
+		char m_aSettingsPreviewCacheContentHash[SHA256_MAXSTRSIZE] = {};
 		bool m_Vanilla;
 		bool m_Special;
 		bool m_AlwaysLoaded;
@@ -203,10 +224,15 @@ public:
 		 * Iterator into @link CSkins::m_SkinsUsageList @endlink for this skin container.
 		 */
 		std::optional<std::list<std::string>::iterator> m_UsageEntryIterator;
+		std::optional<std::list<std::string>::iterator> m_BackgroundEntryIterator;
+		int m_SettingsPreviewCachePinCount = 0;
 
 		EState DetermineInitialState() const;
+		bool IsBackgroundTracked() const { return m_BackgroundEntryIterator.has_value() && !m_UsageEntryIterator.has_value(); }
 		void TouchUsage();
-		void SetState(EState State);
+		void TouchBackgroundUsage();
+		void ClearBackgroundUsage();
+		void SetState(EState State, ESettingsResourcePriority Priority = ESettingsResourcePriority::VISIBLE);
 	};
 
 	/**
@@ -241,6 +267,7 @@ public:
 		 * Request that this skin should be loaded and should stay loaded.
 		 */
 		void RequestLoad(bool Immediate = false);
+		void RequestLoad(ESettingsResourcePriority Priority);
 
 	private:
 		CSkinContainer *m_pSkinContainer;
@@ -297,10 +324,31 @@ public:
 			return false;
 		}
 
-		MeasureSkinSprite(Plan.m_Body, Image, Body);
-		MeasureSkinSprite(Plan.m_Body, Image, BodyOutline);
-		MeasureSkinSprite(Plan.m_Feet, Image, Feet);
-		MeasureSkinSprite(Plan.m_Feet, Image, FeetOutline);
+		SSkinMetricPlan BodyPlan;
+		const bool BodyHasPixels = MeasureSkinSprite(BodyPlan, Image, Body);
+		SSkinMetricPlan BodyOutlinePlan;
+		const bool BodyOutlineHasPixels = MeasureSkinSprite(BodyOutlinePlan, Image, BodyOutline);
+		Plan.m_Body = BodyPlan;
+		if(BodyOutlineHasPixels)
+		{
+			if(BodyHasPixels)
+				MergeSkinMetricPlans(Plan.m_Body, BodyOutlinePlan);
+			else
+				Plan.m_Body = BodyOutlinePlan;
+		}
+
+		SSkinMetricPlan FeetPlan;
+		const bool FeetHasPixels = MeasureSkinSprite(FeetPlan, Image, Feet);
+		SSkinMetricPlan FeetOutlinePlan;
+		const bool FeetOutlineHasPixels = MeasureSkinSprite(FeetOutlinePlan, Image, FeetOutline);
+		Plan.m_Feet = FeetPlan;
+		if(FeetOutlineHasPixels)
+		{
+			if(FeetHasPixels)
+				MergeSkinMetricPlans(Plan.m_Feet, FeetOutlinePlan);
+			else
+				Plan.m_Feet = FeetOutlinePlan;
+		}
 		return true;
 	}
 
@@ -317,7 +365,10 @@ public:
 	CSkinLoadingStats LoadingStats() const;
 	CSkinList &SkinList();
 	void PrewarmByNames(const std::vector<std::string> &vNames, bool Immediate = false);
-	bool PrewarmPlayerPreviewReady(int Dummy, int MaxEntries);
+	bool PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool ProgressiveListReady = false);
+	bool AcquireSettingsPreviewCachePin(const char *pName);
+	void ReleaseSettingsPreviewCachePin(const char *pName);
+	std::vector<std::string> ConsumeSettingsPreviewWarmupReadySkins();
 
 	const CSkinContainer *FindContainerOrNullptr(const char *pName);
 	const CSkin *FindOrNullptr(const char *pName);
@@ -424,7 +475,7 @@ private:
 		ResizeImage(Image, NewWidth, NewHeight);
 		return true;
 	}
-	static void MeasureSkinSprite(SSkinMetricPlan &Plan, const CImageInfo &Image, const SSkinSpriteSpec &Sprite)
+	static bool MeasureSkinSprite(SSkinMetricPlan &Plan, const CImageInfo &Image, const SSkinSpriteSpec &Sprite)
 	{
 		const int GridPixelsWidth = Image.m_Width / Sprite.m_GridX;
 		const int GridPixelsHeight = Image.m_Height / Sprite.m_GridY;
@@ -453,12 +504,37 @@ private:
 			}
 		}
 
+		Plan.m_MaxWidth = CheckWidth;
+		Plan.m_MaxHeight = CheckHeight;
+		if(MaxX < 0 || MaxY < 0)
+		{
+			Plan.m_Width = 1;
+			Plan.m_Height = 1;
+			Plan.m_OffsetX = 0;
+			Plan.m_OffsetY = 0;
+			return false;
+		}
+
 		Plan.m_Width = std::clamp((MaxX - MinX) + 1, 1, CheckWidth);
 		Plan.m_Height = std::clamp((MaxY - MinY) + 1, 1, CheckHeight);
 		Plan.m_OffsetX = std::clamp(MinX, 0, CheckWidth - 1);
 		Plan.m_OffsetY = std::clamp(MinY, 0, CheckHeight - 1);
-		Plan.m_MaxWidth = CheckWidth;
-		Plan.m_MaxHeight = CheckHeight;
+		return true;
+	}
+
+	static void MergeSkinMetricPlans(SSkinMetricPlan &Plan, const SSkinMetricPlan &Other)
+	{
+		const int MinX = minimum(Plan.m_OffsetX, Other.m_OffsetX);
+		const int MinY = minimum(Plan.m_OffsetY, Other.m_OffsetY);
+		const int MaxX = maximum(Plan.m_OffsetX + Plan.m_Width, Other.m_OffsetX + Other.m_Width);
+		const int MaxY = maximum(Plan.m_OffsetY + Plan.m_Height, Other.m_OffsetY + Other.m_Height);
+
+		Plan.m_OffsetX = MinX;
+		Plan.m_OffsetY = MinY;
+		Plan.m_Width = MaxX - MinX;
+		Plan.m_Height = MaxY - MinY;
+		Plan.m_MaxWidth = maximum(Plan.m_MaxWidth, Other.m_MaxWidth);
+		Plan.m_MaxHeight = maximum(Plan.m_MaxHeight, Other.m_MaxHeight);
 	}
 
 	/**
@@ -554,58 +630,15 @@ private:
 		SResult m_Result;
 	};
 
-	std::unordered_map<std::string, std::unique_ptr<CSkinContainer>> m_Skins;
-	std::optional<std::chrono::nanoseconds> m_ContainerUpdateTime;
-	/**
-	 * Sorted from most recently to least recently used. Must be kept synchronized with the skin containers.
-	 * Contains prioritized skins in pending/loading/loaded states so visible items can be started and finished first.
-	 */
-	std::list<std::string> m_SkinsUsageList;
-
-	CSkinList m_SkinList;
-	std::shared_ptr<CSkinDirectoryScanJob> m_pSkinDirectoryScanJob;
-	std::shared_ptr<CSkinListPlanJob> m_pSkinListPlanJob;
-	std::vector<std::string> m_vPendingSkinListMergeNames;
-	std::vector<CSkinListEntry> m_vPendingSkinListEntries;
-	size_t m_SkinListMergeCursor = 0;
-	int m_PendingSkinListUnfilteredCount = 0;
-	int m_SkinListPlanGeneration = 0;
-	std::vector<std::pair<std::string, int>> m_vPendingSkinDirectoryEntries;
-	size_t m_SkinDirectoryMergeCursor = 0;
-	std::set<std::string> m_Favorites;
-	std::array<std::vector<CSkinQueueEntry>, NUM_DUMMIES> m_aSkinQueue;
-	std::array<std::vector<CSkinQueuePreset>, NUM_DUMMIES> m_aSkinQueuePresets;
-	std::array<std::chrono::nanoseconds, NUM_DUMMIES> m_aSkinQueueElapsed = {};
-	std::array<std::optional<std::chrono::nanoseconds>, NUM_DUMMIES> m_aSkinQueueLastUpdate = {};
-
-	CSkin m_PlaceholderSkin;
-	char m_aEventSkinPrefix[MAX_SKIN_LENGTH];
-
-	/**
-	 * Maximum number of skins to process per frame in UpdateFinishLoading.
-	 * This limit prevents frame stuttering caused by uploading too many textures at once.
-	 * Each skin requires approximately 14 texture uploads (7 original + 7 colorable).
-	 */
-	static constexpr int MAX_SKINS_PER_FRAME = 12;
-
-	enum class ESkinProcessResult
-	{
-		CONTINUE,
-		BREAK_GPU_LIMIT,
-		BREAK_TIME_EXCEEDED,
-	};
-
-	ESkinProcessResult ProcessSkinContainer(CSkinContainer *pSkinContainer, CSkinLoadingStats &Stats,
-		int &SkinsProcessedThisFrame, std::chrono::nanoseconds StartTime,
-		std::chrono::nanoseconds MaxTime);
-
 	static bool PrepareSkinData(const char *pName, CSkinLoadData &Data);
+	static void ComputeSettingsPreviewCacheContentHash(CSkinLoadData &Data);
 	void LoadSkinFinish(CSkinContainer *pSkinContainer, const CSkinLoadData &Data);
 	void LoadSkinDirect(const char *pName);
 	const CSkinContainer *FindContainerImpl(const char *pName);
 	static int SkinScan(const char *pName, int IsDir, int StorageType, void *pUser);
 
 	void UpdateUnloadSkins(CSkinLoadingStats &Stats);
+	bool ReclaimBackgroundSkinForPriorityRequest(const char *pRequesterName);
 	void UpdateStartLoading(CSkinLoadingStats &Stats);
 	void UpdateFinishLoading(CSkinLoadingStats &Stats, std::chrono::nanoseconds StartTime, std::chrono::nanoseconds MaxTime);
 	void QueueSkinDirectoryScanJob();
@@ -639,7 +672,59 @@ private:
 	bool AddSkinQueuePreset(const char *pName, int Dummy);
 	bool AddSkinQueuePresetItem(int PresetIndex, const char *pSkinName, int Dummy);
 	bool AddSkinQueuePresetItem(int PresetIndex, const char *pSkinName, bool UseCustomColor, int ColorBody, int ColorFeet, int Dummy);
+	bool AddSkinQueueImpl(const CSkinQueueEntry &Entry, int Dummy);
+	bool RemoveSkinQueueImpl(const CSkinQueueEntry &Entry, int Dummy);
 
 	friend class CSkinProfiles;
+
+	std::unordered_map<std::string, std::unique_ptr<CSkinContainer>> m_Skins;
+	std::optional<std::chrono::nanoseconds> m_ContainerUpdateTime;
+	/**
+	 * Sorted from most recently to least recently used. Must be kept synchronized with the skin containers.
+	 * Contains prioritized skins in pending/loading/loaded states so visible items can be started and finished first.
+	 */
+	std::list<std::string> m_SkinsUsageList;
+	std::list<std::string> m_SkinsBackgroundList;
+	std::deque<std::string> m_vSettingsPreviewWarmupReadySkins;
+	std::unordered_set<std::string> m_SettingsPreviewWarmupReadyQueued;
+
+	CSkinList m_SkinList;
+	std::shared_ptr<CSkinDirectoryScanJob> m_pSkinDirectoryScanJob;
+	std::shared_ptr<CSkinListPlanJob> m_pSkinListPlanJob;
+	std::vector<std::string> m_vPendingSkinListMergeNames;
+	std::vector<CSkinListEntry> m_vPendingSkinListEntries;
+	size_t m_SkinListMergeCursor = 0;
+	int m_PendingSkinListUnfilteredCount = 0;
+	bool m_HasPendingSkinListMergePlan = false;
+	int m_SkinListPlanGeneration = 0;
+	std::vector<std::pair<std::string, int>> m_vPendingSkinDirectoryEntries;
+	size_t m_SkinDirectoryMergeCursor = 0;
+	std::set<std::string> m_Favorites;
+	std::array<std::vector<CSkinQueueEntry>, NUM_DUMMIES> m_aSkinQueue;
+	std::array<std::vector<CSkinQueuePreset>, NUM_DUMMIES> m_aSkinQueuePresets;
+	std::array<std::chrono::nanoseconds, NUM_DUMMIES> m_aSkinQueueElapsed = {};
+	std::array<std::optional<std::chrono::nanoseconds>, NUM_DUMMIES> m_aSkinQueueLastUpdate = {};
+
+	CSkin m_PlaceholderSkin;
+	char m_aEventSkinPrefix[MAX_SKIN_LENGTH];
+
+	/**
+	 * Maximum number of skins to process per frame in UpdateFinishLoading.
+	 * This limit prevents frame stuttering caused by uploading too many textures at once.
+	 * Each skin requires approximately 14 texture uploads (7 original + 7 colorable).
+	 */
+	static constexpr int MAX_SKINS_PER_FRAME = 12;
+
+	enum class ESkinProcessResult
+	{
+		CONTINUE,
+		BREAK_GPU_LIMIT,
+		BREAK_TIME_EXCEEDED,
+	};
+
+	ESkinProcessResult ProcessSkinContainer(CSkinContainer *pSkinContainer, CSkinLoadingStats &Stats,
+		int &SkinsProcessedThisFrame, std::chrono::nanoseconds StartTime,
+		std::chrono::nanoseconds MaxTime);
 };
+
 #endif

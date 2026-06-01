@@ -537,6 +537,8 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 		}
 	}
 
+	pCommand->m_pCapabilities->m_pRenderTargetSupportReason = pCommand->m_pCapabilities->m_RenderTargets ? "supported" : "opengl_context_without_render_target_support";
+
 	if(*pCommand->m_pInitError != -2)
 	{
 		// set some default settings
@@ -1118,6 +1120,46 @@ void CCommandProcessorFragment_OpenGL::Cmd_RenderTarget_Draw(const CCommandBuffe
 #endif
 }
 
+void CCommandProcessorFragment_OpenGL::Cmd_RenderTarget_Readback(const CCommandBuffer::SCommand_RenderTarget_Readback *pCommand)
+{
+	if(pCommand->m_TargetId < 0 || (size_t)pCommand->m_TargetId >= m_vRenderTargets.size() || pCommand->m_pImage == nullptr)
+		return;
+
+	const SOpenGLRenderTarget &Target = m_vRenderTargets[pCommand->m_TargetId];
+	if(Target.m_Framebuffer == 0 || Target.m_Width <= 0 || Target.m_Height <= 0)
+		return;
+
+	const int w = Target.m_Width;
+	const int h = Target.m_Height;
+
+	// we allocate one more row to use when we are flipping the texture
+	unsigned char *pPixelData = (unsigned char *)malloc((size_t)w * (h + 1) * 4);
+	unsigned char *pTempRow = pPixelData + w * h * 4;
+
+	GLint Alignment;
+	GLint PreviousFramebuffer;
+	glGetIntegerv(GL_PACK_ALIGNMENT, &Alignment);
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &PreviousFramebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, Target.m_Framebuffer);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pPixelData);
+	glPixelStorei(GL_PACK_ALIGNMENT, Alignment);
+	glBindFramebuffer(GL_FRAMEBUFFER, PreviousFramebuffer);
+
+	// flip the pixel because opengl works from bottom left corner
+	for(int y = 0; y < h / 2; y++)
+	{
+		mem_copy(pTempRow, pPixelData + y * w * 4, w * 4);
+		mem_copy(pPixelData + y * w * 4, pPixelData + (h - y - 1) * w * 4, w * 4);
+		mem_copy(pPixelData + (h - y - 1) * w * 4, pTempRow, w * 4);
+	}
+
+	pCommand->m_pImage->m_Width = w;
+	pCommand->m_pImage->m_Height = h;
+	pCommand->m_pImage->m_Format = CImageInfo::FORMAT_RGBA;
+	pCommand->m_pImage->m_pData = pPixelData;
+}
+
 void CCommandProcessorFragment_OpenGL::Cmd_ReadPixel(const CCommandBuffer::SCommand_TrySwapAndReadPixel *pCommand)
 {
 	// get size of viewport
@@ -1234,6 +1276,9 @@ ERunCommandReturnTypes CCommandProcessorFragment_OpenGL::RunCommand(const CComma
 		break;
 	case CCommandBuffer::CMD_RENDER_TARGET_DRAW:
 		Cmd_RenderTarget_Draw(static_cast<const CCommandBuffer::SCommand_RenderTarget_Draw *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_RENDER_TARGET_READBACK:
+		Cmd_RenderTarget_Readback(static_cast<const CCommandBuffer::SCommand_RenderTarget_Readback *>(pBaseCommand));
 		break;
 	case CCommandBuffer::CMD_TRY_SWAP_AND_READ_PIXEL:
 		Cmd_ReadPixel(static_cast<const CCommandBuffer::SCommand_TrySwapAndReadPixel *>(pBaseCommand));
