@@ -8,6 +8,7 @@
 #endif
 
 // QmClient specific variables
+MACRO_CONFIG_INT(QmNewUi, qm_new_ui, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用新版设置页面 UI")
 MACRO_CONFIG_INT(QmShowOutdatedVersionWarning, qm_show_outdated_version_warning, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示版本过旧提示")
 
 // Nameplate

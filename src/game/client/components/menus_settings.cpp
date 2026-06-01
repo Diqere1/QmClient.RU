@@ -3500,19 +3500,29 @@ void CMenus::RenderSettings(CUIRect MainView)
 
 	// render background
 	CUIRect Button, TabBar, RestartBar;
-	const float TabBarWidth = std::clamp(MainView.w * 0.16f, 132.0f, 168.0f);
-	const ColorRGBA SettingsBackingColor = SettingsUiColorSurface(0.38f, 0.16f);
-	const ColorRGBA SettingsTabBarColor = SettingsUiColorSurface(0.82f, 0.18f);
-	const ColorRGBA SettingsContentColor = SettingsUiColorSurface(0.70f, 0.16f);
+	const bool UseNewSettingsUi = g_Config.m_QmNewUi != 0;
 	const ColorRGBA SettingsAccentColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
-	MainView.Draw(SettingsBackingColor, IGraphics::CORNER_B, ui_token::radius::CARD);
-	MainView.Margin(std::clamp(MainView.w * 0.012f, 8.0f, 14.0f), &MainView);
-	MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
-	MainView.VSplitRight(12.0f, &MainView, nullptr);
-	TabBar.Draw(SettingsTabBarColor, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	MainView.Draw(SettingsContentColor, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	const float ContentMargin = std::clamp(MainView.w * 0.018f, 14.0f, 22.0f);
-	MainView.Margin(ContentMargin, &MainView);
+	if(UseNewSettingsUi)
+	{
+		const float TabBarWidth = std::clamp(MainView.w * 0.16f, 132.0f, 168.0f);
+		const ColorRGBA SettingsBackingColor = SettingsUiColorSurface(0.38f, 0.16f);
+		const ColorRGBA SettingsTabBarColor = SettingsUiColorSurface(0.82f, 0.18f);
+		const ColorRGBA SettingsContentColor = SettingsUiColorSurface(0.70f, 0.16f);
+		MainView.Draw(SettingsBackingColor, IGraphics::CORNER_B, ui_token::radius::CARD);
+		MainView.Margin(std::clamp(MainView.w * 0.012f, 8.0f, 14.0f), &MainView);
+		MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
+		MainView.VSplitRight(12.0f, &MainView, nullptr);
+		TabBar.Draw(SettingsTabBarColor, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		MainView.Draw(SettingsContentColor, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		MainView.Margin(std::clamp(MainView.w * 0.018f, 14.0f, 22.0f), &MainView);
+	}
+	else
+	{
+		const float TabBarWidth = std::clamp(MainView.w * 0.14f, 108.0f, 120.0f);
+		MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
+		MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
+		MainView.Margin(std::clamp(MainView.w * 0.02f, 12.0f, 20.0f), &MainView);
+	}
 
 	const bool NeedRestart = m_NeedRestartGraphics || m_NeedRestartSound || m_NeedRestartUpdate;
 	if(NeedRestart)
@@ -3521,9 +3531,17 @@ void CMenus::RenderSettings(CUIRect MainView)
 		MainView.HSplitBottom(10.0f, &MainView, nullptr);
 	}
 
-	TabBar.Margin(10.0f, &TabBar);
-	TabBar.HSplitTop(38.0f, &Button, &TabBar);
-	Ui()->DoLabel(&Button, Localize("Settings"), ui_token::font::HEADLINE_LG, TEXTALIGN_MC);
+	if(UseNewSettingsUi)
+	{
+		TabBar.Margin(10.0f, &TabBar);
+		TabBar.HSplitTop(38.0f, &Button, &TabBar);
+		Ui()->DoLabel(&Button, Localize("Settings"), ui_token::font::HEADLINE_LG, TEXTALIGN_MC);
+	}
+	else
+	{
+		TabBar.HSplitTop(50.0f, &Button, &TabBar);
+		Button.Draw(ms_ColorTabbarActive, IGraphics::CORNER_BR, 10.0f);
+	}
 
 	PrepareSettingsTabLabelCache(MainView.w);
 	if(g_Config.m_UiSettingsPage != SETTINGS_LANGUAGE)
@@ -3531,28 +3549,38 @@ void CMenus::RenderSettings(CUIRect MainView)
 
 	{
 		CPerfTimer StageTimer;
-		CUiV2AnimationRuntime &AnimRuntime = GameClient()->UiRuntimeV2()->AnimRuntime();
 		for(int i = 0; i < SETTINGS_LENGTH; i++)
 		{
 			if(i == SETTINGS_PROFILES || i == SETTINGS_CONFIGS || i == SETTINGS_CONTRIBUTORS)
 				continue; // Profiles 已合并到 Tee 页面，Configs/Contributors 已并入 QmClient 顶部分页
-			TabBar.HSplitTop(6.0f, nullptr, &TabBar);
-			TabBar.HSplitTop(27.0f, &Button, &TabBar);
-			const bool Active = g_Config.m_UiSettingsPage == i;
-			const bool Hovered = Ui()->HotItem() == &m_aSettingsTabButtons[i];
-			const uint64_t NodeKey = BuildUiAnimNodeKey(MakeUiScopeHash("settings_v2_nav"), reinterpret_cast<uint64_t>(&m_aSettingsTabButtons[i]));
-			const float NavStrength = std::clamp(ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::ALPHA, (Active || Hovered) ? 1.0f : 0.0f, ui_token::motion::BTN_HOVER.m_DurationSec, ui_token::motion::BTN_HOVER.m_Easing), 0.0f, 1.0f);
-			ColorRGBA DefaultColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(0.25f + NavStrength * 0.85f);
-			ColorRGBA ActiveColor = SettingsAccentColor.WithAlpha(std::clamp(SettingsAccentColor.a * 0.24f, 0.0f, 1.0f));
-			ColorRGBA HoverColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(1.35f);
-			if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], &DefaultColor, &ActiveColor, &HoverColor, ui_token::radius::BASE, nullptr, &m_aSettingsTabLabelElements[i]))
-				g_Config.m_UiSettingsPage = i;
-			if(Active)
+			if(UseNewSettingsUi)
 			{
-				CUIRect Accent = Button;
-				Accent.VSplitLeft(3.0f, &Accent, nullptr);
-				Accent.HMargin(5.0f, &Accent);
-				Accent.Draw(SettingsAccentColor, IGraphics::CORNER_ALL, 2.0f);
+				TabBar.HSplitTop(6.0f, nullptr, &TabBar);
+				TabBar.HSplitTop(27.0f, &Button, &TabBar);
+				const bool Active = g_Config.m_UiSettingsPage == i;
+				const bool Hovered = Ui()->HotItem() == &m_aSettingsTabButtons[i];
+				const uint64_t NodeKey = BuildUiAnimNodeKey(MakeUiScopeHash("settings_v2_nav"), reinterpret_cast<uint64_t>(&m_aSettingsTabButtons[i]));
+				CUiV2AnimationRuntime &AnimRuntime = GameClient()->UiRuntimeV2()->AnimRuntime();
+				const float NavStrength = std::clamp(ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::ALPHA, (Active || Hovered) ? 1.0f : 0.0f, ui_token::motion::BTN_HOVER.m_DurationSec, ui_token::motion::BTN_HOVER.m_Easing), 0.0f, 1.0f);
+				ColorRGBA DefaultColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(0.25f + NavStrength * 0.85f);
+				ColorRGBA ActiveColor = SettingsAccentColor.WithAlpha(std::clamp(SettingsAccentColor.a * 0.24f, 0.0f, 1.0f));
+				ColorRGBA HoverColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(1.35f);
+				if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], &DefaultColor, &ActiveColor, &HoverColor, ui_token::radius::BASE, nullptr, &m_aSettingsTabLabelElements[i]))
+					g_Config.m_UiSettingsPage = i;
+				if(Active)
+				{
+					CUIRect Accent = Button;
+					Accent.VSplitLeft(3.0f, &Accent, nullptr);
+					Accent.HMargin(5.0f, &Accent);
+					Accent.Draw(SettingsAccentColor, IGraphics::CORNER_ALL, 2.0f);
+				}
+			}
+			else
+			{
+				TabBar.HSplitTop(10.0f, nullptr, &TabBar);
+				TabBar.HSplitTop(26.0f, &Button, &TabBar);
+				if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], g_Config.m_UiSettingsPage == i, &Button, IGraphics::CORNER_R, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
+					g_Config.m_UiSettingsPage = i;
 			}
 		}
 
