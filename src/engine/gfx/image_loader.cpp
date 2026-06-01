@@ -13,6 +13,8 @@
 #include <array>
 #include <csetjmp>
 #include <cstdlib>
+#include <limits>
+#include <new>
 #include <vector>
 
 bool CByteBufferReader::Read(void *pData, size_t Size)
@@ -95,6 +97,24 @@ static CImageInfo::EImageFormat ImageFormatFromChannelCount(int ColorChannelCoun
 	}
 }
 
+static bool ImageDataSize(size_t Width, size_t Height, CImageInfo::EImageFormat Format, size_t &DataSize)
+{
+	const size_t PixelSize = CImageInfo::PixelSize(Format);
+	if(Width == 0 || Height == 0 || Width > std::numeric_limits<size_t>::max() / Height)
+	{
+		DataSize = 0;
+		return false;
+	}
+	const size_t PixelCount = Width * Height;
+	if(PixelCount > std::numeric_limits<size_t>::max() / PixelSize)
+	{
+		DataSize = 0;
+		return false;
+	}
+	DataSize = PixelCount * PixelSize;
+	return true;
+}
+
 static int PngliteIncompatibility(png_structp pPngStruct, png_infop pPngInfo)
 {
 	int Result = 0;
@@ -165,13 +185,6 @@ bool CImageLoader::LoadPng(CByteBufferReader &Reader, const char *pContextName, 
 	png_bytepp pRowPointers = nullptr;
 	int Height = 0; // ensure this is not undefined for the Cleanup function
 	const auto &&Cleanup = [&]() {
-		if(pRowPointers != nullptr)
-		{
-			for(int y = 0; y < Height; ++y)
-			{
-				delete[] pRowPointers[y];
-			}
-		}
 		delete[] pRowPointers;
 		if(pPngInfo != nullptr)
 		{
@@ -181,6 +194,7 @@ bool CImageLoader::LoadPng(CByteBufferReader &Reader, const char *pContextName, 
 	};
 	if(setjmp(UserErrorStruct.m_JmpBuf))
 	{
+		Image.Free();
 		Cleanup();
 		return false;
 	}
@@ -213,17 +227,19 @@ bool CImageLoader::LoadPng(CByteBufferReader &Reader, const char *pContextName, 
 		return false;
 	}
 
-	const int Width = png_get_image_width(pPngStruct, pPngInfo);
-	Height = png_get_image_height(pPngStruct, pPngInfo);
+	const png_uint_32 PngWidth = png_get_image_width(pPngStruct, pPngInfo);
+	const png_uint_32 PngHeight = png_get_image_height(pPngStruct, pPngInfo);
 	const png_byte BitDepth = png_get_bit_depth(pPngStruct, pPngInfo);
 	const int ColorType = png_get_color_type(pPngStruct, pPngInfo);
 
-	if(Width == 0 || Height == 0)
+	if(PngWidth == 0 || PngHeight == 0 || PngWidth > (png_uint_32)std::numeric_limits<int>::max() || PngHeight > (png_uint_32)std::numeric_limits<int>::max())
 	{
-		log_error("png", "image has width (%d) or height (%d) of 0.", Width, Height);
+		log_error("png", "image has invalid dimensions. width=%u height=%u", (unsigned)PngWidth, (unsigned)PngHeight);
 		Cleanup();
 		return false;
 	}
+	const int Width = (int)PngWidth;
+	Height = (int)PngHeight;
 
 	if(BitDepth == 16)
 	{
@@ -254,27 +270,44 @@ bool CImageLoader::LoadPng(CByteBufferReader &Reader, const char *pContextName, 
 	png_read_update_info(pPngStruct, pPngInfo);
 
 	const int ColorChannelCount = png_get_channels(pPngStruct, pPngInfo);
-	const int BytesInRow = png_get_rowbytes(pPngStruct, pPngInfo);
-	dbg_assert(BytesInRow == Width * ColorChannelCount, "bytes in row incorrect.");
-
-	pRowPointers = new png_bytep[Height];
-	for(int y = 0; y < Height; ++y)
+	const size_t BytesInRow = png_get_rowbytes(pPngStruct, pPngInfo);
+	const CImageInfo::EImageFormat ImageFormat = ImageFormatFromChannelCount(ColorChannelCount);
+	size_t ExpectedDataSize = 0;
+	if(BytesInRow == 0 || ColorChannelCount <= 0 || (size_t)Width > std::numeric_limits<size_t>::max() / CImageInfo::PixelSize(ImageFormat) ||
+		(size_t)BytesInRow != (size_t)Width * CImageInfo::PixelSize(ImageFormat) ||
+		!ImageDataSize(Width, Height, ImageFormat, ExpectedDataSize))
 	{
-		pRowPointers[y] = new png_byte[BytesInRow];
+		log_error("png", "image dimensions are too large. width=%d height=%d rowbytes=%" PRIzu " channels=%d", Width, Height, BytesInRow, ColorChannelCount);
+		Cleanup();
+		return false;
 	}
 
-	png_read_image(pPngStruct, pRowPointers);
+	Image.m_pData = static_cast<uint8_t *>(malloc(ExpectedDataSize));
+	if(Image.m_pData == nullptr)
+	{
+		log_error("png", "failed to allocate image data. width=%d height=%d bytes=%" PRIzu, Width, Height, ExpectedDataSize);
+		Cleanup();
+		return false;
+	}
+	pRowPointers = new (std::nothrow) png_bytep[Height];
+	if(pRowPointers == nullptr)
+	{
+		Image.Free();
+		log_error("png", "failed to allocate row pointers. height=%d", Height);
+		Cleanup();
+		return false;
+	}
+	for(int y = 0; y < Height; ++y)
+		pRowPointers[y] = &Image.m_pData[(size_t)y * BytesInRow];
 
-	if(!Reader.Error())
+	png_read_image(pPngStruct, pRowPointers);
+	if(Reader.Error())
+		Image.Free();
+	else
 	{
 		Image.m_Width = Width;
 		Image.m_Height = Height;
-		Image.m_Format = ImageFormatFromChannelCount(ColorChannelCount);
-		Image.m_pData = static_cast<uint8_t *>(malloc(Image.DataSize()));
-		for(int y = 0; y < Height; ++y)
-		{
-			mem_copy(&Image.m_pData[y * BytesInRow], pRowPointers[y], BytesInRow);
-		}
+		Image.m_Format = ImageFormat;
 		PngliteIncompatible = PngliteIncompatibility(pPngStruct, pPngInfo);
 	}
 
@@ -525,7 +558,13 @@ bool CImageLoader::LoadWebP(CByteBufferReader &Reader, const char *pContextName,
 	}
 
 	// Allocate output buffer and copy data (libwebp uses its own allocator)
-	const size_t DataSizeOut = Width * Height * 4;
+	size_t DataSizeOut = 0;
+	if(!ImageDataSize(Width, Height, CImageInfo::FORMAT_RGBA, DataSizeOut))
+	{
+		log_error("webp", "image dimensions are too large for '%s': %dx%d", pContextName, Width, Height);
+		WebPFree(pDecodedData);
+		return false;
+	}
 	uint8_t *pDestData = (uint8_t *)malloc(DataSizeOut);
 	if(!pDestData)
 	{

@@ -19,7 +19,7 @@ public:
 	IGraphics::CTextureHandle m_Texture;
 	int m_External = 0;
 	char m_aName[IO_MAX_PATH_LENGTH] = "";
-	unsigned char m_aTileFlags[256];
+	unsigned char m_aTileFlags[256] = {};
 
 	CAutoMapper m_AutoMapper;
 };

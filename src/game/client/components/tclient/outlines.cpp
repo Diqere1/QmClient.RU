@@ -1,5 +1,7 @@
 #include "outlines.h"
 
+#include <base/log.h>
+
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 
@@ -7,6 +9,8 @@
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
 #include <game/mapitems.h>
+
+#include <limits>
 
 // The order of this is the order of priority for outlines
 enum
@@ -107,14 +111,11 @@ public:
 
 // The order of this determines order of priority into the one map (tele + freeze = tele)
 static constexpr COutLineLayer OUTLINE_LAYERS[] = {{OutlineLayer::TELE}, {OutlineLayer::GAME}, {OutlineLayer::FRONT}};
+static constexpr size_t MAX_OUTLINE_MAP_TILES = 4096 * 4096;
 
 void COutlines::OnMapLoad()
 {
-	if(m_pMapData)
-	{
-		delete[] m_pMapData;
-		m_pMapData = nullptr;
-	}
+	m_vMapData.clear();
 
 	// Find valid layers and size
 	std::vector<const COutLineLayer *> vValidOutlineLayers;
@@ -131,18 +132,35 @@ void COutlines::OnMapLoad()
 	}
 	if(m_MapDataSize.x <= 0 || m_MapDataSize.y <= 0)
 		return;
-	m_pMapData = new int[m_MapDataSize.x * m_MapDataSize.y]();
+
+	const size_t MapWidth = (size_t)m_MapDataSize.x;
+	const size_t MapHeight = (size_t)m_MapDataSize.y;
+	if(MapWidth > std::numeric_limits<size_t>::max() / MapHeight)
+	{
+		log_warn("outlines", "Map size overflow for outline cache: %dx%d", m_MapDataSize.x, m_MapDataSize.y);
+		m_MapDataSize = {0, 0};
+		return;
+	}
+	const size_t NumTiles = MapWidth * MapHeight;
+	if(NumTiles > MAX_OUTLINE_MAP_TILES)
+	{
+		log_warn("outlines", "Map too large for outline cache: %dx%d", m_MapDataSize.x, m_MapDataSize.y);
+		m_MapDataSize = {0, 0};
+		return;
+	}
+
+	m_vMapData.assign(NumTiles, OUTLINE_NONE);
 
 	// Do it
 	for(const auto *pLayer : vValidOutlineLayers)
 	{
-		pLayer->SetData(GameClient(), m_pMapData, m_MapDataSize);
+		pLayer->SetData(GameClient(), m_vMapData.data(), m_MapDataSize);
 	}
 }
 
 void COutlines::OnRender()
 {
-	if(!m_pMapData)
+	if(m_vMapData.empty())
 		return;
 	if(GameClient()->m_MapLayersBackground.m_OnlineOnly && Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
@@ -173,7 +191,7 @@ void COutlines::OnRender()
 	auto GetTile = [&](int x, int y) {
 		x = std::clamp(x, 0, m_MapDataSize.x - 1);
 		y = std::clamp(y, 0, m_MapDataSize.y - 1);
-		return m_pMapData[y * m_MapDataSize.x + x];
+		return m_vMapData[y * m_MapDataSize.x + x];
 	};
 
 	Graphics()->TextureClear();

@@ -12,6 +12,7 @@
 
 #include <array>
 #include <chrono>
+#include <limits>
 
 namespace
 {
@@ -161,6 +162,28 @@ namespace
 		}
 	}
 
+}
+
+static bool CheckedDataSize(size_t Count, size_t ItemSize, size_t &DataSize)
+{
+	if(ItemSize != 0 && Count > std::numeric_limits<size_t>::max() / ItemSize)
+	{
+		DataSize = 0;
+		return false;
+	}
+	DataSize = Count * ItemSize;
+	return true;
+}
+
+static bool CheckedAddSize(size_t Lhs, size_t Rhs, size_t &DataSize)
+{
+	if(Lhs > std::numeric_limits<size_t>::max() - Rhs)
+	{
+		DataSize = 0;
+		return false;
+	}
+	DataSize = Lhs + Rhs;
+	return true;
 }
 
 bool CRenderLayerTile::CTileLayerVisuals::Init(unsigned int Width, unsigned int Height)
@@ -809,15 +832,33 @@ void CRenderLayerTile::UploadTileData(std::optional<CTileLayerVisuals> &VisualsO
 	unsigned char *pTmpTileTexCoords = vTmpTileTexCoords.empty() ? nullptr : (unsigned char *)vTmpTileTexCoords.data();
 
 	Visuals.m_BufferContainerIndex = -1;
-	size_t UploadDataSize = vTmpTileTexCoords.size() * sizeof(CGraphicTileTextureCoords) + vTmpTiles.size() * sizeof(CGraphicTile);
+	size_t TileTexCoordsDataSize = 0;
+	size_t TileDataSize = 0;
+	size_t UploadDataSize = 0;
+	size_t TileCopyCount = 0;
+	if(!CheckedDataSize(vTmpTileTexCoords.size(), sizeof(CGraphicTileTextureCoords), TileTexCoordsDataSize) ||
+		!CheckedDataSize(vTmpTiles.size(), sizeof(CGraphicTile), TileDataSize) ||
+		!CheckedDataSize(vTmpTiles.size(), (size_t)4, TileCopyCount) ||
+		!CheckedAddSize(TileTexCoordsDataSize, TileDataSize, UploadDataSize))
+	{
+		log_error("map/render", "Tile layer upload data size overflow.");
+		RenderLoading();
+		return;
+	}
 	if(UploadDataSize > 0)
 	{
 		char *pUploadData = (char *)malloc(sizeof(char) * UploadDataSize);
+		if(pUploadData == nullptr)
+		{
+			log_error("map/render", "Failed to allocate tile layer upload data.");
+			RenderLoading();
+			return;
+		}
 
-		mem_copy_special(pUploadData, pTmpTiles, sizeof(vec2), vTmpTiles.size() * 4, (DoTextureCoords ? sizeof(ubvec4) : 0));
+		mem_copy_special(pUploadData, pTmpTiles, sizeof(vec2), TileCopyCount, (DoTextureCoords ? sizeof(ubvec4) : 0));
 		if(DoTextureCoords)
 		{
-			mem_copy_special(pUploadData + sizeof(vec2), pTmpTileTexCoords, sizeof(ubvec4), vTmpTiles.size() * 4, sizeof(vec2));
+			mem_copy_special(pUploadData + sizeof(vec2), pTmpTileTexCoords, sizeof(ubvec4), TileCopyCount, sizeof(vec2));
 		}
 
 		// first create the buffer object
@@ -1141,10 +1182,12 @@ void CRenderLayerQuads::Init()
 
 	// gpu upload
 	size_t UploadDataSize = 0;
-	if(Textured)
-		UploadDataSize = vTmpQuadsTextured.size() * sizeof(CTmpQuadTextured);
-	else
-		UploadDataSize = vTmpQuads.size() * sizeof(CTmpQuad);
+	if(Textured ? !CheckedDataSize(vTmpQuadsTextured.size(), sizeof(CTmpQuadTextured), UploadDataSize) : !CheckedDataSize(vTmpQuads.size(), sizeof(CTmpQuad), UploadDataSize))
+	{
+		log_error("map/render", "Quad layer upload data size overflow.");
+		RenderLoading();
+		return;
+	}
 
 	if(UploadDataSize > 0)
 	{

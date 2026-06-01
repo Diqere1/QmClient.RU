@@ -4154,7 +4154,11 @@ bool CEditor::ReplaceImage(const char *pFilename, int StorageType, bool CheckDup
 	str_copy(pImg->m_aName, aBuf);
 	pImg->m_External = IsVanillaImage(pImg->m_aName);
 
-	ConvertToRgba(*pImg);
+	if(!ConvertToRgba(*pImg) && (pImg->m_pData == nullptr || pImg->m_Format != CImageInfo::FORMAT_RGBA))
+	{
+		ShowFileDialogError("无法从文件“%s”转换图像。", pFilename);
+		return false;
+	}
 	DilateImage(*pImg);
 
 	pImg->m_AutoMapper.Load(pImg->m_aName);
@@ -4211,7 +4215,11 @@ bool CEditor::AddImage(const char *pFilename, int StorageType, void *pUser)
 	pImg->m_pData = ImgInfo.m_pData;
 	pImg->m_External = IsVanillaImage(aBuf);
 
-	ConvertToRgba(*pImg);
+	if(!ConvertToRgba(*pImg) && (pImg->m_pData == nullptr || pImg->m_Format != CImageInfo::FORMAT_RGBA))
+	{
+		pEditor->ShowFileDialogError("无法从文件“%s”转换图像。", pFilename);
+		return false;
+	}
 	DilateImage(*pImg);
 
 	int TextureLoadFlag = pEditor->Graphics()->Uses2DTextureArrays() ? IGraphics::TEXLOAD_TO_2D_ARRAY_TEXTURE : IGraphics::TEXLOAD_TO_3D_TEXTURE;

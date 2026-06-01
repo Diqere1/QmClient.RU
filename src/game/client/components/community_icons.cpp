@@ -100,6 +100,12 @@ bool CCommunityIcons::LoadFile(const char *pPath, int DirType, CImageInfo &Info,
 		return false;
 	}
 	InfoGrayscale = Info.DeepCopy();
+	if(InfoGrayscale.m_pData == nullptr)
+	{
+		Info.Free();
+		log_error("menus/browser", "Failed to load community icon from '%s': could not copy image data", pPath);
+		return false;
+	}
 	ConvertToGrayscale(InfoGrayscale);
 	return true;
 }

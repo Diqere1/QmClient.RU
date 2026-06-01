@@ -243,11 +243,15 @@ CServer::CServer()
 {
 	m_pConfig = &g_Config;
 	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		m_aClients[i].m_pPersistentData = nullptr;
 		m_aDemoRecorder[i] = CDemoRecorder(&m_SnapshotDelta, true);
+	}
 	m_aDemoRecorder[RECORDER_MANUAL] = CDemoRecorder(&m_SnapshotDelta, false);
 	m_aDemoRecorder[RECORDER_AUTO] = CDemoRecorder(&m_SnapshotDelta, false);
 
 	m_pGameServer = nullptr;
+	m_pPersistentData = nullptr;
 
 	m_CurrentGameTick = MIN_TICK;
 	m_RunServer = UNINITIALIZED;
@@ -3377,13 +3381,36 @@ int CServer::Run()
 
 	{
 		int Size = GameServer()->PersistentClientDataSize();
+		if(Size <= 0)
+		{
+			log_error("server", "invalid persistent client data size %d", Size);
+			return -1;
+		}
 		for(auto &Client : m_aClients)
 		{
 			Client.m_HasPersistentData = false;
+			free(Client.m_pPersistentData);
 			Client.m_pPersistentData = malloc(Size);
+			if(Client.m_pPersistentData == nullptr)
+			{
+				log_error("server", "failed to allocate persistent client data");
+				return -1;
+			}
 		}
 	}
-	m_pPersistentData = malloc(GameServer()->PersistentDataSize());
+	const int PersistentDataSize = GameServer()->PersistentDataSize();
+	if(PersistentDataSize <= 0)
+	{
+		log_error("server", "invalid persistent server data size %d", PersistentDataSize);
+		return -1;
+	}
+	free(m_pPersistentData);
+	m_pPersistentData = malloc(PersistentDataSize);
+	if(m_pPersistentData == nullptr)
+	{
+		log_error("server", "failed to allocate persistent server data");
+		return -1;
+	}
 
 	// load map
 	if(!LoadMap(Config()->m_SvMap))

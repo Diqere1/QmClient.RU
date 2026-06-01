@@ -644,13 +644,19 @@ static bool AllocateImage(CImageInfo &Image, int Width, int Height, ColorRGBA Fi
 	Image.m_Width = Width;
 	Image.m_Height = Height;
 	Image.m_Format = CImageInfo::FORMAT_RGBA;
-	Image.m_pData = static_cast<uint8_t *>(malloc(Image.DataSize()));
+	size_t ImageDataSize = 0;
+	if(Width <= 0 || Height <= 0 || !Image.DataSize(ImageDataSize))
+	{
+		Image.Free();
+		return false;
+	}
+	Image.m_pData = static_cast<uint8_t *>(malloc(ImageDataSize));
 	if(!Image.m_pData)
 	{
 		Image.Free();
 		return false;
 	}
-	mem_zero(Image.m_pData, Image.DataSize());
+	mem_zero(Image.m_pData, ImageDataSize);
 	FillRect(Image, 0, 0, Width, Height, FillColor);
 	return true;
 }
@@ -660,7 +666,13 @@ static bool AllocateClearImage(CImageInfo &Image, int Width, int Height)
 	Image.m_Width = Width;
 	Image.m_Height = Height;
 	Image.m_Format = CImageInfo::FORMAT_RGBA;
-	Image.m_pData = static_cast<uint8_t *>(calloc(Image.DataSize(), sizeof(uint8_t)));
+	size_t ImageDataSize = 0;
+	if(Width <= 0 || Height <= 0 || !Image.DataSize(ImageDataSize))
+	{
+		Image.Free();
+		return false;
+	}
+	Image.m_pData = static_cast<uint8_t *>(calloc(ImageDataSize, sizeof(uint8_t)));
 	if(!Image.m_pData)
 	{
 		Image.Free();

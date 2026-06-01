@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace MapPreview
 {
@@ -138,7 +139,13 @@ namespace MapPreview
 		if(NewWidth == Image.m_Width && NewHeight == Image.m_Height && Left == 0 && Top == 0)
 			return false;
 
-		uint8_t *pNewData = static_cast<uint8_t *>(malloc(NewWidth * NewHeight * PixelSize));
+		if(NewWidth > std::numeric_limits<size_t>::max() / NewHeight)
+			return false;
+		const size_t NewPixelCount = NewWidth * NewHeight;
+		if(NewPixelCount > std::numeric_limits<size_t>::max() / PixelSize)
+			return false;
+
+		uint8_t *pNewData = static_cast<uint8_t *>(malloc(NewPixelCount * PixelSize));
 		if(pNewData == nullptr)
 			return false;
 
@@ -472,7 +479,9 @@ namespace MapPreview
 				ImageInfo.m_Height = pImg->m_Height;
 				ImageInfo.m_Format = CImageInfo::FORMAT_RGBA;
 				ImageInfo.m_pData = static_cast<uint8_t *>(m_pMap->GetData(pImg->m_ImageData));
-				if(!ImageInfo.m_pData || (size_t)m_pMap->GetDataSize(pImg->m_ImageData) < ImageInfo.DataSize())
+				size_t ImageDataSize = 0;
+				const int FileDataSize = m_pMap->GetDataSize(pImg->m_ImageData);
+				if(!ImageInfo.m_pData || FileDataSize < 0 || !ImageInfo.DataSize(ImageDataSize) || (size_t)FileDataSize < ImageDataSize)
 				{
 					m_pMap->UnloadData(pImg->m_ImageData);
 					m_pMap->UnloadData(pImg->m_ImageName);
