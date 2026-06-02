@@ -5268,7 +5268,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					if(str_comp_nocase(pType, "Insane") == 0)
 						return Localize("Insane");
 					if(str_comp_nocase(pType, "Dummy") == 0)
-						return Localize("Dummy");
+						return Localize("分身");
 					if(str_comp_nocase(pType, "Solo") == 0)
 						return Localize("Solo");
 					if(str_comp_nocase(pType, "Oldschool") == 0)

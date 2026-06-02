@@ -1615,7 +1615,7 @@ SHudDummyMiniViewState BuildHudDummyMiniViewState(const CGameClient &GameClient,
 	}
 	else if(!Client.DummyConnected())
 	{
-		str_copy(State.m_aPlaceholderSubtitle, Localize("Connect dummy to activate"), sizeof(State.m_aPlaceholderSubtitle));
+		str_copy(State.m_aPlaceholderSubtitle, Localize("连接分身以启用"), sizeof(State.m_aPlaceholderSubtitle));
 	}
 	else
 	{

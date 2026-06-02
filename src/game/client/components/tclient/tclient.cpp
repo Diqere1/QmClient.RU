@@ -1239,7 +1239,7 @@ void CTClient::TrySendAxiomDummyLogin()
 	str_format(aLoginCommand, sizeof(aLoginCommand), "/login %s", g_Config.m_QmAxiomDummyLoginPassword);
 	GameClient()->m_Chat.SendChatOnConn(IClient::CONN_DUMMY, 0, aLoginCommand);
 	m_AxiomDummyAutoLoginSent = true;
-	GameClient()->Echo(Localize("Attempting Axiom dummy auto login"));
+	GameClient()->Echo(Localize("正在尝试 Axiom 分身自动登录"));
 }
 
 void CTClient::HandleAxiomAutoLoginMessage(const char *pText)

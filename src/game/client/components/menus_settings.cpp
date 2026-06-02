@@ -885,7 +885,7 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	}
 
 	static CButtonContainer s_DummyTabButton;
-	if(DoButton_MenuTab(&s_DummyTabButton, Localize("Dummy"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
+	if(DoButton_MenuTab(&s_DummyTabButton, Localize("分身"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
 	{
 		m_Dummy = true;
 	}
@@ -1059,7 +1059,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	MainView.HSplitTop(20.0f, &TabBar, &MainView);
 	TabBar.VSplitMid(&TabBar, &ChangeInfo, 20.f);
 	const char *pPlayerTabLabel = Localize("Player");
-	const char *pDummyTabLabel = Localize("Dummy");
+	const char *pDummyTabLabel = Localize("分身");
 	const char *pProfilesTabLabel = Localize("Profiles");
 	const float TabFontSize = TabBar.h * CUi::ms_FontmodHeight;
 	float PlayerDummyTabWidth = maximum(90.0f,
@@ -4717,7 +4717,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudHealthAmmo, Localize("Show health, shields and ammo"), &g_Config.m_ClShowhudHealthAmmo, &LeftView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudScore, Localize("Show score"), &g_Config.m_ClShowhudScore, &LeftView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowLocalTimeAlways, Localize("Show local time always"), &g_Config.m_ClShowLocalTimeAlways, &LeftView, LineSize);
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClSpecCursor, Localize("Show spectator cursor"), &g_Config.m_ClSpecCursor, &LeftView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClSpecCursor, Localize("显示旁观光标"), &g_Config.m_ClSpecCursor, &LeftView, LineSize);
 
 		// Settings of the HUD element for votes
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowVotesAfterVoting, Localize("Show votes window after voting"), &g_Config.m_ClShowVotesAfterVoting, &LeftView, LineSize);
@@ -4741,7 +4741,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
 
 		// Switches of various DDRace HUD elements
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowIds, Localize("Show client IDs (scoreboard, chat, spectator)"), &g_Config.m_ClShowIds, &RightView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowIds, Localize("显示客户端 ID（计分板、聊天、旁观）"), &g_Config.m_ClShowIds, &RightView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudDDRace, Localize("Show DDRace HUD"), &g_Config.m_ClShowhudDDRace, &RightView, LineSize);
 		if(g_Config.m_ClShowhudDDRace)
 		{
@@ -4754,7 +4754,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		}
 
 		// Eye with a number of spectators
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudSpectatorCount, Localize("Show number of spectators"), &g_Config.m_ClShowhudSpectatorCount, &RightView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudSpectatorCount, Localize("显示旁观者数量"), &g_Config.m_ClShowhudSpectatorCount, &RightView, LineSize);
 
 		// Switch for dummy actions display
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudDummyActions, Localize("显示分身操作"), &g_Config.m_ClShowhudDummyActions, &RightView, LineSize);
@@ -5299,7 +5299,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 
 		// ***** Name Plate Dummy Preview ***** //
 		RightView.HSplitBottom(LineSize, &RightView, &Button);
-		if(DoButton_CheckBox(&m_DummyNamePlatePreview, g_Config.m_ClDummy ? Localize("Preview player's name plate") : Localize("Preview dummy's name plate"), m_DummyNamePlatePreview, &Button))
+		if(DoButton_CheckBox(&m_DummyNamePlatePreview, g_Config.m_ClDummy ? Localize("预览玩家的名牌") : Localize("预览分身的名牌"), m_DummyNamePlatePreview, &Button))
 			m_DummyNamePlatePreview = !m_DummyNamePlatePreview;
 
 		RightView.HSplitBottom(LineSize, &RightView, &Button);
