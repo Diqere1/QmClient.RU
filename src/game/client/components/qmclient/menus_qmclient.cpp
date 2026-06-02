@@ -5576,7 +5576,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				DoModuleHeadline(CardContent, 11, Localize("HJ辅助"), Localize("解冻自动化助手"));
 
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoUnspecOnUnfreeze, Localize("解冻时自动取消Spec"), &g_Config.m_QmAutoUnspecOnUnfreeze, &Row, LG_LineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoUnspecOnUnfreeze, Localize("解冻时自动取消旁观"), &g_Config.m_QmAutoUnspecOnUnfreeze, &Row, LG_LineHeight);
 				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoSwitchOnUnfreeze, Localize("解冻后自动切换到解冻的玩家"), &g_Config.m_QmAutoSwitchOnUnfreeze, &Row, LG_LineHeight);

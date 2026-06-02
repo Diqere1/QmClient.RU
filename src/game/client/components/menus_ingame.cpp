@@ -446,11 +446,11 @@ void CMenus::RenderGame(CUIRect MainView)
 	const char *pDummyButtonLabel = nullptr;
 	if(!LiveDirectorActive)
 	{
-		pDummyButtonLabel = Localize("Connect Dummy");
+		pDummyButtonLabel = Localize("连接分身");
 		if(Client()->DummyConnecting())
-			pDummyButtonLabel = Localize("Connecting dummy");
+			pDummyButtonLabel = Localize("正在连接分身");
 		else if(Client()->DummyConnected())
-			pDummyButtonLabel = Localize("Disconnect Dummy");
+			pDummyButtonLabel = Localize("断开分身");
 	}
 	const char *pEditHudButtonLabel = Localize("Edit HUD");
 	const char *pDemoButtonLabel = Recording ? Localize("Stop record") : Localize("Record demo");
@@ -458,7 +458,7 @@ void CMenus::RenderGame(CUIRect MainView)
 	str_format(aSaveReplayButtonLabel, sizeof(aSaveReplayButtonLabel), Localize("Save last %d min"), g_Config.m_ClEscReplayLengthMinutes);
 	const char *pDemoMarkerButtonLabel = Localize("Mark demo");
 	const char *pReportButtonLabel = "举报";
-	const char *pSpectateButtonLabel = Localize("Spectate");
+	const char *pSpectateButtonLabel = Localize("旁观");
 	const char *pJoinRedButtonLabel = Localize("Join red");
 	const char *pJoinBlueButtonLabel = Localize("Join blue");
 	const char *pJoinGameButtonLabel = Localize("Join game");
@@ -641,7 +641,7 @@ void CMenus::RenderGame(CUIRect MainView)
 		if(!Client()->DummyAllowed())
 		{
 			DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
-			GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("Dummy is not allowed on this server"));
+			GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("此服务器不允许使用分身"));
 		}
 		else if(Client()->DummyConnectingDelayed())
 		{
@@ -662,7 +662,7 @@ void CMenus::RenderGame(CUIRect MainView)
 			{
 				if(GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0)
 				{
-					PopupConfirm(Localize("Disconnect Dummy"), Localize("Are you sure that you want to disconnect your dummy?"), Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnectDummy);
+					PopupConfirm(Localize("断开分身"), Localize("确定要断开你的分身吗？"), Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnectDummy);
 				}
 				else
 				{
@@ -1792,7 +1792,7 @@ void CMenus::RenderServerControl(CUIRect MainView)
 		s_ControlPage = EServerControlTab::KICKVOTE;
 
 	static CButtonContainer s_Button2;
-	if(DoButton_MenuTab(&s_Button2, Localize("Move player to spectators"), s_ControlPage == EServerControlTab::SPECVOTE, &TabBar, IGraphics::CORNER_NONE))
+	if(DoButton_MenuTab(&s_Button2, Localize("移动玩家到旁观者"), s_ControlPage == EServerControlTab::SPECVOTE, &TabBar, IGraphics::CORNER_NONE))
 		s_ControlPage = EServerControlTab::SPECVOTE;
 
 	if(!s_ControlPageTransitionInitialized)
@@ -2064,7 +2064,7 @@ void CMenus::RenderUnfinishedMaps(CUIRect MainView)
 		Localize("Fun"),
 		Localize("Event"),
 		Localize("Insane"),
-		Localize("Dummy"),
+		Localize("分身"),
 	};
 	const char *apTypeKeys[] = {
 		"Novice",

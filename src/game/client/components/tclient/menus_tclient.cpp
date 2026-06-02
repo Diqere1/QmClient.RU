@@ -2086,11 +2086,11 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView)
 				if(DeferRightHeavySections)
 				{
 					char aBuf[128];
-					str_format(aBuf, sizeof(aBuf), "%s: %d%%", Localize("Free spectate cursor opacity"), g_Config.m_TcRenderCursorSpecAlpha);
+					str_format(aBuf, sizeof(aBuf), "%s: %d%%", Localize("自由旁观光标不透明度"), g_Config.m_TcRenderCursorSpecAlpha);
 					Ui()->DoLabel(&Button, aBuf, FontSize, TEXTALIGN_ML);
 				}
 				else
-					Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+					Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("自由旁观光标不透明度"), 0, 100);
 			}
 
 			if(Render)
@@ -3582,7 +3582,7 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarList, Localize("Enable warlist"), &g_Config.m_TcWarList, &Column2, LineSize);
 	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListChat, Localize("Colors in chat"), &g_Config.m_TcWarListChat, &Column2, LineSize);
 	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListScoreboard, Localize("Colors in scoreboard"), &g_Config.m_TcWarListScoreboard, &Column2, LineSize);
-	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListSpectate, Localize("Colors in spectate select"), &g_Config.m_TcWarListSpectate, &Column2, LineSize);
+	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListSpectate, Localize("旁观选择中显示颜色"), &g_Config.m_TcWarListSpectate, &Column2, LineSize);
 	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListShowClan, Localize("Show clan if war"), &g_Config.m_TcWarListShowClan, &Column2, LineSize);
 
 	if(DeferredFrames >= 2)
@@ -4689,7 +4689,7 @@ void CMenus::RenderSettingsTClientProfiles(CUIRect MainView)
 		MainView.HSplitTop(LineSize, &Options, &MainView);
 
 		Options.VSplitLeft(150.0f, &Button, &Options);
-		if(DoButton_CheckBox(&m_Dummy, Localize("Dummy"), m_Dummy, &Button))
+		if(DoButton_CheckBox(&m_Dummy, Localize("分身"), m_Dummy, &Button))
 			m_Dummy = 1 - m_Dummy;
 
 		Options.VSplitLeft(150.0f, &Button, &Options);

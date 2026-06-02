@@ -400,7 +400,7 @@ void CScoreboard::RenderSpectators(CUIRect Spectators)
 		++RemainingSpectators;
 	}
 
-	TextRender()->TextEx(&Cursor, Localize("Spectators"));
+	TextRender()->TextEx(&Cursor, Localize("旁观者"));
 
 	if(RemainingSpectators > 0)
 	{
@@ -1906,7 +1906,7 @@ CUi::EPopupMenuFunctionResult CScoreboard::PopupScoreboard(void *pContext, CUIRe
 
 	bool IsSpectating = pScoreboard->GameClient()->m_Snap.m_SpecInfo.m_Active && pScoreboard->GameClient()->m_Snap.m_SpecInfo.m_SpectatorId == pPopupContext->m_ClientId;
 	ColorRGBA SpectateButtonColor = ColorRGBA(1.0f, 1.0f, 1.0f, (IsSpectating ? 0.25f : 0.5f) * pUi->ButtonColorMul(&pPopupContext->m_SpectateButton));
-	if(pUi->DoButton_PopupMenu(&pPopupContext->m_SpectateButton, Localize("Spectate"), &Container, FontSize, TEXTALIGN_MC, 0.0f, false, true, SpectateButtonColor))
+	if(pUi->DoButton_PopupMenu(&pPopupContext->m_SpectateButton, Localize("旁观"), &Container, FontSize, TEXTALIGN_MC, 0.0f, false, true, SpectateButtonColor))
 	{
 		if(IsSpectating)
 		{

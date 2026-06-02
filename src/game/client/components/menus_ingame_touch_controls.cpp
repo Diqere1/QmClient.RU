@@ -1519,8 +1519,8 @@ const char **CMenusIngameTouchControls::VisibilityNames() const
 	s_apVisibilities[0] = Localize("Ingame", "Touch button visibilities");
 	s_apVisibilities[1] = Localize("Zoom Allowed", "Touch button visibilities");
 	s_apVisibilities[2] = Localize("Vote Active", "Touch button visibilities");
-	s_apVisibilities[3] = Localize("Dummy Allowed", "Touch button visibilities");
-	s_apVisibilities[4] = Localize("Dummy Connected", "Touch button visibilities");
+	s_apVisibilities[3] = Localize("允许分身", "Touch button visibilities");
+	s_apVisibilities[4] = Localize("分身已连接", "Touch button visibilities");
 	s_apVisibilities[5] = Localize("Rcon Authed", "Touch button visibilities");
 	s_apVisibilities[6] = Localize("Demo Player", "Touch button visibilities");
 	s_apVisibilities[7] = Localize("Extra Menu", "Touch button visibilities");
@@ -1534,7 +1534,7 @@ const char **CMenusIngameTouchControls::PredefinedNames() const
 	s_apPredefined[0] = Localize("Ingame Menu", "Predefined touch button behaviors");
 	s_apPredefined[1] = Localize("Extra Menu", "Predefined touch button behaviors");
 	s_apPredefined[2] = Localize("Emoticon", "Predefined touch button behaviors");
-	s_apPredefined[3] = Localize("Spectate", "Predefined touch button behaviors");
+	s_apPredefined[3] = Localize("旁观", "Predefined touch button behaviors");
 	s_apPredefined[4] = Localize("Swap Action", "Predefined touch button behaviors");
 	s_apPredefined[5] = Localize("Use Action", "Predefined touch button behaviors");
 	s_apPredefined[6] = Localize("Joystick Action", "Predefined touch button behaviors");
