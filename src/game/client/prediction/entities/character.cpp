@@ -1021,6 +1021,93 @@ void CCharacter::HandleTiles(int Index)
 		if(NewJumps != m_Core.m_Jumps)
 			m_Core.m_Jumps = NewJumps;
 	}
+
+	if(TryPredictTeleport(MapIndex))
+		return;
+}
+
+void CCharacter::ApplyTeleport(vec2 Pos, bool ResetVelocity, bool ReleaseHookedPlayers, bool LoseWeapons)
+{
+	m_Core.m_Pos = Pos;
+	if(ResetVelocity)
+		m_Core.m_Vel = vec2(0, 0);
+	if(!g_Config.m_SvTeleportHoldHook)
+	{
+		ResetHook();
+		if(ReleaseHookedPlayers)
+			GameWorld()->ReleaseHooked(GetCid());
+	}
+	if(LoseWeapons)
+		ResetPickups();
+}
+
+bool CCharacter::TryPredictCheckpointTeleport(bool ResetVelocity, bool ReleaseHookedPlayers)
+{
+	for(int Checkpoint = m_TeleCheckpoint - 1; Checkpoint >= 0; Checkpoint--)
+	{
+		const std::vector<vec2> &vTeleCheckOuts = Collision()->TeleCheckOuts(Checkpoint);
+		if(vTeleCheckOuts.empty())
+			continue;
+
+		const int TeleOut = GameWorld()->m_Core.RandomOr0((int)vTeleCheckOuts.size());
+		ApplyTeleport(vTeleCheckOuts[TeleOut], ResetVelocity, ReleaseHookedPlayers, false);
+		return true;
+	}
+
+	return false;
+}
+
+bool CCharacter::TryPredictTeleport(int MapIndex)
+{
+	if(!GameWorld()->m_WorldConfig.m_PredictTeleport)
+		return false;
+
+	const int Teleport = Collision()->IsTeleport(MapIndex);
+	if(!g_Config.m_SvOldTeleportHook && !g_Config.m_SvOldTeleportWeapons && Teleport > 0)
+	{
+		const std::vector<vec2> &vTeleOuts = Collision()->TeleOuts(Teleport - 1);
+		if(!vTeleOuts.empty())
+		{
+			if(m_Core.m_Super || m_Core.m_Invincible)
+				return true;
+
+			const int TeleOut = GameWorld()->m_Core.RandomOr0((int)vTeleOuts.size());
+			ApplyTeleport(vTeleOuts[TeleOut], false, false, g_Config.m_SvTeleportLoseWeapons);
+			return true;
+		}
+	}
+
+	const int EvilTeleport = Collision()->IsEvilTeleport(MapIndex);
+	if(EvilTeleport > 0)
+	{
+		const std::vector<vec2> &vTeleOuts = Collision()->TeleOuts(EvilTeleport - 1);
+		if(!vTeleOuts.empty())
+		{
+			if(m_Core.m_Super || m_Core.m_Invincible)
+				return true;
+
+			const int TeleOut = GameWorld()->m_Core.RandomOr0((int)vTeleOuts.size());
+			const bool ResetState = !g_Config.m_SvOldTeleportHook && !g_Config.m_SvOldTeleportWeapons;
+			ApplyTeleport(vTeleOuts[TeleOut], ResetState, ResetState, ResetState && g_Config.m_SvTeleportLoseWeapons);
+			return true;
+		}
+	}
+
+	if(Collision()->IsCheckEvilTeleport(MapIndex))
+	{
+		if(m_Core.m_Super || m_Core.m_Invincible)
+			return true;
+		return TryPredictCheckpointTeleport(true, true);
+	}
+
+	if(Collision()->IsCheckTeleport(MapIndex))
+	{
+		if(m_Core.m_Super || m_Core.m_Invincible)
+			return true;
+		return TryPredictCheckpointTeleport(false, false);
+	}
+
+	return false;
 }
 
 void CCharacter::HandleTuneLayer()
@@ -1223,6 +1310,16 @@ void CCharacter::GiveAllWeapons()
 	}
 }
 
+void CCharacter::ResetPickups()
+{
+	for(int Weapon = WEAPON_SHOTGUN; Weapon < NUM_WEAPONS - 1; Weapon++)
+	{
+		m_Core.m_aWeapons[Weapon].m_Got = false;
+		if(m_Core.m_ActiveWeapon == Weapon)
+			m_Core.m_ActiveWeapon = WEAPON_GUN;
+	}
+}
+
 void CCharacter::ResetVelocity()
 {
 	m_Core.m_Vel = vec2(0, 0);
@@ -1248,6 +1345,24 @@ void CCharacter::AddVelocity(const vec2 Addition)
 void CCharacter::ApplyMoveRestrictions()
 {
 	m_Core.m_Vel = ClampVel(m_MoveRestrictions, m_Core.m_Vel);
+}
+
+void CCharacter::ShiftTickBase(int TickDelta)
+{
+	if(TickDelta == 0)
+		return;
+
+	m_AttackTick += TickDelta;
+	if(m_LastDamageTick >= 0)
+		m_LastDamageTick += TickDelta;
+	m_LastWeaponSwitchTick += TickDelta;
+	m_LastTuneZoneTick += TickDelta;
+	if(m_Core.m_aWeapons[WEAPON_NINJA].m_Got)
+		m_Core.m_Ninja.m_ActivationTick += TickDelta;
+	if(m_Core.m_FreezeStart > 0)
+		m_Core.m_FreezeStart += TickDelta;
+	if(m_Core.m_FreezeEnd > 0)
+		m_Core.m_FreezeEnd += TickDelta;
 }
 
 CTeamsCore *CCharacter::TeamsCore()
