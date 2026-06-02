@@ -24,6 +24,7 @@ public:
 
 	bool Match(const CPlasma *pPlasma) const;
 	void Read(const CLaserData *pData);
+	void ShiftEvalTick(int TickDelta) { m_EvalTick += TickDelta; }
 
 	void Reset();
 	void Tick() override;

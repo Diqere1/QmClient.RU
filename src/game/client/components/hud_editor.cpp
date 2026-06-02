@@ -20,7 +20,7 @@ namespace
 constexpr float EPSILON = 0.001f;
 constexpr float HUD_EDITOR_SNAP_DISTANCE = 6.0f;
 constexpr float HUD_EDITOR_EDGE_ANCHOR_DISTANCE = EPSILON;
-constexpr const char *JUMP_HINT_DEFAULT_TEXT = "3 Tiles Edge Jump:\\nLeft Jump: .34|.31|.16\\nLeft Double Jump: .41|.28|.25|.13\\nRight Jump: .63|.66|.81\\nRight Double Jump: .56|.69|.72|.84";
+constexpr const char *JUMP_HINT_DEFAULT_TEXT = "这是示例文本";
 
 float Clamp01(float Value)
 {

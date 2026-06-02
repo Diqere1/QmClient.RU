@@ -69,6 +69,7 @@ public:
 	bool Freeze();
 	bool UnFreeze();
 	void GiveAllWeapons();
+	void ResetPickups();
 	int Team();
 	bool CanCollide(int ClientId) override;
 	bool SameTeam(int ClientId);
@@ -142,6 +143,7 @@ public:
 
 	// TClient
 	CNetObj_PlayerInput *LatestInput() { return &m_LatestInput; }
+	void ShiftTickBase(int TickDelta);
 
 private:
 	// weapon info
@@ -181,6 +183,9 @@ private:
 
 	static bool IsSwitchActiveCb(int Number, void *pUser);
 	void HandleTiles(int Index);
+	bool TryPredictTeleport(int MapIndex);
+	bool TryPredictCheckpointTeleport(bool ResetVelocity, bool ReleaseHookedPlayers);
+	void ApplyTeleport(vec2 Pos, bool ResetVelocity, bool ReleaseHookedPlayers, bool LoseWeapons);
 	void HandleSkippableTiles(int Index);
 	void DDRaceTick();
 	void DDRacePostCoreTick();

@@ -134,6 +134,9 @@ private:
 	bool ResolveParticipantInputs(int LocalClientId, int DummyClientId, int &LocalInputConn, int &DummyInputConn) const;
 	int CurrentLocalPracticeId() const;
 	bool ResolvePracticeRoles(int &LocalClientId, int &DummyClientId) const;
+	bool IsPracticeServerPauseActive() const;
+	void ShiftPracticeWorldTicks(int TickDelta);
+	void FreezePracticeWorldForServerPause();
 	void UpdateGhostData();
 	void UpdateGhostForClientId(int ClientId, SGhostData &Ghost);
 	int ApplyVisualFastInputPrediction(int FinalTickRegular, int LocalClientId, int DummyClientId, int LocalInputConn, int DummyInputConn);

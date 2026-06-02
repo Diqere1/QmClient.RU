@@ -15,6 +15,7 @@
 #include <game/client/projectile_data.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/entities/laser.h>
+#include <game/client/prediction/entities/plasma.h>
 #include <game/client/prediction/entities/projectile.h>
 #include <game/gamecore.h>
 #include <game/mapitems.h>
@@ -407,6 +408,20 @@ bool CFastPractice::IsPracticeDummy(int ClientId) const
 	return ClientId >= 0 && ClientId == CurrentPracticeDummyId();
 }
 
+bool CFastPractice::IsPracticeServerPauseActive() const
+{
+	if(!m_Enabled)
+		return false;
+	if(!GameClient()->m_Snap.m_pLocalInfo || GameClient()->m_Snap.m_pLocalInfo->m_Team == TEAM_SPECTATORS)
+		return false;
+
+	const auto IsParticipantPaused = [&](int ClientId) {
+		return ClientId >= 0 && ClientId < MAX_CLIENTS &&
+		       (GameClient()->m_aClients[ClientId].m_Paused || GameClient()->m_aClients[ClientId].m_Spec);
+	};
+	return IsParticipantPaused(m_EnableLocalClientId) || IsParticipantPaused(m_EnableDummyClientId);
+}
+
 bool CFastPractice::ForcePredictWeapons() const
 {
 	const bool Spectating = GameClient()->m_Snap.m_SpecInfo.m_Active ||
@@ -462,6 +477,51 @@ void CFastPractice::PrunePracticeWorld(CGameWorld &World) const
 	}
 }
 
+void CFastPractice::ShiftPracticeWorldTicks(int TickDelta)
+{
+	if(TickDelta <= 0)
+		return;
+
+	m_PracticeBaseWorld.m_GameTick += TickDelta;
+	for(auto &Switcher : m_PracticeBaseWorld.Switchers())
+	{
+		for(int Team = 0; Team < NUM_DDRACE_TEAMS; Team++)
+		{
+			if(Switcher.m_aEndTick[Team] > 0)
+				Switcher.m_aEndTick[Team] += TickDelta;
+			if(Switcher.m_aLastUpdateTick[Team] > 0)
+				Switcher.m_aLastUpdateTick[Team] += TickDelta;
+		}
+	}
+	for(int &LastAttackTick : m_aLastAttackTick)
+		if(LastAttackTick >= 0)
+			LastAttackTick += TickDelta;
+	for(CCharacter *pChar = (CCharacter *)m_PracticeBaseWorld.FindFirst(CGameWorld::ENTTYPE_CHARACTER); pChar; pChar = (CCharacter *)pChar->TypeNext())
+		pChar->ShiftTickBase(TickDelta);
+	for(CProjectile *pProj = (CProjectile *)m_PracticeBaseWorld.FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pProj; pProj = (CProjectile *)pProj->TypeNext())
+		pProj->ShiftStartTick(TickDelta);
+	for(CLaser *pLaser = (CLaser *)m_PracticeBaseWorld.FindFirst(CGameWorld::ENTTYPE_LASER); pLaser; pLaser = (CLaser *)pLaser->TypeNext())
+		pLaser->ShiftEvalTick(TickDelta);
+	for(CPlasma *pPlasma = (CPlasma *)m_PracticeBaseWorld.FindFirst(CGameWorld::ENTTYPE_PLASMA); pPlasma; pPlasma = (CPlasma *)pPlasma->TypeNext())
+		pPlasma->ShiftEvalTick(TickDelta);
+}
+
+void CFastPractice::FreezePracticeWorldForServerPause()
+{
+	if(!m_PracticeWorldInitialized)
+		return;
+
+	const int TargetTick = Client()->PredGameTick(g_Config.m_ClDummy);
+	ShiftPracticeWorldTicks(TargetTick - m_PracticeBaseWorld.GameTick());
+
+	CaptureServerReleasedFireStates();
+	CapturePracticeInputFilterStates();
+	ReleaseBufferedActionInputState();
+	m_SuppressFireOnNextPredictTick = true;
+	m_InputSuppressTicks = std::max(m_InputSuppressTicks, 2);
+	GameClient()->m_PredictedDummyId = -1;
+}
+
 void CFastPractice::SyncPracticeWorldConfig()
 {
 	m_PracticeBaseWorld.m_WorldConfig = GameClient()->m_GameWorld.m_WorldConfig;
@@ -469,6 +529,7 @@ void CFastPractice::SyncPracticeWorldConfig()
 	m_PracticeBaseWorld.m_WorldConfig.m_PredictFreeze = true;
 	m_PracticeBaseWorld.m_WorldConfig.m_PredictTiles = true;
 	m_PracticeBaseWorld.m_WorldConfig.m_PredictDDRace = true;
+	m_PracticeBaseWorld.m_WorldConfig.m_PredictTeleport = true;
 	m_PracticeBaseWorld.m_Teams = GameClient()->m_Teams;
 }
 
@@ -1267,6 +1328,11 @@ bool CFastPractice::OverridePredict()
 		Disable();
 		return false;
 	}
+	if(IsPracticeServerPauseActive())
+	{
+		FreezePracticeWorldForServerPause();
+		return false;
+	}
 	if(GameClient()->m_Snap.m_SpecInfo.m_Active || (GameClient()->m_Snap.m_pLocalInfo && GameClient()->m_Snap.m_pLocalInfo->m_Team == TEAM_SPECTATORS))
 	{
 		// Keep practice mode state, but don't replace predicted world while spectating.
@@ -1770,7 +1836,11 @@ void CFastPractice::OnNewSnapshot()
 		return;
 	}
 
-	if(GameClient()->m_Snap.m_SpecInfo.m_Active || (GameClient()->m_Snap.m_pLocalInfo && GameClient()->m_Snap.m_pLocalInfo->m_Team == TEAM_SPECTATORS))
+	if(IsPracticeServerPauseActive())
+	{
+		FreezePracticeWorldForServerPause();
+	}
+	else if(GameClient()->m_Snap.m_SpecInfo.m_Active || (GameClient()->m_Snap.m_pLocalInfo && GameClient()->m_Snap.m_pLocalInfo->m_Team == TEAM_SPECTATORS))
 		GameClient()->m_PredictedDummyId = -1;
 	else
 	{
