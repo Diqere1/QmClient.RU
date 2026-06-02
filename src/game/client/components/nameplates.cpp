@@ -127,6 +127,7 @@ static constexpr int NAMEPLATE_FREE_MOVE_OFFSET_MAX = 300;
 // nameplate elements around. Width and height are both scaled by this factor
 // around the baseline frame's center.
 static constexpr float NAMEPLATE_FREE_MOVE_FRAME_SCALE = 3.0f;
+static constexpr float NAMEPLATE_FREE_MOVE_SNAP_DISTANCE = 8.0f;
 
 static void ScaleFrameAroundCenter(vec2 &Min, vec2 &Max, float Scale)
 {
@@ -138,7 +139,40 @@ static void ScaleFrameAroundCenter(vec2 &Min, vec2 &Max, float Scale)
 
 static bool NameplateFreeMoveEnabled()
 {
-	return false;
+	return g_Config.m_QmNameplateFreeMove != 0 || g_Config.m_QmNameplateFreeMoveX != 0 || g_Config.m_QmNameplateFreeMoveY != 0;
+}
+
+static bool NameplatePointInFrame(vec2 Position, vec2 FrameMin, vec2 FrameMax)
+{
+	return Position.x >= FrameMin.x &&
+		Position.x <= FrameMax.x &&
+		Position.y >= FrameMin.y &&
+		Position.y <= FrameMax.y;
+}
+
+static int NameplateSnapCoreRowOffsetX(int OffsetX, int LimitMinX, int LimitMaxX, vec2 RowCenter, vec2 RowSize, vec2 FrameMin, vec2 FrameMax)
+{
+	const float RowMinX = RowCenter.x - RowSize.x / 2.0f;
+	const float RowMaxX = RowCenter.x + RowSize.x / 2.0f;
+	const float FrameCenterX = (FrameMin.x + FrameMax.x) / 2.0f;
+	const int aSnapTargets[] = {
+		std::clamp(round_to_int(FrameMin.x - RowMinX), LimitMinX, LimitMaxX),
+		std::clamp(round_to_int(FrameCenterX - RowCenter.x), LimitMinX, LimitMaxX),
+		std::clamp(round_to_int(FrameMax.x - RowMaxX), LimitMinX, LimitMaxX),
+	};
+
+	int SnappedOffsetX = OffsetX;
+	int BestDistance = round_to_int(NAMEPLATE_FREE_MOVE_SNAP_DISTANCE) + 1;
+	for(const int TargetOffsetX : aSnapTargets)
+	{
+		const int Distance = std::abs(OffsetX - TargetOffsetX);
+		if(Distance <= NAMEPLATE_FREE_MOVE_SNAP_DISTANCE && Distance < BestDistance)
+		{
+			SnappedOffsetX = TargetOffsetX;
+			BestDistance = Distance;
+		}
+	}
+	return SnappedOffsetX;
 }
 
 static int *NameplateCoreRowOffsetX(ENameplateCoreRow Row)
@@ -1858,7 +1892,9 @@ void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
 
 			if(pOffsetX != nullptr)
 			{
-				const int NewOffsetX = std::clamp(round_to_int(m_pData->m_FreeMoveDragStartOffset.x + MousePosition.x - m_pData->m_FreeMoveDragStartMouse.x), LimitMinX, LimitMaxX);
+				int NewOffsetX = std::clamp(round_to_int(m_pData->m_FreeMoveDragStartOffset.x + MousePosition.x - m_pData->m_FreeMoveDragStartMouse.x), LimitMinX, LimitMaxX);
+				if(DragHasFrame && DragHasRow)
+					NewOffsetX = NameplateSnapCoreRowOffsetX(NewOffsetX, LimitMinX, LimitMaxX, DragRowCenter, DragRowSize, DragFrameMin, DragFrameMax);
 				*pOffsetX = NewOffsetX;
 			}
 			if(pOffsetY != nullptr)
@@ -1869,28 +1905,44 @@ void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
 			NamePlate.CollectCoreRowRects(Position, aEditorRects);
 		}
 
-		// Frame is intentionally invisible to the user. FrameMin/FrameMax are
-		// still used to anchor the tee and clamp drag offsets — only the
-		// outline drawing is suppressed.
-
-		Graphics()->TextureClear();
-		Graphics()->QuadsBegin();
-		for(const SNameplateCoreRowRect &Rect : aEditorRects)
+		const bool DraggingAnyRow = m_pData->m_FreeMoveDragRow != ENameplateCoreRow::NUM_ROWS;
+		const bool HoveringFrame = HasFrame && NameplatePointInFrame(MousePosition, FrameMin, FrameMax);
+		const bool ShowEditorFrame = DraggingAnyRow || HoveringFrame;
+		if(ShowEditorFrame)
 		{
-			if(!Rect.m_Visible)
-				continue;
-			const bool Dragging = m_pData->m_FreeMoveDragRow == Rect.m_Row;
-			const bool Hovered = HoveredRow == Rect.m_Row;
-			if(Dragging)
-				Graphics()->SetColor(ColorRGBA(0.25f, 0.85f, 1.0f, 0.22f));
-			else if(Hovered)
-				Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.14f));
-			else
-				Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.06f));
-			Graphics()->DrawRectExt(Rect.m_Min.x, Rect.m_Min.y, Rect.m_Max.x - Rect.m_Min.x, Rect.m_Max.y - Rect.m_Min.y, 4.0f, IGraphics::CORNER_ALL);
+			Graphics()->TextureClear();
+			if(HasFrame)
+			{
+				Graphics()->SetColor(ColorRGBA(0.35f, 0.75f, 1.0f, 0.38f));
+				Graphics()->LinesBegin();
+				const IGraphics::CLineItem aFrameLines[] = {
+					IGraphics::CLineItem(FrameMin.x, FrameMin.y, FrameMax.x, FrameMin.y),
+					IGraphics::CLineItem(FrameMax.x, FrameMin.y, FrameMax.x, FrameMax.y),
+					IGraphics::CLineItem(FrameMax.x, FrameMax.y, FrameMin.x, FrameMax.y),
+					IGraphics::CLineItem(FrameMin.x, FrameMax.y, FrameMin.x, FrameMin.y),
+				};
+				Graphics()->LinesDraw(aFrameLines, std::size(aFrameLines));
+				Graphics()->LinesEnd();
+			}
+
+			Graphics()->QuadsBegin();
+			for(const SNameplateCoreRowRect &Rect : aEditorRects)
+			{
+				if(!Rect.m_Visible)
+					continue;
+				const bool Dragging = m_pData->m_FreeMoveDragRow == Rect.m_Row;
+				const bool Hovered = HoveredRow == Rect.m_Row;
+				if(Dragging)
+					Graphics()->SetColor(ColorRGBA(0.25f, 0.85f, 1.0f, 0.22f));
+				else if(Hovered)
+					Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.14f));
+				else
+					Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.06f));
+				Graphics()->DrawRectExt(Rect.m_Min.x, Rect.m_Min.y, Rect.m_Max.x - Rect.m_Min.x, Rect.m_Max.y - Rect.m_Min.y, 4.0f, IGraphics::CORNER_ALL);
+			}
+			Graphics()->QuadsEnd();
+			Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 		}
-		Graphics()->QuadsEnd();
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 	else
 	{

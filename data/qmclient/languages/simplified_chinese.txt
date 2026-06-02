@@ -1,0 +1,582 @@
+%s could not be read
+== %s could not be read
+
+%s to %s failed: %s
+== %s to %s failed: %s
+
+%s translating to %s
+== %s translating to %s
+
+%s translating to %s before send
+== %s translating to %s before send
+
+API Key
+== API Key
+
+API key
+== API key
+
+Append language codes like [ru], [en], [ja] at the end when sending
+== Append language codes like [ru], [en], [ja] at the end when sending
+
+Auto disable when time expires
+== Auto disable when time expires
+
+Auto hot-reload after external saves
+== Auto hot-reload after external saves
+
+Auto reply cooldown
+== Auto reply cooldown
+
+Auto switch to the tee that got unfrozen
+== Auto switch to the tee that got unfrozen
+
+Auto team lock
+== Auto team lock
+
+Auto unspec on unfreeze
+== Auto unspec on unfreeze
+
+Auto-toggle fast input
+== Auto-toggle fast input
+
+Auto-toggle fast input others
+== Auto-toggle fast input others
+
+Auto-translate will skip simplified Chinese, traditional Chinese, and server messages
+== Auto-translate will skip simplified Chinese, traditional Chinese, and server messages
+
+Automatically close the current chat after waking from freeze
+== Automatically close the current chat after waking from freeze
+
+Background opacity
+== Background opacity
+
+Brutal
+== Brutal
+
+Bubble opacity
+== Bubble opacity
+
+Button - Disabled
+== Button - Disabled
+
+Button - Enabled
+== Button - Enabled
+
+Classic
+== Classic
+
+Classic easy
+== Classic easy
+
+Classic next
+== Classic next
+
+Classic nut
+== Classic nut
+
+Classic pro
+== Classic pro
+
+Click to copy the QQ group number
+== Click to copy the QQ group number
+
+Click to copy the map name
+== Click to copy the map name
+
+Community links, updates, feedback, and supporter credits moved to Contributors
+== Community links, updates, feedback, and supporter credits moved to Contributors
+
+Config
+== Config
+
+Config file: data/input_overlay.json
+== Config file: data/input_overlay.json
+
+Configs reuses the existing client config browser inside QmClient
+== Configs reuses the existing client config browser inside QmClient
+
+Contributors
+== Contributors
+
+Copied
+== Copied
+
+Copy skin
+== Copy skin
+
+Countdown timer for speedruns
+== Countdown timer for speedruns
+
+Crescent
+== Crescent
+
+Cube
+== Cube
+
+Custom
+== Custom
+
+Custom ratio
+== Custom ratio
+
+DF
+== DF
+
+DeepSeek
+== DeepSeek
+
+DeepSeek API Key
+== DeepSeek API Key
+
+Detection distance
+== Detection distance
+
+Developers and supporters
+== Developers and supporters
+
+Diamond
+== Diamond
+
+Drag, collapse, search, and usage history are preserved inside each category
+== Drag, collapse, search, and usage history are preserved inside each category
+
+Drift intensity
+== Drift intensity
+
+Drift smoothness
+== Drift smoothness
+
+Dummy
+== Dummy
+
+Duration
+== Duration
+
+Dynamic FOV intensity
+== Dynamic FOV intensity
+
+Dynamic FOV smoothness
+== Dynamic FOV smoothness
+
+Each tab now has a focused responsibility
+== Each tab now has a focused responsibility
+
+Enable speedrun timer
+== Enable speedrun timer
+
+Enable thinking mode requires using reasoning models
+== Enable thinking mode requires using reasoning models
+
+Enhanced laser effects
+== Enhanced laser effects
+
+Ensure backend supports OpenAI-compatible thinking parameter
+== Ensure backend supports OpenAI-compatible thinking parameter
+
+Event
+== Event
+
+Expand module
+== Expand module
+
+FTAPI auto-translate is disabled to prevent overload. Enable in settings if needed.
+== FTAPI auto-translate is disabled to prevent overload. Enable in settings if needed.
+
+Fade in
+== Fade in
+
+Fade out
+== Fade out
+
+Failed to load the support QR code. Check the Base64 content
+== Failed to load the support QR code. Check the Base64 content
+
+Favorite map manager
+== Favorite map manager
+
+Favorite maps
+== Favorite maps
+
+Font size
+== Font size
+
+Friend
+== Friend
+
+Fun
+== Fun
+
+Function contains tools, automation, and gameplay helpers
+== Function contains tools, automation, and gameplay helpers
+
+Functions
+== Functions
+
+Glow alpha
+== Glow alpha
+
+Glow intensity
+== Glow intensity
+
+Glow offset
+== Glow offset
+
+HDF
+== HDF
+
+HJ assist
+== HJ assist
+
+HUD
+== HUD
+
+HUD collects overlays, counters, voice display, and top-of-screen components
+== HUD collects overlays, counters, voice display, and top-of-screen components
+
+Heart
+== Heart
+
+Hide support QR code
+== Hide support QR code
+
+Horizontal position
+== Horizontal position
+
+Hours
+== Hours
+
+ID not connected
+== ID not connected
+
+Info keeps a lightweight overview of the client and page structure
+== Info keeps a lightweight overview of the client and page structure
+
+Input overlay
+== Input overlay
+
+Input overlay display
+== Input overlay display
+
+Input overlay opacity
+== Input overlay opacity
+
+Insane
+== Insane
+
+Invalid translate backend
+== Invalid translate backend
+
+Invalid translate backend, sending original text
+== Invalid translate backend, sending original text
+
+Join QQ group
+== Join QQ group
+
+Laser preview
+== Laser preview
+
+Laser settings
+== Laser settings
+
+Laser size
+== Laser size
+
+Laser style
+== Laser style
+
+Lock delay
+== Lock delay
+
+Map progress bar (experimental)
+== Map progress bar (experimental)
+
+Max size
+== Max size
+
+Mention
+== Mention
+
+Menu Background
+== Menu Background
+
+Menu Option - Normal
+== Menu Option - Normal
+
+Menu Option - Selected
+== Menu Option - Selected
+
+Milliseconds
+== Milliseconds
+
+Min size
+== Min size
+
+Minimize module
+== Minimize module
+
+Minutes
+== Minutes
+
+Mixed
+== Mixed
+
+Moderate
+== Moderate
+
+No favorite maps yet
+== No favorite maps yet
+
+No message to translate
+== No message to translate
+
+Not a valid ID
+== Not a valid ID
+
+Novice
+== Novice
+
+Official community links
+== Official community links
+
+Oldschool
+== Oldschool
+
+Only Apple Can Do
+== Only Apple Can Do
+
+OpenAI
+== OpenAI
+
+OpenAI API Key
+== OpenAI API Key
+
+Page guide
+== Page guide
+
+Particle alpha
+== Particle alpha
+
+Particle color
+== Particle color
+
+Particle count
+== Particle count
+
+Particle depth
+== Particle depth
+
+Particle glow
+== Particle glow
+
+Particle pulse
+== Particle pulse
+
+Particle speed
+== Particle speed
+
+Particle trail
+== Particle trail
+
+Particle twinkle
+== Particle twinkle
+
+Pie menu opacity
+== Pie menu opacity
+
+Player stats
+== Player stats
+
+Player stats and info display
+== Player stats and info display
+
+Progress bar color
+== Progress bar color
+
+Progress bar height
+== Progress bar height
+
+Progress bar width
+== Progress bar width
+
+Pulse amplitude
+== Pulse amplitude
+
+Pulse speed
+== Pulse speed
+
+Pulse strength
+== Pulse strength
+
+Push radius
+== Push radius
+
+Push strength
+== Push strength
+
+Pyramid
+== Pyramid
+
+QQ Group: 1076765929 (click to copy)
+== QQ Group: 1076765929 (click to copy)
+
+QmClient community
+== QmClient community
+
+QmClient overview
+== QmClient overview
+
+QmClient team
+== QmClient team
+
+Race
+== Race
+
+Random
+== Random
+
+Refresh interval
+== Refresh interval
+
+Region
+== Region
+
+Remove from favorites
+== Remove from favorites
+
+Reset stats when joining a server
+== Reset stats when joining a server
+
+Ring
+== Ring
+
+Rounded caps
+== Rounded caps
+
+Run a 
+== Run a 
+
+SMTC
+== SMTC
+
+Seconds
+== Seconds
+
+SecretId
+== SecretId
+
+SecretKey
+== SecretKey
+
+Send feedback
+== Send feedback
+
+Server messages are not translated
+== Server messages are not translated
+
+Show dotted map route debug
+== Show dotted map route debug
+
+Show inputs
+== Show inputs
+
+Show player stats HUD
+== Show player stats HUD
+
+Show wake-up popup on the other tee
+== Show wake-up popup on the other tee
+
+Size
+== Size
+
+Solo
+== Solo
+
+Spectate
+== Spectate
+
+Speedrun timer
+== Speedrun timer
+
+Sphere
+== Sphere
+
+Star
+== Star
+
+Support
+== Support
+
+Support QR code Base64 is not configured
+== Support QR code Base64 is not configured
+
+Supporters:
+== Supporters:
+
+Swap
+== Swap
+
+Tencent Cloud
+== Tencent Cloud
+
+Thanks for supporting QmClient
+== Thanks for supporting QmClient
+
+Too many translation jobs
+== Too many translation jobs
+
+Trail alpha
+== Trail alpha
+
+Trail length
+== Trail length
+
+Translating to %s...
+== Translating to %s...
+
+Translation queue full, sending original text
+== Translation queue full, sending original text
+
+Transparency
+== Transparency
+
+Twinkle strength
+== Twinkle strength
+
+UI scale
+== UI scale
+
+Unfreeze automation helpers
+== Unfreeze automation helpers
+
+Unknown
+== Unknown
+
+Use embedded HUD progress bar
+== Use embedded HUD progress bar
+
+Use the top tabs to browse QmClient features by category
+== Use the top tabs to browse QmClient features by category
+
+Vertical position
+== Vertical position
+
+View margin
+== View margin
+
+View recent updates
+== View recent updates
+
+View support QR code
+== View support QR code
+
+Visual contains appearance and rendering related options
+== Visual contains appearance and rendering related options
+
+Visuals
+== Visuals
+
+Whisper
+== Whisper
+

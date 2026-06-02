@@ -4656,6 +4656,33 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		if(DoButton_CheckBox(&m_DummyNamePlatePreview, g_Config.m_ClDummy ? Localize("Preview player's name plate") : Localize("Preview dummy's name plate"), m_DummyNamePlatePreview, &Button))
 			m_DummyNamePlatePreview = !m_DummyNamePlatePreview;
 
+		RightView.HSplitBottom(LineSize, &RightView, &Button);
+		const bool NameplateFreeMoveEnabled = g_Config.m_QmNameplateFreeMove != 0 || g_Config.m_QmNameplateFreeMoveX != 0 || g_Config.m_QmNameplateFreeMoveY != 0;
+		if(DoButton_CheckBox(&g_Config.m_QmNameplateFreeMove, Localize("自由调整布局"), NameplateFreeMoveEnabled, &Button))
+		{
+			const int NewValue = NameplateFreeMoveEnabled ? 0 : 1;
+			g_Config.m_QmNameplateFreeMove = NewValue;
+			g_Config.m_QmNameplateFreeMoveX = 0;
+			g_Config.m_QmNameplateFreeMoveY = 0;
+		}
+
+		RightView.HSplitBottom(LineSize, &RightView, &Button);
+		static CButtonContainer s_NameplateResetLayoutButton;
+		if(DoButton_Menu(&s_NameplateResetLayoutButton, Localize("重置布局"), 0, &Button))
+		{
+			g_Config.m_QmNameplateKeysOffsetX = 0;
+			g_Config.m_QmNameplateKeysOffsetY = 0;
+			g_Config.m_QmNameplateCoordsOffsetX = 0;
+			g_Config.m_QmNameplateCoordsOffsetY = 0;
+			g_Config.m_QmNameplateHookOffsetX = 0;
+			g_Config.m_QmNameplateHookOffsetY = 0;
+			g_Config.m_QmNameplateClanOffsetX = 0;
+			g_Config.m_QmNameplateClanOffsetY = 0;
+			g_Config.m_QmNameplateNameOffsetX = 0;
+			g_Config.m_QmNameplateNameOffsetY = 0;
+		}
+		RightView.HSplitBottom(MarginSmall, &RightView, nullptr);
+
 		int Dummy = g_Config.m_ClDummy != (m_DummyNamePlatePreview ? 1 : 0);
 
 		const vec2 Position = RightView.Center();
