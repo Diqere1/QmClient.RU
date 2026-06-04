@@ -1482,7 +1482,7 @@ protected:
 	void PopupCancelRemoveFriend();
 	void RenderServerbrowserTabBar(CUIRect TabBar);
 	void RenderServerbrowserToolBox(CUIRect ToolBox);
-	void RenderServerbrowser(CUIRect MainView);
+	void RenderServerbrowser(CUIRect MainView, bool DrawBackground);
 	template<typename F>
 	bool PrintHighlighted(const char *pName, F &&PrintFn);
 	CTeeRenderInfo GetTeeRenderInfo(vec2 Size, const char *pSkinName, bool CustomSkinColors, int CustomSkinColorBody, int CustomSkinColorFeet) const;

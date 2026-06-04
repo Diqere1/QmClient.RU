@@ -1990,6 +1990,7 @@ void CMenus::Render()
 		{
 			RenderBackground();
 		}
+<<<<<<< HEAD
 		// feat-004: deep glass overlay on the menu background so feat-003 cards
 		// and the modern nav widgets read with adequate contrast. Fades in
 		// over 0.4s on first entry so the transition out of the loading screen
@@ -2001,6 +2002,8 @@ void CMenus::Render()
 			const CUIRect FullScreen = *Ui()->Screen();
 			FullScreen.Draw(Overlay, IGraphics::CORNER_NONE, 0.0f);
 		}
+=======
+>>>>>>> 4fc26774d (fix(client):修复游戏内菜单与进服加载显示异常)
 		ms_ColorTabbarInactive = ms_ColorTabbarInactiveOutgame;
 		ms_ColorTabbarActive = ms_ColorTabbarActiveOutgame;
 		ms_ColorTabbarHover = ms_ColorTabbarHoverOutgame;
@@ -2093,7 +2096,7 @@ void CMenus::Render()
 			}
 			else if((m_MenuPage >= PAGE_INTERNET && m_MenuPage <= PAGE_FAVORITE_COMMUNITY_5) || m_MenuPage == PAGE_FAVORITE_MAPS)
 			{
-				RenderServerbrowser(MainView);
+				RenderServerbrowser(MainView, true);
 			}
 			else if(m_MenuPage == PAGE_DEMOS)
 			{
@@ -2110,6 +2113,13 @@ void CMenus::Render()
 			char aContentExtra[128];
 			str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", pPageName, TransitionActive ? 1 : 0);
 			LogPerfStage(Client(), "offline_page_content", ContentTimer.ElapsedMs(), TransitionActive, aContentExtra);
+			if(Client()->State() != ClientState)
+			{
+				if(TransitionActive)
+					Ui()->ClipDisable();
+				LogPerfStage(Client(), "menus_render_total", RenderTimer.ElapsedMs(), true, "state=changed_during_offline_content");
+				return;
+			}
 
 			if(TransitionActive && TransitionAlpha > 0.0f)
 			{
@@ -2214,6 +2224,13 @@ void CMenus::Render()
 			char aContentExtra[128];
 			str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", pPageName, TransitionActive ? 1 : 0);
 			LogPerfStage(Client(), "ingame_page_content", ContentTimer.ElapsedMs(), TransitionActive, aContentExtra);
+			if(Client()->State() != ClientState)
+			{
+				if(TransitionActive)
+					Ui()->ClipDisable();
+				LogPerfStage(Client(), "menus_render_total", RenderTimer.ElapsedMs(), true, "state=changed_during_ingame_content");
+				return;
+			}
 
 			if(TransitionActive && TransitionAlpha > 0.0f)
 			{

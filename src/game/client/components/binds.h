@@ -101,6 +101,7 @@ public:
 	}
 	static const char *GetModifierName(int Modifier);
 	void GetKeyBindName(int Key, int ModifierMask, char *pBuf, size_t BufSize) const;
+	void RefreshActiveBinds();
 
 	void OnConsoleInit() override;
 	bool OnInput(const IInput::CEvent &Event) override;
