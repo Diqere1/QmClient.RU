@@ -23,6 +23,7 @@
 #include <game/client/components/countryflags.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/menus.h>
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/components/section_loader.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/tclient/bindchat.h>
@@ -97,22 +98,11 @@ namespace
 		return g_Config.m_QmPerfDebug != 0;
 	}
 
-	double PerfDebugThresholdMs()
-	{
-		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-	}
-
 	void LogTClientPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
 	{
 		if(!PerfDebugEnabled())
 			return;
-		if(DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+		QmPerfLogStage("perf/tclient", pStage, DurationMs, Force, nullptr, nullptr, nullptr, pExtra);
 	}
 
 	void LogTClientPerfStageEx(const char *pScope, const char *pSection, ETClientSettingsPerfStage Stage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
@@ -1520,6 +1510,11 @@ void CMenus::InvalidateTClientSettingsRuntimeCacheSections(ESettingsCacheDirtyRe
 {
 	s_VisualFontLoader.InvalidateCache(Reason);
 	s_RightSectionLoader.InvalidateCache(Reason);
+	InvalidateSettingsPageRuntimeCache(SETTINGS_TCLIENT, -1);
+}
+bool CMenus::TClientSettingsSubcachesReady() const
+{
+	return s_VisualFontLoader.IsComplete() && s_RightSectionLoader.IsComplete();
 }
 
 void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
@@ -3464,6 +3459,13 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		{
 			++m_SettingsStartupWarmupCursor;
 		}
+		else if(JobPage == SETTINGS_TEE)
+		{
+			const bool ResourcesReady = PrewarmSettingsPageResources(SETTINGS_TEE, PageTab, ContentView);
+			m_aSettingsPagePrewarmed[Slot] = ResourcesReady;
+			if(ResourcesReady)
+				++m_SettingsStartupWarmupCursor;
+		}
 		else if(JobPage == SETTINGS_TCLIENT)
 		{
 			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, TClientTab, Job.m_ScrollY);
@@ -3474,7 +3476,7 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		}
 		else
 		{
-			const bool ResourcesReady = PrewarmSettingsPageResources(JobPage, PageTab);
+			const bool ResourcesReady = PrewarmSettingsPageResources(JobPage, PageTab, ContentView);
 			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, Job.m_ScrollY, ResourcesReady);
 			m_aSettingsPagePrewarmed[Slot] = ResourcesReady && PageReady;
 			if(m_aSettingsPagePrewarmed[Slot])

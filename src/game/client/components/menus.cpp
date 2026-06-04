@@ -37,6 +37,7 @@
 #include <game/client/components/console.h>
 #include <game/client/components/key_binder.h>
 #include <game/client/components/menu_background.h>
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
 #include <game/client/ui_listbox.h>
@@ -164,7 +165,7 @@ namespace
 
 	bool PerfDebugEnabled()
 	{
-		return g_Config.m_QmPerfDebug != 0 || g_Config.m_QmPerfLogfile != 0;
+		return QmPerfEnabled();
 	}
 
 	double PerfDebugThresholdMs()
@@ -184,17 +185,9 @@ namespace
 		return (time_get() - StartTime) * 1000.0 / time_freq();
 	}
 
-	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	void LogPerfStage(IClient *pClient, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 	{
-		if(!PerfDebugEnabled())
-			return;
-		if(!Force && DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+		QmPerfLogStage("perf/menu", pStage, DurationMs, Force, pClient, nullptr, nullptr, pExtra);
 	}
 
 	void LogSettingsWarmupPerf(int Page, int Tab, const char *pPageFbo, const char *pSectionFbo, ESettingsWarmupMissReason Reason, double DurationMs)
@@ -202,8 +195,10 @@ namespace
 		if(!PerfDebugEnabled())
 			return;
 		const std::string PageName = SettingsPageCacheKey(Page, -1);
-		dbg_msg("perf/settings-warmup", "page=%s tab=%d page_fbo=%s section_fbo=%s reason=%s cost_ms=%.3f",
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "page=%s tab=%d page_fbo=%s section_fbo=%s reason=%s cost_ms=%.3f",
 			PageName.c_str(), Tab, pPageFbo, pSectionFbo, SettingsWarmupMissReasonName(Reason), DurationMs);
+		QmPerfLogPayload("perf/settings-warmup", aPayload);
 	}
 
 	void LogSettingsWarmupPerfName(int Page, int Tab, const char *pPageFbo, const char *pSectionFbo, const char *pReason, double DurationMs)
@@ -211,16 +206,20 @@ namespace
 		if(!PerfDebugEnabled())
 			return;
 		const std::string PageName = SettingsPageCacheKey(Page, -1);
-		dbg_msg("perf/settings-warmup", "page=%s tab=%d page_fbo=%s section_fbo=%s reason=%s cost_ms=%.3f",
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "page=%s tab=%d page_fbo=%s section_fbo=%s reason=%s cost_ms=%.3f",
 			PageName.c_str(), Tab, pPageFbo, pSectionFbo, pReason, DurationMs);
+		QmPerfLogPayload("perf/settings-warmup", aPayload);
 	}
 
 	void LogSettingsInvalidatePerf(ESettingsInvalidationReason Reason, bool ClearsText, bool ClearsSection, bool ClearsPage, bool ClearsResource)
 	{
 		if(!PerfDebugEnabled())
 			return;
-		dbg_msg("perf/settings-invalidate", "reason=%s text=%d section=%d page=%d resource=%d",
+		char aPayload[128];
+		str_format(aPayload, sizeof(aPayload), "reason=%s text=%d section=%d page=%d resource=%d",
 			SettingsInvalidationReasonName(Reason), ClearsText ? 1 : 0, ClearsSection ? 1 : 0, ClearsPage ? 1 : 0, ClearsResource ? 1 : 0);
+		QmPerfLogPayload("perf/settings-invalidate", aPayload);
 	}
 
 	const char *MenuPageName(const int Page)
@@ -2018,14 +2017,14 @@ void CMenus::Render()
 	case IClient::STATE_QUITTING:
 	case IClient::STATE_RESTARTING:
 		// Render nothing except menu background. This should not happen for more than one frame.
-		LogPerfStage("menus_render_total", RenderTimer.ElapsedMs(), true, "state=shutdown");
+		LogPerfStage(Client(), "menus_render_total", RenderTimer.ElapsedMs(), true, "state=shutdown");
 		return;
 
 	case IClient::STATE_CONNECTING:
 	{
 		CPerfTimer StageTimer;
 		RenderPopupConnecting(Screen);
-		LogPerfStage("popup_connecting", StageTimer.ElapsedMs());
+		LogPerfStage(Client(), "popup_connecting", StageTimer.ElapsedMs());
 	}
 	break;
 
@@ -2033,7 +2032,7 @@ void CMenus::Render()
 	{
 		CPerfTimer StageTimer;
 		RenderPopupLoading(Screen);
-		LogPerfStage("popup_loading", StageTimer.ElapsedMs());
+		LogPerfStage(Client(), "popup_loading", StageTimer.ElapsedMs());
 	}
 	break;
 
@@ -2042,13 +2041,13 @@ void CMenus::Render()
 		{
 			CPerfTimer StageTimer;
 			RenderPopupFullscreen(Screen);
-			LogPerfStage("popup_fullscreen", StageTimer.ElapsedMs());
+			LogPerfStage(Client(), "popup_fullscreen", StageTimer.ElapsedMs());
 		}
 		else if(m_ShowStart)
 		{
 			CPerfTimer StageTimer;
 			m_MenusStart.RenderStartMenuV2(Screen);
-			LogPerfStage("start_menu", StageTimer.ElapsedMs());
+			LogPerfStage(Client(), "start_menu", StageTimer.ElapsedMs());
 		}
 		else
 		{
@@ -2069,15 +2068,19 @@ void CMenus::Render()
 			}
 
 			CPerfTimer ContentTimer;
-			const bool CanPrewarmSettings = SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache) &&
-				Ui()->ActiveItem() == nullptr &&
-				Ui()->HotItem() == nullptr &&
-				!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
-				!Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) &&
-				!Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) &&
-				!Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT) &&
-				!m_SettingsPageSwitchActive &&
-				!m_SettingsScrollActive;
+			const bool ScrollInputActive =
+				Input()->KeyPress(KEY_MOUSE_WHEEL_UP) ||
+				Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) ||
+				Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) ||
+				Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
+			const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(
+				SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),
+				true,
+				Ui()->ActiveItem() != nullptr,
+				Ui()->HotItem() != nullptr,
+				ScrollInputActive,
+				m_SettingsPageSwitchActive,
+				m_SettingsScrollActive);
 			if(CanPrewarmSettings)
 				(void)PrewarmSettingsRuntimeCaches(MainView);
 			if(m_MenuPage == PAGE_NEWS)
@@ -2106,7 +2109,7 @@ void CMenus::Render()
 			}
 			char aContentExtra[128];
 			str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", pPageName, TransitionActive ? 1 : 0);
-			LogPerfStage("offline_page_content", ContentTimer.ElapsedMs(), TransitionActive, aContentExtra);
+			LogPerfStage(Client(), "offline_page_content", ContentTimer.ElapsedMs(), TransitionActive, aContentExtra);
 
 			if(TransitionActive && TransitionAlpha > 0.0f)
 			{
@@ -2121,7 +2124,7 @@ void CMenus::Render()
 				RenderMenubar(TabBar, ClientState);
 				char aMenubarExtra[128];
 				str_format(aMenubarExtra, sizeof(aMenubarExtra), "page=%s state=%s", pPageName, ClientStateName(ClientState));
-				LogPerfStage("menu_menubar", StageTimer.ElapsedMs(), TransitionActive, aMenubarExtra);
+				LogPerfStage(Client(), "menu_menubar", StageTimer.ElapsedMs(), TransitionActive, aMenubarExtra);
 			}
 		}
 		break;
@@ -2131,7 +2134,7 @@ void CMenus::Render()
 		{
 			CPerfTimer StageTimer;
 			RenderPopupFullscreen(Screen);
-			LogPerfStage("popup_fullscreen", StageTimer.ElapsedMs());
+			LogPerfStage(Client(), "popup_fullscreen", StageTimer.ElapsedMs());
 		}
 		else
 		{
@@ -2152,15 +2155,19 @@ void CMenus::Render()
 			}
 
 			CPerfTimer ContentTimer;
-			const bool CanPrewarmSettings = SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache) &&
-				Ui()->ActiveItem() == nullptr &&
-				Ui()->HotItem() == nullptr &&
-				!Input()->KeyPress(KEY_MOUSE_WHEEL_UP) &&
-				!Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) &&
-				!Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) &&
-				!Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT) &&
-				!m_SettingsPageSwitchActive &&
-				!m_SettingsScrollActive;
+			const bool ScrollInputActive =
+				Input()->KeyPress(KEY_MOUSE_WHEEL_UP) ||
+				Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) ||
+				Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) ||
+				Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
+			const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(
+				SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),
+				true,
+				Ui()->ActiveItem() != nullptr,
+				Ui()->HotItem() != nullptr,
+				ScrollInputActive,
+				m_SettingsPageSwitchActive,
+				m_SettingsScrollActive);
 			if(CanPrewarmSettings)
 				(void)PrewarmSettingsRuntimeCaches(MainView);
 			if(m_GamePage == PAGE_GAME)
@@ -2206,7 +2213,7 @@ void CMenus::Render()
 			}
 			char aContentExtra[128];
 			str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", pPageName, TransitionActive ? 1 : 0);
-			LogPerfStage("ingame_page_content", ContentTimer.ElapsedMs(), TransitionActive, aContentExtra);
+			LogPerfStage(Client(), "ingame_page_content", ContentTimer.ElapsedMs(), TransitionActive, aContentExtra);
 
 			if(TransitionActive && TransitionAlpha > 0.0f)
 			{
@@ -2221,7 +2228,7 @@ void CMenus::Render()
 				RenderMenubar(TabBar, ClientState);
 				char aMenubarExtra[128];
 				str_format(aMenubarExtra, sizeof(aMenubarExtra), "page=%s state=%s", pPageName, ClientStateName(ClientState));
-				LogPerfStage("menu_menubar", StageTimer.ElapsedMs(), TransitionActive, aMenubarExtra);
+				LogPerfStage(Client(), "menu_menubar", StageTimer.ElapsedMs(), TransitionActive, aMenubarExtra);
 			}
 		}
 		break;
@@ -2231,13 +2238,13 @@ void CMenus::Render()
 		{
 			CPerfTimer StageTimer;
 			RenderPopupFullscreen(Screen);
-			LogPerfStage("popup_fullscreen", StageTimer.ElapsedMs());
+			LogPerfStage(Client(), "popup_fullscreen", StageTimer.ElapsedMs());
 		}
 		else
 		{
 			CPerfTimer StageTimer;
 			RenderDemoPlayer(Screen);
-			LogPerfStage("demo_player", StageTimer.ElapsedMs());
+			LogPerfStage(Client(), "demo_player", StageTimer.ElapsedMs());
 		}
 		break;
 	}
@@ -2245,7 +2252,7 @@ void CMenus::Render()
 	{
 		CPerfTimer StageTimer;
 		Ui()->RenderPopupMenus();
-		LogPerfStage("popup_menus", StageTimer.ElapsedMs());
+		LogPerfStage(Client(), "popup_menus", StageTimer.ElapsedMs());
 	}
 
 	// Prevent UI elements from being hovered while a key reader is active
@@ -2262,7 +2269,7 @@ void CMenus::Render()
 
 	char aTotalExtra[96];
 	str_format(aTotalExtra, sizeof(aTotalExtra), "state=%s active=%d", ClientStateName(ClientState), IsActive() ? 1 : 0);
-	LogPerfStage("menus_render_total", RenderTimer.ElapsedMs(), false, aTotalExtra);
+	LogPerfStage(Client(), "menus_render_total", RenderTimer.ElapsedMs(), false, aTotalExtra);
 }
 
 void CMenus::RenderPopupFullscreen(CUIRect Screen)
@@ -3267,7 +3274,7 @@ void CMenus::RenderThemeSelection(CUIRect MainView)
 	}
 	char aExtra[96];
 	str_format(aExtra, sizeof(aExtra), "themes=%d selected=%d", (int)vThemes.size(), SelectedTheme);
-	LogPerfStage("theme_selection_total", RenderTimer.ElapsedMs(), false, aExtra);
+	LogPerfStage(Client(), "theme_selection_total", RenderTimer.ElapsedMs(), false, aExtra);
 }
 
 void CMenus::SetActive(bool Active)
@@ -3280,6 +3287,8 @@ void CMenus::SetActive(bool Active)
 	m_MenuActive = Active;
 	if(!m_MenuActive)
 	{
+		if(g_Config.m_UiSettingsPage == SETTINGS_TEE)
+			FinalizeTeeListDrainPerfSession();
 		ClearQmClientSettingsSearchInputs();
 
 		if(m_NeedSendinfo)
@@ -3523,16 +3532,17 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	const SSettingsSectionCacheRuntimeKey RuntimeKey = MakeSettingsPageRuntimeKey(ContentView, Graphics(), Page, Tab, ScrollY);
 	const int Width = std::max(1, (int)ContentView.w);
 	const int Height = std::max(1, (int)ContentView.h);
+	const bool DependentSubcachesReady = Page != SETTINGS_TCLIENT || TClientSettingsSubcachesReady();
 	if(SettingsPageRuntimeCacheMatches(pCache->m_State, Page, Tab, Width, Height, RuntimeKey))
 	{
-		if(pCache->m_State.m_ResourcesReadyAtRecord)
+		if(SettingsPageCacheCanUseRecordedResources(true, pCache->m_RenderTarget.IsValid(), pCache->m_State.m_ResourcesReadyAtRecord, pCache->m_State.m_DependentSubcachesReadyAtRecord))
 		{
 			LogSettingsWarmupPerf(Page, Tab, "hit", "n/a", ESettingsWarmupMissReason::NONE, PerfDebugElapsedMs(PerfStartTime));
 			return true;
 		}
-		if(!ResourcesReady)
+		if(!ResourcesReady || !DependentSubcachesReady)
 		{
-			LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING, PerfDebugElapsedMs(PerfStartTime));
+			LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", SettingsPageRecordedCacheMissReason(true, pCache->m_RenderTarget.IsValid(), ResourcesReady, DependentSubcachesReady), PerfDebugElapsedMs(PerfStartTime));
 			return false;
 		}
 	}
@@ -3621,13 +3631,13 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 	pCache->m_State.m_Valid = true;
 	pCache->m_State.m_DrawnOnce = false;
 	pCache->m_State.m_ResourcesReadyAtRecord = ResourcesReady;
-	LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", ResourcesReady ? ESettingsWarmupMissReason::NONE : ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING, PerfDebugElapsedMs(PerfStartTime));
+	pCache->m_State.m_DependentSubcachesReadyAtRecord = DependentSubcachesReady;
+	LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", SettingsPageRecordedCacheMissReason(true, true, ResourcesReady, DependentSubcachesReady), PerfDebugElapsedMs(PerfStartTime));
 	return true;
 }
 
-bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
+bool CMenus::PrewarmSettingsPageResources(int Page, int Tab, const CUIRect &ContentView)
 {
-	constexpr int ResourceWarmRows = 12;
 	Page = SettingsCanonicalPage(Page);
 	if(Page == SETTINGS_GENERAL)
 	{
@@ -3649,14 +3659,14 @@ bool CMenus::PrewarmSettingsPageResources(int Page, int Tab)
 	}
 	else if(Page == SETTINGS_TEE)
 	{
+		const int TeeWarmupEntries = SettingsTeeSkinListFirstPageWarmupEntries(ContentView.h);
 		std::vector<int> vIndices;
 		vIndices.reserve(GameClient()->m_CountryFlags.Num());
 		for(int i = 0; i < (int)GameClient()->m_CountryFlags.Num(); ++i)
 			vIndices.push_back(i);
 		const bool FlagsReady = GameClient()->m_CountryFlags.PrewarmByIndicesReady(vIndices);
-		const bool PlayerReady = GameClient()->m_Skins.PrewarmPlayerPreviewReady(0, ResourceWarmRows);
-		const bool DummyReady = GameClient()->m_Skins.PrewarmPlayerPreviewReady(1, ResourceWarmRows);
-		return FlagsReady && PlayerReady && DummyReady;
+		const bool TeeReady = GameClient()->m_Skins.PrewarmPlayerPreviewReady(m_Dummy ? 1 : 0, TeeWarmupEntries, true);
+		return FlagsReady && TeeReady;
 	}
 	else if(Page == SETTINGS_ASSETS)
 	{
@@ -3693,9 +3703,10 @@ bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab
 	const int Height = std::max(1, (int)ContentView.h);
 	const SSettingsSectionCacheRuntimeKey RuntimeKey = MakeSettingsPageRuntimeKey(ContentView, Graphics(), Page, Tab, ScrollY);
 	const bool CacheMatches = SettingsPageRuntimeCacheMatches(pCache->m_State, Page, Tab, Width, Height, RuntimeKey);
-	if(!SettingsPageCacheCanUseRecordedResources(CacheMatches, pCache->m_RenderTarget.IsValid(), pCache->m_State.m_ResourcesReadyAtRecord))
+	const bool DependentSubcachesReadyAtRecord = pCache->m_State.m_DependentSubcachesReadyAtRecord;
+	if(!SettingsPageCacheCanUseRecordedResources(CacheMatches, pCache->m_RenderTarget.IsValid(), pCache->m_State.m_ResourcesReadyAtRecord, DependentSubcachesReadyAtRecord))
 	{
-		const ESettingsWarmupMissReason Reason = CacheMatches && pCache->m_RenderTarget.IsValid() ? ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING : ESettingsWarmupMissReason::PAGE_FBO_NOT_READY;
+		const ESettingsWarmupMissReason Reason = SettingsPageRecordedCacheMissReason(CacheMatches, pCache->m_RenderTarget.IsValid(), pCache->m_State.m_ResourcesReadyAtRecord, DependentSubcachesReadyAtRecord);
 		LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", Reason, PerfDebugElapsedMs(PerfStartTime));
 		return false;
 	}
@@ -3898,7 +3909,6 @@ void CMenus::OnWindowResize()
 void CMenus::OnRender()
 {
 	CPerfTimer FrameTimer;
-	m_SettingsFrameBudget = {};
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		SetActive(true);
 
@@ -3928,20 +3938,20 @@ void CMenus::OnRender()
 	{
 		CPerfTimer StageTimer;
 		Ui()->Update();
-		LogPerfStage("ui_update", StageTimer.ElapsedMs());
+		LogPerfStage(Client(), "ui_update", StageTimer.ElapsedMs());
 	}
 
 	{
 		CPerfTimer StageTimer;
 		Render();
-		LogPerfStage("render_body", StageTimer.ElapsedMs());
+		LogPerfStage(Client(), "render_body", StageTimer.ElapsedMs());
 	}
 
 	if(IsActive())
 	{
 		CPerfTimer StageTimer;
 		RenderTools()->RenderCursor(Ui()->MousePos(), 24.0f);
-		LogPerfStage("cursor_render", StageTimer.ElapsedMs());
+		LogPerfStage(Client(), "cursor_render", StageTimer.ElapsedMs());
 	}
 
 	// render debug information
@@ -3956,7 +3966,7 @@ void CMenus::OnRender()
 
 	char aExtra[96];
 	str_format(aExtra, sizeof(aExtra), "state=%s active=%d", ClientStateName(Client()->State()), IsActive() ? 1 : 0);
-	LogPerfStage("menus_onrender_total", FrameTimer.ElapsedMs(), false, aExtra);
+	LogPerfStage(Client(), "menus_onrender_total", FrameTimer.ElapsedMs(), false, aExtra);
 }
 
 void CMenus::UpdateColors()
@@ -4108,10 +4118,14 @@ void CMenus::SetMenuPage(int NewPage)
 {
 	const int OldPage = m_MenuPage;
 	if(OldPage == PAGE_SETTINGS && NewPage != PAGE_SETTINGS)
+	{
 		ClearQmClientSettingsSearchInputs();
+	}
 	if(PerfDebugEnabled() && OldPage != NewPage)
 	{
-		dbg_msg("perf/menu", "event=menu_page_switch from=%s to=%s", MenuPageName(OldPage), MenuPageName(NewPage));
+		char aPayload[128];
+		str_format(aPayload, sizeof(aPayload), "event=menu_page_switch from=%s to=%s", MenuPageName(OldPage), MenuPageName(NewPage));
+		QmPerfLogPayload("perf/interaction", aPayload, Client());
 	}
 	m_MenuPage = NewPage;
 	auto IsBrowserPage = [](int Page) {
@@ -4175,7 +4189,9 @@ void CMenus::SetGamePage(int NewPage)
 	const int OldPage = m_GamePage;
 	if(PerfDebugEnabled() && OldPage != NewPage)
 	{
-		dbg_msg("perf/menu", "event=game_page_switch from=%s to=%s", GamePageName(OldPage), GamePageName(NewPage));
+		char aPayload[128];
+		str_format(aPayload, sizeof(aPayload), "event=game_page_switch from=%s to=%s", GamePageName(OldPage), GamePageName(NewPage));
+		QmPerfLogPayload("perf/interaction", aPayload, Client());
 	}
 	m_GamePage = NewPage;
 	if(OldPage != NewPage)
@@ -4240,7 +4256,7 @@ void CMenus::RefreshBrowserTab(bool Force)
 
 	char aExtra[128];
 	str_format(aExtra, sizeof(aExtra), "page=%s force=%d current_type=%d", MenuPageName(g_Config.m_UiPage), Force ? 1 : 0, ServerBrowser()->GetCurrentType());
-	LogPerfStage("refresh_browser_tab", Timer.ElapsedMs(), Force, aExtra);
+	LogPerfStage(Client(), "refresh_browser_tab", Timer.ElapsedMs(), Force, aExtra);
 }
 
 void CMenus::ForceRefreshLanPage()

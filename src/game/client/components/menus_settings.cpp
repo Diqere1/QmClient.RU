@@ -26,6 +26,7 @@
 #include <game/client/components/chat.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/message_gradient.h>
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
 #include <game/client/skin.h>
@@ -34,9 +35,12 @@
 #include <game/client/ui_scrollregion.h>
 #include <game/localization.h>
 
+#include <inttypes.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <numeric>
 #include <set>
@@ -90,7 +94,7 @@ namespace
 
 	bool PerfDebugEnabled()
 	{
-		return g_Config.m_QmPerfDebug != 0 || g_Config.m_QmPerfLogfile != 0;
+		return QmPerfEnabled();
 	}
 
 	double PerfDebugThresholdMs()
@@ -98,17 +102,9 @@ namespace
 		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 	}
 
-	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	void LogPerfStage(IClient *pClient, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 	{
-		if(!PerfDebugEnabled())
-			return;
-		if(!Force && DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+		QmPerfLogStage("perf/menu", pStage, DurationMs, Force, pClient, nullptr, nullptr, pExtra);
 	}
 
 	struct SSettingsPreviewSkinKey
@@ -175,6 +171,142 @@ namespace
 			return &m_PreviousInfo;
 		}
 	};
+
+	struct STeeListDrainPerfSession
+	{
+		bool m_Active = false;
+		int64_t m_StartNs = 0;
+		uint64_t m_UploadsBase = 0;
+		uint64_t m_LoadsBase = 0;
+		uint64_t m_LastUploads = 0;
+		uint64_t m_LastLoads = 0;
+		int m_LastVisibleReady = -1;
+		int m_LastVisibleTotal = -1;
+		int m_LastRequested = -1;
+		int m_LastPending = -1;
+		int m_LastLoading = -1;
+		int m_LastLoaded = -1;
+		int m_LastAdmittedDelta = 0;
+		int m_LastStartedDelta = 0;
+		bool m_LastBackgroundDrain = false;
+		int m_MaxRequested = 0;
+		int m_MaxPending = 0;
+		int m_MaxLoading = 0;
+		int m_MaxRealInflight = 0;
+		int m_CountFuseLimit = 0;
+		uint64_t m_TotalRequested = 0;
+		uint64_t m_TotalAdmitted = 0;
+		uint64_t m_TotalStarted = 0;
+		int m_NumLoadingWindowWaits = 0;
+		int m_NumGpuBudgetWaits = 0;
+		int m_NumQueueFuseWaits = 0;
+	};
+
+	STeeListDrainPerfSession gs_TeeListDrainPerfSession;
+
+	struct STeeSettingsPageState
+	{
+		bool m_SkinListScrollActiveLastFrame = false;
+		int m_SkinListScrollCooldownFrames = 0;
+		int m_SkinListPostScrollRecoveryFrames = 0;
+		size_t m_BackgroundRequestCursor = 0;
+		int m_LastLoggedVisibleCount = -1;
+		int m_LastLoggedVisibleReadyCount = -1;
+		int m_LastLoggedRecoveryFrames = -1;
+		bool m_LastLoggedScrollActive = false;
+		char m_aLastLoggedFirstVisibleSkin[MAX_SKIN_LENGTH] = "";
+		bool m_TeePageActiveLastFrame = false;
+		bool m_TeeClickActiveLastFrame = false;
+		bool m_TeeScrollInteractionLastFrame = false;
+		bool m_TeeFirstVisibleReadyLogged = false;
+		bool m_TeeAllVisibleReadyLogged = false;
+		bool m_TeeFullListReadyLogged = false;
+		bool m_TeeRefreshInProgress = false;
+		int64_t m_TeeEnterStartNs = 0;
+		int64_t m_TeeRefreshStartNs = 0;
+		int m_LastRequestBudgetActual = 0;
+		ESettingsSkinBackgroundRequestBlockReason m_LastRequestBudgetBlockReason = ESettingsSkinBackgroundRequestBlockReason::NONE;
+	};
+
+	STeeSettingsPageState gs_TeeSettingsPageState;
+
+	void BeginTeeListDrainPerfSession(const CSkins &Skins, int64_t NowNs)
+	{
+		gs_TeeListDrainPerfSession.m_Active = true;
+		gs_TeeListDrainPerfSession.m_StartNs = NowNs;
+		gs_TeeListDrainPerfSession.m_UploadsBase = Skins.SettingsSourceUploadsCompleted();
+		gs_TeeListDrainPerfSession.m_LoadsBase = Skins.SettingsSourceLoadsCompleted();
+		gs_TeeListDrainPerfSession.m_LastUploads = gs_TeeListDrainPerfSession.m_UploadsBase;
+		gs_TeeListDrainPerfSession.m_LastLoads = gs_TeeListDrainPerfSession.m_LoadsBase;
+		gs_TeeListDrainPerfSession.m_LastVisibleReady = -1;
+		gs_TeeListDrainPerfSession.m_LastVisibleTotal = -1;
+		gs_TeeListDrainPerfSession.m_LastRequested = -1;
+		gs_TeeListDrainPerfSession.m_LastPending = -1;
+		gs_TeeListDrainPerfSession.m_LastLoading = -1;
+		gs_TeeListDrainPerfSession.m_LastLoaded = -1;
+		gs_TeeListDrainPerfSession.m_LastAdmittedDelta = 0;
+		gs_TeeListDrainPerfSession.m_LastStartedDelta = 0;
+		gs_TeeListDrainPerfSession.m_LastBackgroundDrain = false;
+		gs_TeeListDrainPerfSession.m_MaxRequested = 0;
+		gs_TeeListDrainPerfSession.m_MaxPending = 0;
+		gs_TeeListDrainPerfSession.m_MaxLoading = 0;
+		gs_TeeListDrainPerfSession.m_MaxRealInflight = 0;
+		gs_TeeListDrainPerfSession.m_CountFuseLimit = 0;
+		gs_TeeListDrainPerfSession.m_TotalRequested = 0;
+		gs_TeeListDrainPerfSession.m_TotalAdmitted = 0;
+		gs_TeeListDrainPerfSession.m_TotalStarted = 0;
+		gs_TeeListDrainPerfSession.m_NumLoadingWindowWaits = 0;
+		gs_TeeListDrainPerfSession.m_NumGpuBudgetWaits = 0;
+		gs_TeeListDrainPerfSession.m_NumQueueFuseWaits = 0;
+	}
+
+	void LogTeeListDrainSummary(IClient *pClient, const CSkins &Skins, const CSkins::CSkinLoadingStats &Stats, bool FullListReady, int64_t NowNs)
+	{
+		if(!gs_TeeListDrainPerfSession.m_Active || (g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0))
+			return;
+
+		const uint64_t UploadsDoneTotal = Skins.SettingsSourceUploadsCompleted() - gs_TeeListDrainPerfSession.m_UploadsBase;
+		const uint64_t LoadedTotal = Skins.SettingsSourceLoadsCompleted() - gs_TeeListDrainPerfSession.m_LoadsBase;
+		const double DurationMs = gs_TeeListDrainPerfSession.m_StartNs > 0 ? (NowNs - gs_TeeListDrainPerfSession.m_StartNs) / 1000000.0 : 0.0;
+		const double DurationSec = DurationMs > 0.0 ? DurationMs / 1000.0 : 0.0;
+		const double UploadsPerSec = DurationSec > 0.0 ? UploadsDoneTotal / DurationSec : 0.0;
+		const double LoadedPerSec = DurationSec > 0.0 ? LoadedTotal / DurationSec : 0.0;
+		const auto &Telemetry = Skins.SettingsSourceAdmissionTelemetry();
+		char aPayload[768];
+		str_format(aPayload, sizeof(aPayload), "event=list_drain_summary dur_ms=%.3f uploads_done_total=%llu loaded_total=%llu uploads_per_sec=%.3f loaded_per_sec=%.3f requested=%d pending=%d loading=%d loaded=%d max_requested=%d max_pending=%d max_loading=%d max_real_inflight=%d count_fuse_limit=%d total_requested=%llu total_admitted=%llu total_started=%llu num_loading_window_waits=%d num_gpu_budget_waits=%d num_queue_fuse_waits=%d full_list_ready=%d final_real_inflight=%d last_wait_reason=%s last_dynamic_decision=%s last_request_budget_block_reason=%s",
+			DurationMs,
+			(unsigned long long)UploadsDoneTotal,
+			(unsigned long long)LoadedTotal,
+			UploadsPerSec,
+			LoadedPerSec,
+			(int)Stats.m_NumBackgroundRequested,
+			(int)Stats.m_NumPending,
+			(int)Stats.m_NumLoading,
+			(int)Stats.m_NumLoaded,
+			gs_TeeListDrainPerfSession.m_MaxRequested,
+			gs_TeeListDrainPerfSession.m_MaxPending,
+			gs_TeeListDrainPerfSession.m_MaxLoading,
+			gs_TeeListDrainPerfSession.m_MaxRealInflight,
+			gs_TeeListDrainPerfSession.m_CountFuseLimit,
+			(unsigned long long)gs_TeeListDrainPerfSession.m_TotalRequested,
+			(unsigned long long)gs_TeeListDrainPerfSession.m_TotalAdmitted,
+			(unsigned long long)gs_TeeListDrainPerfSession.m_TotalStarted,
+			gs_TeeListDrainPerfSession.m_NumLoadingWindowWaits,
+			gs_TeeListDrainPerfSession.m_NumGpuBudgetWaits,
+			gs_TeeListDrainPerfSession.m_NumQueueFuseWaits,
+			FullListReady ? 1 : 0,
+			Telemetry.m_RealInflight,
+			Telemetry.m_aLastWaitReason,
+			Telemetry.m_aDynamicDecision,
+			SettingsSkinBackgroundRequestBlockReasonName(gs_TeeSettingsPageState.m_LastRequestBudgetBlockReason));
+		QmPerfLogPayload("perf/skin-preview-cache", aPayload, pClient, "settings:tee");
+		gs_TeeListDrainPerfSession.m_Active = false;
+	}
+
+	void ResetTeeSettingsPageState()
+	{
+		gs_TeeSettingsPageState = {};
+	}
 
 }
 
@@ -559,7 +691,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 		{
 			CPerfTimer StageTimer;
 			RenderThemeSelection(Left);
-			LogPerfStage("general_theme_selection", StageTimer.ElapsedMs(), false, "page=general");
+			LogPerfStage(Client(), "general_theme_selection", StageTimer.ElapsedMs(), false, "page=general");
 		}
 
 		// automatic recording
@@ -585,7 +717,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 				if(g_Config.m_ClAutoScreenshot)
 					Ui()->DoScrollbarOption(&g_Config.m_ClAutoScreenshotMax, &g_Config.m_ClAutoScreenshotMax, &Button, Localize("Max Screenshots"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_MULTILINE);
 
-				LogPerfStage("general_auto_record_core", StageTimer.ElapsedMs(), false, "page=general");
+				LogPerfStage(Client(), "general_auto_record_core", StageTimer.ElapsedMs(), false, "page=general");
 			}
 
 			{
@@ -611,11 +743,11 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 				if(g_Config.m_ClAutoCSV)
 					Ui()->DoScrollbarOption(&g_Config.m_ClAutoCSVMax, &g_Config.m_ClAutoCSVMax, &Button, Localize("Max CSVs"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_MULTILINE);
 
-				LogPerfStage("general_auto_record_extended", StageTimer.ElapsedMs(), false, "page=general");
+				LogPerfStage(Client(), "general_auto_record_extended", StageTimer.ElapsedMs(), false, "page=general");
 			}
 		}
 	}
-	LogPerfStage("general_page_total", RenderTimer.ElapsedMs(), false, "page=general");
+	LogPerfStage(Client(), "general_page_total", RenderTimer.ElapsedMs(), false, "page=general");
 }
 
 void CMenus::SetNeedSendInfo()
@@ -909,6 +1041,13 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	Ui()->DoEditBox_Search(&s_FlagFilterInput, &QuickSearch, 14.0f, !Ui()->IsPopupOpen() && !GameClient()->m_GameConsole.IsActive());
 }
 
+void CMenus::FinalizeTeeListDrainPerfSession()
+{
+	LogTeeListDrainSummary(Client(), GameClient()->m_Skins, GameClient()->m_Skins.LoadingStats(), false, time_get_nanoseconds().count());
+	m_SettingsHighPrioritySettled = false;
+	ResetTeeSettingsPageState();
+}
+
 void CMenus::RenderSettingsTee(CUIRect MainView)
 {
 	static int s_TeeSubTab = 0; // 0=Player, 1=Dummy, 2=Profiles
@@ -1195,29 +1334,31 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		Parent.HSplitTop(20.0f, &StatusIcon, nullptr);
 		StatusIcon.VSplitLeft(20.0f, &StatusIcon, nullptr);
 
-		if(pSkinContainer != nullptr &&
-			(pSkinContainer->State() == CSkins::CSkinContainer::EState::UNLOADED ||
-				pSkinContainer->State() == CSkins::CSkinContainer::EState::PENDING ||
-				pSkinContainer->State() == CSkins::CSkinContainer::EState::LOADING))
+		const CSkins::CSkinContainer::EStatusIndicator Indicator =
+			pSkinContainer == nullptr ?
+				CSkins::CSkinContainer::EStatusIndicator::ERROR :
+				CSkins::CSkinContainer::StatusIndicator(pSkinContainer->State());
+		Ui()->DoButtonLogic(pStatusTooltipId, 0, &StatusIcon, BUTTONFLAG_NONE);
+		if(Indicator == CSkins::CSkinContainer::EStatusIndicator::LOADING)
 		{
 			Ui()->RenderProgressSpinner(StatusIcon.Center(), 5.0f);
+			GameClient()->m_Tooltips.DoToolTip(pStatusTooltipId, &StatusIcon, Localize("Skin is loading."));
 		}
 		else
 		{
 			TextRender()->TextColor(ColorRGBA(1.0f, 0.0f, 0.0f, 1.0f));
 			TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 			TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
-			Ui()->DoLabel(&StatusIcon, pSkinContainer == nullptr || pSkinContainer->State() == CSkins::CSkinContainer::EState::ERROR ? FONT_ICON_TRIANGLE_EXCLAMATION : FONT_ICON_QUESTION, 12.0f, TEXTALIGN_MC);
+			Ui()->DoLabel(&StatusIcon, Indicator == CSkins::CSkinContainer::EStatusIndicator::NOT_FOUND ? FONT_ICON_QUESTION : FONT_ICON_TRIANGLE_EXCLAMATION, 12.0f, TEXTALIGN_MC);
 			TextRender()->SetRenderFlags(0);
 			TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 			TextRender()->TextColor(TextRender()->DefaultTextColor());
-			Ui()->DoButtonLogic(pStatusTooltipId, 0, &StatusIcon, BUTTONFLAG_NONE);
 			const char *pErrorTooltip;
 			if(pSkinContainer == nullptr)
 			{
 				pErrorTooltip = Localize("This skin name cannot be used.");
 			}
-			else if(pSkinContainer->State() == CSkins::CSkinContainer::EState::ERROR)
+			else if(Indicator == CSkins::CSkinContainer::EStatusIndicator::ERROR)
 			{
 				pErrorTooltip = Localize("Skin could not be loaded due to an error. Check the local console for details.");
 			}
@@ -1714,7 +1855,38 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	// Skin selector
 	static CListBox s_ListBox;
 	static std::vector<char> s_vQueueButtonIds;
+	static CLineInput s_SkinFilterInput(g_Config.m_ClSkinFilterString, sizeof(g_Config.m_ClSkinFilterString));
+	bool &s_SkinListScrollActiveLastFrame = gs_TeeSettingsPageState.m_SkinListScrollActiveLastFrame;
+	int &s_SkinListScrollCooldownFrames = gs_TeeSettingsPageState.m_SkinListScrollCooldownFrames;
+	int &s_SkinListPostScrollRecoveryFrames = gs_TeeSettingsPageState.m_SkinListPostScrollRecoveryFrames;
+	size_t &s_BackgroundRequestCursor = gs_TeeSettingsPageState.m_BackgroundRequestCursor;
+	int &s_LastLoggedVisibleCount = gs_TeeSettingsPageState.m_LastLoggedVisibleCount;
+	int &s_LastLoggedVisibleReadyCount = gs_TeeSettingsPageState.m_LastLoggedVisibleReadyCount;
+	int &s_LastLoggedRecoveryFrames = gs_TeeSettingsPageState.m_LastLoggedRecoveryFrames;
+	bool &s_LastLoggedScrollActive = gs_TeeSettingsPageState.m_LastLoggedScrollActive;
+	char *s_aLastLoggedFirstVisibleSkin = gs_TeeSettingsPageState.m_aLastLoggedFirstVisibleSkin;
+	bool &s_TeePageActiveLastFrame = gs_TeeSettingsPageState.m_TeePageActiveLastFrame;
+	bool &s_TeeClickActiveLastFrame = gs_TeeSettingsPageState.m_TeeClickActiveLastFrame;
+	bool &s_TeeScrollInteractionLastFrame = gs_TeeSettingsPageState.m_TeeScrollInteractionLastFrame;
+	bool &s_TeeFirstVisibleReadyLogged = gs_TeeSettingsPageState.m_TeeFirstVisibleReadyLogged;
+	bool &s_TeeAllVisibleReadyLogged = gs_TeeSettingsPageState.m_TeeAllVisibleReadyLogged;
+	bool &s_TeeFullListReadyLogged = gs_TeeSettingsPageState.m_TeeFullListReadyLogged;
+	bool &s_TeeRefreshInProgress = gs_TeeSettingsPageState.m_TeeRefreshInProgress;
+	int64_t &s_TeeEnterStartNs = gs_TeeSettingsPageState.m_TeeEnterStartNs;
+	int64_t &s_TeeRefreshStartNs = gs_TeeSettingsPageState.m_TeeRefreshStartNs;
+	if(m_SettingsRuntimeMetadata.m_LastPage != SETTINGS_TEE)
+	{
+		gs_TeeListDrainPerfSession.m_Active = false;
+		ResetTeeSettingsPageState();
+		m_SettingsHighPrioritySettled = false;
+	}
 	std::vector<CSkins::CSkinListEntry> &vSkinList = SkinList.Skins();
+	std::vector<size_t> vVisibleSkinIndices;
+	vVisibleSkinIndices.reserve(vSkinList.size());
+	int VisibleReadyCount = 0;
+	int VisibleBackgroundRequestedCount = 0;
+	int VisibleNonTerminalWaitingCount = 0;
+	int TotalReadyCount = 0;
 	int OldSelected = -1;
 	s_vQueueButtonIds.resize(vSkinList.size());
 	s_ListBox.DoStart(50.0f, vSkinList.size(), 4, 2, OldSelected, &MainView);
@@ -1761,8 +1933,27 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			continue;
 		}
 
-		SkinListEntry.RequestLoad(SettingsSkinListShouldRequestImmediateLoad(Item.m_Visible));
-		const CSkin *pSkin = pSkinContainer->State() == CSkins::CSkinContainer::EState::LOADED ? pSkinContainer->Skin().get() : pDefaultSkin;
+		vVisibleSkinIndices.push_back(i);
+		const auto State = pSkinContainer->State();
+		const bool EntryReady =
+			State == CSkins::CSkinContainer::EState::LOADED ||
+			State == CSkins::CSkinContainer::EState::ERROR ||
+			State == CSkins::CSkinContainer::EState::NOT_FOUND;
+		const bool EntryNonTerminalWaiting =
+			State == CSkins::CSkinContainer::EState::UNLOADED ||
+			State == CSkins::CSkinContainer::EState::BACKGROUND_REQUESTED ||
+			State == CSkins::CSkinContainer::EState::PENDING ||
+			State == CSkins::CSkinContainer::EState::LOADING;
+		if(EntryReady)
+		{
+			++TotalReadyCount;
+			++VisibleReadyCount;
+		}
+		if(State == CSkins::CSkinContainer::EState::BACKGROUND_REQUESTED)
+			++VisibleBackgroundRequestedCount;
+		if(EntryNonTerminalWaiting)
+			++VisibleNonTerminalWaitingCount;
+		const CSkin *pSkin = State == CSkins::CSkinContainer::EState::LOADED ? pSkinContainer->Skin().get() : pDefaultSkin;
 
 		Item.m_Rect.VSplitLeft(60.0f, &Button, &Label);
 
@@ -1784,7 +1975,6 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			RenderTools()->RenderTee(CAnimState::GetIdle(), &Info, *pEmote, vec2(1.0f, 0.0f), TeeRenderPos);
 			Ui()->ClipDisable();
 		}
-
 		{
 			SLabelProperties Props;
 			Props.m_MaxWidth = Label.w - 5.0f;
@@ -1845,8 +2035,307 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 
 		RenderSkinStatus(Item.m_Rect, pSkinContainer, SkinListEntry.ErrorTooltipId());
 	}
+	for(auto It = vVisibleSkinIndices.rbegin(); It != vVisibleSkinIndices.rend(); ++It)
+	{
+		vSkinList[*It].RequestLoad(ESettingsResourcePriority::VISIBLE);
+	}
+	for(size_t i = 0; i < vSkinList.size(); ++i)
+	{
+		if(std::find(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), i) != vVisibleSkinIndices.end())
+			continue;
+		const auto State = vSkinList[i].SkinContainer()->State();
+		if(State == CSkins::CSkinContainer::EState::LOADED ||
+			State == CSkins::CSkinContainer::EState::ERROR ||
+			State == CSkins::CSkinContainer::EState::NOT_FOUND)
+			++TotalReadyCount;
+	}
+	const bool SkinListScrollInteraction = m_SettingsScrollActive || s_ListBox.ScrollbarActive() || s_ListBox.ScrollbarAnimating() || s_SkinListScrollActiveLastFrame;
+	const int PreviousSkinListScrollCooldownFrames = s_SkinListScrollCooldownFrames;
+	s_SkinListScrollCooldownFrames = SettingsScrollInteractionCooldown(SkinListScrollInteraction, s_SkinListScrollCooldownFrames, 3);
+	s_SkinListPostScrollRecoveryFrames = SettingsScrollInteractionRecovery(
+		SkinListScrollInteraction, PreviousSkinListScrollCooldownFrames, s_SkinListScrollCooldownFrames, s_SkinListPostScrollRecoveryFrames, 2);
+	m_SettingsPostScrollRecoveryFrames = s_SkinListPostScrollRecoveryFrames;
+	const bool RequestWindowScrollBlocked = SkinListScrollInteraction || s_SkinListScrollCooldownFrames > 0;
+	SSettingsResourceFrameContext FrameContext = SettingsBuildFrameContext(RequestWindowScrollBlocked, false, s_SkinListPostScrollRecoveryFrames);
+	const bool VisibleSettled = VisibleReadyCount == (int)vVisibleSkinIndices.size();
+	m_SettingsHighPrioritySettled = VisibleSettled;
+	FrameContext.m_HighPrioritySettled = VisibleSettled;
+	const auto &Throughput = GameClient()->m_Skins.SettingsThroughputControllerOutput();
+	const bool BackgroundDrainActive = Throughput.m_BackgroundDrainActive;
+	const int CountFuseLimit = Throughput.m_CountFuseLimit;
+	const auto AdmissionTelemetry = GameClient()->m_Skins.SettingsSourceAdmissionTelemetry();
+	const auto SkinStatsBeforeBackgroundRequest = GameClient()->m_Skins.LoadingStats();
+	const int DefaultBackgroundRequestBudget = Throughput.m_BackgroundRequestBudget;
+	const int RecentLoadedDelta = gs_TeeListDrainPerfSession.m_Active ? (int)(GameClient()->m_Skins.SettingsSourceLoadsCompleted() - gs_TeeListDrainPerfSession.m_LastLoads) : 0;
+	const auto BackgroundBudgetDecision = SettingsSkinBackgroundRequestBudgetDecision({
+		DefaultBackgroundRequestBudget,
+		(int)SkinStatsBeforeBackgroundRequest.m_NumPending,
+		(int)SkinStatsBeforeBackgroundRequest.m_NumLoading,
+		(int)SkinStatsBeforeBackgroundRequest.m_NumBackgroundRequested,
+		CountFuseLimit,
+		Throughput.m_VisibleReserve,
+		RecentLoadedDelta,
+		AdmissionTelemetry.m_AdmittedDelta,
+		BackgroundDrainActive,
+	});
+	const int BackgroundRequestBudget = BackgroundBudgetDecision.m_RequestBudget;
+	gs_TeeSettingsPageState.m_LastRequestBudgetActual = BackgroundRequestBudget;
+	gs_TeeSettingsPageState.m_LastRequestBudgetBlockReason = BackgroundBudgetDecision.m_BlockReason;
+	int BackgroundRequestsIssued = 0;
+	if(VisibleSettled && BackgroundRequestBudget > 0 && !vSkinList.empty())
+	{
+		s_BackgroundRequestCursor %= vSkinList.size();
+		for(size_t Attempts = 0; Attempts < vSkinList.size() && BackgroundRequestsIssued < BackgroundRequestBudget; ++Attempts)
+		{
+			const size_t BackgroundIndex = (s_BackgroundRequestCursor + Attempts) % vSkinList.size();
+			if(std::find(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), BackgroundIndex) != vVisibleSkinIndices.end())
+				continue;
 
+			const CSkins::CSkinContainer *pBackgroundContainer = vSkinList[BackgroundIndex].SkinContainer();
+			if(pBackgroundContainer == nullptr || pBackgroundContainer->State() != CSkins::CSkinContainer::EState::UNLOADED)
+				continue;
+
+			vSkinList[BackgroundIndex].RequestLoad(ESettingsResourcePriority::BACKGROUND);
+			++BackgroundRequestsIssued;
+			s_BackgroundRequestCursor = (BackgroundIndex + 1) % vSkinList.size();
+		}
+	}
+	const auto SkinStats = GameClient()->m_Skins.LoadingStats();
+	CSkins::SSettingsTeeVisibleSnapshot VisibleSnapshot;
+	VisibleSnapshot.m_VisibleTotal = (int)vVisibleSkinIndices.size();
+	VisibleSnapshot.m_VisibleReady = VisibleReadyCount;
+	VisibleSnapshot.m_VisibleWaiting = maximum(0, (int)vVisibleSkinIndices.size() - VisibleReadyCount);
+	VisibleSnapshot.m_VisibleBackgroundRequested = VisibleBackgroundRequestedCount;
+	VisibleSnapshot.m_VisibleNonterminalWaiting = VisibleNonTerminalWaitingCount;
+	str_copy(VisibleSnapshot.m_aRequestBudgetBlockReason,
+		SettingsSkinBackgroundRequestBlockReasonName(BackgroundBudgetDecision.m_BlockReason),
+		sizeof(VisibleSnapshot.m_aRequestBudgetBlockReason));
+	GameClient()->m_Skins.SetSettingsTeeVisibleSnapshot(VisibleSnapshot);
+	const char *pFirstVisibleSkin = !vVisibleSkinIndices.empty() ? vSkinList[vVisibleSkinIndices.front()].SkinContainer()->Name() : "";
+	const int FirstVisibleIndex = !vVisibleSkinIndices.empty() ? (int)vVisibleSkinIndices.front() : -1;
+	const int LastVisibleIndex = !vVisibleSkinIndices.empty() ? (int)vVisibleSkinIndices.back() : -1;
+	const bool FirstVisibleReady = !vVisibleSkinIndices.empty() &&
+		(vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::LOADED ||
+			vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::ERROR ||
+			vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::NOT_FOUND);
+	const bool FullListReady = !vSkinList.empty() && TotalReadyCount == (int)vSkinList.size();
+	const int64_t NowNs = time_get_nanoseconds().count();
+	if(!gs_TeeSettingsPageState.m_TeePageActiveLastFrame)
+	{
+		gs_TeeSettingsPageState.m_TeePageActiveLastFrame = true;
+		gs_TeeSettingsPageState.m_TeeEnterStartNs = NowNs;
+		BeginTeeListDrainPerfSession(GameClient()->m_Skins, NowNs);
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=tee_enter visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	const bool ClickActive = Input()->KeyIsPressed(KEY_MOUSE_1) != 0;
+	if(ClickActive && !gs_TeeSettingsPageState.m_TeeClickActiveLastFrame)
+	{
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=click_begin visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	else if(!ClickActive && gs_TeeSettingsPageState.m_TeeClickActiveLastFrame)
+	{
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=click_end visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	gs_TeeSettingsPageState.m_TeeClickActiveLastFrame = ClickActive;
+	if(SkinListScrollInteraction && !gs_TeeSettingsPageState.m_TeeScrollInteractionLastFrame)
+	{
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=scroll_begin visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	else if(!SkinListScrollInteraction && gs_TeeSettingsPageState.m_TeeScrollInteractionLastFrame)
+	{
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=scroll_end visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	gs_TeeSettingsPageState.m_TeeScrollInteractionLastFrame = SkinListScrollInteraction;
+	if(FirstVisibleReady && !gs_TeeSettingsPageState.m_TeeFirstVisibleReadyLogged)
+	{
+		gs_TeeSettingsPageState.m_TeeFirstVisibleReadyLogged = true;
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=first_visible_ready dur_ms=%.3f visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			gs_TeeSettingsPageState.m_TeeEnterStartNs > 0 ? (NowNs - gs_TeeSettingsPageState.m_TeeEnterStartNs) / 1000000.0 : 0.0,
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/skin-ux", aPayload, Client(), "settings:tee");
+	}
+	if(SettingsSkinListShouldLogAllVisibleReady(
+		   VisibleSettled,
+		   gs_TeeSettingsPageState.m_TeeAllVisibleReadyLogged,
+		   (int)vVisibleSkinIndices.size()))
+	{
+		gs_TeeSettingsPageState.m_TeeAllVisibleReadyLogged = true;
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=all_visible_ready dur_ms=%.3f visible_rows=%d first_visible_index=%d last_visible_index=%d first_visible_skin=%s",
+			gs_TeeSettingsPageState.m_TeeEnterStartNs > 0 ? (NowNs - gs_TeeSettingsPageState.m_TeeEnterStartNs) / 1000000.0 : 0.0,
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, LastVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/skin-ux", aPayload, Client(), "settings:tee");
+	}
+	if(FullListReady && !gs_TeeSettingsPageState.m_TeeFullListReadyLogged)
+	{
+		gs_TeeSettingsPageState.m_TeeFullListReadyLogged = true;
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=full_list_ready dur_ms=%.3f total=%d visible_rows=%d first_visible_skin=%s",
+			gs_TeeSettingsPageState.m_TeeEnterStartNs > 0 ? (NowNs - gs_TeeSettingsPageState.m_TeeEnterStartNs) / 1000000.0 : 0.0,
+			(int)vSkinList.size(), (int)vVisibleSkinIndices.size(), pFirstVisibleSkin);
+		QmPerfLogPayload("perf/skin-ux", aPayload, Client(), "settings:tee");
+		LogTeeListDrainSummary(Client(), GameClient()->m_Skins, GameClient()->m_Skins.LoadingStats(), true, NowNs);
+		if(gs_TeeSettingsPageState.m_TeeRefreshInProgress)
+		{
+			char aRefreshPayload[256];
+			str_format(aRefreshPayload, sizeof(aRefreshPayload), "event=tee_refresh_end dur_ms=%.3f visible_rows=%d first_visible_skin=%s",
+				gs_TeeSettingsPageState.m_TeeRefreshStartNs > 0 ? (NowNs - gs_TeeSettingsPageState.m_TeeRefreshStartNs) / 1000000.0 : 0.0,
+				(int)vVisibleSkinIndices.size(), pFirstVisibleSkin);
+			QmPerfLogPayload("perf/interaction", aRefreshPayload, Client(), "settings:tee");
+			gs_TeeSettingsPageState.m_TeeRefreshInProgress = false;
+		}
+	}
+	if(PerfDebugEnabled() &&
+		(BackgroundRequestsIssued > 0 ||
+			gs_TeeSettingsPageState.m_LastLoggedVisibleCount != (int)vVisibleSkinIndices.size() ||
+			gs_TeeSettingsPageState.m_LastLoggedVisibleReadyCount != VisibleReadyCount ||
+			gs_TeeSettingsPageState.m_LastLoggedScrollActive != FrameContext.m_ScrollActive ||
+			gs_TeeSettingsPageState.m_LastLoggedRecoveryFrames != FrameContext.m_PostScrollRecoveryFrames ||
+			str_comp(gs_TeeSettingsPageState.m_aLastLoggedFirstVisibleSkin, pFirstVisibleSkin) != 0))
+	{
+		const int GpuUploadLimitUnits = GameClient()->GpuUploadLimiter()->MaxUploadsPerFrame();
+		const int GpuUploadRemainingUnits = GameClient()->GpuUploadLimiter()->RemainingUploads();
+		const int FinalizeBudgetLimit = Throughput.m_FinalizeBudgetLimit;
+		const char *pEffectiveFrameContext = SettingsSkinThroughputControllerModeName(Throughput.m_Mode);
+		char aPayload[768];
+		str_format(aPayload, sizeof(aPayload),
+			"event=request_window visible=%d visible_ready=%d visible_waiting=%d visible_background_requested=%d visible_nonterminal_waiting=%d background_budget=%d background_issued=%d requested=%d idle=%d scroll=%d recovery=%d pending=%d loading=%d loaded=%d total=%d first_visible_index=%d first_visible_skin=%s count_fuse_limit=%d real_inflight=%d visible_reserve=%d request_budget_default=%d request_budget_actual=%d request_budget_block_reason=%s gpu_upload_limit_units=%d gpu_upload_remaining_units=%d finalize_budget_limit=%d effective_frame_context=%s controller_reason=%s frame_time_avg_ms=%.3f render_frame_time_ms=%.3f admission_underfed=%d underfed_streak=%d",
+			(int)vVisibleSkinIndices.size(), VisibleReadyCount, maximum(0, (int)vVisibleSkinIndices.size() - VisibleReadyCount), VisibleBackgroundRequestedCount, VisibleNonTerminalWaitingCount, DefaultBackgroundRequestBudget, BackgroundRequestsIssued,
+			(int)SkinStats.m_NumBackgroundRequested,
+			!FrameContext.m_ScrollActive && FrameContext.m_PostScrollRecoveryFrames == 0 ? 1 : 0,
+			FrameContext.m_ScrollActive ? 1 : 0, FrameContext.m_PostScrollRecoveryFrames,
+			SkinStats.m_NumPending, SkinStats.m_NumLoading, SkinStats.m_NumLoaded, (int)vSkinList.size(), FirstVisibleIndex, pFirstVisibleSkin,
+			CountFuseLimit, AdmissionTelemetry.m_RealInflight, Throughput.m_VisibleReserve, DefaultBackgroundRequestBudget, BackgroundRequestBudget,
+			SettingsSkinBackgroundRequestBlockReasonName(BackgroundBudgetDecision.m_BlockReason),
+			GpuUploadLimitUnits, GpuUploadRemainingUnits, FinalizeBudgetLimit, pEffectiveFrameContext,
+			SettingsSkinThroughputControllerReasonName(Throughput.m_Reason),
+			AdmissionTelemetry.m_FrameTimeAverageMs,
+			AdmissionTelemetry.m_RenderFrameTimeMs,
+			AdmissionTelemetry.m_AdmissionUnderfed ? 1 : 0,
+			AdmissionTelemetry.m_UnderfedStreak);
+		QmPerfLogPayload("perf/skin-preview-cache", aPayload, Client(), "settings:tee");
+		gs_TeeSettingsPageState.m_LastLoggedVisibleCount = (int)vVisibleSkinIndices.size();
+		gs_TeeSettingsPageState.m_LastLoggedVisibleReadyCount = VisibleReadyCount;
+		gs_TeeSettingsPageState.m_LastLoggedScrollActive = FrameContext.m_ScrollActive;
+		gs_TeeSettingsPageState.m_LastLoggedRecoveryFrames = FrameContext.m_PostScrollRecoveryFrames;
+		str_copy(gs_TeeSettingsPageState.m_aLastLoggedFirstVisibleSkin, pFirstVisibleSkin, sizeof(gs_TeeSettingsPageState.m_aLastLoggedFirstVisibleSkin));
+	}
+	if(PerfDebugEnabled() && gs_TeeListDrainPerfSession.m_Active)
+	{
+		const uint64_t UploadsDoneNow = GameClient()->m_Skins.SettingsSourceUploadsCompleted();
+		const uint64_t LoadedNow = GameClient()->m_Skins.SettingsSourceLoadsCompleted();
+		const uint64_t UploadsDoneDelta = UploadsDoneNow - gs_TeeListDrainPerfSession.m_LastUploads;
+		const uint64_t LoadedDelta = LoadedNow - gs_TeeListDrainPerfSession.m_LastLoads;
+		const int RequestedDelta = gs_TeeListDrainPerfSession.m_LastRequested >= 0 ? (int)SkinStats.m_NumBackgroundRequested - gs_TeeListDrainPerfSession.m_LastRequested : (int)SkinStats.m_NumBackgroundRequested;
+		const auto &Telemetry = GameClient()->m_Skins.SettingsSourceAdmissionTelemetry();
+		if(UploadsDoneDelta > 0 ||
+			LoadedDelta > 0 ||
+			Telemetry.m_AdmittedDelta > 0 ||
+			Telemetry.m_StartedDelta > 0 ||
+			gs_TeeListDrainPerfSession.m_LastBackgroundDrain != BackgroundDrainActive ||
+			gs_TeeListDrainPerfSession.m_LastVisibleReady != VisibleReadyCount ||
+			gs_TeeListDrainPerfSession.m_LastVisibleTotal != (int)vVisibleSkinIndices.size() ||
+			gs_TeeListDrainPerfSession.m_LastRequested != (int)SkinStats.m_NumBackgroundRequested ||
+			gs_TeeListDrainPerfSession.m_LastPending != (int)SkinStats.m_NumPending ||
+			gs_TeeListDrainPerfSession.m_LastLoading != (int)SkinStats.m_NumLoading ||
+			gs_TeeListDrainPerfSession.m_LastLoaded != (int)SkinStats.m_NumLoaded)
+		{
+			const int GpuUploadLimitUnits = GameClient()->GpuUploadLimiter()->MaxUploadsPerFrame();
+			const int GpuUploadRemainingUnits = GameClient()->GpuUploadLimiter()->RemainingUploads();
+			const int FinalizeBudgetLimit = Throughput.m_FinalizeBudgetLimit;
+			const char *pEffectiveFrameContext = SettingsSkinThroughputControllerModeName(Throughput.m_Mode);
+			char aPayload[1024];
+			str_format(aPayload, sizeof(aPayload), "event=list_drain_tick mode=%s visible_ready=%d visible_total=%d visible_waiting=%d visible_background_requested=%d visible_nonterminal_waiting=%d requested=%d pending=%d loading=%d loaded=%d uploads_done_delta=%llu loaded_delta=%llu requested_delta=%d admitted_delta=%d started_delta=%d real_inflight=%d loading_window_limit=%d loading_window_used=%d dynamic_decision=%s request_budget_block_reason=%s last_wait_reason=%s gpu_upload_limit_units=%d gpu_upload_remaining_units=%d finalize_budget_limit=%d effective_frame_context=%s controller_reason=%s visible_reserve_effective=%d frame_time_avg_ms=%.3f render_frame_time_ms=%.3f admission_underfed=%d underfed_streak=%d",
+				BackgroundDrainActive ? "background_drain" : "visible",
+				VisibleReadyCount,
+				(int)vVisibleSkinIndices.size(),
+				maximum(0, (int)vVisibleSkinIndices.size() - VisibleReadyCount),
+				VisibleBackgroundRequestedCount,
+				VisibleNonTerminalWaitingCount,
+				(int)SkinStats.m_NumBackgroundRequested,
+				(int)SkinStats.m_NumPending,
+				(int)SkinStats.m_NumLoading,
+				(int)SkinStats.m_NumLoaded,
+				(unsigned long long)UploadsDoneDelta,
+				(unsigned long long)LoadedDelta,
+				RequestedDelta,
+				Telemetry.m_AdmittedDelta,
+				Telemetry.m_StartedDelta,
+				Telemetry.m_RealInflight,
+				Telemetry.m_LoadingWindowLimit,
+				Telemetry.m_LoadingWindowUsed,
+				Telemetry.m_aDynamicDecision,
+				SettingsSkinBackgroundRequestBlockReasonName(BackgroundBudgetDecision.m_BlockReason),
+				Telemetry.m_aLastWaitReason,
+				GpuUploadLimitUnits,
+				GpuUploadRemainingUnits,
+				FinalizeBudgetLimit,
+				pEffectiveFrameContext,
+				Telemetry.m_aControllerReason,
+				Telemetry.m_VisibleReserve,
+				Telemetry.m_FrameTimeAverageMs,
+				Telemetry.m_RenderFrameTimeMs,
+				Telemetry.m_AdmissionUnderfed ? 1 : 0,
+				Telemetry.m_UnderfedStreak);
+			QmPerfLogPayload("perf/skin-preview-cache", aPayload, Client(), "settings:tee");
+			gs_TeeListDrainPerfSession.m_TotalRequested += (uint64_t)maximum(0, RequestedDelta);
+			gs_TeeListDrainPerfSession.m_TotalAdmitted += (uint64_t)maximum(0, Telemetry.m_AdmittedDelta);
+			gs_TeeListDrainPerfSession.m_TotalStarted += (uint64_t)maximum(0, Telemetry.m_StartedDelta);
+			gs_TeeListDrainPerfSession.m_MaxRequested = maximum(gs_TeeListDrainPerfSession.m_MaxRequested, (int)SkinStats.m_NumBackgroundRequested);
+			gs_TeeListDrainPerfSession.m_MaxPending = maximum(gs_TeeListDrainPerfSession.m_MaxPending, (int)SkinStats.m_NumPending);
+			gs_TeeListDrainPerfSession.m_MaxLoading = maximum(gs_TeeListDrainPerfSession.m_MaxLoading, (int)SkinStats.m_NumLoading);
+			gs_TeeListDrainPerfSession.m_MaxRealInflight = maximum(gs_TeeListDrainPerfSession.m_MaxRealInflight, Telemetry.m_RealInflight);
+			gs_TeeListDrainPerfSession.m_CountFuseLimit = CountFuseLimit;
+			if(str_comp(Telemetry.m_aLastWaitReason, "loading_window") == 0)
+				gs_TeeListDrainPerfSession.m_NumLoadingWindowWaits++;
+			else if(str_comp(Telemetry.m_aLastWaitReason, "gpu_upload_budget") == 0)
+				gs_TeeListDrainPerfSession.m_NumGpuBudgetWaits++;
+			else if(str_comp(Telemetry.m_aLastWaitReason, "queue_fuse") == 0)
+				gs_TeeListDrainPerfSession.m_NumQueueFuseWaits++;
+			gs_TeeListDrainPerfSession.m_LastUploads = UploadsDoneNow;
+			gs_TeeListDrainPerfSession.m_LastLoads = LoadedNow;
+			gs_TeeListDrainPerfSession.m_LastBackgroundDrain = BackgroundDrainActive;
+			gs_TeeListDrainPerfSession.m_LastVisibleReady = VisibleReadyCount;
+			gs_TeeListDrainPerfSession.m_LastVisibleTotal = (int)vVisibleSkinIndices.size();
+			gs_TeeListDrainPerfSession.m_LastRequested = (int)SkinStats.m_NumBackgroundRequested;
+			gs_TeeListDrainPerfSession.m_LastPending = (int)SkinStats.m_NumPending;
+			gs_TeeListDrainPerfSession.m_LastLoading = (int)SkinStats.m_NumLoading;
+			gs_TeeListDrainPerfSession.m_LastLoaded = (int)SkinStats.m_NumLoaded;
+			gs_TeeListDrainPerfSession.m_LastAdmittedDelta = Telemetry.m_AdmittedDelta;
+			gs_TeeListDrainPerfSession.m_LastStartedDelta = Telemetry.m_StartedDelta;
+		}
+		if(Telemetry.m_AdmissionInvariantViolated)
+		{
+			char aPayload[256];
+			str_format(aPayload, sizeof(aPayload), "event=admission_invariant_violation pending=%d loading=%d real_inflight=%d count_fuse_limit=%d",
+				(int)SkinStats.m_NumPending,
+				(int)SkinStats.m_NumLoading,
+				Telemetry.m_RealInflight,
+				CountFuseLimit);
+			QmPerfLogPayload("perf/skin-preview-cache", aPayload, Client(), "settings:tee");
+		}
+	}
 	const int NewSelected = s_ListBox.DoEnd();
+
+	const bool SkinListScrollActive = s_ListBox.ScrollbarActive() || s_ListBox.ScrollbarAnimating();
+	m_SettingsScrollActive = m_SettingsScrollActive || SkinListScrollActive;
+	gs_TeeSettingsPageState.m_SkinListScrollActiveLastFrame = SkinListScrollActive;
 	if(OldSelected != NewSelected)
 	{
 		if(NewSelected >= 0 && NewSelected < (int)vSkinList.size())
@@ -1857,7 +2346,6 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		}
 	}
 
-	static CLineInput s_SkinFilterInput(g_Config.m_ClSkinFilterString, sizeof(g_Config.m_ClSkinFilterString));
 	if(SkinList.UnfilteredCount() > 0 && vSkinList.empty())
 	{
 		CUIRect FilterLabel, ResetButton;
@@ -1910,6 +2398,19 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 
 	if(ShouldRefresh)
 	{
+		const int64_t RefreshNowNs = time_get_nanoseconds().count();
+		if(gs_TeeListDrainPerfSession.m_Active)
+			LogTeeListDrainSummary(Client(), GameClient()->m_Skins, GameClient()->m_Skins.LoadingStats(), false, RefreshNowNs);
+		BeginTeeListDrainPerfSession(GameClient()->m_Skins, RefreshNowNs);
+		gs_TeeSettingsPageState.m_TeeFirstVisibleReadyLogged = false;
+		gs_TeeSettingsPageState.m_TeeAllVisibleReadyLogged = false;
+		gs_TeeSettingsPageState.m_TeeFullListReadyLogged = false;
+		gs_TeeSettingsPageState.m_TeeRefreshInProgress = true;
+		gs_TeeSettingsPageState.m_TeeRefreshStartNs = RefreshNowNs;
+		char aPayload[192];
+		str_format(aPayload, sizeof(aPayload), "event=tee_refresh_begin visible_rows=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
 		GameClient()->RefreshSkins(CSkinDescriptor::FLAG_SIX);
 	}
 }
@@ -3467,9 +3968,9 @@ void CMenus::RenderLanguageSettings(CUIRect MainView)
 		RenderLanguageSelection(List);
 		char aExtra[96];
 		str_format(aExtra, sizeof(aExtra), "page=language languages=%d", NumLanguages);
-		LogPerfStage("language_list_total", StageTimer.ElapsedMs(), false, aExtra);
+		LogPerfStage(Client(), "language_list_total", StageTimer.ElapsedMs(), false, aExtra);
 	}
-	LogPerfStage("language_page_total", RenderTimer.ElapsedMs(), false, "page=language");
+	LogPerfStage(Client(), "language_page_total", RenderTimer.ElapsedMs(), false, "page=language");
 }
 
 bool CMenus::RenderLanguageSelection(CUIRect MainView)
@@ -3653,7 +4154,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 
 		char aTabBarExtra[96];
 		str_format(aTabBarExtra, sizeof(aTabBarExtra), "page=%s", SettingsPageName(g_Config.m_UiSettingsPage));
-		LogPerfStage("settings_tabbar", StageTimer.ElapsedMs(), false, aTabBarExtra);
+		LogPerfStage(Client(), "settings_tabbar", StageTimer.ElapsedMs(), false, aTabBarExtra);
 	}
 
 	if(!s_SettingsTransitionInitialized)
@@ -3663,8 +4164,15 @@ void CMenus::RenderSettings(CUIRect MainView)
 	}
 	else if(g_Config.m_UiSettingsPage != s_PrevSettingsPage)
 	{
+		if(s_PrevSettingsPage == SETTINGS_TEE && g_Config.m_UiSettingsPage != SETTINGS_TEE)
+			FinalizeTeeListDrainPerfSession();
 		if(PerfDebugEnabled())
-			dbg_msg("perf/menu", "event=settings_page_switch from=%s to=%s", SettingsPageName(s_PrevSettingsPage), SettingsPageName(g_Config.m_UiSettingsPage));
+		{
+			char aPayload[128];
+			str_format(aPayload, sizeof(aPayload), "event=settings_page_switch from=%s to=%s",
+				SettingsPageName(s_PrevSettingsPage), SettingsPageName(g_Config.m_UiSettingsPage));
+			QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings");
+		}
 		s_SettingsTransitionDirection = g_Config.m_UiSettingsPage > s_PrevSettingsPage ? 1.0f : -1.0f;
 		TriggerUiSwitchAnimation(SettingsPageSwitchNode, 0.18f);
 		s_PrevSettingsPage = g_Config.m_UiSettingsPage;
@@ -3685,8 +4193,20 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		CPerfTimer StageTimer;
 		auto DrawOrPrewarmSection = [&](int Page, int Tab, const char *pSectionId) {
+			CPerfTimer SectionTimer;
 			if(!DrawSettingsSectionRuntimeCache(ContentView, Page, Tab, pSectionId))
 				(void)PrewarmSettingsSectionRuntimeCache(ContentView, Page, Tab, pSectionId);
+			char aPayload[192];
+			char aTab[16];
+			const char *pTab = nullptr;
+			if(Tab >= 0)
+			{
+				str_format(aTab, sizeof(aTab), "%d", Tab);
+				pTab = aTab;
+			}
+			str_format(aPayload, sizeof(aPayload), "event=section_render section=%s dur_ms=%.3f",
+				pSectionId != nullptr ? pSectionId : "unknown", SectionTimer.ElapsedMs());
+			QmPerfLogPayload("perf/section", aPayload, Client(), SettingsPageName(Page), pTab);
 		};
 		if(g_Config.m_UiSettingsPage == SETTINGS_GENERAL)
 		{
@@ -3764,8 +4284,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 				RenderSettingsTClient(ContentView);
 			m_SettingsRuntimeMetadata.m_LastTClientTab = m_TClientSettingsTab;
 		}
-		else if(g_Config.m_UiSettingsPage == SETTINGS_QMCLIENT)
-		{
+	else if(g_Config.m_UiSettingsPage == SETTINGS_QMCLIENT)
+	{
 			GameClient()->m_MenuBackground.ChangePosition(15);
 			const char *pQmSection = m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONFIG ? "config" :
 													 (m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONTRIBUTORS ? "contributors" : "general");
@@ -3786,8 +4306,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 		}
 		char aContentExtra[128];
 		str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", SettingsPageName(g_Config.m_UiSettingsPage), TransitionActive ? 1 : 0);
-		LogPerfStage("settings_page_content", StageTimer.ElapsedMs(), TransitionActive, aContentExtra);
+		LogPerfStage(Client(), "settings_page_content", StageTimer.ElapsedMs(), TransitionActive, aContentExtra);
 	}
+
 	m_SettingsRuntimeMetadata.m_LastPage = g_Config.m_UiSettingsPage;
 	m_SettingsRuntimeMetadata.m_Valid = true;
 

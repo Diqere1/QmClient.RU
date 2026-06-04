@@ -1,7 +1,10 @@
 #include <game/client/components/settings_warmup.h>
 #include <game/client/components/menus.h>
 #include <game/client/components/settings_resource_jobs.h>
+#include <game/client/components/settings_skin_preview_cache.h>
 
+#include <fstream>
+#include <sstream>
 #include <gtest/gtest.h>
 
 TEST(SettingsWarmup, StageReadinessUsesInclusiveThreshold)
@@ -217,6 +220,112 @@ TEST(SettingsRuntimeCache, RegistersAllSettingsPages)
 	EXPECT_FALSE(SettingsPageRuntimeRegistryContains(Registry, CMenus::SETTINGS_CONTRIBUTORS));
 }
 
+TEST(SettingsWarmup, TeePageWarmupStartsSkinSourcePrewarm)
+{
+	std::ifstream File("src/game/client/components/menus.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t PrewarmPos = Source.find("bool CMenus::PrewarmSettingsPageResources(int Page, int Tab, const CUIRect &ContentView)");
+	ASSERT_NE(PrewarmPos, std::string::npos);
+	const size_t PrewarmEnd = Source.find("bool CMenus::DrawSettingsPageRuntimeCache", PrewarmPos);
+	ASSERT_NE(PrewarmEnd, std::string::npos);
+	const std::string PrewarmBody = Source.substr(PrewarmPos, PrewarmEnd - PrewarmPos);
+
+	const size_t TeeBranchPos = PrewarmBody.find("else if(Page == SETTINGS_TEE)");
+	ASSERT_NE(TeeBranchPos, std::string::npos);
+	const size_t AssetsBranchPos = PrewarmBody.find("else if(Page == SETTINGS_ASSETS)", TeeBranchPos);
+	ASSERT_NE(AssetsBranchPos, std::string::npos);
+	const std::string TeeBranch = PrewarmBody.substr(TeeBranchPos, AssetsBranchPos - TeeBranchPos);
+
+	EXPECT_NE(TeeBranch.find("SettingsTeeSkinListFirstPageWarmupEntries(ContentView.h)"), std::string::npos);
+	EXPECT_EQ(TeeBranch.find("SettingsSkinListFirstPageWarmupEntries("), std::string::npos);
+	EXPECT_NE(TeeBranch.find("PrewarmPlayerPreviewReady"), std::string::npos);
+}
+
+TEST(SettingsWarmup, SettingsFrameBudgetResetsBeforeUpdatePhaseConsumers)
+{
+	std::ifstream GameClientFile("src/game/client/gameclient.cpp");
+	ASSERT_TRUE(GameClientFile.good());
+	std::stringstream GameClientBuffer;
+	GameClientBuffer << GameClientFile.rdbuf();
+	const std::string GameClientSource = GameClientBuffer.str();
+
+	const size_t OnUpdatePos = GameClientSource.find("void CGameClient::OnUpdate()");
+	ASSERT_NE(OnUpdatePos, std::string::npos);
+	const size_t OnRenderPos = GameClientSource.find("void CGameClient::OnRender()");
+	ASSERT_NE(OnRenderPos, std::string::npos);
+	const std::string OnUpdateBody = GameClientSource.substr(OnUpdatePos, OnRenderPos - OnUpdatePos);
+	EXPECT_NE(OnUpdateBody.find("const bool TeeSettingsActive = m_Menus.IsSettingsPageActive() && g_Config.m_UiSettingsPage == CMenus::SETTINGS_TEE;"), std::string::npos);
+	EXPECT_NE(OnUpdateBody.find("m_Skins.PrepareSettingsThroughputForFrame();"), std::string::npos);
+	EXPECT_NE(OnUpdateBody.find("m_Menus.ResetSettingsFrameBudgetForFrame(TeeSettingsActive, FrameSkinUploadBudget);"), std::string::npos);
+
+	std::ifstream MenusFile("src/game/client/components/menus.cpp");
+	ASSERT_TRUE(MenusFile.good());
+	std::stringstream MenusBuffer;
+	MenusBuffer << MenusFile.rdbuf();
+	const std::string MenusSource = MenusBuffer.str();
+	const size_t MenusOnRenderPos = MenusSource.find("void CMenus::OnRender()");
+	ASSERT_NE(MenusOnRenderPos, std::string::npos);
+	const size_t MenusOnRenderEnd = MenusSource.find("if(Client()->State() != IClient::STATE_ONLINE", MenusOnRenderPos);
+	ASSERT_NE(MenusOnRenderEnd, std::string::npos);
+	const std::string MenusOnRenderPreamble = MenusSource.substr(MenusOnRenderPos, MenusOnRenderEnd - MenusOnRenderPos);
+	EXPECT_EQ(MenusOnRenderPreamble.find("m_SettingsFrameBudget = {};"), std::string::npos);
+
+	std::ifstream MenusHeaderFile("src/game/client/components/menus.h");
+	ASSERT_TRUE(MenusHeaderFile.good());
+	std::stringstream MenusHeaderBuffer;
+	MenusHeaderBuffer << MenusHeaderFile.rdbuf();
+	const std::string MenusHeaderSource = MenusHeaderBuffer.str();
+	EXPECT_NE(MenusHeaderSource.find("m_SettingsFrameBudget = SSettingsWarmupFrameBudget{};"), std::string::npos);
+	EXPECT_NE(MenusHeaderSource.find("SettingsApplyActiveTeeSkinFrameBudget(m_SettingsFrameBudget, TeeSettingsActive);"), std::string::npos);
+}
+
+TEST(SettingsWarmup, LoadingPrewarmPumpsSkinUpdatesForTeeSources)
+{
+	std::ifstream GameClientFile("src/game/client/gameclient.cpp");
+	ASSERT_TRUE(GameClientFile.good());
+	std::stringstream GameClientBuffer;
+	GameClientBuffer << GameClientFile.rdbuf();
+	const std::string GameClientSource = GameClientBuffer.str();
+
+	const size_t PrewarmPos = GameClientSource.find("void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption, const char *pLoadingMessage)");
+	ASSERT_NE(PrewarmPos, std::string::npos);
+	const size_t OnUpdatePos = GameClientSource.find("void CGameClient::OnUpdate()", PrewarmPos);
+	ASSERT_NE(OnUpdatePos, std::string::npos);
+	const std::string PrewarmBody = GameClientSource.substr(PrewarmPos, OnUpdatePos - PrewarmPos);
+
+	EXPECT_NE(PrewarmBody.find("const int TeeWarmupEntries = SettingsTeeSkinListFirstPageWarmupEntries(MainView.h);"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("const int MaxAttempts = SettingsLoadingPrewarmMaxAttempts(CMenus::SettingsRuntimeCacheWarmupSteps(), TeeWarmupEntries);"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("const bool WarmupReady = m_Menus.PrewarmSettingsRuntimeCaches(MainView);"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("ConsecutiveNoProgressSteps"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("SettingsLoadingPrewarmShouldKeepPumping(false, CompletedSteps, MaxAttempts, ConsecutiveNoProgressSteps)"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("LogSettingsLoadingPrewarmEvent(Client(), \"startup_ready\""), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("LogSettingsLoadingPrewarmEvent(Client(), \"startup_exhausted\""), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("m_Menus.ResetSettingsFrameBudgetForFrame(true);"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("m_GpuUploadLimiter.OnFrameStart(SettingsSkinGpuUploadLimiterUnits(TeePrewarmFrameContext, true));"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("m_Skins.UpdateForSettingsWarmup();"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("m_Menus.RenderLoading(pLoadingCaption, pLoadingMessage, 0);"), std::string::npos);
+	EXPECT_NE(GameClientSource.find("PrewarmSettingsRuntimeCachesDuringLoading(pLoadingDDNetCaption, pLoadingMessageAssets);"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("maximum(CMenus::SettingsRuntimeCacheWarmupSteps() * 4, 1)"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("m_Skins.OnUpdate();"), std::string::npos);
+}
+
+TEST(SettingsWarmup, RuntimePrewarmCallsitesDoNotRequireVisibleSettingsPage)
+{
+	std::ifstream MenusFile("src/game/client/components/menus.cpp");
+	ASSERT_TRUE(MenusFile.good());
+	std::stringstream MenusBuffer;
+	MenusBuffer << MenusFile.rdbuf();
+	const std::string MenusSource = MenusBuffer.str();
+
+	EXPECT_NE(MenusSource.find("const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\ttrue,"), std::string::npos);
+	EXPECT_EQ(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\tm_MenuPage == PAGE_SETTINGS,"), std::string::npos);
+	EXPECT_EQ(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\tm_GamePage == PAGE_SETTINGS,"), std::string::npos);
+}
+
 TEST(SettingsRuntimeCache, CanonicalizesMergedSettingsPages)
 {
 	EXPECT_EQ(SettingsCanonicalPage(CMenus::SETTINGS_LANGUAGE), CMenus::SETTINGS_GENERAL);
@@ -313,9 +422,13 @@ TEST(SettingsRuntimeCache, PerfReasonNamesAreStable)
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::PAGE_FBO_UNSUPPORTED), "page_fbo_unsupported");
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::PAGE_FBO_NOT_READY), "page_fbo_not_ready");
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::SECTION_FBO_NOT_READY), "section_fbo_not_ready");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::DEPENDENCY_NOT_READY), "dependency_not_ready");
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING), "resource_plan_pending");
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::JOB_RESULT_PENDING), "job_result_pending");
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET), "gpu_upload_budget");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::SHARED_HEAVY_BUDGET), "shared_heavy_budget");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::UPLOAD_BYTES_BUDGET), "upload_bytes_budget");
+	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::OVERSIZED_UPLOAD_DEFERRED), "oversized_upload_deferred");
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::TEXT_BUDGET), "text_budget");
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::ACTIVE_ITEM), "active_item");
 	EXPECT_STREQ(SettingsWarmupMissReasonName(ESettingsWarmupMissReason::INVALID_RUNTIME_KEY), "invalid_runtime_key");
@@ -419,6 +532,17 @@ TEST(SettingsRuntimeCache, StartupPlanCoversLastPageAndAllRegisteredPages)
 	EXPECT_EQ(Plan.m_vPageJobs[0].m_Page, CMenus::SETTINGS_ASSETS);
 	for(int Page : BuildSettingsPageRuntimeRegistry().m_vPages)
 		EXPECT_TRUE(SettingsWarmupPlanContainsPage(Plan, Page));
+}
+
+TEST(SettingsRuntimeCache, StartupPlanIncludesTeeWarmupPage)
+{
+	SSettingsRuntimeCacheMetadata Metadata;
+	Metadata.m_LastPage = CMenus::SETTINGS_PLAYER;
+
+	const SSettingsWarmupStartupPlan Plan = BuildSettingsWarmupStartupPlan(Metadata, BuildSettingsPageRuntimeRegistry());
+
+	EXPECT_TRUE(SettingsWarmupPlanContainsPage(Plan, CMenus::SETTINGS_TEE));
+	EXPECT_FALSE(SettingsWarmupPlanContainsPage(Plan, CMenus::SETTINGS_PLAYER));
 }
 
 TEST(SettingsRuntimeCache, RuntimeMetadataCarriesRuntimeKeyAlongsideWarmupContext)
@@ -705,6 +829,178 @@ TEST(SettingsResourceJobs, VisibleResourceStartsCanUsePriorityBudget)
 	EXPECT_FALSE(SettingsResourceCanUseHighPriorityBudget(12, 6, 12, true));
 }
 
+TEST(SettingsResourceJobs, UploadByteBudgetRejectsOversizedFirstUpload)
+{
+	EXPECT_FALSE(SettingsResourceUploadWithinByteBudget(0, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_TRUE(SettingsResourceUploadWithinByteBudget(0, 0, 512 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceUploadWithinByteBudget(1, 512 * 1024, 768 * 1024, 1 * 1024 * 1024));
+}
+
+TEST(SettingsResourceJobs, OversizedUploadOnlyAllowedWhenIdleAndPageStable)
+{
+	SSettingsResourceFrameContext IdleVisible{};
+	IdleVisible.m_ScrollActive = false;
+	IdleVisible.m_PostScrollRecoveryFrames = 0;
+
+	SSettingsResourceFrameContext ScrollActive = IdleVisible;
+	ScrollActive.m_ScrollActive = true;
+
+	SSettingsResourceFrameContext Recovery = IdleVisible;
+	Recovery.m_PostScrollRecoveryFrames = 2;
+
+	EXPECT_TRUE(SettingsResourceOversizedUploadAllowed(IdleVisible, false, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(IdleVisible, true, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(ScrollActive, false, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(Recovery, false, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(IdleVisible, false, ESettingsResourcePriority::BACKGROUND, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(IdleVisible, false, ESettingsResourcePriority::VISIBLE, 0, 512 * 1024, 1 * 1024 * 1024));
+}
+
+TEST(SettingsResourceJobs, OversizedUploadAllowsAtMostOnePerStableFrame)
+{
+	SSettingsResourceFrameContext Stable{};
+	Stable.m_ScrollActive = false;
+	Stable.m_PostScrollRecoveryFrames = 0;
+
+	EXPECT_TRUE(SettingsResourceOversizedUploadAllowed(Stable, false, ESettingsResourcePriority::VISIBLE, 0, 2 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(Stable, false, ESettingsResourcePriority::VISIBLE, 1, 2 * 1024 * 1024, 1 * 1024 * 1024));
+}
+
+TEST(SettingsResourceJobs, VisibleNormalSizedUploadStillUsesByteBudget)
+{
+	SSettingsResourceFrameContext Stable{};
+	Stable.m_ScrollActive = false;
+	Stable.m_PostScrollRecoveryFrames = 0;
+
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(Stable, false, ESettingsResourcePriority::VISIBLE, 1, 512 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceUploadWithinByteBudget(1, 768 * 1024, 512 * 1024, 1 * 1024 * 1024));
+}
+
+TEST(SettingsResourceJobs, ScrollActiveResourceStageBudgetBlocksBackgroundUploads)
+{
+	SSettingsResourceFrameContext ScrollActive{};
+	ScrollActive.m_ScrollActive = true;
+	ScrollActive.m_PostScrollRecoveryFrames = 0;
+
+	EXPECT_EQ(SettingsResourceFrameStageBudget(ScrollActive, ESettingsResourcePriority::BACKGROUND, 4, 1), 0);
+	EXPECT_EQ(SettingsResourceFrameStageBudget(ScrollActive, ESettingsResourcePriority::VISIBLE, 4, 1), 1);
+}
+
+TEST(SettingsResourceJobs, PostScrollRecoveryDefersOversizedUploads)
+{
+	SSettingsResourceFrameContext Recovery{};
+	Recovery.m_ScrollActive = false;
+	Recovery.m_PostScrollRecoveryFrames = 3;
+
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(Recovery, false, ESettingsResourcePriority::VISIBLE, 0, 2 * 1024 * 1024, 1 * 1024 * 1024));
+}
+
+TEST(SettingsResourceJobs, ImmediateScrollInputBlocksHeavyAssetsWorkBeforePersistentStateCatchesUp)
+{
+	const SSettingsResourceFrameContext Idle = SettingsBuildFrameContext(false, false, 0);
+	const SSettingsResourceFrameContext ImmediateScroll = SettingsBuildFrameContext(false, true, 0);
+
+	EXPECT_EQ(SettingsResourceSharedHeavyBudget(Idle, 4, 1), 4);
+	EXPECT_EQ(SettingsResourceSharedHeavyBudget(ImmediateScroll, 4, 1), 0);
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(ImmediateScroll, false, ESettingsResourcePriority::VISIBLE, 0, 2 * 1024 * 1024, 1 * 1024 * 1024));
+}
+
+TEST(SettingsResourceJobs, PostListScrollStateClampsStaleIdleHeavyBudgetBeforeAssetsFinalize)
+{
+	const SSettingsResourceFrameContext PreListIdle = SettingsBuildFrameContext(false, false, 0);
+	const int PreListHeavyBudget = SettingsResourceSharedHeavyBudget(PreListIdle, 4, 1);
+	const SSettingsResourceFrameContext PostListScroll = SettingsBuildFrameContext(false, true, 0);
+
+	EXPECT_EQ(PreListHeavyBudget, 4);
+	EXPECT_EQ(SettingsResourceClampSharedHeavyBudget(PreListHeavyBudget, PostListScroll, 4, 1), 0);
+}
+
+TEST(SettingsResourceJobs, PostListRecoveryStateClampsStaleIdleHeavyBudgetForWorkshopThumbs)
+{
+	const SSettingsResourceFrameContext PreListIdle = SettingsBuildFrameContext(false, false, 0);
+	const int PreListHeavyBudget = SettingsResourceSharedHeavyBudget(PreListIdle, 4, 1);
+	const SSettingsResourceFrameContext PostListRecovery = SettingsBuildFrameContext(false, false, 2);
+
+	EXPECT_EQ(PreListHeavyBudget, 4);
+	EXPECT_EQ(SettingsResourceClampSharedHeavyBudget(PreListHeavyBudget, PostListRecovery, 4, 1), 1);
+}
+
+TEST(SettingsResourceJobs, AssetsLocalListFinalizesHeavyPreviewWorkOnlyAfterListEnd)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t LocalListPos = Source.find("if(!UsesCombinedAssetList(pCurrentCategory))");
+	ASSERT_NE(LocalListPos, std::string::npos);
+	const size_t LocalListEnd = Source.find("auto ResetSelectedAssetToDefault = [&](const char *pDeletedName) {", LocalListPos);
+	ASSERT_NE(LocalListEnd, std::string::npos);
+	const std::string LocalListBody = Source.substr(LocalListPos, LocalListEnd - LocalListPos);
+
+	const size_t DoEndPos = LocalListBody.find("const int NewSelected = s_ListBox.DoEnd();");
+	const size_t ScrollPos = LocalListBody.find("const bool ListScrollActive = s_ListBox.ScrollbarActive() || s_ListBox.ScrollbarAnimating();");
+	const size_t FrameContextPos = LocalListBody.find("const SSettingsResourceFrameContext PreviewUploadFrameContext = SettingsBuildFrameContext(");
+	const size_t ClampPos = LocalListBody.find("RemainingHeavyResourceBatches = SettingsResourceClampSharedHeavyBudget(");
+	const size_t FinalizePos = LocalListBody.find("FinalizeReadyPreviewDecodes(PreviewUploadFrameContext);");
+	const size_t DrainPos = LocalListBody.find("DrainReadyPreviewUploadsAfterList(PreviewUploadFrameContext);");
+
+	ASSERT_NE(DoEndPos, std::string::npos);
+	ASSERT_NE(ScrollPos, std::string::npos);
+	ASSERT_NE(FrameContextPos, std::string::npos);
+	ASSERT_NE(ClampPos, std::string::npos);
+	ASSERT_NE(FinalizePos, std::string::npos);
+	ASSERT_NE(DrainPos, std::string::npos);
+
+	EXPECT_LT(DoEndPos, ScrollPos);
+	EXPECT_LT(ScrollPos, FrameContextPos);
+	EXPECT_LT(FrameContextPos, ClampPos);
+	EXPECT_LT(ClampPos, FinalizePos);
+	EXPECT_LT(FinalizePos, DrainPos);
+}
+
+TEST(SettingsResourceJobs, AssetsWorkshopListFinalizesPreviewAndThumbWorkOnlyAfterListEnd)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t WorkshopListPos = Source.find("static CListBox s_WorkshopAssetsListBox;");
+	ASSERT_NE(WorkshopListPos, std::string::npos);
+	const size_t WorkshopListEnd = Source.find("if(DeleteLocalRequested)", WorkshopListPos);
+	ASSERT_NE(WorkshopListEnd, std::string::npos);
+	const std::string WorkshopListBody = Source.substr(WorkshopListPos, WorkshopListEnd - WorkshopListPos);
+
+	const size_t DoEndPos = WorkshopListBody.find("const int NewCombinedSelected = s_WorkshopAssetsListBox.DoEnd();");
+	const size_t ScrollPos = WorkshopListBody.find("const bool WorkshopListScrollActive = s_WorkshopAssetsListBox.ScrollbarActive() || s_WorkshopAssetsListBox.ScrollbarAnimating();");
+	const size_t FrameContextPos = WorkshopListBody.find("const SSettingsResourceFrameContext WorkshopUploadFrameContext = SettingsBuildFrameContext(");
+	const size_t ClampPos = WorkshopListBody.find("RemainingHeavyResourceBatches = SettingsResourceClampSharedHeavyBudget(");
+	const size_t PreviewFinalizePos = WorkshopListBody.find("FinalizeReadyPreviewDecodes(WorkshopUploadFrameContext);");
+	const size_t PreviewDrainPos = WorkshopListBody.find("DrainReadyPreviewUploadsAfterList(WorkshopUploadFrameContext);");
+	const size_t ThumbFinalizePos = WorkshopListBody.find("FinalizeWorkshopReadyThumbs(WorkshopUploadFrameContext);");
+	const size_t ThumbDrainPos = WorkshopListBody.find("DrainWorkshopReadyThumbUploads(WorkshopUploadFrameContext);");
+
+	ASSERT_NE(DoEndPos, std::string::npos);
+	ASSERT_NE(ScrollPos, std::string::npos);
+	ASSERT_NE(FrameContextPos, std::string::npos);
+	ASSERT_NE(ClampPos, std::string::npos);
+	ASSERT_NE(PreviewFinalizePos, std::string::npos);
+	ASSERT_NE(PreviewDrainPos, std::string::npos);
+	ASSERT_NE(ThumbFinalizePos, std::string::npos);
+	ASSERT_NE(ThumbDrainPos, std::string::npos);
+
+	EXPECT_LT(DoEndPos, ScrollPos);
+	EXPECT_LT(ScrollPos, FrameContextPos);
+	EXPECT_LT(FrameContextPos, ClampPos);
+	EXPECT_LT(ClampPos, PreviewFinalizePos);
+	EXPECT_LT(PreviewFinalizePos, PreviewDrainPos);
+	EXPECT_LT(PreviewDrainPos, ThumbFinalizePos);
+	EXPECT_LT(ThumbFinalizePos, ThumbDrainPos);
+}
+
 TEST(SettingsResourceJobs, VisibleReadyPreviewKeepsUploadPriority)
 {
 	EXPECT_TRUE(SettingsAssetPreviewShouldPrioritizeVisibleRange(3, 3, 5));
@@ -722,9 +1018,52 @@ TEST(SettingsResourceJobs, PageCacheRejectsRecordedFrameWithoutReadyResources)
 	EXPECT_TRUE(SettingsPageCacheCanUseRecordedResources(true, true, true));
 }
 
+TEST(SettingsResourceJobs, PageCacheRejectsRecordedFrameWithoutReadyDependentSubcaches)
+{
+	EXPECT_FALSE(SettingsPageCacheCanUseRecordedResources(true, true, true, false));
+	EXPECT_EQ(SettingsPageRecordedCacheMissReason(true, true, true, false), ESettingsWarmupMissReason::DEPENDENCY_NOT_READY);
+}
+
+TEST(SettingsResourceJobs, TClientSectionInvalidationAlsoInvalidatesPageCache)
+{
+	std::ifstream File("src/game/client/components/tclient/menus_tclient.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+	EXPECT_NE(Source.find("InvalidateSettingsPageRuntimeCache(SETTINGS_TCLIENT"), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, DrawSettingsPageRuntimeCacheUsesRecordedDependencyFlag)
+{
+	std::ifstream File("src/game/client/components/menus.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+	EXPECT_NE(Source.find("pCache->m_State.m_DependentSubcachesReadyAtRecord"), std::string::npos);
+	EXPECT_NE(Source.find("SettingsPageRecordedCacheMissReason("), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, PrewarmSettingsPageRuntimeCacheLogsSuccessfulRecord)
+{
+	std::ifstream File("src/game/client/components/menus.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t RecordPos = Source.find("pCache->m_State.m_DependentSubcachesReadyAtRecord = DependentSubcachesReady;");
+	ASSERT_NE(RecordPos, std::string::npos);
+	const size_t LogPos = Source.find("LogSettingsWarmupPerf(Page, Tab, \"miss\", \"n/a\", SettingsPageRecordedCacheMissReason(true, true, ResourcesReady, DependentSubcachesReady), PerfDebugElapsedMs(PerfStartTime));", RecordPos);
+	ASSERT_NE(LogPos, std::string::npos);
+}
+
 TEST(SettingsResourceJobs, AssetsPageRejectsWholePageFbo)
 {
 	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_ASSETS, CMenus::SETTINGS_ASSETS));
+	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_TEE, CMenus::SETTINGS_ASSETS));
+	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_PLAYER, CMenus::SETTINGS_ASSETS));
 	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_TCLIENT, CMenus::SETTINGS_ASSETS));
 	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_LANGUAGE, CMenus::SETTINGS_ASSETS));
 }
@@ -757,18 +1096,202 @@ TEST(SettingsResourceJobs, AssetListRejectsStaleJobGeneration)
 	EXPECT_FALSE(SettingsAssetListJobGenerationMatches(4, 5));
 }
 
-TEST(SettingsResourceJobs, SkinListPublishesOnlyCompleteMergedList)
+TEST(SettingsResourceJobs, SkinListPublishesProgressiveMergedList)
 {
 	EXPECT_FALSE(SettingsSkinListShouldPublishMergedList(0, 3));
-	EXPECT_FALSE(SettingsSkinListShouldPublishMergedList(2, 3));
+	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(2, 3));
 	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(3, 3));
-	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(4, 3));
+	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(0, 0));
+}
+
+TEST(SettingsResourceJobs, SkinListReplacesPublishedEntriesAfterStableDirectory)
+{
+	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 3, true, true));
+	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 3, false, false));
+	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 3, false, true));
+	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(10, 20, false, false));
+	EXPECT_FALSE(SettingsSkinListShouldReplacePublishedEntries(20, 10, false, false));
+}
+
+TEST(SettingsResourceJobs, SkinListPublishesPartialEntriesBeforeDirectoryScanSettles)
+{
+	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 1, true, false));
+	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 3, true, false));
+	EXPECT_FALSE(SettingsSkinListShouldReplacePublishedEntries(3, 1, true, false));
+}
+
+TEST(SettingsResourceJobs, SkinListSkeletonReadyDoesNotRequirePreviewResources)
+{
+	SSkinListPlanState State{};
+	State.m_DirectoryScanPending = false;
+	State.m_MergeComplete = true;
+	State.m_ItemCount = 120;
+	EXPECT_TRUE(SettingsSkinListSkeletonReady(State));
+	EXPECT_FALSE(SettingsSkinListResourcesSettled(State));
+}
+
+TEST(SettingsResourceJobs, SkinListReadyMigrationKeepsStructureStable)
+{
+	SSkinListPlanSnapshot Snapshot{};
+	Snapshot.m_ItemCount = 120;
+
+	SSkinListPlanState Loading{};
+	Loading.m_DirectoryScanPending = false;
+	Loading.m_MergeComplete = true;
+	Loading.m_ItemCount = 120;
+	Loading.m_BackgroundBacklog = 5;
+	Loading.m_VisibleBacklog = 1;
+
+	SSkinListPlanState Settled = Loading;
+	Settled.m_BackgroundBacklog = 0;
+	Settled.m_VisibleBacklog = 0;
+
+	EXPECT_FALSE(SettingsSkinListResourcesSettled(Loading));
+	EXPECT_TRUE(SettingsSkinListResourcesSettled(Settled));
+	EXPECT_EQ(Snapshot.m_ItemCount, 120);
+}
+
+TEST(SettingsResourceJobs, SourceAdmissionAllowsVisiblePromotionWhenDrainInactive)
+{
+	const auto Decision = SettingsSkinSourceAdmissionDecision({
+		true,
+		ESettingsResourcePriority::VISIBLE,
+		false,
+		24,
+		192,
+		256,
+	});
+
+	EXPECT_TRUE(Decision.m_PromoteAllowed);
+	EXPECT_EQ(Decision.m_PromotePriority, ESettingsResourcePriority::VISIBLE);
+	EXPECT_EQ(Decision.m_BlockReason, ESettingsSkinSourceAdmissionBlockReason::NONE);
+	EXPECT_FALSE(Decision.m_CountFuseApplies);
+}
+
+TEST(SettingsResourceJobs, SourceAdmissionBlocksBackgroundPromotionWhenDrainInactive)
+{
+	const auto Decision = SettingsSkinSourceAdmissionDecision({
+		true,
+		ESettingsResourcePriority::BACKGROUND,
+		false,
+		24,
+		192,
+		256,
+	});
+
+	EXPECT_FALSE(Decision.m_PromoteAllowed);
+	EXPECT_EQ(Decision.m_BlockReason, ESettingsSkinSourceAdmissionBlockReason::DRAIN_INACTIVE);
+	EXPECT_TRUE(Decision.m_CountFuseApplies);
+}
+
+TEST(SettingsResourceJobs, SourceAdmissionUsesVisibleReserveForVisibleRequests)
+{
+	const auto Decision = SettingsSkinSourceAdmissionDecision({
+		true,
+		ESettingsResourcePriority::VISIBLE,
+		true,
+		256,
+		192,
+		256,
+	});
+
+	EXPECT_FALSE(Decision.m_PromoteAllowed);
+	EXPECT_EQ(Decision.m_BlockReason, ESettingsSkinSourceAdmissionBlockReason::VISIBLE_RESERVE);
+	EXPECT_FALSE(Decision.m_CountFuseApplies);
+}
+
+TEST(SettingsResourceJobs, AllVisibleReadyLoggingRequiresVisibleRows)
+{
+	EXPECT_FALSE(SettingsSkinListShouldLogAllVisibleReady(true, false, 0));
+	EXPECT_FALSE(SettingsSkinListShouldLogAllVisibleReady(false, false, 28));
+	EXPECT_FALSE(SettingsSkinListShouldLogAllVisibleReady(true, true, 28));
+	EXPECT_TRUE(SettingsSkinListShouldLogAllVisibleReady(true, false, 28));
+}
+
+TEST(SettingsResourceJobs, SkeletonReadyPublishedCountMatchesSnapshotCount)
+{
+	SSkinListPlanSnapshot Snapshot{};
+	Snapshot.m_ItemCount = 120;
+	std::vector<int> vPublished(120, 0);
+	EXPECT_EQ(static_cast<int>(vPublished.size()), Snapshot.m_ItemCount);
+}
+
+TEST(SettingsResourceJobs, SkinListKeepsPendingPlanAliveUntilPublishGateOpens)
+{
+	EXPECT_TRUE(SettingsSkinListHasPendingMergeWork(true, 3, 3, 3));
+	EXPECT_TRUE(SettingsSkinListHasPendingMergeWork(true, 0, 0, 0));
+	EXPECT_FALSE(SettingsSkinListHasPendingMergeWork(false, 3, 3, 3));
 }
 
 TEST(SettingsResourceJobs, VisibleSkinListEntriesRequestImmediateLoad)
 {
 	EXPECT_TRUE(SettingsSkinListShouldRequestImmediateLoad(true));
 	EXPECT_FALSE(SettingsSkinListShouldRequestImmediateLoad(false));
+}
+
+TEST(SettingsResourceJobs, RuntimeWarmupOnlyRunsOnSettingsPageWhenIdle)
+{
+	EXPECT_TRUE(SettingsRuntimeWarmupShouldRun(true, true, false, false, false, false, false));
+	EXPECT_FALSE(SettingsRuntimeWarmupShouldRun(true, false, false, false, false, false, false));
+	EXPECT_FALSE(SettingsRuntimeWarmupShouldRun(true, true, true, false, false, false, false));
+	EXPECT_FALSE(SettingsRuntimeWarmupShouldRun(true, true, false, true, false, false, false));
+	EXPECT_FALSE(SettingsRuntimeWarmupShouldRun(true, true, false, false, true, false, false));
+	EXPECT_FALSE(SettingsRuntimeWarmupShouldRun(true, true, false, false, false, true, false));
+	EXPECT_FALSE(SettingsRuntimeWarmupShouldRun(true, true, false, false, false, false, true));
+	EXPECT_FALSE(SettingsRuntimeWarmupShouldRun(false, true, false, false, false, false, false));
+}
+
+TEST(SettingsResourceJobs, SkinListWarmupCountsCoverVisibleAndPrefetchRows)
+{
+	EXPECT_EQ(SettingsSkinListFirstPageWarmupEntries(180.0f, 50.0f, 1, 2), 6);
+	EXPECT_EQ(SettingsSkinListFirstPageWarmupEntries(300.0f, 50.0f, 4, 1), 28);
+	EXPECT_EQ(SettingsSkinListFirstPageWarmupEntries(0.0f, 50.0f, 1, 2), 0);
+	EXPECT_EQ(SettingsTeeSkinListFirstPageWarmupEntries(300.0f), 28);
+	EXPECT_EQ(SettingsTeeSkinListFirstPageWarmupEntries(120.0f), 24);
+	EXPECT_EQ(SettingsSkinListPrefetchCount(0, 2, 1, 2, 10), 2);
+	EXPECT_EQ(SettingsSkinListPrefetchCount(7, 9, 1, 2, 10), 0);
+	EXPECT_EQ(SettingsSkinListBackgroundWarmupCount(20, 6), 6);
+	EXPECT_EQ(SettingsSkinListBackgroundWarmupCount(3, 6), 3);
+}
+
+TEST(SettingsResourceJobs, LoadingPrewarmAttemptBudgetReservesExtraTeeSourceSettlePasses)
+{
+	EXPECT_EQ(SettingsLoadingPrewarmMaxAttempts(0, 0), 33);
+	EXPECT_EQ(SettingsLoadingPrewarmMaxAttempts(19, 28), 132);
+	EXPECT_EQ(SettingsLoadingPrewarmMaxAttempts(19, 8), 108);
+}
+
+TEST(SettingsResourceJobs, LoadingPrewarmBudgetOnlyStopsAfterBudgetAndStall)
+{
+	EXPECT_TRUE(SettingsLoadingPrewarmShouldKeepPumping(false, 0, 108, 0));
+	EXPECT_TRUE(SettingsLoadingPrewarmShouldKeepPumping(false, 108, 108, 0));
+	EXPECT_TRUE(SettingsLoadingPrewarmShouldKeepPumping(false, 108, 108, 7));
+	EXPECT_FALSE(SettingsLoadingPrewarmShouldKeepPumping(false, 108, 108, 8));
+	EXPECT_FALSE(SettingsLoadingPrewarmShouldKeepPumping(true, 20, 108, 0));
+}
+
+TEST(SettingsResourceJobs, SkinListBackgroundWarmupWaitsForIdleVisibleBacklog)
+{
+	EXPECT_TRUE(SettingsSkinBackgroundWarmupShouldRun(true, false, false));
+	EXPECT_FALSE(SettingsSkinBackgroundWarmupShouldRun(true, true, false));
+	EXPECT_FALSE(SettingsSkinBackgroundWarmupShouldRun(true, false, true));
+	EXPECT_FALSE(SettingsSkinBackgroundWarmupShouldRun(false, false, false));
+	EXPECT_FALSE(SettingsSkinBackgroundWarmupWindowFull(0, 20, 10, 64));
+	EXPECT_TRUE(SettingsSkinBackgroundWarmupWindowFull(0, 40, 24, 64));
+}
+
+TEST(SettingsResourceJobs, TeeSkinSourceLoadWindowCapsActiveDecodeConcurrency)
+{
+	const SSettingsResourceFrameContext Idle = SettingsBuildFrameContext(false, false, 0);
+	const SSettingsResourceFrameContext Recovery = SettingsBuildFrameContext(false, false, 2);
+	const SSettingsResourceFrameContext Scroll = SettingsBuildFrameContext(true, false, 0);
+	EXPECT_EQ(SettingsSkinSourceLoadNormalWindow(Idle, true, 1600), 256);
+	EXPECT_EQ(SettingsSkinSourceLoadVisibleWindow(Idle, true, 1600), 256);
+	EXPECT_EQ(SettingsSkinSourceLoadNormalWindow(Recovery, true, 1600), 128);
+	EXPECT_EQ(SettingsSkinSourceLoadVisibleWindow(Recovery, true, 1600), 192);
+	EXPECT_EQ(SettingsSkinSourceLoadNormalWindow(Scroll, true, 1600), 48);
+	EXPECT_EQ(SettingsSkinSourceLoadVisibleWindow(Scroll, true, 1600), 128);
+	EXPECT_EQ(SettingsSkinSourceLoadVisibleWindow(Idle, true, 32), 32);
 }
 
 TEST(SettingsResourceJobs, VisibleSkinFinalizeDefersBackgroundSweepsAfterPriorityWork)
@@ -783,6 +1306,560 @@ TEST(SettingsResourceJobs, VisibleSkinFinalizeAllowsBackgroundSweepOnNextFrame)
 {
 	EXPECT_TRUE(SettingsSkinFinalizeShouldDeferBackgroundSweep(true, 1, 12));
 	EXPECT_FALSE(SettingsSkinFinalizeShouldDeferBackgroundSweep(false, 0, 12));
+}
+
+TEST(SettingsResourceJobs, TeeSkinFinalizeBudgetDefersDuringScrollAndRecovery)
+{
+	const SSettingsResourceFrameContext Idle = {false, 0};
+	const SSettingsResourceFrameContext Scrolling = {true, 0};
+	const SSettingsResourceFrameContext Recovering = {false, 2};
+
+	EXPECT_EQ(SettingsSkinFinalizeMaxPerFrame(true), 64);
+	EXPECT_EQ(SettingsSkinGpuUploadUnits(true), 8);
+	EXPECT_EQ(SettingsSkinFinalizeFrameBudget(Idle, true), SettingsSkinFinalizeMaxPerFrame(true));
+	EXPECT_EQ(SettingsSkinGpuUploadFrameUnits(Idle, true), SettingsSkinGpuUploadUnits(true));
+	EXPECT_EQ(SettingsSkinFinalizeFrameBudget(Scrolling, true), 16);
+	EXPECT_EQ(SettingsSkinGpuUploadFrameUnits(Scrolling, true), 4);
+	EXPECT_EQ(SettingsSkinFinalizeFrameBudget(Recovering, true), 48);
+	EXPECT_EQ(SettingsSkinGpuUploadFrameUnits(Recovering, true), 8);
+}
+
+TEST(SettingsResourceJobs, ActiveTeeSkinFrameBudgetAllowsEightSourceUploadsPerFrame)
+{
+	SSettingsWarmupFrameBudget Budget;
+	SettingsApplyActiveTeeSkinFrameBudget(Budget, true);
+
+	SSettingsResourceMergeBudget UploadBudget;
+	UploadBudget.m_MaxGpuUploads = 8;
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_TRUE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_FALSE(SettingsResourceConsumeGpuUpload(UploadBudget, &Budget));
+	EXPECT_EQ(UploadBudget.m_StopReason, ESettingsWarmupStopReason::GPU_UPLOAD_BUDGET);
+}
+
+TEST(SettingsResourceJobs, TeeSkinGpuUploadLimiterBudgetTracksFrameContext)
+{
+	const SSettingsResourceFrameContext IdleVisible = SettingsBuildFrameContext(false, false, 0);
+	const SSettingsResourceFrameContext Recovery = SettingsBuildFrameContext(false, false, 2);
+	const SSettingsResourceFrameContext Scroll = SettingsBuildFrameContext(true, false, 0);
+	SSettingsResourceFrameContext IdleDrain = SettingsBuildFrameContext(false, false, 0);
+	IdleDrain.m_HighPrioritySettled = true;
+
+	EXPECT_EQ(SettingsSkinGpuUploadLimiterUnits(IdleVisible, true), 192);
+	EXPECT_EQ(SettingsSkinGpuUploadLimiterUnits(Recovery, true), 192);
+	EXPECT_EQ(SettingsSkinGpuUploadLimiterUnits(Scroll, true), 96);
+	EXPECT_EQ(SettingsSkinGpuUploadLimiterUnits(IdleDrain, true), 288);
+}
+
+TEST(SettingsResourceJobs, ThroughputControllerKeepsVisibleBacklogOutOfIdleDrain)
+{
+	SSettingsSkinThroughputControllerState State;
+	const auto VisibleBacklog = SettingsSkinThroughputControllerStep({
+		{false, 0, true},
+		true,
+		6.5f,
+		6.0f,
+		512,
+		28,
+		19,
+		9,
+		0,
+		9,
+		0,
+		3,
+		21,
+		29,
+		24,
+		0,
+		0,
+		0,
+		0,
+		192,
+		false,
+		"none",
+		"drain_inactive",
+	},
+		State);
+	EXPECT_EQ(VisibleBacklog.m_Mode, ESettingsSkinThroughputControllerMode::IDLE_VISIBLE);
+	EXPECT_FALSE(VisibleBacklog.m_BackgroundDrainActive);
+	EXPECT_EQ(VisibleBacklog.m_BackgroundRequestBudget, 6);
+
+	const auto Settled = SettingsSkinThroughputControllerStep({
+		{false, 0, true},
+		true,
+		6.5f,
+		6.0f,
+		512,
+		28,
+		28,
+		0,
+		0,
+		0,
+		0,
+		0,
+		20,
+		40,
+		20,
+		12,
+		12,
+		0,
+		0,
+		288,
+		false,
+		"none",
+		"none",
+	},
+		State);
+	EXPECT_EQ(Settled.m_Mode, ESettingsSkinThroughputControllerMode::IDLE_DRAIN);
+	EXPECT_TRUE(Settled.m_BackgroundDrainActive);
+	EXPECT_EQ(Settled.m_BackgroundRequestBudget, 24);
+}
+
+TEST(SettingsResourceJobs, ThroughputControllerRelaxesReserveAndExpandsWindowsWhenAdmissionUnderfed)
+{
+	SSettingsSkinThroughputControllerState State;
+	State.m_Initialized = true;
+	State.m_Mode = ESettingsSkinThroughputControllerMode::IDLE_VISIBLE;
+	State.m_GpuUploadLimitUnits = 192;
+	State.m_GpuUploadFrameBudget = 8;
+	State.m_FinalizeBudgetLimit = 48;
+	State.m_NormalLoadingWindow = 128;
+	State.m_VisibleLoadingWindow = 192;
+	State.m_VisibleReserve = 2;
+
+	const auto Output = SettingsSkinThroughputControllerStep({
+		{false, 0, false},
+		true,
+		6.9f,
+		6.7f,
+		512,
+		28,
+		19,
+		9,
+		0,
+		9,
+		0,
+		3,
+		21,
+		29,
+		30,
+		0,
+		0,
+		0,
+		0,
+		192,
+		false,
+		"visible_reserve",
+		"drain_inactive",
+	},
+		State);
+
+	EXPECT_EQ(Output.m_Reason, ESettingsSkinThroughputControllerReason::ADMISSION);
+	EXPECT_EQ(Output.m_VisibleReserve, 0);
+	EXPECT_GT(Output.m_NormalLoadingWindow, 128);
+	EXPECT_GT(Output.m_VisibleLoadingWindow, 192);
+	EXPECT_TRUE(Output.m_AdmissionUnderfed);
+	EXPECT_EQ(Output.m_UnderfedStreak, 1);
+}
+
+TEST(SettingsResourceJobs, ThroughputControllerReducesOnlyUploadBudgetOnGpuPressure)
+{
+	SSettingsSkinThroughputControllerState State;
+	State.m_Initialized = true;
+	State.m_Mode = ESettingsSkinThroughputControllerMode::IDLE_VISIBLE;
+	State.m_GpuUploadLimitUnits = 240;
+	State.m_GpuUploadFrameBudget = 10;
+	State.m_FinalizeBudgetLimit = 64;
+	State.m_NormalLoadingWindow = 192;
+	State.m_VisibleLoadingWindow = 224;
+	State.m_VisibleReserve = 2;
+
+	const auto Output = SettingsSkinThroughputControllerStep({
+		{false, 0, false},
+		true,
+		7.0f,
+		6.8f,
+		512,
+		28,
+		20,
+		8,
+		0,
+		8,
+		0,
+		2,
+		18,
+		30,
+		20,
+		0,
+		0,
+		0,
+		0,
+		0,
+		false,
+		"gpu_upload_budget",
+		"none",
+	},
+		State);
+
+	EXPECT_EQ(Output.m_Reason, ESettingsSkinThroughputControllerReason::GPU);
+	EXPECT_LT(Output.m_GpuUploadLimitUnits, 240);
+	EXPECT_EQ(Output.m_FinalizeBudgetLimit, 64);
+	EXPECT_EQ(Output.m_NormalLoadingWindow, 192);
+}
+
+TEST(SettingsResourceJobs, ThroughputControllerReducesOnlyFinalizeBudgetOnFinalizePressure)
+{
+	SSettingsSkinThroughputControllerState State;
+	State.m_Initialized = true;
+	State.m_Mode = ESettingsSkinThroughputControllerMode::IDLE_VISIBLE;
+	State.m_GpuUploadLimitUnits = 240;
+	State.m_GpuUploadFrameBudget = 10;
+	State.m_FinalizeBudgetLimit = 64;
+	State.m_NormalLoadingWindow = 192;
+	State.m_VisibleLoadingWindow = 224;
+	State.m_VisibleReserve = 2;
+
+	const auto Output = SettingsSkinThroughputControllerStep({
+		{false, 0, false},
+		true,
+		7.0f,
+		6.8f,
+		512,
+		28,
+		20,
+		8,
+		0,
+		8,
+		0,
+		2,
+		18,
+		30,
+		20,
+		0,
+		0,
+		0,
+		0,
+		96,
+		false,
+		"max_per_frame",
+		"none",
+	},
+		State);
+
+	EXPECT_EQ(Output.m_Reason, ESettingsSkinThroughputControllerReason::FINALIZE);
+	EXPECT_EQ(Output.m_GpuUploadLimitUnits, 240);
+	EXPECT_LT(Output.m_FinalizeBudgetLimit, 64);
+	EXPECT_EQ(Output.m_NormalLoadingWindow, 192);
+}
+
+TEST(SettingsResourceJobs, NonTeeSkinFinalizeBudgetKeepsLegacyLimits)
+{
+	const SSettingsResourceFrameContext Scrolling = {true, 2};
+	EXPECT_EQ(SettingsSkinFinalizeFrameBudget(Scrolling, false), SettingsSkinFinalizeMaxPerFrame(false));
+	EXPECT_EQ(SettingsSkinGpuUploadFrameUnits(Scrolling, false), SettingsSkinGpuUploadUnits(false));
+}
+
+TEST(SettingsResourceJobs, ImmediateScrollInputKeepsReducedTeeThroughputBeforePersistentStateCatchesUp)
+{
+	const SSettingsResourceFrameContext Idle = SettingsBuildFrameContext(false, false, 0);
+	const SSettingsResourceFrameContext ImmediateScroll = SettingsBuildFrameContext(false, true, 0);
+	const SSettingsResourceFrameContext PersistentScroll = SettingsBuildFrameContext(true, false, 0);
+
+	EXPECT_FALSE(Idle.m_ScrollActive);
+	EXPECT_TRUE(ImmediateScroll.m_ScrollActive);
+	EXPECT_TRUE(PersistentScroll.m_ScrollActive);
+	EXPECT_GT(SettingsSkinFinalizeFrameBudget(ImmediateScroll, true), 0);
+	EXPECT_GT(SettingsSkinGpuUploadFrameUnits(ImmediateScroll, true), 0);
+	EXPECT_LT(SettingsSkinFinalizeFrameBudget(ImmediateScroll, true), SettingsSkinFinalizeFrameBudget(Idle, true));
+	EXPECT_LT(SettingsSkinGpuUploadFrameUnits(ImmediateScroll, true), SettingsSkinGpuUploadFrameUnits(Idle, true));
+	EXPECT_EQ(SettingsSkinFinalizeFrameBudget(ImmediateScroll, true), SettingsSkinFinalizeFrameBudget(PersistentScroll, true));
+	EXPECT_EQ(SettingsSkinGpuUploadFrameUnits(ImmediateScroll, true), SettingsSkinGpuUploadFrameUnits(PersistentScroll, true));
+}
+
+TEST(SettingsResourceJobs, TeeSkinBackgroundRequestBudgetOnlyRunsOnIdleFrames)
+{
+	const SSettingsResourceFrameContext Idle = {false, 0};
+	const SSettingsResourceFrameContext Scrolling = {true, 0};
+	const SSettingsResourceFrameContext Recovering = {false, 2};
+
+	EXPECT_GT(SettingsSkinBackgroundRequestFrameBudget(Idle, true), 0);
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(Scrolling, true), 0);
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(Recovering, true), 0);
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(Idle, false), 0);
+}
+
+TEST(SettingsResourceJobs, TeeSkinBackgroundDrainRaisesIdleThroughputBudgets)
+{
+	SSettingsResourceFrameContext IdleSettled = {false, 0};
+	IdleSettled.m_HighPrioritySettled = true;
+	SSettingsResourceFrameContext RecoveringSettled = {false, 2};
+	RecoveringSettled.m_HighPrioritySettled = true;
+	SSettingsResourceFrameContext ScrollingSettled = {true, 0};
+	ScrollingSettled.m_HighPrioritySettled = true;
+
+	EXPECT_TRUE(SettingsSkinBackgroundDrainActive(IdleSettled, true));
+	EXPECT_FALSE(SettingsSkinBackgroundDrainActive(RecoveringSettled, true));
+	EXPECT_FALSE(SettingsSkinBackgroundDrainActive(ScrollingSettled, true));
+	EXPECT_FALSE(SettingsSkinBackgroundDrainActive(IdleSettled, false));
+
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(IdleSettled, true), 24);
+	EXPECT_EQ(SettingsSkinSourceLoadNormalWindow(IdleSettled, true, 64), 256);
+	EXPECT_EQ(SettingsSkinSourceLoadVisibleWindow(IdleSettled, true, 64), 256);
+	EXPECT_EQ(SettingsSkinSourceCountFuseLimit(IdleSettled, true, 64), 128);
+}
+
+TEST(SettingsResourceJobs, TeeBackgroundRequestsStayBlockedThroughScrollCooldownAndRecovery)
+{
+	int CooldownFrames = 0;
+	int RecoveryFrames = 0;
+
+	CooldownFrames = SettingsScrollInteractionCooldown(true, CooldownFrames, 3);
+	RecoveryFrames = SettingsScrollInteractionRecovery(true, 0, CooldownFrames, RecoveryFrames, 2);
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(SettingsBuildFrameContext(true || CooldownFrames > 0, false, RecoveryFrames), true), 0);
+
+	int PreviousCooldownFrames = CooldownFrames;
+	CooldownFrames = SettingsScrollInteractionCooldown(false, CooldownFrames, 3);
+	RecoveryFrames = SettingsScrollInteractionRecovery(false, PreviousCooldownFrames, CooldownFrames, RecoveryFrames, 2);
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(SettingsBuildFrameContext(false || CooldownFrames > 0, false, RecoveryFrames), true), 0);
+
+	PreviousCooldownFrames = CooldownFrames;
+	CooldownFrames = SettingsScrollInteractionCooldown(false, CooldownFrames, 3);
+	RecoveryFrames = SettingsScrollInteractionRecovery(false, PreviousCooldownFrames, CooldownFrames, RecoveryFrames, 2);
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(SettingsBuildFrameContext(false || CooldownFrames > 0, false, RecoveryFrames), true), 0);
+
+	PreviousCooldownFrames = CooldownFrames;
+	CooldownFrames = SettingsScrollInteractionCooldown(false, CooldownFrames, 3);
+	RecoveryFrames = SettingsScrollInteractionRecovery(false, PreviousCooldownFrames, CooldownFrames, RecoveryFrames, 2);
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(SettingsBuildFrameContext(false || CooldownFrames > 0, false, RecoveryFrames), true), 0);
+
+	PreviousCooldownFrames = CooldownFrames;
+	CooldownFrames = SettingsScrollInteractionCooldown(false, CooldownFrames, 3);
+	RecoveryFrames = SettingsScrollInteractionRecovery(false, PreviousCooldownFrames, CooldownFrames, RecoveryFrames, 2);
+	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(SettingsBuildFrameContext(false || CooldownFrames > 0, false, RecoveryFrames), true), 0);
+
+	PreviousCooldownFrames = CooldownFrames;
+	CooldownFrames = SettingsScrollInteractionCooldown(false, CooldownFrames, 3);
+	RecoveryFrames = SettingsScrollInteractionRecovery(false, PreviousCooldownFrames, CooldownFrames, RecoveryFrames, 2);
+	EXPECT_GT(SettingsSkinBackgroundRequestFrameBudget(SettingsBuildFrameContext(false || CooldownFrames > 0, false, RecoveryFrames), true), 0);
+}
+
+TEST(SettingsResourceJobs, TeeBackgroundRequestBudgetTracksRealInflightHeadroom)
+{
+	SSettingsSkinBackgroundRequestBudgetInput Input;
+	Input.m_DefaultBudget = 24;
+	Input.m_Pending = 40;
+	Input.m_Loading = 60;
+	Input.m_BackgroundRequested = 0;
+	Input.m_CountFuseLimit = 128;
+	Input.m_VisibleReserve = 8;
+	Input.m_RecentLoadedDelta = 2;
+	Input.m_RecentAdmittedDelta = 2;
+	Input.m_DrainActive = true;
+
+	const auto Decision = SettingsSkinBackgroundRequestBudgetDecision(Input);
+	EXPECT_EQ(Decision.m_RealInflight, 100);
+	EXPECT_EQ(Decision.m_RequestBudget, 20);
+	EXPECT_EQ(Decision.m_BlockReason, ESettingsSkinBackgroundRequestBlockReason::NONE);
+}
+
+TEST(SettingsResourceJobs, TeeBackgroundRequestBudgetPausesWhenHeadroomIsReservedForVisible)
+{
+	SSettingsSkinBackgroundRequestBudgetInput Input;
+	Input.m_DefaultBudget = 24;
+	Input.m_Pending = 64;
+	Input.m_Loading = 56;
+	Input.m_BackgroundRequested = 0;
+	Input.m_CountFuseLimit = 128;
+	Input.m_VisibleReserve = 8;
+	Input.m_RecentLoadedDelta = 1;
+	Input.m_RecentAdmittedDelta = 1;
+	Input.m_DrainActive = true;
+
+	const auto Decision = SettingsSkinBackgroundRequestBudgetDecision(Input);
+	EXPECT_EQ(Decision.m_RealInflight, 120);
+	EXPECT_EQ(Decision.m_RequestBudget, 0);
+	EXPECT_EQ(Decision.m_BlockReason, ESettingsSkinBackgroundRequestBlockReason::VISIBLE_RESERVE);
+}
+
+TEST(SettingsResourceJobs, TeeBackgroundRequestBudgetSlowsStalledProducerWithLargeBacklog)
+{
+	SSettingsSkinBackgroundRequestBudgetInput Input;
+	Input.m_DefaultBudget = 24;
+	Input.m_Pending = 4;
+	Input.m_Loading = 4;
+	Input.m_BackgroundRequested = 300;
+	Input.m_CountFuseLimit = 128;
+	Input.m_VisibleReserve = 8;
+	Input.m_RecentLoadedDelta = 0;
+	Input.m_RecentAdmittedDelta = 3;
+	Input.m_DrainActive = true;
+
+	const auto Decision = SettingsSkinBackgroundRequestBudgetDecision(Input);
+	EXPECT_EQ(Decision.m_RequestBudget, 0);
+	EXPECT_EQ(Decision.m_BlockReason, ESettingsSkinBackgroundRequestBlockReason::STALL_BACKPRESSURE);
+}
+
+TEST(SettingsResourceJobs, TeeBackgroundWindowGrowsSlowlyWhenDrainIsHealthy)
+{
+	SSettingsSkinBackgroundWindowInput Input;
+	Input.m_CurrentLimit = 64;
+	Input.m_MinLimit = 32;
+	Input.m_MaxLimit = 120;
+	Input.m_HealthyFrames = 3;
+	Input.m_HealthyFramesToGrow = 4;
+	Input.m_DrainActive = true;
+	Input.m_FrameStable = true;
+	Input.m_VisibleWaiting = false;
+	Input.m_GpuBudgetExhausted = false;
+	Input.m_FinalizeBudgetExhausted = false;
+	Input.m_DecodeJobsSaturated = false;
+	Input.m_LoadedProgress = true;
+	Input.m_ConsumerStalled = false;
+
+	const auto Update = SettingsSkinBackgroundWindowUpdate(Input);
+	EXPECT_EQ(Update.m_NextLimit, 65);
+	EXPECT_EQ(Update.m_NextHealthyFrames, 0);
+	EXPECT_EQ(Update.m_Decision, ESettingsSkinBackgroundWindowDecision::INCREASE);
+}
+
+TEST(SettingsResourceJobs, TeeBackgroundWindowShrinksFastWhenVisibleNeedsHeadroom)
+{
+	SSettingsSkinBackgroundWindowInput Input;
+	Input.m_CurrentLimit = 96;
+	Input.m_MinLimit = 32;
+	Input.m_MaxLimit = 120;
+	Input.m_HealthyFrames = 2;
+	Input.m_HealthyFramesToGrow = 4;
+	Input.m_DrainActive = true;
+	Input.m_FrameStable = true;
+	Input.m_VisibleWaiting = true;
+	Input.m_GpuBudgetExhausted = false;
+	Input.m_FinalizeBudgetExhausted = false;
+	Input.m_DecodeJobsSaturated = false;
+	Input.m_LoadedProgress = false;
+	Input.m_ConsumerStalled = false;
+
+	const auto Update = SettingsSkinBackgroundWindowUpdate(Input);
+	EXPECT_EQ(Update.m_NextLimit, 48);
+	EXPECT_EQ(Update.m_NextHealthyFrames, 0);
+	EXPECT_EQ(Update.m_Decision, ESettingsSkinBackgroundWindowDecision::DECREASE);
+}
+
+TEST(SettingsResourceJobs, TeeBackgroundWindowShrinksWhenAdmittedWorkStopsCompleting)
+{
+	SSettingsSkinBackgroundWindowInput Input;
+	Input.m_CurrentLimit = 80;
+	Input.m_MinLimit = 32;
+	Input.m_MaxLimit = 120;
+	Input.m_HealthyFrames = 1;
+	Input.m_HealthyFramesToGrow = 4;
+	Input.m_DrainActive = true;
+	Input.m_FrameStable = true;
+	Input.m_VisibleWaiting = false;
+	Input.m_GpuBudgetExhausted = false;
+	Input.m_FinalizeBudgetExhausted = false;
+	Input.m_DecodeJobsSaturated = false;
+	Input.m_LoadedProgress = false;
+	Input.m_ConsumerStalled = true;
+
+	const auto Update = SettingsSkinBackgroundWindowUpdate(Input);
+	EXPECT_EQ(Update.m_NextLimit, 40);
+	EXPECT_EQ(Update.m_Decision, ESettingsSkinBackgroundWindowDecision::DECREASE);
+}
+
+TEST(SettingsResourceJobs, TeeBackgroundWindowShrinksWhenDecodeJobsSaturate)
+{
+	SSettingsSkinBackgroundWindowInput Input;
+	Input.m_CurrentLimit = 72;
+	Input.m_MinLimit = 32;
+	Input.m_MaxLimit = 120;
+	Input.m_HealthyFrames = 2;
+	Input.m_HealthyFramesToGrow = 4;
+	Input.m_DrainActive = true;
+	Input.m_FrameStable = true;
+	Input.m_VisibleWaiting = false;
+	Input.m_GpuBudgetExhausted = false;
+	Input.m_FinalizeBudgetExhausted = false;
+	Input.m_DecodeJobsSaturated = true;
+	Input.m_LoadedProgress = false;
+	Input.m_ConsumerStalled = false;
+
+	const auto Update = SettingsSkinBackgroundWindowUpdate(Input);
+	EXPECT_EQ(Update.m_NextLimit, 36);
+	EXPECT_EQ(Update.m_NextHealthyFrames, 0);
+	EXPECT_EQ(Update.m_Decision, ESettingsSkinBackgroundWindowDecision::DECREASE);
+}
+
+TEST(SettingsResourceJobs, VisiblePreviewObligationCanBypassLoadedMaxCountFuse)
+{
+	EXPECT_TRUE(SettingsSkinPreviewObligationCanAdmitNewSource(true, 256, 256));
+	EXPECT_TRUE(SettingsSkinPreviewObligationCanAdmitNewSource(false, 255, 256));
+}
+
+TEST(SettingsResourceJobs, PreviewObligationOnlyReordersEvictionWithinAdmittedSources)
+{
+	EXPECT_TRUE(SettingsSkinPreviewObligationRaisesSourcePriority(true, false));
+}
+
+TEST(SettingsResourceJobs, PreviewObligationLifecycleHandlesVisibleExitAndStablePromotion)
+{
+	EXPECT_TRUE(SettingsSkinPreviewObligationShouldPin(true, false, false));
+	EXPECT_FALSE(SettingsSkinPreviewObligationShouldPin(false, true, false));
+	EXPECT_TRUE(SettingsSkinPreviewObligationShouldPin(true, false, true));
+}
+
+TEST(SettingsResourceJobs, SourceFallbackPinsOnlyLoadedRowsWithoutCachedPreview)
+{
+	EXPECT_TRUE(SettingsSkinSourceFallbackShouldPin(true, false));
+	EXPECT_FALSE(SettingsSkinSourceFallbackShouldPin(true, true));
+	EXPECT_FALSE(SettingsSkinSourceFallbackShouldPin(false, false));
+}
+
+TEST(SettingsResourceJobs, PreviewObligationDoesNotSharePinAcrossDifferentArtifactKeys)
+{
+	SSettingsSkinPreviewCacheKey A{"default", 3, 64, "hash-a", 0, false};
+	SSettingsSkinPreviewCacheKey B{"default", 3, 64, "hash-b", 0, false};
+	EXPECT_NE(A, B);
+	EXPECT_FALSE(SettingsSkinPreviewObligationSharesPin(A, B));
+}
+
+TEST(SettingsResourceJobs, CacheDisabledVariantsDoNotCreatePreviewObligation)
+{
+	EXPECT_FALSE(SettingsSkinPreviewShouldCreateObligation(ESettingsSkinPreviewCacheDisabledReason::WHITE_FEET));
+	EXPECT_FALSE(SettingsSkinPreviewShouldCreateObligation(ESettingsSkinPreviewCacheDisabledReason::SIXUP));
+	EXPECT_FALSE(SettingsSkinPreviewShouldCreateObligation(ESettingsSkinPreviewCacheDisabledReason::BACKEND_UNSUPPORTED));
+}
+
+TEST(SettingsResourceJobs, SourceBytesEstimateExceedsZeroForLoadedSkin)
+{
+	EXPECT_GT(SettingsSkinSourceBytesEstimate(256, 128, 2), 0u);
+}
+
+TEST(SettingsResourceJobs, BytesBudgetCanTriggerReclaimBeforeCountFuse)
+{
+	EXPECT_TRUE(SettingsSkinResidencyShouldReclaim(true, false));
+}
+
+TEST(SettingsResourceJobs, CountFuseStillAppliesWhenBytesBudgetIsWithinLimit)
+{
+	EXPECT_TRUE(SettingsSkinResidencyShouldReclaim(false, true));
+}
+
+TEST(SettingsResourceJobs, LowBudgetPrefersReclaimingSourceCapabilityBeforeStablePreview)
+{
+	EXPECT_TRUE(SettingsSkinResidencyShouldReclaimSourceBeforeStablePreview(true, true));
+}
+
+TEST(SettingsResourceJobs, WorkshopInstalledAssetCanUseWorkshopCatalogAndLocalBytes)
+{
+	EXPECT_STREQ(SettingsWorkshopCatalogSourceName(ESettingsWorkshopCatalogSource::WORKSHOP_CACHE), "workshop-cache");
+	EXPECT_STREQ(SettingsWorkshopBytesSourceName(ESettingsWorkshopBytesSource::LOCAL_INSTALL), "local-install");
 }
 
 TEST(SettingsResourceJobs, CountryFlagPlanHandlesEmptyInput)

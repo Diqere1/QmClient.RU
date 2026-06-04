@@ -388,7 +388,7 @@ private:
 	int m_LastDemoInputRecordTick = -1;
 	int m_LastDemoPlaybackStateTick = -1;
 
-	void PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption);
+	void PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption, const char *pLoadingMessage);
 
 public:
 	// 将 IInterface 的 protected Kernel() 暴露给客户端组件的既有访问模式。

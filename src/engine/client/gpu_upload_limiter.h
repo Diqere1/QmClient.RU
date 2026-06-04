@@ -25,19 +25,24 @@ public:
 	 * Maximum number of texture uploads allowed per frame.
 	 * This value is tuned to balance loading speed vs frame smoothness.
 	 */
-	static constexpr int MAX_UPLOADS_PER_FRAME = 30;
+	static constexpr int DEFAULT_MAX_UPLOADS_PER_FRAME = 30;
 
 	/**
 	 * Reset the upload counter for a new frame.
-	 * Should be called at the beginning of each frame in OnRender().
+	 * Should be called at the beginning of each frame before main-thread upload consumers run.
 	 */
-	void OnFrameStart() { m_UploadsThisFrame = 0; }
+	void OnFrameStart(int MaxUploadsPerFrame = DEFAULT_MAX_UPLOADS_PER_FRAME)
+	{
+		m_UploadsThisFrame = 0;
+		m_MaxUploadsThisFrame = MaxUploadsPerFrame > 0 ? MaxUploadsPerFrame : 0;
+	}
 
 	/**
 	 * Check if a new texture upload is allowed this frame.
 	 * @return true if upload is allowed, false if the limit has been reached
 	 */
-	bool CanUpload() const { return m_UploadsThisFrame < MAX_UPLOADS_PER_FRAME; }
+	bool CanUpload() const { return CanUpload(1); }
+	bool CanUpload(int Count) const { return Count >= 0 && m_UploadsThisFrame + Count <= m_MaxUploadsThisFrame; }
 
 	/**
 	 * Record that a texture upload has been performed.
@@ -54,10 +59,13 @@ public:
 	/**
 	 * Get the maximum uploads per frame limit.
 	 */
-	static constexpr int MaxUploadsPerFrame() { return MAX_UPLOADS_PER_FRAME; }
+	static constexpr int DefaultMaxUploadsPerFrame() { return DEFAULT_MAX_UPLOADS_PER_FRAME; }
+	int MaxUploadsPerFrame() const { return m_MaxUploadsThisFrame; }
+	int RemainingUploads() const { return m_UploadsThisFrame < m_MaxUploadsThisFrame ? m_MaxUploadsThisFrame - m_UploadsThisFrame : 0; }
 
 private:
 	int m_UploadsThisFrame = 0;
+	int m_MaxUploadsThisFrame = DEFAULT_MAX_UPLOADS_PER_FRAME;
 };
 
 #endif // ENGINE_CLIENT_GPU_UPLOAD_LIMITER_H

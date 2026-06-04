@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <limits>
 #include <list>
@@ -32,7 +33,6 @@
 #include <vector>
 
 class CHttpRequest;
-
 class CSkins : public CComponent
 {
 private:
@@ -46,7 +46,6 @@ private:
 		CImageInfo m_InfoGrayscale;
 		CSkin::CSkinMetrics m_Metrics;
 		ColorRGBA m_BloodColor;
-		char m_aSettingsPreviewCacheContentHash[SHA256_MAXSTRSIZE] = {};
 	};
 
 	/**
@@ -120,6 +119,10 @@ public:
 			 */
 			UNLOADED,
 			/**
+			 * Skin was requested by the settings Tee source path but has not entered the admitted load queue yet.
+			 */
+			BACKGROUND_REQUESTED,
+			/**
 			 * Skin is unloaded and should be loaded when a slot is free. Skin will enter @link LOADING @endlink
 			 * state when maximum number of loaded skins is not exceeded.
 			 */
@@ -142,6 +145,14 @@ public:
 			NOT_FOUND,
 		};
 
+		enum class EStatusIndicator
+		{
+			NONE = 0,
+			LOADING,
+			NOT_FOUND,
+			ERROR,
+		};
+
 		CSkinContainer(CSkinContainer &&Other) = default;
 		CSkinContainer(CSkins *pSkins, const char *pName, EType Type, int StorageType);
 		~CSkinContainer();
@@ -157,8 +168,7 @@ public:
 		bool IsAlwaysLoaded() const { return m_AlwaysLoaded; }
 		EState State() const { return m_State; }
 		const std::unique_ptr<CSkin> &Skin() const { return m_pSkin; }
-		const char *SettingsPreviewCacheContentHash() const { return m_aSettingsPreviewCacheContentHash; }
-		bool IsSettingsPreviewCachePinned() const { return m_SettingsPreviewCachePinCount > 0; }
+		size_t SettingsSourceApproxBytes() const { return m_SettingsSourceApproxBytes; }
 		struct SUsageTrackingUpdate
 		{
 			bool m_ShouldTouch = false;
@@ -171,7 +181,13 @@ public:
 		}
 		static bool TracksPriorityUsage(EState State, bool AlwaysLoaded, ESettingsResourcePriority Priority)
 		{
-			return Priority != ESettingsResourcePriority::BACKGROUND && TracksUsage(State, AlwaysLoaded);
+			return !AlwaysLoaded &&
+			       Priority != ESettingsResourcePriority::BACKGROUND &&
+			       (State == EState::BACKGROUND_REQUESTED || TracksUsage(State, AlwaysLoaded));
+		}
+		static bool SettingsResourcePriorityCanUpgrade(ESettingsResourcePriority Priority, ESettingsResourcePriority CurrentPriority)
+		{
+			return static_cast<int>(Priority) > static_cast<int>(CurrentPriority);
 		}
 		static SUsageTrackingUpdate UsageTrackingUpdate(EState State, bool AlwaysLoaded, bool HasUsageEntry)
 		{
@@ -185,11 +201,29 @@ public:
 		}
 		static bool ShouldDiscardUsageEntryBeforeUnload(bool ExistsInSkinMap, EState State, bool AlwaysLoaded)
 		{
-			return !ExistsInSkinMap || !TracksUsage(State, AlwaysLoaded);
+			return !ExistsInSkinMap || (!TracksUsage(State, AlwaysLoaded) && State != EState::BACKGROUND_REQUESTED);
 		}
 		static bool StateChangeRequiresListRefresh(EState OldState, EState NewState)
 		{
 			return (OldState == EState::NOT_FOUND) != (NewState == EState::NOT_FOUND);
+		}
+		static EStatusIndicator StatusIndicator(EState State)
+		{
+			switch(State)
+			{
+			case EState::UNLOADED:
+			case EState::BACKGROUND_REQUESTED:
+			case EState::PENDING:
+			case EState::LOADING:
+				return EStatusIndicator::LOADING;
+			case EState::NOT_FOUND:
+				return EStatusIndicator::NOT_FOUND;
+			case EState::ERROR:
+				return EStatusIndicator::ERROR;
+			case EState::LOADED:
+				break;
+			}
+			return EStatusIndicator::NONE;
 		}
 
 		/**
@@ -203,14 +237,15 @@ public:
 		char m_aName[MAX_SKIN_LENGTH];
 		EType m_Type;
 		int m_StorageType;
-		char m_aSettingsPreviewCacheContentHash[SHA256_MAXSTRSIZE] = {};
 		bool m_Vanilla;
 		bool m_Special;
 		bool m_AlwaysLoaded;
 
 		EState m_State = EState::UNLOADED;
+		ESettingsResourcePriority m_LoadPriority = ESettingsResourcePriority::BACKGROUND;
 		std::unique_ptr<CSkin> m_pSkin = nullptr;
 		std::shared_ptr<CAbstractSkinLoadJob> m_pLoadJob = nullptr;
+		size_t m_SettingsSourceApproxBytes = 0;
 
 		/**
 		 * The time when loading of this skin was first requested.
@@ -225,7 +260,6 @@ public:
 		 */
 		std::optional<std::list<std::string>::iterator> m_UsageEntryIterator;
 		std::optional<std::list<std::string>::iterator> m_BackgroundEntryIterator;
-		int m_SettingsPreviewCachePinCount = 0;
 
 		EState DetermineInitialState() const;
 		bool IsBackgroundTracked() const { return m_BackgroundEntryIterator.has_value() && !m_UsageEntryIterator.has_value(); }
@@ -299,11 +333,53 @@ public:
 	{
 	public:
 		size_t m_NumUnloaded = 0;
+		size_t m_NumBackgroundRequested = 0;
 		size_t m_NumPending = 0;
 		size_t m_NumLoading = 0;
 		size_t m_NumLoaded = 0;
 		size_t m_NumError = 0;
 		size_t m_NumNotFound = 0;
+
+		size_t RealInflight() const { return m_NumPending + m_NumLoading; }
+		bool AdmissionInvariantViolated(int CountFuseLimit) const
+		{
+			return CountFuseLimit >= 0 && RealInflight() > (size_t)CountFuseLimit;
+		}
+	};
+
+	struct SSettingsSourceAdmissionTelemetry
+	{
+		int m_AdmittedDelta = 0;
+		int m_StartedDelta = 0;
+		int m_RealInflight = 0;
+		int m_CountFuseLimit = 0;
+		int m_VisibleReserve = 0;
+		int m_LoadingWindowLimit = 0;
+		int m_LoadingWindowUsed = 0;
+		int m_GpuUploadLimitUnits = 0;
+		int m_GpuUploadRemainingUnits = 0;
+		int m_FinalizeBudgetLimit = 0;
+		int m_VisibleBackgroundRequested = 0;
+		int m_VisibleNonterminalWaiting = 0;
+		int m_UnderfedStreak = 0;
+		float m_FrameTimeAverageMs = 0.0f;
+		float m_RenderFrameTimeMs = 0.0f;
+		bool m_AdmissionInvariantViolated = false;
+		bool m_AdmissionUnderfed = false;
+		char m_aDynamicDecision[48] = "hold";
+		char m_aControllerMode[32] = "idle_visible";
+		char m_aControllerReason[32] = "none";
+		char m_aLastWaitReason[32] = "none";
+	};
+
+	struct SSettingsTeeVisibleSnapshot
+	{
+		int m_VisibleTotal = 0;
+		int m_VisibleReady = 0;
+		int m_VisibleWaiting = 0;
+		int m_VisibleBackgroundRequested = 0;
+		int m_VisibleNonterminalWaiting = 0;
+		char m_aRequestBudgetBlockReason[32] = "none";
 	};
 
 	CSkins();
@@ -364,11 +440,26 @@ public:
 	void Refresh(TSkinLoadedCallback &&SkinLoadedCallback);
 	CSkinLoadingStats LoadingStats() const;
 	CSkinList &SkinList();
+	bool SkinListSkeletonReady() const;
+	bool SkinListReady() const;
+	uint64_t SettingsSourceUploadsCompleted() const { return m_SettingsSourceUploadsCompleted; }
+	uint64_t SettingsSourceLoadsCompleted() const { return m_SettingsSourceLoadsCompleted; }
+	const SSettingsSourceAdmissionTelemetry &SettingsSourceAdmissionTelemetry() const { return m_SettingsSourceAdmissionTelemetry; }
+	void SetSettingsTeeVisibleSnapshot(const SSettingsTeeVisibleSnapshot &Snapshot) { m_SettingsTeeVisibleSnapshot = Snapshot; }
+	void PrepareSettingsThroughputForFrame();
+	void UpdateForSettingsWarmup();
+	int SettingsGpuUploadLimiterUnitsForFrame() const { return m_SettingsThroughputControllerOutput.m_GpuUploadLimitUnits; }
+	int SettingsGpuUploadFrameBudgetForFrame() const { return m_SettingsThroughputControllerOutput.m_GpuUploadFrameBudget; }
+	int SettingsFinalizeBudgetForFrame() const { return m_SettingsThroughputControllerOutput.m_FinalizeBudgetLimit; }
+	int SettingsNormalLoadingWindowForFrame() const { return m_SettingsThroughputControllerOutput.m_NormalLoadingWindow; }
+	int SettingsVisibleLoadingWindowForFrame() const { return m_SettingsThroughputControllerOutput.m_VisibleLoadingWindow; }
+	int SettingsVisibleReserveForFrame() const { return m_SettingsThroughputControllerOutput.m_VisibleReserve; }
+	int SettingsBackgroundRequestBudgetForFrame() const { return m_SettingsThroughputControllerOutput.m_BackgroundRequestBudget; }
+	int SettingsCountFuseLimitForFrame() const { return m_SettingsThroughputControllerOutput.m_CountFuseLimit; }
+	bool SettingsBackgroundDrainActiveForFrame() const { return m_SettingsThroughputControllerOutput.m_BackgroundDrainActive; }
+	const SSettingsSkinThroughputControllerOutput &SettingsThroughputControllerOutput() const { return m_SettingsThroughputControllerOutput; }
 	void PrewarmByNames(const std::vector<std::string> &vNames, bool Immediate = false);
 	bool PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool ProgressiveListReady = false);
-	bool AcquireSettingsPreviewCachePin(const char *pName);
-	void ReleaseSettingsPreviewCachePin(const char *pName);
-	std::vector<std::string> ConsumeSettingsPreviewWarmupReadySkins();
 
 	const CSkinContainer *FindContainerOrNullptr(const char *pName);
 	const CSkin *FindOrNullptr(const char *pName);
@@ -631,14 +722,13 @@ private:
 	};
 
 	static bool PrepareSkinData(const char *pName, CSkinLoadData &Data);
-	static void ComputeSettingsPreviewCacheContentHash(CSkinLoadData &Data);
 	void LoadSkinFinish(CSkinContainer *pSkinContainer, const CSkinLoadData &Data);
 	void LoadSkinDirect(const char *pName);
 	const CSkinContainer *FindContainerImpl(const char *pName);
 	static int SkinScan(const char *pName, int IsDir, int StorageType, void *pUser);
 
 	void UpdateUnloadSkins(CSkinLoadingStats &Stats);
-	bool ReclaimBackgroundSkinForPriorityRequest(const char *pRequesterName);
+	bool ReclaimBackgroundSkinForPriorityRequest(const char *pRequesterName, int CountFuseLimit);
 	void UpdateStartLoading(CSkinLoadingStats &Stats);
 	void UpdateFinishLoading(CSkinLoadingStats &Stats, std::chrono::nanoseconds StartTime, std::chrono::nanoseconds MaxTime);
 	void QueueSkinDirectoryScanJob();
@@ -646,7 +736,6 @@ private:
 	void QueueSkinListPlanJob();
 	void ProcessSkinListPlanJob();
 	CSkinListEntry MakeSkinListEntry(const CSkinContainer *pSkinContainer) const;
-	void SeedVisibleSkinListIfEmpty();
 
 	static void ConAddFavoriteSkin(IConsole::IResult *pResult, void *pUserData);
 	static void ConRemFavoriteSkin(IConsole::IResult *pResult, void *pUserData);
@@ -685,8 +774,6 @@ private:
 	 */
 	std::list<std::string> m_SkinsUsageList;
 	std::list<std::string> m_SkinsBackgroundList;
-	std::deque<std::string> m_vSettingsPreviewWarmupReadySkins;
-	std::unordered_set<std::string> m_SettingsPreviewWarmupReadyQueued;
 
 	CSkinList m_SkinList;
 	std::shared_ptr<CSkinDirectoryScanJob> m_pSkinDirectoryScanJob;
@@ -707,6 +794,17 @@ private:
 
 	CSkin m_PlaceholderSkin;
 	char m_aEventSkinPrefix[MAX_SKIN_LENGTH];
+	uint64_t m_SettingsSourceUploadsCompleted = 0;
+	uint64_t m_SettingsSourceLoadsCompleted = 0;
+	uint64_t m_SettingsSourceLoadsAtLastStartLoading = 0;
+	uint64_t m_SettingsSourceUploadsAtLastControllerFrame = 0;
+	uint64_t m_SettingsSourceLoadsAtLastControllerFrame = 0;
+	int m_SettingsBackgroundLoadingWindowLimit = 0;
+	int m_SettingsBackgroundWindowHealthyFrames = 0;
+	SSettingsTeeVisibleSnapshot m_SettingsTeeVisibleSnapshot;
+	SSettingsSourceAdmissionTelemetry m_SettingsSourceAdmissionTelemetry;
+	SSettingsSkinThroughputControllerState m_SettingsThroughputControllerState;
+	SSettingsSkinThroughputControllerOutput m_SettingsThroughputControllerOutput;
 
 	/**
 	 * Maximum number of skins to process per frame in UpdateFinishLoading.

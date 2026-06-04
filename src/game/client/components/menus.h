@@ -33,6 +33,7 @@
 #include <game/client/ui.h>
 #include <game/voting.h>
 
+#include <game/client/components/settings_resource_jobs.h>
 #include <array>
 #include <chrono>
 #include <deque>
@@ -200,6 +201,7 @@ public:
 		EPreviewState m_PreviewState = PREVIEW_STATE_UNLOADED;
 		CImageInfo m_PreviewImage;
 		unsigned m_PreviewEpoch = 0;
+		size_t m_PreviewListIndex = 0;
 		size_t m_PreviewBytes = 0;
 		bool m_PreviewResized = false;
 		bool m_PreviewHighPriority = false;
@@ -211,6 +213,7 @@ public:
 			m_pDecodeJob(Other.m_pDecodeJob),
 			m_PreviewState(Other.m_PreviewState),
 			m_PreviewEpoch(Other.m_PreviewEpoch),
+			m_PreviewListIndex(Other.m_PreviewListIndex),
 			m_PreviewBytes(Other.m_PreviewBytes),
 			m_PreviewResized(Other.m_PreviewResized),
 			m_PreviewHighPriority(Other.m_PreviewHighPriority)
@@ -235,6 +238,7 @@ public:
 			if(Other.m_PreviewImage.m_pData != nullptr)
 				m_PreviewImage = Other.m_PreviewImage.DeepCopy();
 			m_PreviewEpoch = Other.m_PreviewEpoch;
+			m_PreviewListIndex = Other.m_PreviewListIndex;
 			m_PreviewBytes = Other.m_PreviewBytes;
 			m_PreviewResized = Other.m_PreviewResized;
 			m_PreviewHighPriority = Other.m_PreviewHighPriority;
@@ -772,9 +776,9 @@ protected:
 	char m_aEntityBgCurrentFolder[IO_MAX_PATH_LENGTH] = "";
 	bool m_ShowWorkshopAssets = true;
 	std::vector<SCustomExtras> m_vExtrasList;
-	std::deque<SCustomItem *> m_aaCustomPreviewDecodeQueue[NUMBER_OF_ASSETS_TABS];
-	std::deque<SCustomItem *> m_aaCustomPreviewReadyQueue[NUMBER_OF_ASSETS_TABS];
-	std::unordered_set<SCustomItem *> m_aaCustomPreviewReadyQueued[NUMBER_OF_ASSETS_TABS];
+	std::deque<SSettingsAssetPreviewHandle> m_aaCustomPreviewDecodeQueue[NUMBER_OF_ASSETS_TABS];
+	std::deque<SSettingsAssetPreviewHandle> m_aaCustomPreviewReadyQueue[NUMBER_OF_ASSETS_TABS];
+	std::unordered_set<std::string> m_aaCustomPreviewReadyQueued[NUMBER_OF_ASSETS_TABS];
 	unsigned m_aCustomPreviewEpoch[NUMBER_OF_ASSETS_TABS] = {0};
 
 	bool m_IsInit = false;
@@ -1582,6 +1586,7 @@ public:
 
 	bool IsActive() const { return m_MenuActive; }
 	bool IsSettingsPageActive() const;
+	SSettingsResourceFrameContext SettingsResourceFrameContext() const { return {m_SettingsScrollActive, m_SettingsPostScrollRecoveryFrames, m_SettingsHighPrioritySettled}; }
 	void SetActive(bool Active);
 
 	void OnInterfacesInit(CGameClient *pClient) override;
@@ -1796,6 +1801,15 @@ public:
 	CUIElement &SettingsTextElement(int Page, int Tab, const char *pTextId);
 	void InvalidateSettingsTextPool();
 	void InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason Reason);
+	void FinalizeTeeListDrainPerfSession();
+		void ResetSettingsFrameBudgetForFrame(bool TeeSettingsActive, int TeeSkinGpuUploadsPerFrame = -1)
+		{
+			const SSettingsResourceFrameContext FrameContext = SettingsResourceFrameContext();
+			m_SettingsFrameBudget = SSettingsWarmupFrameBudget{};
+			SettingsApplyActiveTeeSkinFrameBudget(m_SettingsFrameBudget, TeeSettingsActive);
+			if(TeeSettingsActive)
+				m_SettingsFrameBudget.m_MaxGpuUploads = TeeSkinGpuUploadsPerFrame >= 0 ? TeeSkinGpuUploadsPerFrame : SettingsSkinGpuUploadFrameUnits(FrameContext, TeeSettingsActive);
+		}
 	SSettingsWarmupFrameBudget *SettingsFrameBudget() { return &m_SettingsFrameBudget; }
 
 private:
@@ -1826,6 +1840,8 @@ private:
 	bool m_SettingsTClientScrollRestorePending = false;
 	bool m_SettingsPageSwitchActive = false;
 	bool m_SettingsScrollActive = false;
+	int m_SettingsPostScrollRecoveryFrames = 0;
+	bool m_SettingsHighPrioritySettled = false;
 	SSettingsPageRuntimeCache m_aSettingsPageRuntimeCaches[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS];
 	bool m_aSettingsPagePrewarmed[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS] = {};
 	bool m_aSettingsTClientSiblingPrewarmed[6] = {};
@@ -1876,6 +1892,7 @@ private:
 	float LayoutTClientHudCacheSection(CUIRect &CurrentColumn, bool Render);
 	float RenderTClientHudInteractiveLayer(CUIRect &CurrentColumn);
 	void PrewarmSettingsTClient(CUIRect MainView);
+	bool TClientSettingsSubcachesReady() const;
 	bool PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView);
 	bool PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView);
 	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f, bool ResourcesReady = true);
@@ -1887,7 +1904,7 @@ private:
 	bool DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
 	void InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char *pSectionId);
 	void DestroySettingsPageRuntimeCaches();
-	bool PrewarmSettingsPageResources(int Page, int Tab);
+		bool PrewarmSettingsPageResources(int Page, int Tab, const CUIRect &ContentView);
 	bool PrewarmSettingsAssetResources();
 	SSettingsPageRuntimeCache *GetSettingsPageRuntimeCache(int Page, int Tab);
 	void RenderSettingsTClientBindWheel(CUIRect MainView);

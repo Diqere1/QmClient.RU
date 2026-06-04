@@ -2,6 +2,7 @@
 #include "assets_resource_registry.h"
 #include "background.h"
 #include "menus.h"
+#include "qmclient/perf_logging.h"
 #include "settings_resource_jobs.h"
 
 #include <base/lock.h>
@@ -41,22 +42,31 @@ namespace
 		return g_Config.m_QmPerfDebug != 0;
 	}
 
-	double AssetsPerfDebugThresholdMs()
-	{
-		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-	}
-
 	void LogAssetsPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
 	{
 		if(!AssetsPerfDebugEnabled())
 			return;
-		if(!Force && DurationMs < AssetsPerfDebugThresholdMs())
-			return;
+		QmPerfLogStage("perf/assets", pStage, DurationMs, Force, nullptr, nullptr, nullptr, pExtra);
+	}
 
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/assets", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/assets", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	const char *AssetsResourcePriorityName(ESettingsResourcePriority Priority)
+	{
+		switch(Priority)
+		{
+		case ESettingsResourcePriority::BACKGROUND: return "background";
+		case ESettingsResourcePriority::PREFETCH: return "prefetch";
+		case ESettingsResourcePriority::VISIBLE: return "visible";
+		}
+		return "background";
+	}
+
+	const char *AssetsResourceFrameContextName(const SSettingsResourceFrameContext &Context)
+	{
+		if(Context.m_ScrollActive)
+			return "scroll";
+		if(Context.m_PostScrollRecoveryFrames > 0)
+			return "recovery";
+		return "idle";
 	}
 
 }
@@ -3532,7 +3542,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	SMenuAssetScanUser LazyLoadUser;
 	LazyLoadUser.m_pUser = this;
 	constexpr int MaxPreviewUploadsPerFrame = 1;
-	constexpr size_t MaxPreviewUploadBytesPerFrame = 1 * 1024 * 1024;
+	constexpr size_t MaxPreviewUploadBytesPerFrame = ASSET_PREVIEW_UPLOAD_MAX_BYTES_PER_FRAME;
 	constexpr int MaxPreviewDecodeStartsPerFrame = 6;
 	constexpr int MaxPreviewHighPriorityDecodeStartsPerFrame = 12;
 	constexpr int MaxPreviewDecodeFinalizesPerFrame = 1;
@@ -3555,10 +3565,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 	s_AssetsScrollCooldownFrames = SettingsScrollInteractionCooldown(AssetsScrollInteraction, s_AssetsScrollCooldownFrames, 3);
 	s_AssetsPostScrollRecoveryFrames = SettingsScrollInteractionRecovery(
 		AssetsScrollInteraction, PreviousAssetsScrollCooldownFrames, s_AssetsScrollCooldownFrames, s_AssetsPostScrollRecoveryFrames, 2);
-	const SSettingsResourceFrameContext ResourceFrameContext = {
-		s_AssetsScrollCooldownFrames > 0,
-		s_AssetsPostScrollRecoveryFrames,
-	};
+	const SSettingsResourceFrameContext ResourceFrameContext = SettingsBuildFrameContext(
+		s_AssetsScrollCooldownFrames > 0, m_SettingsScrollActive, s_AssetsPostScrollRecoveryFrames);
 	int RemainingHeavyResourceBatches = SettingsResourceSharedHeavyBudget(ResourceFrameContext, 4, 1);
 
 	auto MakePreviewHandle = [&](const SCustomItem &Item) {
@@ -3943,7 +3951,10 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 
 	const float AssetCardTextReserve = s_CurCustomTab == ASSETS_TAB_ENTITY_BG ? AssetCardTextReserveSingleLine : AssetCardTextReserveWithAuthor;
 
-	{
+	auto FinalizeReadyPreviewDecodes = [&](const SSettingsResourceFrameContext &FinalizeFrameContext) {
+		RemainingHeavyResourceBatches = std::min(
+			RemainingHeavyResourceBatches,
+			SettingsResourceSharedHeavyBudget(FinalizeFrameContext, 4, 1));
 		CPerfTimer ScanTimer;
 		CPerfTimer DecodeFinalizeTimer;
 		int ReadyCount = 0;
@@ -3991,7 +4002,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			}
 
 			const ESettingsResourcePriority FinalizePriority = pItem->m_PreviewHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND;
-			const int MaxFinalizesForFrame = SettingsResourceFrameStageBudget(ResourceFrameContext, FinalizePriority, MaxPreviewDecodeFinalizesPerFrame, 0);
+			const int MaxFinalizesForFrame = SettingsResourceFrameStageBudget(FinalizeFrameContext, FinalizePriority, MaxPreviewDecodeFinalizesPerFrame, 0);
 			if(SettingsAssetPreviewShouldDeferFinalize(PreviewDecodeFinalizesThisFrame, DecodeFinalizeTimer.ElapsedMs(), MaxFinalizesForFrame, MaxPreviewDecodeFinalizeMsPerFrame))
 			{
 				vDecodeQueue.push_back(Handle);
@@ -4062,15 +4073,30 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			LogAssetsPerfStage("assets_preview_decode_finalize_batch", DecodeFinalizeBatchTimer.ElapsedMs(), false, aFinalizeExtra);
 		}
 		char aFinalizeTotalExtra[160];
-		str_format(aFinalizeTotalExtra, sizeof(aFinalizeTotalExtra), "tab=%d finalized=%d deferred=%d polled=%d pending_after=%d budget_ms=%.1f used_ms=%.3f",
+		str_format(aFinalizeTotalExtra, sizeof(aFinalizeTotalExtra), "tab=%d finalized=%d deferred=%d polled=%d pending_after=%d budget_ms=%.1f used_ms=%.3f frame_context=%s",
 			s_CurCustomTab, PreviewDecodeFinalizesThisFrame, DeferredCompleted, (int)DecodePolls, (int)vDecodeQueue.size(),
-			MaxPreviewDecodeFinalizeMsPerFrame, DecodeFinalizeTimer.ElapsedMs());
+			MaxPreviewDecodeFinalizeMsPerFrame, DecodeFinalizeTimer.ElapsedMs(), AssetsResourceFrameContextName(FinalizeFrameContext));
 		LogAssetsPerfStage("assets_preview_decode_finalize_total", DecodeFinalizeTimer.ElapsedMs(), false, aFinalizeTotalExtra);
 
+		char aExtra[224];
+		str_format(aExtra, sizeof(aExtra), "tab=%d search_list=%d decode_pending=%d ready_queue=%d ready=%d dropped_stale=%d uploads=%d resized=%d finalized=%d deferred=%d finalize_budget_ms=%.1f scroll_cooldown=%d recovery_frames=%d heavy_batches_left=%d frame_context=%s",
+			s_CurCustomTab, (int)SearchListSize, (int)vDecodeQueue.size(), (int)vReadyQueue.size(),
+			ReadyCount, DroppedStale, UploadedPreviewsThisFrame, ResizedPreviewsThisFrame, PreviewDecodeFinalizesThisFrame, DeferredCompleted,
+			MaxPreviewDecodeFinalizeMsPerFrame, s_AssetsScrollCooldownFrames, s_AssetsPostScrollRecoveryFrames, RemainingHeavyResourceBatches,
+			AssetsResourceFrameContextName(FinalizeFrameContext));
+		LogAssetsPerfStage("assets_preview_gpu_upload_scan", ScanTimer.ElapsedMs(), false, aExtra);
+	};
+	auto DrainReadyPreviewUploadsAfterList = [&](const SSettingsResourceFrameContext &UploadFrameContext) {
+		RemainingHeavyResourceBatches = std::min(
+			RemainingHeavyResourceBatches,
+			SettingsResourceSharedHeavyBudget(UploadFrameContext, 4, 1));
 		size_t UploadedBytesThisFrame = 0;
+		int OversizedUploadsThisFrame = 0;
+		ESettingsWarmupMissReason UploadBlockReason = ESettingsWarmupMissReason::NONE;
+		bool UploadBlocked = false;
 		SSettingsResourceMergeBudget UploadBudget;
 		UploadBudget.m_MaxGpuUploads = MaxPreviewUploadsPerFrame - UploadedPreviewsThisFrame;
-		while(!vReadyQueue.empty() && UploadedPreviewsThisFrame < MaxPreviewUploadsPerFrame && GameClient()->GpuUploadLimiter()->CanUpload())
+		while(!vReadyQueue.empty() && UploadedPreviewsThisFrame < MaxPreviewUploadsPerFrame)
 		{
 			const SSettingsAssetPreviewHandle Handle = vReadyQueue.front();
 			vReadyQueue.pop_front();
@@ -4088,9 +4114,11 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 				continue;
 			}
 			const ESettingsResourcePriority UploadPriority = pItem->m_PreviewHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND;
-			const int MaxUploadsForFrame = SettingsResourceFrameStageBudget(ResourceFrameContext, UploadPriority, MaxPreviewUploadsPerFrame, 0);
+			const int MaxUploadsForFrame = SettingsResourceFrameStageBudget(UploadFrameContext, UploadPriority, MaxPreviewUploadsPerFrame, 0);
 			if(UploadedPreviewsThisFrame >= MaxUploadsForFrame)
 			{
+				UploadBlocked = true;
+				UploadBlockReason = ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
 				vReadyQueue.push_front(Handle);
 				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
 				break;
@@ -4098,18 +4126,42 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			const size_t ItemBytes = pItem->m_PreviewBytes;
 			if(!SettingsResourceUploadWithinByteBudget(UploadedPreviewsThisFrame, UploadedBytesThisFrame, ItemBytes, MaxPreviewUploadBytesPerFrame))
 			{
-				vReadyQueue.push_front(Handle);
-				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
-				break;
+				if(!SettingsResourceOversizedUploadAllowed(UploadFrameContext, m_SettingsPageSwitchActive, UploadPriority, OversizedUploadsThisFrame, ItemBytes, MaxPreviewUploadBytesPerFrame))
+				{
+					UploadBlocked = true;
+					UploadBlockReason = ItemBytes > MaxPreviewUploadBytesPerFrame ?
+						ESettingsWarmupMissReason::OVERSIZED_UPLOAD_DEFERRED :
+						ESettingsWarmupMissReason::UPLOAD_BYTES_BUDGET;
+					vReadyQueue.push_front(Handle);
+					vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
+					break;
+				}
 			}
 			if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
 			{
+				UploadBlocked = true;
+				UploadBlockReason = ESettingsWarmupMissReason::SHARED_HEAVY_BUDGET;
 				vReadyQueue.push_front(Handle);
 				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
 				break;
 			}
-			if(!SettingsResourceConsumeGpuUpload(UploadBudget, SettingsFrameBudget()))
+			SSettingsWarmupFrameBudget *pFrameBudget = SettingsFrameBudget();
+			if(!SettingsResourceConsumeGpuUpload(UploadBudget, pFrameBudget))
 			{
+				UploadBlocked = true;
+				UploadBlockReason = ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
+				vReadyQueue.push_front(Handle);
+				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
+				++RemainingHeavyResourceBatches;
+				break;
+			}
+			if(!GameClient()->GpuUploadLimiter()->CanUpload())
+			{
+				UploadBlocked = true;
+				UploadBlockReason = ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
+				++UploadBudget.m_MaxGpuUploads;
+				if(pFrameBudget != nullptr)
+					++pFrameBudget->m_MaxGpuUploads;
 				vReadyQueue.push_front(Handle);
 				vReadyQueued.insert(SettingsAssetPreviewHandleKey(Handle));
 				++RemainingHeavyResourceBatches;
@@ -4128,30 +4180,32 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			pItem->m_PreviewHighPriority = false;
 			UploadedBytesThisFrame += ItemBytes;
 			++UploadedPreviewsThisFrame;
+			if(ItemBytes > MaxPreviewUploadBytesPerFrame)
+				++OversizedUploadsThisFrame;
 			if(pItem->m_PreviewResized)
 				++ResizedPreviewsThisFrame;
 			InvalidateSettingsPageRuntimeCache(SETTINGS_ASSETS, -1);
 			char aUploadExtra[192];
-			str_format(aUploadExtra, sizeof(aUploadExtra), "tab=%d asset=%s uploads_this_frame=%d bytes=%u bytes_used=%u queue_remaining=%d resized=%d",
+			str_format(aUploadExtra, sizeof(aUploadExtra), "tab=%d asset=%s uploads_this_frame=%d bytes=%u bytes_used=%u bytes_budget=%u oversized=%d frame_context=%s priority=%s queue_remaining=%d resized=%d",
 				s_CurCustomTab, pItem->m_aName, UploadedPreviewsThisFrame, (unsigned)ItemBytes,
-				(unsigned)UploadedBytesThisFrame, (int)vReadyQueue.size(), pItem->m_PreviewResized ? 1 : 0);
+				(unsigned)UploadedBytesThisFrame, (unsigned)MaxPreviewUploadBytesPerFrame, ItemBytes > MaxPreviewUploadBytesPerFrame ? 1 : 0,
+				AssetsResourceFrameContextName(UploadFrameContext), AssetsResourcePriorityName(UploadPriority),
+				(int)vReadyQueue.size(), pItem->m_PreviewResized ? 1 : 0);
 			LogAssetsPerfStage("assets_preview_gpu_upload_batch", 0.0, true, aUploadExtra);
 			pItem->m_PreviewResized = false;
 		}
-		LogSettingsResourcePerf(SETTINGS_ASSETS, "upload", (int)UploadedBytesThisFrame, (int)MaxPreviewUploadBytesPerFrame, (int)vReadyQueue.size(), vReadyQueue.empty() ? ESettingsWarmupMissReason::NONE : ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
+		if(!vReadyQueue.empty() && !UploadBlocked && UploadedPreviewsThisFrame >= MaxPreviewUploadsPerFrame)
+		{
+			UploadBlocked = true;
+			UploadBlockReason = ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
+		}
+		LogSettingsResourcePerf(SETTINGS_ASSETS, "upload", (int)UploadedBytesThisFrame, (int)MaxPreviewUploadBytesPerFrame, (int)vReadyQueue.size(), UploadBlocked ? UploadBlockReason : ESettingsWarmupMissReason::NONE, 0.0);
 		char aDrainExtra[192];
 		str_format(aDrainExtra, sizeof(aDrainExtra), "tab=%d processed=%d bytes_budget=%u queue_remaining=%d bytes_used=%u",
 			s_CurCustomTab, UploadedPreviewsThisFrame, (unsigned)MaxPreviewUploadBytesPerFrame, (int)vReadyQueue.size(),
 			(unsigned)UploadedBytesThisFrame);
 		LogAssetsPerfStage("assets_preview_upload_queue_drain", 0.0, true, aDrainExtra);
-
-		char aExtra[192];
-		str_format(aExtra, sizeof(aExtra), "tab=%d search_list=%d decode_pending=%d ready_queue=%d ready=%d dropped_stale=%d uploads=%d resized=%d finalized=%d deferred=%d finalize_budget_ms=%.1f scroll_cooldown=%d recovery_frames=%d heavy_batches_left=%d",
-			s_CurCustomTab, (int)SearchListSize, (int)vDecodeQueue.size(), (int)vReadyQueue.size(),
-			ReadyCount, DroppedStale, UploadedPreviewsThisFrame, ResizedPreviewsThisFrame, PreviewDecodeFinalizesThisFrame, DeferredCompleted,
-			MaxPreviewDecodeFinalizeMsPerFrame, s_AssetsScrollCooldownFrames, s_AssetsPostScrollRecoveryFrames, RemainingHeavyResourceBatches);
-		LogAssetsPerfStage("assets_preview_gpu_upload_scan", ScanTimer.ElapsedMs(), false, aExtra);
-	}
+	};
 
 	if(!UsesCombinedAssetList(pCurrentCategory))
 	{
@@ -4291,6 +4345,12 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		const bool ListScrollActive = s_ListBox.ScrollbarActive() || s_ListBox.ScrollbarAnimating();
 		m_SettingsScrollActive = m_SettingsScrollActive || ListScrollActive;
 		s_AssetsScrollActiveLastFrame = ListScrollActive;
+		const SSettingsResourceFrameContext PreviewUploadFrameContext = SettingsBuildFrameContext(
+			s_AssetsScrollCooldownFrames > 0, ListScrollActive, s_AssetsPostScrollRecoveryFrames);
+		RemainingHeavyResourceBatches = SettingsResourceClampSharedHeavyBudget(
+			RemainingHeavyResourceBatches, PreviewUploadFrameContext, 4, 1);
+		FinalizeReadyPreviewDecodes(PreviewUploadFrameContext);
+		DrainReadyPreviewUploadsAfterList(PreviewUploadFrameContext);
 		auto ResetSelectedAssetToDefault = [&](const char *pDeletedName) {
 			if(s_CurCustomTab == ASSETS_TAB_ENTITIES && str_comp(g_Config.m_ClAssetsEntities, pDeletedName) == 0)
 			{
@@ -4706,85 +4766,12 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 
 		constexpr int MaxWorkshopThumbDecodeFinalizesPerFrame = 1;
 		constexpr int MaxWorkshopThumbUploadsPerFrame = 1;
-		constexpr size_t MaxWorkshopThumbUploadBytesPerFrame = 1 * 1024 * 1024;
+		constexpr size_t MaxWorkshopThumbUploadBytesPerFrame = ASSET_PREVIEW_UPLOAD_MAX_BYTES_PER_FRAME;
 		constexpr double MaxWorkshopThumbDecodeFinalizeMsPerFrame = 1.0;
 		int WorkshopGpuUploadsThisFrame = 0;
 		int WorkshopThumbFinalizesThisFrame = 0;
 		int DeferredWorkshopThumbs = 0;
 		size_t WorkshopThumbUploadedBytesThisFrame = 0;
-		CPerfTimer WorkshopDecodeFinalizeTimer;
-		constexpr size_t MaxWorkshopThumbDecodePollsPerFrame = 24;
-		const size_t PendingWorkshopDecodes = WorkshopState.m_vDecodeThumbQueue.size();
-		const size_t WorkshopDecodePolls = minimum(PendingWorkshopDecodes, MaxWorkshopThumbDecodePollsPerFrame);
-		for(size_t Poll = 0; Poll < WorkshopDecodePolls; ++Poll)
-		{
-			const std::string AssetId = WorkshopState.m_vDecodeThumbQueue.front();
-			WorkshopState.m_vDecodeThumbQueue.pop_front();
-			WorkshopState.m_vDecodeThumbQueued.erase(AssetId);
-
-			SWorkshopHudAsset *pAsset = FindWorkshopAssetById(WorkshopState, AssetId);
-			if(pAsset == nullptr || !pAsset->m_pDecodeJob)
-				continue;
-			if(!pAsset->m_pDecodeJob->IsCompleted())
-			{
-				QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
-				continue;
-			}
-			if(pAsset->m_ThumbTexture.IsValid())
-			{
-				pAsset->m_pDecodeJob.reset();
-				continue;
-			}
-
-			const ESettingsResourcePriority FinalizePriority = pAsset->m_ThumbHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND;
-			const int MaxFinalizesForFrame = SettingsResourceFrameStageBudget(ResourceFrameContext, FinalizePriority, MaxWorkshopThumbDecodeFinalizesPerFrame, 0);
-			if(SettingsAssetPreviewShouldDeferFinalize(WorkshopThumbFinalizesThisFrame, WorkshopDecodeFinalizeTimer.ElapsedMs(), MaxFinalizesForFrame, MaxWorkshopThumbDecodeFinalizeMsPerFrame))
-			{
-				QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
-				++DeferredWorkshopThumbs;
-				continue;
-			}
-			if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
-			{
-				QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
-				++DeferredWorkshopThumbs;
-				continue;
-			}
-
-			CPerfTimer DecodeFinalizeBatchTimer;
-			CFullAsyncImageLoadJob::SResult Result = pAsset->m_pDecodeJob->GetResult();
-			pAsset->m_pDecodeJob.reset();
-			if(Result.m_Success && Result.m_Image.m_pData)
-			{
-				const bool WasHighPriority = pAsset->m_ThumbHighPriority;
-				const bool ResizedPreview = Result.m_Resized;
-				ResetWorkshopThumbReadyState(*pAsset);
-				pAsset->m_ThumbHighPriority = WasHighPriority;
-				pAsset->m_ThumbImage = std::move(Result.m_Image);
-				pAsset->m_ThumbBytes = pAsset->m_ThumbImage.DataSize();
-				pAsset->m_ThumbResized = ResizedPreview;
-				QueueWorkshopReadyThumb(WorkshopState, *pAsset, s_CurCustomTab);
-				++WorkshopThumbFinalizesThisFrame;
-				char aDecodeExtra[160];
-				str_format(aDecodeExtra, sizeof(aDecodeExtra), "tab=%d asset=%s resized=%d finalized=%d w=%u h=%u",
-					s_CurCustomTab, pAsset->m_Name.c_str(), ResizedPreview ? 1 : 0, WorkshopThumbFinalizesThisFrame,
-					(unsigned)pAsset->m_ThumbImage.m_Width, (unsigned)pAsset->m_ThumbImage.m_Height);
-				LogAssetsPerfStage("assets_workshop_thumb_decode_finalize_batch", DecodeFinalizeBatchTimer.ElapsedMs(), false, aDecodeExtra);
-			}
-			else
-			{
-				Result.m_Image.Free();
-				const bool DecodeFromRemote = pAsset->m_ThumbDecodeFromRemote;
-				pAsset->m_ThumbDecodeFromRemote = false;
-				pAsset->m_ThumbCacheFailed = true;
-				if(!pAsset->m_ThumbCachePath.empty())
-				{
-					Storage()->RemoveFile(pAsset->m_ThumbCachePath.c_str(), IStorage::TYPE_SAVE);
-				}
-				if(DecodeFromRemote)
-					pAsset->m_ThumbRemoteFailed = true;
-			}
-		}
 
 		for(SWorkshopHudAsset &Asset : WorkshopState.m_vAssets)
 		{
@@ -4824,70 +4811,192 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 				}
 			}
 		}
-		SSettingsResourceMergeBudget UploadBudget;
-		UploadBudget.m_MaxGpuUploads = MaxWorkshopThumbUploadsPerFrame - WorkshopGpuUploadsThisFrame;
-		while(!WorkshopState.m_vReadyThumbQueue.empty() && WorkshopGpuUploadsThisFrame < MaxWorkshopThumbUploadsPerFrame && GameClient()->GpuUploadLimiter()->CanUpload())
-		{
-			const std::string ReadyAssetId = WorkshopState.m_vReadyThumbQueue.front();
-			WorkshopState.m_vReadyThumbQueue.pop_front();
-			WorkshopState.m_vReadyThumbQueued.erase(ReadyAssetId);
-
-			SWorkshopHudAsset *pAsset = FindWorkshopAssetById(WorkshopState, ReadyAssetId);
-			if(pAsset == nullptr)
-				continue;
-			if(pAsset->m_ThumbTexture.IsValid())
+		auto FinalizeWorkshopReadyThumbs = [&](const SSettingsResourceFrameContext &FinalizeFrameContext) {
+			RemainingHeavyResourceBatches = std::min(
+				RemainingHeavyResourceBatches,
+				SettingsResourceSharedHeavyBudget(FinalizeFrameContext, 4, 1));
+			CPerfTimer WorkshopDecodeFinalizeTimer;
+			constexpr size_t MaxWorkshopThumbDecodePollsPerFrame = 24;
+			const size_t PendingWorkshopDecodes = WorkshopState.m_vDecodeThumbQueue.size();
+			const size_t WorkshopDecodePolls = minimum(PendingWorkshopDecodes, MaxWorkshopThumbDecodePollsPerFrame);
+			for(size_t Poll = 0; Poll < WorkshopDecodePolls; ++Poll)
 			{
+				const std::string AssetId = WorkshopState.m_vDecodeThumbQueue.front();
+				WorkshopState.m_vDecodeThumbQueue.pop_front();
+				WorkshopState.m_vDecodeThumbQueued.erase(AssetId);
+
+				SWorkshopHudAsset *pAsset = FindWorkshopAssetById(WorkshopState, AssetId);
+				if(pAsset == nullptr || !pAsset->m_pDecodeJob)
+					continue;
+				if(!pAsset->m_pDecodeJob->IsCompleted())
+				{
+					QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
+					continue;
+				}
+				if(pAsset->m_ThumbTexture.IsValid())
+				{
+					pAsset->m_pDecodeJob.reset();
+					continue;
+				}
+
+				const ESettingsResourcePriority FinalizePriority = pAsset->m_ThumbHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND;
+				const int MaxFinalizesForFrame = SettingsResourceFrameStageBudget(FinalizeFrameContext, FinalizePriority, MaxWorkshopThumbDecodeFinalizesPerFrame, 0);
+				if(SettingsAssetPreviewShouldDeferFinalize(WorkshopThumbFinalizesThisFrame, WorkshopDecodeFinalizeTimer.ElapsedMs(), MaxFinalizesForFrame, MaxWorkshopThumbDecodeFinalizeMsPerFrame))
+				{
+					QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
+					++DeferredWorkshopThumbs;
+					continue;
+				}
+				if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
+				{
+					QueueWorkshopDecodeThumb(WorkshopState, *pAsset, s_CurCustomTab);
+					++DeferredWorkshopThumbs;
+					continue;
+				}
+
+				CPerfTimer DecodeFinalizeBatchTimer;
+				CFullAsyncImageLoadJob::SResult Result = pAsset->m_pDecodeJob->GetResult();
+				pAsset->m_pDecodeJob.reset();
+				if(Result.m_Success && Result.m_Image.m_pData)
+				{
+					const bool WasHighPriority = pAsset->m_ThumbHighPriority;
+					const bool ResizedPreview = Result.m_Resized;
+					ResetWorkshopThumbReadyState(*pAsset);
+					pAsset->m_ThumbHighPriority = WasHighPriority;
+					pAsset->m_ThumbImage = std::move(Result.m_Image);
+					pAsset->m_ThumbBytes = pAsset->m_ThumbImage.DataSize();
+					pAsset->m_ThumbResized = ResizedPreview;
+					QueueWorkshopReadyThumb(WorkshopState, *pAsset, s_CurCustomTab);
+					++WorkshopThumbFinalizesThisFrame;
+					char aDecodeExtra[160];
+					str_format(aDecodeExtra, sizeof(aDecodeExtra), "tab=%d asset=%s resized=%d finalized=%d w=%u h=%u",
+						s_CurCustomTab, pAsset->m_Name.c_str(), ResizedPreview ? 1 : 0, WorkshopThumbFinalizesThisFrame,
+						(unsigned)pAsset->m_ThumbImage.m_Width, (unsigned)pAsset->m_ThumbImage.m_Height);
+					LogAssetsPerfStage("assets_workshop_thumb_decode_finalize_batch", DecodeFinalizeBatchTimer.ElapsedMs(), false, aDecodeExtra);
+				}
+				else
+				{
+					Result.m_Image.Free();
+					const bool DecodeFromRemote = pAsset->m_ThumbDecodeFromRemote;
+					pAsset->m_ThumbDecodeFromRemote = false;
+					pAsset->m_ThumbCacheFailed = true;
+					if(!pAsset->m_ThumbCachePath.empty())
+					{
+						Storage()->RemoveFile(pAsset->m_ThumbCachePath.c_str(), IStorage::TYPE_SAVE);
+					}
+					if(DecodeFromRemote)
+						pAsset->m_ThumbRemoteFailed = true;
+				}
+			}
+		};
+		auto DrainWorkshopReadyThumbUploads = [&](const SSettingsResourceFrameContext &UploadFrameContext) {
+			RemainingHeavyResourceBatches = std::min(
+				RemainingHeavyResourceBatches,
+				SettingsResourceSharedHeavyBudget(UploadFrameContext, 4, 1));
+			SSettingsResourceMergeBudget UploadBudget;
+			UploadBudget.m_MaxGpuUploads = MaxWorkshopThumbUploadsPerFrame - WorkshopGpuUploadsThisFrame;
+			int WorkshopOversizedUploadsThisFrame = 0;
+			ESettingsWarmupMissReason WorkshopUploadBlockReason = ESettingsWarmupMissReason::NONE;
+			bool WorkshopUploadBlocked = false;
+			while(!WorkshopState.m_vReadyThumbQueue.empty() && WorkshopGpuUploadsThisFrame < MaxWorkshopThumbUploadsPerFrame)
+			{
+				const std::string ReadyAssetId = WorkshopState.m_vReadyThumbQueue.front();
+				WorkshopState.m_vReadyThumbQueue.pop_front();
+				WorkshopState.m_vReadyThumbQueued.erase(ReadyAssetId);
+
+				SWorkshopHudAsset *pAsset = FindWorkshopAssetById(WorkshopState, ReadyAssetId);
+				if(pAsset == nullptr)
+					continue;
+				if(pAsset->m_ThumbTexture.IsValid())
+				{
+					ResetWorkshopThumbReadyState(*pAsset);
+					continue;
+				}
+				if(pAsset->m_ThumbImage.m_pData == nullptr)
+					continue;
+
+				CPerfTimer UploadBatchTimer;
+				const size_t AssetBytes = pAsset->m_ThumbBytes;
+				const ESettingsResourcePriority UploadPriority = pAsset->m_ThumbHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND;
+				const int MaxUploadsForFrame = SettingsResourceFrameStageBudget(UploadFrameContext, UploadPriority, MaxWorkshopThumbUploadsPerFrame, 0);
+				if(WorkshopGpuUploadsThisFrame >= MaxUploadsForFrame)
+				{
+					WorkshopUploadBlocked = true;
+					WorkshopUploadBlockReason = ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
+					WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
+					WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+					break;
+				}
+				if(!SettingsResourceUploadWithinByteBudget(WorkshopGpuUploadsThisFrame, WorkshopThumbUploadedBytesThisFrame, AssetBytes, MaxWorkshopThumbUploadBytesPerFrame))
+				{
+					if(!SettingsResourceOversizedUploadAllowed(UploadFrameContext, m_SettingsPageSwitchActive, UploadPriority, WorkshopOversizedUploadsThisFrame, AssetBytes, MaxWorkshopThumbUploadBytesPerFrame))
+					{
+						WorkshopUploadBlocked = true;
+						WorkshopUploadBlockReason = AssetBytes > MaxWorkshopThumbUploadBytesPerFrame ?
+							ESettingsWarmupMissReason::OVERSIZED_UPLOAD_DEFERRED :
+							ESettingsWarmupMissReason::UPLOAD_BYTES_BUDGET;
+						WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
+						WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+						break;
+					}
+				}
+				if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
+				{
+					WorkshopUploadBlocked = true;
+					WorkshopUploadBlockReason = ESettingsWarmupMissReason::SHARED_HEAVY_BUDGET;
+					WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
+					WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+					break;
+				}
+				SSettingsWarmupFrameBudget *pFrameBudget = SettingsFrameBudget();
+				if(!SettingsResourceConsumeGpuUpload(UploadBudget, pFrameBudget))
+				{
+					WorkshopUploadBlocked = true;
+					WorkshopUploadBlockReason = ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
+					WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
+					WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+					++RemainingHeavyResourceBatches;
+					break;
+				}
+				if(!GameClient()->GpuUploadLimiter()->CanUpload())
+				{
+					WorkshopUploadBlocked = true;
+					WorkshopUploadBlockReason = ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
+					++UploadBudget.m_MaxGpuUploads;
+					if(pFrameBudget != nullptr)
+						++pFrameBudget->m_MaxGpuUploads;
+					WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
+					WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
+					++RemainingHeavyResourceBatches;
+					break;
+				}
+				pAsset->m_ThumbTexture = Graphics()->LoadTextureRawMove(pAsset->m_ThumbImage, 0, pAsset->m_Name.c_str());
+				GameClient()->GpuUploadLimiter()->OnUploaded();
+				WorkshopThumbUploadedBytesThisFrame += AssetBytes;
+				++WorkshopGpuUploadsThisFrame;
+				if(AssetBytes > MaxWorkshopThumbUploadBytesPerFrame)
+					++WorkshopOversizedUploadsThisFrame;
+				char aExtra[192];
+				str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s uploads_this_frame=%d bytes=%u bytes_used=%u bytes_budget=%u oversized=%d frame_context=%s priority=%s queue_remaining=%d resized=%d",
+					s_CurCustomTab, pAsset->m_Name.c_str(), WorkshopGpuUploadsThisFrame, (unsigned)AssetBytes,
+					(unsigned)WorkshopThumbUploadedBytesThisFrame, (unsigned)MaxWorkshopThumbUploadBytesPerFrame, AssetBytes > MaxWorkshopThumbUploadBytesPerFrame ? 1 : 0,
+					AssetsResourceFrameContextName(UploadFrameContext), AssetsResourcePriorityName(UploadPriority),
+					(int)WorkshopState.m_vReadyThumbQueue.size(), pAsset->m_ThumbResized ? 1 : 0);
+				LogAssetsPerfStage("assets_workshop_thumb_upload_batch", UploadBatchTimer.ElapsedMs(), false, aExtra);
 				ResetWorkshopThumbReadyState(*pAsset);
-				continue;
 			}
-			if(pAsset->m_ThumbImage.m_pData == nullptr)
-				continue;
-
-			CPerfTimer UploadBatchTimer;
-			const size_t AssetBytes = pAsset->m_ThumbBytes;
-			const int MaxUploadsForFrame = SettingsResourceFrameStageBudget(ResourceFrameContext, pAsset->m_ThumbHighPriority ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::BACKGROUND, MaxWorkshopThumbUploadsPerFrame, 0);
-			if(WorkshopGpuUploadsThisFrame >= MaxUploadsForFrame)
+			if(!WorkshopState.m_vReadyThumbQueue.empty() && !WorkshopUploadBlocked && WorkshopGpuUploadsThisFrame >= MaxWorkshopThumbUploadsPerFrame)
 			{
-				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
-				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
-				break;
+				WorkshopUploadBlocked = true;
+				WorkshopUploadBlockReason = ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET;
 			}
-			if(!SettingsResourceUploadWithinByteBudget(WorkshopGpuUploadsThisFrame, WorkshopThumbUploadedBytesThisFrame, AssetBytes, MaxWorkshopThumbUploadBytesPerFrame))
-			{
-				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
-				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
-				break;
-			}
-			if(!SettingsResourceConsumeSharedHeavyBudget(RemainingHeavyResourceBatches))
-			{
-				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
-				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
-				break;
-			}
-			if(!SettingsResourceConsumeGpuUpload(UploadBudget, SettingsFrameBudget()))
-			{
-				WorkshopState.m_vReadyThumbQueue.push_front(ReadyAssetId);
-				WorkshopState.m_vReadyThumbQueued.insert(ReadyAssetId);
-				++RemainingHeavyResourceBatches;
-				break;
-			}
-			pAsset->m_ThumbTexture = Graphics()->LoadTextureRawMove(pAsset->m_ThumbImage, 0, pAsset->m_Name.c_str());
-			GameClient()->GpuUploadLimiter()->OnUploaded();
-			WorkshopThumbUploadedBytesThisFrame += AssetBytes;
-			++WorkshopGpuUploadsThisFrame;
-			char aExtra[192];
-			str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s uploads_this_frame=%d bytes=%u bytes_used=%u queue_remaining=%d resized=%d",
-				s_CurCustomTab, pAsset->m_Name.c_str(), WorkshopGpuUploadsThisFrame, (unsigned)AssetBytes,
-				(unsigned)WorkshopThumbUploadedBytesThisFrame, (int)WorkshopState.m_vReadyThumbQueue.size(), pAsset->m_ThumbResized ? 1 : 0);
-			LogAssetsPerfStage("assets_workshop_thumb_upload_batch", UploadBatchTimer.ElapsedMs(), false, aExtra);
-			ResetWorkshopThumbReadyState(*pAsset);
-		}
-		LogSettingsResourcePerf(SETTINGS_ASSETS, "upload", (int)WorkshopThumbUploadedBytesThisFrame, (int)MaxWorkshopThumbUploadBytesPerFrame, (int)WorkshopState.m_vReadyThumbQueue.size(), WorkshopState.m_vReadyThumbQueue.empty() ? ESettingsWarmupMissReason::NONE : ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
-		char aWorkshopFinalizeExtra[160];
-		str_format(aWorkshopFinalizeExtra, sizeof(aWorkshopFinalizeExtra), "tab=%d finalized=%d deferred=%d ready_queue=%d recovery_frames=%d heavy_batches_left=%d",
-			s_CurCustomTab, WorkshopThumbFinalizesThisFrame, DeferredWorkshopThumbs, (int)WorkshopState.m_vReadyThumbQueue.size(),
-			s_AssetsPostScrollRecoveryFrames, RemainingHeavyResourceBatches);
-		LogAssetsPerfStage("assets_workshop_thumb_decode_finalize_total", 0.0, WorkshopThumbFinalizesThisFrame > 0 || DeferredWorkshopThumbs > 0 || !WorkshopState.m_vReadyThumbQueue.empty(), aWorkshopFinalizeExtra);
+			LogSettingsResourcePerf(SETTINGS_ASSETS, "upload", (int)WorkshopThumbUploadedBytesThisFrame, (int)MaxWorkshopThumbUploadBytesPerFrame, (int)WorkshopState.m_vReadyThumbQueue.size(), WorkshopUploadBlocked ? WorkshopUploadBlockReason : ESettingsWarmupMissReason::NONE, 0.0);
+			char aWorkshopFinalizeExtra[160];
+			str_format(aWorkshopFinalizeExtra, sizeof(aWorkshopFinalizeExtra), "tab=%d finalized=%d deferred=%d ready_queue=%d recovery_frames=%d heavy_batches_left=%d",
+				s_CurCustomTab, WorkshopThumbFinalizesThisFrame, DeferredWorkshopThumbs, (int)WorkshopState.m_vReadyThumbQueue.size(),
+				s_AssetsPostScrollRecoveryFrames, RemainingHeavyResourceBatches);
+			LogAssetsPerfStage("assets_workshop_thumb_decode_finalize_total", 0.0, WorkshopThumbFinalizesThisFrame > 0 || DeferredWorkshopThumbs > 0 || !WorkshopState.m_vReadyThumbQueue.empty(), aWorkshopFinalizeExtra);
+		};
 		if(DeferredWorkshopThumbs > 0)
 		{
 			char aDeferredExtra[128];
@@ -5045,9 +5154,12 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					{
 						QueueWorkshopDecodeThumb(WorkshopState, Asset, s_CurCustomTab);
 						++ThumbStartsThisFrame;
-						char aExtra[160];
-						str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s started=%d source=%s",
-							s_CurCustomTab, Asset.m_Name.c_str(), ThumbStartsThisFrame, HasUsableInstalledThumb ? "installed" : "cache");
+						const ESettingsWorkshopBytesSource BytesSource = HasUsableInstalledThumb ? ESettingsWorkshopBytesSource::LOCAL_INSTALL : ESettingsWorkshopBytesSource::LOCAL_THUMB_CACHE;
+						char aExtra[240];
+						str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s started=%d source=%s catalog_source=%s bytes_source=%s",
+							s_CurCustomTab, Asset.m_Name.c_str(), ThumbStartsThisFrame, HasUsableInstalledThumb ? "installed" : "cache",
+							SettingsWorkshopCatalogSourceName(ESettingsWorkshopCatalogSource::WORKSHOP_CACHE),
+							SettingsWorkshopBytesSourceName(BytesSource));
 						LogAssetsPerfStage("assets_workshop_thumb_start_local", ThumbStartTimer.ElapsedMs(), false, aExtra);
 						return true;
 					}
@@ -5076,9 +5188,11 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 				Asset.m_pThumbTask = std::move(pThumbTask);
 				Http()->Run(Asset.m_pThumbTask);
 				++ThumbStartsThisFrame;
-				char aExtra[160];
-				str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s started=%d source=remote",
-					s_CurCustomTab, Asset.m_Name.c_str(), ThumbStartsThisFrame);
+				char aExtra[240];
+				str_format(aExtra, sizeof(aExtra), "tab=%d asset=%s started=%d source=remote catalog_source=%s bytes_source=%s",
+					s_CurCustomTab, Asset.m_Name.c_str(), ThumbStartsThisFrame,
+					SettingsWorkshopCatalogSourceName(ESettingsWorkshopCatalogSource::WORKSHOP_CACHE),
+					SettingsWorkshopBytesSourceName(ESettingsWorkshopBytesSource::REMOTE_THUMB_HTTP));
 				LogAssetsPerfStage("assets_workshop_thumb_start_remote", ThumbStartTimer.ElapsedMs(), false, aExtra);
 				return true;
 			};
@@ -5385,6 +5499,14 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			const bool WorkshopListScrollActive = s_WorkshopAssetsListBox.ScrollbarActive() || s_WorkshopAssetsListBox.ScrollbarAnimating();
 			m_SettingsScrollActive = m_SettingsScrollActive || WorkshopListScrollActive;
 			s_AssetsScrollActiveLastFrame = WorkshopListScrollActive;
+			const SSettingsResourceFrameContext WorkshopUploadFrameContext = SettingsBuildFrameContext(
+				s_AssetsScrollCooldownFrames > 0, WorkshopListScrollActive, s_AssetsPostScrollRecoveryFrames);
+			RemainingHeavyResourceBatches = SettingsResourceClampSharedHeavyBudget(
+				RemainingHeavyResourceBatches, WorkshopUploadFrameContext, 4, 1);
+			FinalizeReadyPreviewDecodes(WorkshopUploadFrameContext);
+			DrainReadyPreviewUploadsAfterList(WorkshopUploadFrameContext);
+			FinalizeWorkshopReadyThumbs(WorkshopUploadFrameContext);
+			DrainWorkshopReadyThumbUploads(WorkshopUploadFrameContext);
 			if(DeleteLocalRequested)
 			{
 				str_copy(s_aWorkshopPendingDeleteName, aDeleteLocalName, sizeof(s_aWorkshopPendingDeleteName));

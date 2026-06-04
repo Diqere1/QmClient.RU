@@ -19,6 +19,8 @@ enum class ESettingsWarmupStopReason
 	TEXT_BUDGET,
 	FBO_BUDGET,
 	GPU_UPLOAD_BUDGET,
+	GPU_READBACK_BUDGET,
+	PREVIEW_CACHE_IO_BUDGET,
 	MERGE_BUDGET,
 	ACTIVE_ITEM,
 };
@@ -29,9 +31,13 @@ enum class ESettingsWarmupMissReason
 	PAGE_FBO_UNSUPPORTED,
 	PAGE_FBO_NOT_READY,
 	SECTION_FBO_NOT_READY,
+	DEPENDENCY_NOT_READY,
 	RESOURCE_PLAN_PENDING,
 	JOB_RESULT_PENDING,
 	GPU_UPLOAD_BUDGET,
+	SHARED_HEAVY_BUDGET,
+	UPLOAD_BYTES_BUDGET,
+	OVERSIZED_UPLOAD_DEFERRED,
 	TEXT_BUDGET,
 	ACTIVE_ITEM,
 	INVALID_RUNTIME_KEY,
@@ -63,6 +69,8 @@ struct SSettingsWarmupFrameBudget
 	int m_MaxTextContainers = 8;
 	int m_MaxRenderTargetRecords = 1;
 	int m_MaxGpuUploads = 14;
+	int m_MaxGpuReadbacks = 1;
+	int m_MaxPreviewCacheIo = 1;
 	int m_MaxJobResultMerges = 1;
 	ESettingsWarmupStopReason m_StopReason = ESettingsWarmupStopReason::NONE;
 };

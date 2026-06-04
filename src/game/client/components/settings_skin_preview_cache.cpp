@@ -12,24 +12,78 @@
 #include <sstream>
 #include <unordered_map>
 
+namespace
+{
+	constexpr const char *SETTINGS_QMCLIENT_DIR = "qmclient";
+	constexpr const char *SETTINGS_QMCLIENT_SKINS_DIR = "qmclient/skins";
+	constexpr const char *SETTINGS_SKIN_PREVIEW_CACHE_DIR = "qmclient/skins/preview_cache";
+
+	size_t HashCombine(size_t Seed, size_t Value)
+	{
+		return Seed ^ (Value + 0x9e3779b9 + (Seed << 6) + (Seed >> 2));
+	}
+
+	int SettingsSkinPreviewArtifactLayerCount(ESettingsSkinPreviewArtifactType ArtifactType)
+	{
+		return ArtifactType == ESettingsSkinPreviewArtifactType::FINAL_PREVIEW ?
+			SETTINGS_SKIN_PREVIEW_CACHE_FINAL_PREVIEW_LAYER_COUNT :
+			NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS;
+	}
+}
+
+CSettingsSkinPreviewCache *GetSharedSettingsSkinPreviewCache(IStorage *pStorage, IGraphics *pGraphics)
+{
+	static CSettingsSkinPreviewCache s_Cache;
+	static bool s_Initialized = false;
+	if(!s_Initialized && pStorage != nullptr)
+	{
+		s_Cache.Init(pStorage, pGraphics);
+		s_Initialized = true;
+	}
+	else if(s_Initialized)
+	{
+		s_Cache.Init(pStorage, pGraphics);
+	}
+	return s_Initialized ? &s_Cache : nullptr;
+}
+
 size_t SSettingsSkinPreviewCacheKeyHash::operator()(const SSettingsSkinPreviewCacheKey &Key) const
 {
-	return std::hash<std::string>{}(Key.m_SkinName) ^
-	       ((size_t)Key.m_Version << 1) ^
-	       ((size_t)Key.m_SizeBucket << 17) ^
-	       (std::hash<std::string>{}(Key.m_ContentHash) << 1) ^
-	       ((size_t)Key.m_Emote << 23) ^
-	       ((size_t)Key.m_FatSkins << 29);
+	size_t Seed = std::hash<std::string>{}(Key.m_SkinName);
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_Version));
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_SizeBucket));
+	Seed = HashCombine(Seed, std::hash<std::string>{}(Key.m_ContentHash));
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_Emote));
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_FatSkins));
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_TinyTee));
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_TinyTeeSize));
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_UseCustomColor));
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_ColorBody));
+	Seed = HashCombine(Seed, std::hash<int>{}(Key.m_ColorFeet));
+	return Seed;
 }
 
 bool SSettingsSkinPreviewCacheTextures::IsComplete() const
 {
+	if(m_FinalPreviewTexture.IsValid())
+		return true;
 	for(const IGraphics::CTextureHandle &Texture : m_aTextures)
 	{
 		if(!Texture.IsValid())
 			return false;
 	}
 	return true;
+}
+
+SSettingsSkinPreviewCacheKey CanonicalizeSettingsSkinPreviewArtifactKey(const SSettingsSkinPreviewCacheKey &Key)
+{
+	SSettingsSkinPreviewCacheKey Canonical = Key;
+	if(Canonical.m_UseCustomColor != 0)
+	{
+		Canonical.m_ColorBody = 0;
+		Canonical.m_ColorFeet = 0;
+	}
+	return Canonical;
 }
 
 const char *SettingsSkinPreviewCacheLayerName(ESettingsSkinPreviewCacheLayer Layer)
@@ -105,6 +159,69 @@ bool SettingsSkinPreviewCacheImagesHaveVisiblePixels(const std::array<CImageInfo
 	return false;
 }
 
+ESettingsSkinPreviewCacheDisabledReason SettingsSkinPreviewCacheDisabledReason(bool HasContentHash, bool RenderOnly, bool BackendUnsupported, bool WhiteFeet, bool Sixup)
+{
+	if(RenderOnly || BackendUnsupported)
+		return ESettingsSkinPreviewCacheDisabledReason::BACKEND_UNSUPPORTED;
+	if(WhiteFeet)
+		return ESettingsSkinPreviewCacheDisabledReason::WHITE_FEET;
+	if(Sixup)
+		return ESettingsSkinPreviewCacheDisabledReason::SIXUP;
+	if(!HasContentHash)
+		return ESettingsSkinPreviewCacheDisabledReason::MISSING_HASH;
+	return ESettingsSkinPreviewCacheDisabledReason::NONE;
+}
+
+ESettingsSkinPreviewCacheDisabledReason SettingsSkinPreviewCacheDisabledReason(bool RenderOnly, bool BackendUnsupported, bool WhiteFeet, bool Sixup)
+{
+	return SettingsSkinPreviewCacheDisabledReason(true, RenderOnly, BackendUnsupported, WhiteFeet, Sixup);
+}
+
+bool SettingsSkinPreviewShouldBecomeStable(ESettingsSkinPreviewHitSource Source)
+{
+	return Source == ESettingsSkinPreviewHitSource::MEMORY_HIT ||
+		Source == ESettingsSkinPreviewHitSource::DISK_RESTORE ||
+		Source == ESettingsSkinPreviewHitSource::SOURCE_GENERATION;
+}
+
+const char *SettingsSkinPreviewHitSourceName(ESettingsSkinPreviewHitSource Source)
+{
+	switch(Source)
+	{
+	case ESettingsSkinPreviewHitSource::MEMORY_HIT: return "memory-hit";
+	case ESettingsSkinPreviewHitSource::DISK_RESTORE: return "disk-restore";
+	case ESettingsSkinPreviewHitSource::SOURCE_GENERATION: return "source-generation";
+	}
+	return "unknown";
+}
+
+bool SettingsSkinPreviewObligationSharesPin(const SSettingsSkinPreviewCacheKey &Left, const SSettingsSkinPreviewCacheKey &Right)
+{
+	return Left == Right;
+}
+
+bool SettingsSkinPreviewShouldCreateObligation(ESettingsSkinPreviewCacheDisabledReason Reason)
+{
+	return Reason == ESettingsSkinPreviewCacheDisabledReason::NONE;
+}
+
+size_t SettingsSkinPreviewBytesEstimate(int Width, int Height, int LayerCount)
+{
+	if(Width <= 0 || Height <= 0 || LayerCount <= 0)
+		return 0;
+	return (size_t)Width * (size_t)Height * 4u * (size_t)LayerCount;
+}
+
+bool SettingsSkinPreviewEvictPreviewFirst(bool HasStablePreview, bool SourceStillReclaimable)
+{
+	return !(HasStablePreview && SourceStillReclaimable);
+}
+
+bool SettingsSkinPreviewCanPruneDiskAlongsideMemory(bool StablePreview, bool MemoryEvicted)
+{
+	return !StablePreview || !MemoryEvicted;
+}
+
 bool SettingsSkinPreviewCacheAllowsLookup(bool HasContentHash, bool WhiteFeet, bool Sixup)
 {
 	return HasContentHash && !WhiteFeet && !Sixup;
@@ -115,13 +232,84 @@ bool SettingsSkinPreviewCacheAllowsGeneration(bool SkinLoaded, bool HasContentHa
 	return SkinLoaded && SettingsSkinPreviewCacheAllowsLookup(HasContentHash, WhiteFeet, Sixup);
 }
 
-bool SettingsSkinPreviewCacheShouldRunMaintenance(bool RuntimeAllowed, bool RangeStable, bool InputActive, bool ScrollAnimating, int StableFrames, int RequiredStableFrames)
+bool SettingsSkinPreviewCacheShouldRunMaintenance(bool RuntimeAllowed, bool RangeStable, bool InputActive, bool ScrollAnimating, int StableFrames, int RequiredStableFrames, bool HeavyRenderTargetWorkAllowed)
 {
-	if(!RuntimeAllowed || InputActive || ScrollAnimating)
+	if(!RuntimeAllowed || !HeavyRenderTargetWorkAllowed || InputActive || ScrollAnimating)
 		return false;
 	if(!RangeStable)
 		return false;
 	return StableFrames >= RequiredStableFrames;
+}
+
+bool SettingsSkinPreviewCacheShouldPumpMaintenance(bool JobActive, bool MaintenanceAllowed)
+{
+	return JobActive || MaintenanceAllowed;
+}
+
+bool SettingsSkinPreviewCacheShouldRequeueInterruptedJob(bool JobActive, const std::string &SkinName)
+{
+	return JobActive && !SkinName.empty();
+}
+
+bool SettingsSkinPreviewCacheShouldDisableBackendAfterReadbackFailure(const char *pReason)
+{
+	if(pReason == nullptr)
+		return false;
+	return str_comp(pReason, "render-target-readback-timeout") == 0 ||
+		str_comp(pReason, "render-target-readback-begin-failed") == 0 ||
+		str_comp(pReason, "render-target-readback-failed") == 0 ||
+		str_comp(pReason, "render-target-readback-resolve-failed") == 0;
+}
+
+bool SettingsSkinPreviewCacheArtifactsReadyForPublish(const SSettingsSkinPreviewCacheKey &Key, const std::array<std::string, NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS> &aTemporaryLayerPaths, const SSettingsSkinPreviewCacheManifest &Manifest)
+{
+	if(!SettingsSkinPreviewCacheManifestAllowsLoad(Manifest, Key))
+		return false;
+	if(Manifest.m_LayerCount != NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS)
+		return false;
+	for(const auto &Path : aTemporaryLayerPaths)
+	{
+		if(Path.empty())
+			return false;
+	}
+	return true;
+}
+
+bool SettingsSkinPreviewCacheShouldRememberAfterPublish(bool MemoryBudgetAllows, bool DiskPublishSucceeded)
+{
+	return MemoryBudgetAllows && DiskPublishSucceeded;
+}
+
+bool BuildSettingsSkinPreviewCacheLayerImageFromSource(const CImageInfo &Source, const SSettingsSkinPreviewSourceSprite &Sprite, CImageInfo &OutImage)
+{
+	if(Source.m_pData == nullptr || Source.m_Format != CImageInfo::FORMAT_RGBA)
+		return false;
+	if(Sprite.m_GridX <= 0 || Sprite.m_GridY <= 0 || Sprite.m_W <= 0 || Sprite.m_H <= 0)
+		return false;
+	if(Source.m_Width == 0 || Source.m_Height == 0 || Source.m_Width % Sprite.m_GridX != 0 || Source.m_Height % Sprite.m_GridY != 0)
+		return false;
+
+	const size_t CellWidth = Source.m_Width / (size_t)Sprite.m_GridX;
+	const size_t CellHeight = Source.m_Height / (size_t)Sprite.m_GridY;
+	const size_t X = (size_t)Sprite.m_X * CellWidth;
+	const size_t Y = (size_t)Sprite.m_Y * CellHeight;
+	const size_t W = (size_t)Sprite.m_W * CellWidth;
+	const size_t H = (size_t)Sprite.m_H * CellHeight;
+	if(W == 0 || H == 0 || X + W > Source.m_Width || Y + H > Source.m_Height)
+		return false;
+
+	OutImage.Free();
+	OutImage.m_Width = W;
+	OutImage.m_Height = H;
+	OutImage.m_Format = Source.m_Format;
+	OutImage.m_pData = static_cast<uint8_t *>(malloc(OutImage.DataSize()));
+	if(OutImage.m_pData == nullptr)
+	{
+		OutImage.Free();
+		return false;
+	}
+	OutImage.CopyRectFrom(Source, X, Y, W, H, 0, 0);
+	return true;
 }
 
 std::string BuildSettingsSkinPreviewCachePath(const char *pSkinName, int Version, const char *pHash)
@@ -133,12 +321,10 @@ std::string BuildSettingsSkinPreviewCachePath(const char *pSkinName, int Version
 	{
 		if(*pChar == ' ')
 			*pChar = '_';
-		else if(*pChar == '/' || *pChar == '\\' || *pChar == ':' || *pChar == '?' || *pChar == '*')
-			*pChar = '_';
 	}
 
 	char aBuf[IO_MAX_PATH_LENGTH];
-	str_format(aBuf, sizeof(aBuf), "qmclient/skins/preview_cache/%s--v%d--%s.webp", aName, Version, pHash ? pHash : "missing");
+	str_format(aBuf, sizeof(aBuf), "%s/%s--v%d--%s.webp", SETTINGS_SKIN_PREVIEW_CACHE_DIR, aName, Version, pHash ? pHash : "missing");
 	return aBuf;
 }
 
@@ -152,6 +338,14 @@ std::string BuildSettingsSkinPreviewCachePath(const SSettingsSkinPreviewCacheKey
 	char aSize[32];
 	str_format(aSize, sizeof(aSize), "--s%d--e%d--f%d", Key.m_SizeBucket, Key.m_Emote, Key.m_FatSkins);
 	Path.insert(ExtensionPos, aSize);
+	if(Key.m_TinyTee != 0 || Key.m_TinyTeeSize != 100 || Key.m_UseCustomColor != 0)
+	{
+		char aVariant[96];
+		str_format(aVariant, sizeof(aVariant), "--t%d--ts%d--c%d--cb%x--cf%x", Key.m_TinyTee, Key.m_TinyTeeSize, Key.m_UseCustomColor, Key.m_ColorBody, Key.m_ColorFeet);
+		const size_t VariantExtensionPos = Path.rfind(".webp");
+		if(VariantExtensionPos != std::string::npos)
+			Path.insert(VariantExtensionPos, aVariant);
+	}
 	return Path;
 }
 
@@ -186,9 +380,12 @@ std::string BuildSettingsSkinPreviewCacheTemporaryPath(const std::string &Path)
 SSettingsSkinPreviewCacheManifest BuildSettingsSkinPreviewCacheManifest(const SSettingsSkinPreviewCacheKey &Key)
 {
 	SSettingsSkinPreviewCacheManifest Manifest;
-	Manifest.m_Key = Key;
+	Manifest.m_Key = CanonicalizeSettingsSkinPreviewArtifactKey(Key);
 	Manifest.m_Version = SETTINGS_SKIN_PREVIEW_CACHE_MANIFEST_VERSION;
-	Manifest.m_LayerCount = NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS;
+	Manifest.m_ArtifactType = Manifest.m_Key.m_UseCustomColor != 0 ?
+		ESettingsSkinPreviewArtifactType::PARAMETRIC_LAYERS :
+		ESettingsSkinPreviewArtifactType::FINAL_PREVIEW;
+	Manifest.m_LayerCount = SettingsSkinPreviewArtifactLayerCount(Manifest.m_ArtifactType);
 	return Manifest;
 }
 
@@ -202,8 +399,14 @@ std::string SerializeSettingsSkinPreviewCacheManifest(const SSettingsSkinPreview
 	Text += "content_hash=" + Manifest.m_Key.m_ContentHash + "\n";
 	Text += "emote=" + std::to_string(Manifest.m_Key.m_Emote) + "\n";
 	Text += "fat_skins=" + std::to_string(Manifest.m_Key.m_FatSkins) + "\n";
+	Text += "artifact_type=" + std::to_string((int)Manifest.m_ArtifactType) + "\n";
+	Text += "tiny_tee=" + std::to_string(Manifest.m_Key.m_TinyTee) + "\n";
+	Text += "tiny_tee_size=" + std::to_string(Manifest.m_Key.m_TinyTeeSize) + "\n";
+	Text += "use_custom_color=" + std::to_string(Manifest.m_Key.m_UseCustomColor) + "\n";
+	Text += "color_body=" + std::to_string(Manifest.m_Key.m_ColorBody) + "\n";
+	Text += "color_feet=" + std::to_string(Manifest.m_Key.m_ColorFeet) + "\n";
 	Text += "layers=" + std::to_string(Manifest.m_LayerCount) + "\n";
-	for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
+	for(int LayerIndex = 0; LayerIndex < Manifest.m_LayerCount; ++LayerIndex)
 	{
 		const SSettingsSkinPreviewCacheManifestLayer &Layer = Manifest.m_aLayers[LayerIndex];
 		Text += "layer=" + std::to_string(LayerIndex) + "\t" + SettingsSkinPreviewCacheLayerName((ESettingsSkinPreviewCacheLayer)LayerIndex) + "\t" +
@@ -349,6 +552,40 @@ std::optional<SSettingsSkinPreviewCacheManifest> ParseSettingsSkinPreviewCacheMa
 			if(!ParseIntValue(Value, Manifest.m_Key.m_FatSkins))
 				return std::nullopt;
 		}
+		else if(Key == "artifact_type")
+		{
+			int ArtifactType = 0;
+			if(!ParseIntValue(Value, ArtifactType))
+				return std::nullopt;
+			if(ArtifactType < (int)ESettingsSkinPreviewArtifactType::FINAL_PREVIEW || ArtifactType > (int)ESettingsSkinPreviewArtifactType::PARAMETRIC_LAYERS)
+				return std::nullopt;
+			Manifest.m_ArtifactType = (ESettingsSkinPreviewArtifactType)ArtifactType;
+		}
+		else if(Key == "tiny_tee")
+		{
+			if(!ParseIntValue(Value, Manifest.m_Key.m_TinyTee))
+				return std::nullopt;
+		}
+		else if(Key == "tiny_tee_size")
+		{
+			if(!ParseIntValue(Value, Manifest.m_Key.m_TinyTeeSize))
+				return std::nullopt;
+		}
+		else if(Key == "use_custom_color")
+		{
+			if(!ParseIntValue(Value, Manifest.m_Key.m_UseCustomColor))
+				return std::nullopt;
+		}
+		else if(Key == "color_body")
+		{
+			if(!ParseIntValue(Value, Manifest.m_Key.m_ColorBody))
+				return std::nullopt;
+		}
+		else if(Key == "color_feet")
+		{
+			if(!ParseIntValue(Value, Manifest.m_Key.m_ColorFeet))
+				return std::nullopt;
+		}
 		else if(Key == "layers")
 		{
 			if(!ParseIntValue(Value, Manifest.m_LayerCount))
@@ -360,9 +597,13 @@ std::optional<SSettingsSkinPreviewCacheManifest> ParseSettingsSkinPreviewCacheMa
 		}
 	}
 
-	for(bool LayerSeen : aLayerSeen)
+	Manifest.m_Key = CanonicalizeSettingsSkinPreviewArtifactKey(Manifest.m_Key);
+	const int RequiredLayerCount = SettingsSkinPreviewArtifactLayerCount(Manifest.m_ArtifactType);
+	if(Manifest.m_LayerCount != RequiredLayerCount)
+		return std::nullopt;
+	for(int LayerIndex = 0; LayerIndex < RequiredLayerCount; ++LayerIndex)
 	{
-		if(!LayerSeen)
+		if(!aLayerSeen[LayerIndex])
 			return std::nullopt;
 	}
 	return Manifest;
@@ -375,14 +616,22 @@ bool SettingsSkinPreviewCacheManifestAllowsLoad(const std::optional<SSettingsSki
 
 bool SettingsSkinPreviewCacheManifestAllowsLoad(const SSettingsSkinPreviewCacheManifest &Manifest, const SSettingsSkinPreviewCacheKey &Key)
 {
-	if(Manifest.m_Version != SETTINGS_SKIN_PREVIEW_CACHE_MANIFEST_VERSION || Manifest.m_LayerCount != NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS || !(Manifest.m_Key == Key))
+	const SSettingsSkinPreviewCacheKey CanonicalKey = CanonicalizeSettingsSkinPreviewArtifactKey(Key);
+	if(Manifest.m_Version != SETTINGS_SKIN_PREVIEW_CACHE_MANIFEST_VERSION || !(Manifest.m_Key == CanonicalKey))
+		return false;
+	if(Manifest.m_LayerCount != SettingsSkinPreviewArtifactLayerCount(Manifest.m_ArtifactType))
 		return false;
 
 	uint64_t VisiblePixels = 0;
-	for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
+	for(int LayerIndex = 0; LayerIndex < Manifest.m_LayerCount; ++LayerIndex)
 	{
 		const SSettingsSkinPreviewCacheManifestLayer &Layer = Manifest.m_aLayers[LayerIndex];
-		if(Layer.m_Path != BuildSettingsSkinPreviewCachePath(Key, (ESettingsSkinPreviewCacheLayer)LayerIndex))
+		const std::string ExpectedPath = SettingsSkinPreviewCacheManifestUsesFinalPreview(Manifest) ?
+			BuildSettingsSkinPreviewCachePath(CanonicalKey) :
+			BuildSettingsSkinPreviewCachePath(CanonicalKey, (ESettingsSkinPreviewCacheLayer)LayerIndex);
+		if(Layer.m_Path != ExpectedPath)
+			return false;
+		if(SettingsSkinPreviewCacheManifestUsesFinalPreview(Manifest) && (Layer.m_Width != CanonicalKey.m_SizeBucket || Layer.m_Height != CanonicalKey.m_SizeBucket))
 			return false;
 		if(Layer.m_Width <= 0 || Layer.m_Height <= 0)
 			return false;
@@ -393,16 +642,31 @@ bool SettingsSkinPreviewCacheManifestAllowsLoad(const SSettingsSkinPreviewCacheM
 	return VisiblePixels > 0;
 }
 
+bool SettingsSkinPreviewCacheManifestUsesFinalPreview(const SSettingsSkinPreviewCacheManifest &Manifest)
+{
+	return Manifest.m_ArtifactType == ESettingsSkinPreviewArtifactType::FINAL_PREVIEW;
+}
+
 SSettingsSkinPreviewCacheAtomicPublishPlan BuildSettingsSkinPreviewCacheAtomicPublishPlan(const SSettingsSkinPreviewCacheKey &Key)
 {
+	const SSettingsSkinPreviewCacheManifest Manifest = BuildSettingsSkinPreviewCacheManifest(Key);
+	const SSettingsSkinPreviewCacheKey CanonicalKey = Manifest.m_Key;
 	SSettingsSkinPreviewCacheAtomicPublishPlan Plan;
-	Plan.m_vSteps.reserve(NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS + 1);
-	for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
+	Plan.m_vSteps.reserve((size_t)SettingsSkinPreviewArtifactLayerCount(Manifest.m_ArtifactType) + 1u);
+	if(SettingsSkinPreviewCacheManifestUsesFinalPreview(Manifest))
 	{
-		const std::string FinalPath = BuildSettingsSkinPreviewCachePath(Key, (ESettingsSkinPreviewCacheLayer)LayerIndex);
-		Plan.m_vSteps.push_back({BuildSettingsSkinPreviewCacheTemporaryPath(FinalPath), FinalPath});
+		const std::string FinalPreviewPath = BuildSettingsSkinPreviewCachePath(CanonicalKey);
+		Plan.m_vSteps.push_back({BuildSettingsSkinPreviewCacheTemporaryPath(FinalPreviewPath), FinalPreviewPath});
 	}
-	const std::string ManifestPath = BuildSettingsSkinPreviewCacheManifestPath(Key);
+	else
+	{
+		for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
+		{
+			const std::string LayerPath = BuildSettingsSkinPreviewCachePath(CanonicalKey, (ESettingsSkinPreviewCacheLayer)LayerIndex);
+			Plan.m_vSteps.push_back({BuildSettingsSkinPreviewCacheTemporaryPath(LayerPath), LayerPath});
+		}
+	}
+	const std::string ManifestPath = BuildSettingsSkinPreviewCacheManifestPath(CanonicalKey);
 	Plan.m_vSteps.push_back({BuildSettingsSkinPreviewCacheTemporaryPath(ManifestPath), ManifestPath});
 	return Plan;
 }
@@ -501,6 +765,8 @@ namespace
 	{
 		if(pGraphics == nullptr)
 			return;
+		if(Textures.m_FinalPreviewTexture.IsValid())
+			pGraphics->UnloadTexture(&Textures.m_FinalPreviewTexture);
 		for(IGraphics::CTextureHandle &Texture : Textures.m_aTextures)
 		{
 			if(Texture.IsValid())
@@ -516,7 +782,7 @@ namespace
 		if(str_endswith(pInfo->m_pName, ".webp") == nullptr && str_endswith(pInfo->m_pName, ".manifest") == nullptr)
 			return 0;
 		auto *pEntries = static_cast<std::vector<SSettingsSkinPreviewCacheFileEntry> *>(pUser);
-		pEntries->push_back({std::string("qmclient/skins/preview_cache/") + pInfo->m_pName, (int64_t)pInfo->m_TimeModified});
+		pEntries->push_back({std::string(SETTINGS_SKIN_PREVIEW_CACHE_DIR) + "/" + pInfo->m_pName, (int64_t)pInfo->m_TimeModified});
 		return 0;
 	}
 }
@@ -543,9 +809,9 @@ bool CSettingsSkinPreviewCache::EnsureCacheFolders()
 {
 	if(m_pStorage == nullptr)
 		return false;
-	const bool QmFolderOk = m_pStorage->FolderExists("qmclient", IStorage::TYPE_SAVE) || m_pStorage->CreateFolder("qmclient", IStorage::TYPE_SAVE);
-	const bool SkinsFolderOk = m_pStorage->FolderExists("qmclient/skins", IStorage::TYPE_SAVE) || m_pStorage->CreateFolder("qmclient/skins", IStorage::TYPE_SAVE);
-	const bool CacheFolderOk = m_pStorage->FolderExists("qmclient/skins/preview_cache", IStorage::TYPE_SAVE) || m_pStorage->CreateFolder("qmclient/skins/preview_cache", IStorage::TYPE_SAVE);
+	const bool QmFolderOk = m_pStorage->FolderExists(SETTINGS_QMCLIENT_DIR, IStorage::TYPE_SAVE) || m_pStorage->CreateFolder(SETTINGS_QMCLIENT_DIR, IStorage::TYPE_SAVE);
+	const bool SkinsFolderOk = m_pStorage->FolderExists(SETTINGS_QMCLIENT_SKINS_DIR, IStorage::TYPE_SAVE) || m_pStorage->CreateFolder(SETTINGS_QMCLIENT_SKINS_DIR, IStorage::TYPE_SAVE);
+	const bool CacheFolderOk = m_pStorage->FolderExists(SETTINGS_SKIN_PREVIEW_CACHE_DIR, IStorage::TYPE_SAVE) || m_pStorage->CreateFolder(SETTINGS_SKIN_PREVIEW_CACHE_DIR, IStorage::TYPE_SAVE);
 	return QmFolderOk && SkinsFolderOk && CacheFolderOk;
 }
 
@@ -554,24 +820,34 @@ void CSettingsSkinPreviewCache::PruneDiskCache()
 	if(m_pStorage == nullptr || !EnsureCacheFolders())
 		return;
 	std::vector<SSettingsSkinPreviewCacheFileEntry> vEntries;
-	m_pStorage->ListDirectoryInfo(IStorage::TYPE_SAVE, "qmclient/skins/preview_cache", CollectPreviewCacheFileInfo, &vEntries);
+	m_pStorage->ListDirectoryInfo(IStorage::TYPE_SAVE, SETTINGS_SKIN_PREVIEW_CACHE_DIR, CollectPreviewCacheFileInfo, &vEntries);
+	vEntries.erase(std::remove_if(vEntries.begin(), vEntries.end(), [&](const SSettingsSkinPreviewCacheFileEntry &Entry) {
+		for(const SSettingsSkinPreviewCacheKey &Key : m_vStableTextures)
+		{
+			const std::string BasePath = BuildSettingsSkinPreviewCachePath(Key);
+			const std::string ManifestPath = BuildSettingsSkinPreviewCacheManifestPath(Key);
+			if(Entry.m_Path == ManifestPath || Entry.m_Path.rfind(BasePath.substr(0, BasePath.size() - 5), 0) == 0)
+				return true;
+		}
+		return false;
+	}), vEntries.end());
 	for(const std::string &Path : ComputeSettingsSkinPreviewCachePruneList(std::move(vEntries), SETTINGS_SKIN_PREVIEW_CACHE_KEY_LIMIT))
 		m_pStorage->RemoveFile(Path.c_str(), IStorage::TYPE_SAVE);
 }
 
 std::string CSettingsSkinPreviewCache::PathForKey(const SSettingsSkinPreviewCacheKey &Key) const
 {
-	return BuildSettingsSkinPreviewCachePath(Key);
+	return BuildSettingsSkinPreviewCachePath(CanonicalizeSettingsSkinPreviewArtifactKey(Key));
 }
 
 std::string CSettingsSkinPreviewCache::PathForKey(const SSettingsSkinPreviewCacheKey &Key, ESettingsSkinPreviewCacheLayer Layer) const
 {
-	return BuildSettingsSkinPreviewCachePath(Key, Layer);
+	return BuildSettingsSkinPreviewCachePath(CanonicalizeSettingsSkinPreviewArtifactKey(Key), Layer);
 }
 
 std::string CSettingsSkinPreviewCache::ManifestPathForKey(const SSettingsSkinPreviewCacheKey &Key) const
 {
-	return BuildSettingsSkinPreviewCacheManifestPath(Key);
+	return BuildSettingsSkinPreviewCacheManifestPath(CanonicalizeSettingsSkinPreviewArtifactKey(Key));
 }
 
 void CSettingsSkinPreviewCache::RemoveDiskCache(const SSettingsSkinPreviewCacheKey &Key)
@@ -580,6 +856,8 @@ void CSettingsSkinPreviewCache::RemoveDiskCache(const SSettingsSkinPreviewCacheK
 		return;
 	m_pStorage->RemoveFile(ManifestPathForKey(Key).c_str(), IStorage::TYPE_SAVE);
 	m_pStorage->RemoveFile(BuildSettingsSkinPreviewCacheTemporaryPath(ManifestPathForKey(Key)).c_str(), IStorage::TYPE_SAVE);
+	m_pStorage->RemoveFile(BuildSettingsSkinPreviewCacheTemporaryPath(PathForKey(Key)).c_str(), IStorage::TYPE_SAVE);
+	m_pStorage->RemoveFile(PathForKey(Key).c_str(), IStorage::TYPE_SAVE);
 	for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
 	{
 		m_pStorage->RemoveFile(BuildSettingsSkinPreviewCacheTemporaryPath(PathForKey(Key, (ESettingsSkinPreviewCacheLayer)LayerIndex)).c_str(), IStorage::TYPE_SAVE);
@@ -618,10 +896,10 @@ bool CSettingsSkinPreviewCache::WriteManifestAtomically(const SSettingsSkinPrevi
 
 bool CSettingsSkinPreviewCache::PublishDiskCacheArtifactsAtomically(const SSettingsSkinPreviewCacheKey &Key, const std::array<std::string, NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS> &aTemporaryLayerPaths, const SSettingsSkinPreviewCacheManifest &Manifest)
 {
-	if(m_pStorage == nullptr || !SettingsSkinPreviewCacheManifestAllowsLoad(Manifest, Key) || !EnsureCacheFolders())
+	if(m_pStorage == nullptr || !SettingsSkinPreviewCacheArtifactsReadyForPublish(Key, aTemporaryLayerPaths, Manifest) || !EnsureCacheFolders())
 		return false;
 
-	for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
+	for(int LayerIndex = 0; LayerIndex < Manifest.m_LayerCount; ++LayerIndex)
 	{
 		const std::string FinalPath = PathForKey(Key, (ESettingsSkinPreviewCacheLayer)LayerIndex);
 		if(aTemporaryLayerPaths[LayerIndex].empty() || aTemporaryLayerPaths[LayerIndex] == FinalPath)
@@ -645,9 +923,115 @@ bool CSettingsSkinPreviewCache::PublishDiskCacheArtifactsAtomically(const SSetti
 	return true;
 }
 
+bool CSettingsSkinPreviewCache::PublishSourceSkinLayerImages(const SSettingsSkinPreviewCacheKey &Key, const std::array<CImageInfo, NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS> &aImages)
+{
+	if(m_pStorage == nullptr || !SettingsSkinPreviewCacheImagesHaveVisiblePixels(aImages) || !EnsureCacheFolders())
+		return false;
+
+	const SSettingsSkinPreviewCacheKey CanonicalKey = CanonicalizeSettingsSkinPreviewArtifactKey(Key);
+	SSettingsSkinPreviewCacheManifest Manifest = BuildSettingsSkinPreviewCacheManifest(Key);
+	Manifest.m_ArtifactType = ESettingsSkinPreviewArtifactType::PARAMETRIC_LAYERS;
+	Manifest.m_LayerCount = NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS;
+	std::array<std::string, NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS> aTemporaryLayerPaths;
+	for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
+	{
+		const auto Layer = (ESettingsSkinPreviewCacheLayer)LayerIndex;
+		const std::string FinalPath = PathForKey(CanonicalKey, Layer);
+		const std::string TemporaryPath = BuildSettingsSkinPreviewCacheTemporaryPath(FinalPath);
+		CByteBufferWriter Writer;
+		if(!CImageLoader::SaveWebP(Writer, aImages[LayerIndex]))
+		{
+			RemoveDiskCache(CanonicalKey);
+			return false;
+		}
+
+		IOHANDLE File = m_pStorage->OpenFile(TemporaryPath.c_str(), IOFLAG_WRITE, IStorage::TYPE_SAVE);
+		if(!File)
+		{
+			RemoveDiskCache(CanonicalKey);
+			return false;
+		}
+		const unsigned Written = io_write(File, Writer.Data(), (unsigned)Writer.Size());
+		io_close(File);
+		if(Written != Writer.Size())
+		{
+			m_pStorage->RemoveFile(TemporaryPath.c_str(), IStorage::TYPE_SAVE);
+			RemoveDiskCache(CanonicalKey);
+			return false;
+		}
+
+		aTemporaryLayerPaths[LayerIndex] = TemporaryPath;
+		Manifest.m_aLayers[LayerIndex].m_Path = FinalPath;
+		Manifest.m_aLayers[LayerIndex].m_Width = (int)aImages[LayerIndex].m_Width;
+		Manifest.m_aLayers[LayerIndex].m_Height = (int)aImages[LayerIndex].m_Height;
+		Manifest.m_aLayers[LayerIndex].m_VisiblePixels = SettingsSkinPreviewCacheVisiblePixelCount(aImages[LayerIndex]);
+		Manifest.m_aLayers[LayerIndex].m_EncodedBytes = Writer.Size();
+	}
+
+	const bool Published = PublishDiskCacheArtifactsAtomically(CanonicalKey, aTemporaryLayerPaths, Manifest);
+	if(Published)
+		RememberStablePreview(CanonicalKey);
+	return Published;
+}
+
+bool CSettingsSkinPreviewCache::PublishSourceSkinFinalPreviewImage(const SSettingsSkinPreviewCacheKey &Key, const CImageInfo &Image)
+{
+	if(m_pStorage == nullptr || !SettingsSkinPreviewCacheImageHasVisiblePixels(Image) || !EnsureCacheFolders())
+		return false;
+
+	const SSettingsSkinPreviewCacheKey CanonicalKey = CanonicalizeSettingsSkinPreviewArtifactKey(Key);
+	SSettingsSkinPreviewCacheManifest Manifest = BuildSettingsSkinPreviewCacheManifest(Key);
+	Manifest.m_ArtifactType = ESettingsSkinPreviewArtifactType::FINAL_PREVIEW;
+	Manifest.m_LayerCount = SETTINGS_SKIN_PREVIEW_CACHE_FINAL_PREVIEW_LAYER_COUNT;
+	const std::string FinalPath = PathForKey(CanonicalKey);
+	const std::string TemporaryPath = BuildSettingsSkinPreviewCacheTemporaryPath(FinalPath);
+	CByteBufferWriter Writer;
+	if(!CImageLoader::SaveWebP(Writer, Image))
+	{
+		RemoveDiskCache(CanonicalKey);
+		return false;
+	}
+
+	IOHANDLE File = m_pStorage->OpenFile(TemporaryPath.c_str(), IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+	{
+		RemoveDiskCache(CanonicalKey);
+		return false;
+	}
+	const unsigned Written = io_write(File, Writer.Data(), (unsigned)Writer.Size());
+	io_close(File);
+	if(Written != Writer.Size())
+	{
+		m_pStorage->RemoveFile(TemporaryPath.c_str(), IStorage::TYPE_SAVE);
+		RemoveDiskCache(CanonicalKey);
+		return false;
+	}
+
+	Manifest.m_aLayers[0].m_Path = FinalPath;
+	Manifest.m_aLayers[0].m_Width = (int)Image.m_Width;
+	Manifest.m_aLayers[0].m_Height = (int)Image.m_Height;
+	Manifest.m_aLayers[0].m_VisiblePixels = SettingsSkinPreviewCacheVisiblePixelCount(Image);
+	Manifest.m_aLayers[0].m_EncodedBytes = Writer.Size();
+
+	m_pStorage->RemoveFile(FinalPath.c_str(), IStorage::TYPE_SAVE);
+	if(!m_pStorage->RenameFile(TemporaryPath.c_str(), FinalPath.c_str(), IStorage::TYPE_SAVE))
+	{
+		m_pStorage->RemoveFile(TemporaryPath.c_str(), IStorage::TYPE_SAVE);
+		RemoveDiskCache(CanonicalKey);
+		return false;
+	}
+	if(!WriteManifestAtomically(Manifest))
+	{
+		RemoveDiskCache(CanonicalKey);
+		return false;
+	}
+	RememberStablePreview(CanonicalKey);
+	return true;
+}
+
 std::optional<SSettingsSkinPreviewCacheTextures> CSettingsSkinPreviewCache::FindTextures(const SSettingsSkinPreviewCacheKey &Key)
 {
-	const auto It = m_vTextures.find(Key);
+	const auto It = m_vTextures.find(CanonicalizeSettingsSkinPreviewArtifactKey(Key));
 	if(It == m_vTextures.end() || !It->second.m_Textures.IsComplete())
 		return std::nullopt;
 	It->second.m_LastUseSequence = m_NextUseSequence++;
@@ -657,6 +1041,86 @@ std::optional<SSettingsSkinPreviewCacheTextures> CSettingsSkinPreviewCache::Find
 bool CSettingsSkinPreviewCache::DiskCacheExists(const SSettingsSkinPreviewCacheKey &Key) const
 {
 	return m_pStorage != nullptr && m_pStorage->FileExists(ManifestPathForKey(Key).c_str(), IStorage::TYPE_SAVE);
+}
+
+bool CSettingsSkinPreviewCache::DiskCacheArtifactsValid(const SSettingsSkinPreviewCacheKey &Key) const
+{
+	if(m_pStorage == nullptr)
+		return false;
+
+	const std::string ManifestPath = ManifestPathForKey(Key);
+	if(!m_pStorage->FileExists(ManifestPath.c_str(), IStorage::TYPE_SAVE))
+		return false;
+
+	char *pManifestText = m_pStorage->ReadFileStr(ManifestPath.c_str(), IStorage::TYPE_SAVE);
+	const std::optional<SSettingsSkinPreviewCacheManifest> Manifest = pManifestText ? ParseSettingsSkinPreviewCacheManifest(pManifestText) : std::nullopt;
+	free(pManifestText);
+	if(!SettingsSkinPreviewCacheManifestAllowsLoad(Manifest, Key))
+		return false;
+
+	const int LayerCount = Manifest->m_LayerCount;
+	for(int LayerIndex = 0; LayerIndex < LayerCount; ++LayerIndex)
+	{
+		const std::string Path = SettingsSkinPreviewCacheManifestUsesFinalPreview(*Manifest) ? PathForKey(Key) : PathForKey(Key, (ESettingsSkinPreviewCacheLayer)LayerIndex);
+		if(!m_pStorage->FileExists(Path.c_str(), IStorage::TYPE_SAVE))
+			return false;
+
+		IOHANDLE File = m_pStorage->OpenFile(Path.c_str(), IOFLAG_READ, IStorage::TYPE_SAVE);
+		const int64_t EncodedBytes = File ? io_length(File) : -1;
+		if(File)
+			io_close(File);
+		if(EncodedBytes < 0 || (uint64_t)EncodedBytes != Manifest->m_aLayers[LayerIndex].m_EncodedBytes)
+			return false;
+	}
+	return true;
+}
+
+std::optional<SSettingsSkinPreviewCacheKey> CSettingsSkinPreviewCache::FindDiskCacheKeyForSkin(const SSettingsSkinPreviewCacheKey &LookupKey) const
+{
+	if(m_pStorage == nullptr || LookupKey.m_SkinName.empty() || LookupKey.m_ContentHash.empty())
+		return std::nullopt;
+	const SSettingsSkinPreviewCacheKey CanonicalLookupKey = CanonicalizeSettingsSkinPreviewArtifactKey(LookupKey);
+
+	std::vector<SSettingsSkinPreviewCacheFileEntry> vEntries;
+	m_pStorage->ListDirectoryInfo(IStorage::TYPE_SAVE, SETTINGS_SKIN_PREVIEW_CACHE_DIR, CollectPreviewCacheFileInfo, &vEntries);
+	std::sort(vEntries.begin(), vEntries.end(), [](const auto &A, const auto &B) {
+		if(A.m_ModifiedTime != B.m_ModifiedTime)
+			return A.m_ModifiedTime > B.m_ModifiedTime;
+		return A.m_Path < B.m_Path;
+	});
+
+	for(const SSettingsSkinPreviewCacheFileEntry &Entry : vEntries)
+	{
+		if(str_endswith(Entry.m_Path.c_str(), ".manifest") == nullptr)
+			continue;
+		char *pManifestText = m_pStorage->ReadFileStr(Entry.m_Path.c_str(), IStorage::TYPE_SAVE);
+		const std::optional<SSettingsSkinPreviewCacheManifest> Manifest = pManifestText ? ParseSettingsSkinPreviewCacheManifest(pManifestText) : std::nullopt;
+		free(pManifestText);
+		if(!Manifest.has_value())
+			continue;
+
+		const SSettingsSkinPreviewCacheKey &Key = Manifest->m_Key;
+		if(Key.m_Version != SETTINGS_SKIN_PREVIEW_CACHE_VERSION ||
+			Key.m_SkinName != CanonicalLookupKey.m_SkinName ||
+			Key.m_SizeBucket != CanonicalLookupKey.m_SizeBucket ||
+			Key.m_ContentHash != CanonicalLookupKey.m_ContentHash ||
+			Key.m_Emote != CanonicalLookupKey.m_Emote ||
+			Key.m_FatSkins != CanonicalLookupKey.m_FatSkins ||
+			Key.m_TinyTee != CanonicalLookupKey.m_TinyTee ||
+			Key.m_TinyTeeSize != CanonicalLookupKey.m_TinyTeeSize ||
+			Key.m_UseCustomColor != CanonicalLookupKey.m_UseCustomColor ||
+			Key.m_ColorBody != CanonicalLookupKey.m_ColorBody ||
+			Key.m_ColorFeet != CanonicalLookupKey.m_ColorFeet)
+		{
+			continue;
+		}
+		if(SettingsSkinPreviewCacheManifestAllowsLoad(*Manifest, Key))
+		{
+			if(DiskCacheArtifactsValid(Key))
+				return Key;
+		}
+	}
+	return std::nullopt;
 }
 
 bool CSettingsSkinPreviewCache::LoadLayerImagesFromDisk(const SSettingsSkinPreviewCacheKey &Key, std::array<CImageInfo, NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS> &aImages, SSettingsSkinPreviewCacheManifest *pManifest)
@@ -674,7 +1138,7 @@ bool CSettingsSkinPreviewCache::LoadLayerImagesFromDisk(const SSettingsSkinPrevi
 	char *pManifestText = m_pStorage->ReadFileStr(ManifestPath.c_str(), IStorage::TYPE_SAVE);
 	const std::optional<SSettingsSkinPreviewCacheManifest> Manifest = pManifestText ? ParseSettingsSkinPreviewCacheManifest(pManifestText) : std::nullopt;
 	free(pManifestText);
-	if(!SettingsSkinPreviewCacheManifestAllowsLoad(Manifest, Key))
+	if(!SettingsSkinPreviewCacheManifestAllowsLoad(Manifest, Key) || SettingsSkinPreviewCacheManifestUsesFinalPreview(*Manifest))
 	{
 		RemoveDiskCache(Key);
 		return false;
@@ -738,42 +1202,113 @@ bool CSettingsSkinPreviewCache::LoadLayerImagesFromDisk(const SSettingsSkinPrevi
 	return true;
 }
 
+bool CSettingsSkinPreviewCache::LoadFinalPreviewImageFromDisk(const SSettingsSkinPreviewCacheKey &Key, CImageInfo &Image, SSettingsSkinPreviewCacheManifest *pManifest)
+{
+	if(m_pStorage == nullptr)
+		return false;
+
+	const std::string ManifestPath = ManifestPathForKey(Key);
+	if(!m_pStorage->FileExists(ManifestPath.c_str(), IStorage::TYPE_SAVE))
+	{
+		RemoveDiskCache(Key);
+		return false;
+	}
+
+	char *pManifestText = m_pStorage->ReadFileStr(ManifestPath.c_str(), IStorage::TYPE_SAVE);
+	const std::optional<SSettingsSkinPreviewCacheManifest> Manifest = pManifestText ? ParseSettingsSkinPreviewCacheManifest(pManifestText) : std::nullopt;
+	free(pManifestText);
+	if(!SettingsSkinPreviewCacheManifestAllowsLoad(Manifest, Key) || !SettingsSkinPreviewCacheManifestUsesFinalPreview(*Manifest))
+	{
+		return false;
+	}
+
+	const std::string Path = PathForKey(Key);
+	if(!m_pStorage->FileExists(Path.c_str(), IStorage::TYPE_SAVE))
+	{
+		RemoveDiskCache(Key);
+		return false;
+	}
+
+	IOHANDLE File = m_pStorage->OpenFile(Path.c_str(), IOFLAG_READ, IStorage::TYPE_SAVE);
+	const int64_t EncodedBytes = File ? io_length(File) : -1;
+	if(EncodedBytes < 0 || (uint64_t)EncodedBytes != Manifest->m_aLayers[0].m_EncodedBytes)
+	{
+		if(File)
+			io_close(File);
+		RemoveDiskCache(Key);
+		return false;
+	}
+	if(!CImageLoader::LoadWebP(File, Path.c_str(), Image))
+	{
+		RemoveDiskCache(Key);
+		return false;
+	}
+	const SSettingsSkinPreviewCacheManifestLayer &Layer = Manifest->m_aLayers[0];
+	if(SettingsSkinPreviewCacheVisiblePixelCount(Image) != Layer.m_VisiblePixels ||
+		Image.m_Width != Layer.m_Width ||
+		Image.m_Height != Layer.m_Height)
+	{
+		Image.Free();
+		RemoveDiskCache(Key);
+		return false;
+	}
+	if(pManifest != nullptr)
+		*pManifest = *Manifest;
+	return true;
+}
+
 std::optional<SSettingsSkinPreviewCacheTextures> CSettingsSkinPreviewCache::LoadTexturesFromDisk(const SSettingsSkinPreviewCacheKey &Key)
 {
 	if(m_pStorage == nullptr || m_pGraphics == nullptr)
 		return std::nullopt;
 
-	std::array<CImageInfo, NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS> aImages;
-	auto CleanupImages = [&]() {
-		for(CImageInfo &Image : aImages)
-			Image.Free();
-	};
-	if(!LoadLayerImagesFromDisk(Key, aImages))
-		return std::nullopt;
-
-	SSettingsSkinPreviewCacheTextures Textures;
-	for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
+	const SSettingsSkinPreviewCacheKey CanonicalKey = CanonicalizeSettingsSkinPreviewArtifactKey(Key);
+	CImageInfo FinalPreviewImage;
+	if(LoadFinalPreviewImageFromDisk(CanonicalKey, FinalPreviewImage))
 	{
-		const std::string Path = PathForKey(Key, (ESettingsSkinPreviewCacheLayer)LayerIndex);
-		Textures.m_ApproxBytes += (size_t)aImages[LayerIndex].m_Width * (size_t)aImages[LayerIndex].m_Height * 4u;
-		Textures.m_aTextures[LayerIndex] = m_pGraphics->LoadTextureRawMove(aImages[LayerIndex], 0, Path.c_str());
-		if(!Textures.m_aTextures[LayerIndex].IsValid())
+		SSettingsSkinPreviewCacheTextures Textures;
+		const std::string Path = PathForKey(CanonicalKey);
+		Textures.m_ApproxBytes = (size_t)FinalPreviewImage.m_Width * (size_t)FinalPreviewImage.m_Height * 4u;
+		Textures.m_FinalPreviewTexture = m_pGraphics->LoadTextureRawMove(FinalPreviewImage, 0, Path.c_str());
+		if(!Textures.m_FinalPreviewTexture.IsValid())
 		{
-			log_error("settings/skins", "failed to upload preview cache texture '%s'", Path.c_str());
-			RemoveDiskCache(Key);
-			UnloadPreviewCacheTextures(m_pGraphics, Textures);
-			CleanupImages();
+			log_error("settings/skins", "failed to upload final preview cache texture '%s'", Path.c_str());
+			RemoveDiskCache(CanonicalKey);
+			FinalPreviewImage.Free();
 			return std::nullopt;
 		}
+		RememberTextures(CanonicalKey, Textures);
+		return Textures;
 	}
 
-	RememberTextures(Key, Textures);
-	return Textures;
+	std::array<CImageInfo, NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS> aImages;
+	if(LoadLayerImagesFromDisk(CanonicalKey, aImages))
+	{
+		SSettingsSkinPreviewCacheTextures Textures;
+		for(int LayerIndex = 0; LayerIndex < NUM_SETTINGS_SKIN_PREVIEW_CACHE_LAYERS; ++LayerIndex)
+		{
+			const std::string Path = PathForKey(CanonicalKey, (ESettingsSkinPreviewCacheLayer)LayerIndex);
+			Textures.m_ApproxBytes += (size_t)aImages[LayerIndex].m_Width * (size_t)aImages[LayerIndex].m_Height * 4u;
+			Textures.m_aTextures[LayerIndex] = m_pGraphics->LoadTextureRawMove(aImages[LayerIndex], 0, Path.c_str());
+			if(!Textures.m_aTextures[LayerIndex].IsValid())
+			{
+				log_error("settings/skins", "failed to upload parametric preview cache texture '%s'", Path.c_str());
+				UnloadPreviewCacheTextures(m_pGraphics, Textures);
+				RemoveDiskCache(CanonicalKey);
+				return std::nullopt;
+			}
+		}
+		RememberTextures(CanonicalKey, Textures);
+		return Textures;
+	}
+
+	return std::nullopt;
 }
 
 void CSettingsSkinPreviewCache::RememberTextures(const SSettingsSkinPreviewCacheKey &Key, SSettingsSkinPreviewCacheTextures Textures)
 {
-	const auto It = m_vTextures.find(Key);
+	const SSettingsSkinPreviewCacheKey CanonicalKey = CanonicalizeSettingsSkinPreviewArtifactKey(Key);
+	const auto It = m_vTextures.find(CanonicalKey);
 	if(It != m_vTextures.end())
 	{
 		SSettingsSkinPreviewCacheTextures OldTextures = It->second.m_Textures;
@@ -784,19 +1319,28 @@ void CSettingsSkinPreviewCache::RememberTextures(const SSettingsSkinPreviewCache
 	Entry.m_Textures = std::move(Textures);
 	Entry.m_LastUseSequence = m_NextUseSequence++;
 	m_MemoryCacheBytes += Entry.m_Textures.m_ApproxBytes;
-	m_vTextures[Key] = std::move(Entry);
+	m_vTextures[CanonicalKey] = std::move(Entry);
 	EvictMemoryCacheIfNeeded();
+}
+
+void CSettingsSkinPreviewCache::RememberStablePreview(const SSettingsSkinPreviewCacheKey &Key)
+{
+	const SSettingsSkinPreviewCacheKey CanonicalKey = CanonicalizeSettingsSkinPreviewArtifactKey(Key);
+	if(!CanonicalKey.m_SkinName.empty())
+		m_vStableTextures.insert(CanonicalKey);
 }
 
 void CSettingsSkinPreviewCache::ForgetTexture(const SSettingsSkinPreviewCacheKey &Key)
 {
-	const auto It = m_vTextures.find(Key);
+	const SSettingsSkinPreviewCacheKey CanonicalKey = CanonicalizeSettingsSkinPreviewArtifactKey(Key);
+	const auto It = m_vTextures.find(CanonicalKey);
 	if(It == m_vTextures.end())
 		return;
 	if(m_pGraphics)
 		UnloadPreviewCacheTextures(m_pGraphics, It->second.m_Textures);
 	m_MemoryCacheBytes -= It->second.m_Textures.m_ApproxBytes;
 	m_vTextures.erase(It);
+	m_vStableTextures.erase(CanonicalKey);
 }
 
 void CSettingsSkinPreviewCache::ClearMemoryCache()
@@ -824,6 +1368,7 @@ void CSettingsSkinPreviewCache::ClearTextures()
 		}
 	}
 	m_vTextures.clear();
+	m_vStableTextures.clear();
 	m_MemoryCacheBytes = 0;
 }
 
@@ -842,7 +1387,8 @@ void CSettingsSkinPreviewCache::EvictMemoryCacheIfNeeded()
 	for(const auto &[Key, Entry] : m_vTextures)
 	{
 		vKeys.push_back(Key);
-		vEntries.push_back({Entry.m_Textures.m_ApproxBytes, Entry.m_LastUseSequence});
+		const uint64_t EffectiveLastUse = m_vStableTextures.contains(Key) ? std::numeric_limits<uint64_t>::max() : Entry.m_LastUseSequence;
+		vEntries.push_back({Entry.m_Textures.m_ApproxBytes, EffectiveLastUse});
 	}
 
 	const auto vEvict = ComputeSettingsSkinPreviewCacheMemoryEvictionList(vEntries, SETTINGS_SKIN_PREVIEW_MEMORY_CACHE_MAX_ENTRIES, SETTINGS_SKIN_PREVIEW_MEMORY_CACHE_MAX_BYTES);

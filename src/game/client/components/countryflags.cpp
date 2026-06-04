@@ -15,6 +15,7 @@
 
 #include <game/client/gameclient.h>
 #include <game/client/components/menus.h>
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/components/settings_runtime_cache.h>
 
 namespace
@@ -28,10 +29,7 @@ namespace
 	{
 		if(!CountryFlagsPerfDebugEnabled())
 			return;
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/countryflags", "stage=%s %s", pStage, pExtra);
-		else
-			dbg_msg("perf/countryflags", "stage=%s", pStage);
+		QmPerfLogStage("perf/countryflags", pStage, 0.0, true, nullptr, nullptr, nullptr, pExtra);
 	}
 
 	void LogCountryFlagSettingsResourcePerf(const char *pJob, int Count, int Budget, int Remaining, ESettingsWarmupMissReason Reason, double DurationMs)

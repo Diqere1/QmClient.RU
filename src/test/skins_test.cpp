@@ -183,6 +183,103 @@ TEST(Skins, BackgroundRequestDoesNotTouchPriorityUsageTrackingData)
 	EXPECT_TRUE(ExistingEntry.m_ShouldErase);
 }
 
+TEST(Skins, HighPriorityBackgroundRequestedTouchesUsageTrackingData)
+{
+	using EState = CSkins::CSkinContainer::EState;
+
+	const auto VisibleMissingEntry = CSkins::CSkinContainer::UsageTrackingUpdate(EState::BACKGROUND_REQUESTED, false, false, ESettingsResourcePriority::VISIBLE);
+	EXPECT_TRUE(VisibleMissingEntry.m_ShouldTouch);
+	EXPECT_FALSE(VisibleMissingEntry.m_ShouldErase);
+
+	const auto PrefetchMissingEntry = CSkins::CSkinContainer::UsageTrackingUpdate(EState::BACKGROUND_REQUESTED, false, false, ESettingsResourcePriority::PREFETCH);
+	EXPECT_TRUE(PrefetchMissingEntry.m_ShouldTouch);
+	EXPECT_FALSE(PrefetchMissingEntry.m_ShouldErase);
+
+	const auto BackgroundMissingEntry = CSkins::CSkinContainer::UsageTrackingUpdate(EState::BACKGROUND_REQUESTED, false, false, ESettingsResourcePriority::BACKGROUND);
+	EXPECT_FALSE(BackgroundMissingEntry.m_ShouldTouch);
+	EXPECT_FALSE(BackgroundMissingEntry.m_ShouldErase);
+}
+
+TEST(Skins, TeeBackgroundDrainSeparatesRequestedBacklogFromAdmittedQueue)
+{
+	std::ifstream File("src/game/client/components/skins.h");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("BACKGROUND_REQUESTED"), std::string::npos);
+	EXPECT_NE(Source.find("size_t m_NumBackgroundRequested = 0;"), std::string::npos);
+	EXPECT_NE(Source.find("return !ExistsInSkinMap || (!TracksUsage(State, AlwaysLoaded) && State != EState::BACKGROUND_REQUESTED);"), std::string::npos);
+}
+
+TEST(Skins, LoadingStatsRealInflightExcludesBackgroundRequested)
+{
+	CSkins::CSkinLoadingStats Stats;
+	Stats.m_NumBackgroundRequested = 999;
+	Stats.m_NumPending = 7;
+	Stats.m_NumLoading = 11;
+
+	EXPECT_EQ(Stats.RealInflight(), 18u);
+	EXPECT_FALSE(Stats.AdmissionInvariantViolated(18));
+	EXPECT_TRUE(Stats.AdmissionInvariantViolated(17));
+}
+
+TEST(Skins, TeeBackgroundRequestsWaitForAdmissionBeforePending)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("if(m_State == EState::UNLOADED)\n\t\t\tSetState(EState::BACKGROUND_REQUESTED, ESettingsResourcePriority::BACKGROUND);"), std::string::npos);
+	EXPECT_NE(Source.find("if(m_State == EState::UNLOADED || m_State == EState::BACKGROUND_REQUESTED)"), std::string::npos);
+	const size_t StartLoadingPos = Source.find("void CSkins::UpdateStartLoading(CSkinLoadingStats &Stats)");
+	ASSERT_NE(StartLoadingPos, std::string::npos);
+	const size_t StartLoadingEnd = Source.find("CSkins::ESkinProcessResult CSkins::ProcessSkinContainer", StartLoadingPos);
+	ASSERT_NE(StartLoadingEnd, std::string::npos);
+	const std::string StartLoading = Source.substr(StartLoadingPos, StartLoadingEnd - StartLoadingPos);
+
+	EXPECT_NE(StartLoading.find("if(Stats.m_NumPending == 0 && pSkinContainer->m_State != CSkinContainer::EState::BACKGROUND_REQUESTED)"), std::string::npos);
+	EXPECT_NE(StartLoading.find("if(pSkinContainer->m_State == CSkinContainer::EState::BACKGROUND_REQUESTED)"), std::string::npos);
+	EXPECT_NE(StartLoading.find("pSkinContainer->SetState(CSkinContainer::EState::PENDING, Admission.m_PromotePriority);"), std::string::npos);
+	EXPECT_NE(StartLoading.find("Stats.m_NumBackgroundRequested--;"), std::string::npos);
+	EXPECT_NE(StartLoading.find("Stats.m_NumPending++;"), std::string::npos);
+}
+
+TEST(Skins, TeePriorityRequestsReclaimBackgroundRequestedBeforeAdmittedBackgroundWork)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t ReclaimBackground = Source.find("bool CSkins::ReclaimBackgroundSkinForPriorityRequest");
+	ASSERT_NE(ReclaimBackground, std::string::npos);
+	const size_t ReclaimBackgroundEnd = Source.find("\n}", ReclaimBackground);
+	ASSERT_NE(ReclaimBackgroundEnd, std::string::npos);
+	const std::string ReclaimBody = Source.substr(ReclaimBackground, ReclaimBackgroundEnd - ReclaimBackground);
+
+	const size_t BackgroundRequestedPos = ReclaimBody.find("if(pSkinContainer->m_State == CSkinContainer::EState::BACKGROUND_REQUESTED)");
+	const size_t PendingBranchPos = ReclaimBody.find("if(pSkinContainer->m_State != CSkinContainer::EState::PENDING &&");
+	ASSERT_NE(BackgroundRequestedPos, std::string::npos);
+	ASSERT_NE(PendingBranchPos, std::string::npos);
+	EXPECT_LT(BackgroundRequestedPos, PendingBranchPos);
+}
+
+TEST(Skins, SettingsResourcePriorityOnlyUpgradesTowardVisible)
+{
+	EXPECT_TRUE(CSkins::CSkinContainer::SettingsResourcePriorityCanUpgrade(ESettingsResourcePriority::PREFETCH, ESettingsResourcePriority::BACKGROUND));
+	EXPECT_TRUE(CSkins::CSkinContainer::SettingsResourcePriorityCanUpgrade(ESettingsResourcePriority::VISIBLE, ESettingsResourcePriority::PREFETCH));
+	EXPECT_TRUE(CSkins::CSkinContainer::SettingsResourcePriorityCanUpgrade(ESettingsResourcePriority::VISIBLE, ESettingsResourcePriority::BACKGROUND));
+
+	EXPECT_FALSE(CSkins::CSkinContainer::SettingsResourcePriorityCanUpgrade(ESettingsResourcePriority::BACKGROUND, ESettingsResourcePriority::PREFETCH));
+	EXPECT_FALSE(CSkins::CSkinContainer::SettingsResourcePriorityCanUpgrade(ESettingsResourcePriority::PREFETCH, ESettingsResourcePriority::VISIBLE));
+	EXPECT_FALSE(CSkins::CSkinContainer::SettingsResourcePriorityCanUpgrade(ESettingsResourcePriority::VISIBLE, ESettingsResourcePriority::VISIBLE));
+}
+
 TEST(Skins, PriorityRequestsCanReclaimBackgroundLoadingSlots)
 {
 	std::ifstream File("src/game/client/components/skins.cpp");
@@ -209,7 +306,326 @@ TEST(Skins, PriorityRequestsCanReclaimBackgroundLoadingSlots)
 	EXPECT_EQ(StartLoadBody.find("Priority != ESettingsResourcePriority::BACKGROUND"), std::string::npos);
 }
 
-TEST(Skins, PreviewCachePinnedSkinsAreExcludedFromUnloadPaths)
+TEST(Skins, PrioritizedLoadQueueKeepsOriginalRequestPriority)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t StartLoadingPos = Source.find("void CSkins::UpdateStartLoading(CSkinLoadingStats &Stats)");
+	ASSERT_NE(StartLoadingPos, std::string::npos);
+	const size_t StartLoadingEnd = Source.find("CSkins::ESkinProcessResult CSkins::ProcessSkinContainer", StartLoadingPos);
+	ASSERT_NE(StartLoadingEnd, std::string::npos);
+	const std::string StartLoading = Source.substr(StartLoadingPos, StartLoadingEnd - StartLoadingPos);
+
+	EXPECT_NE(StartLoading.find("StartLoadJob(It->second.get(), It->second->m_LoadPriority)"), std::string::npos);
+	EXPECT_EQ(StartLoading.find("StartLoadJob(It->second.get(), ESettingsResourcePriority::VISIBLE)"), std::string::npos);
+	EXPECT_NE(StartLoading.find("Stats.m_NumPending + Stats.m_NumLoading"), std::string::npos);
+	EXPECT_EQ(StartLoading.find("Stats.m_NumPending + Stats.m_NumLoaded + Stats.m_NumLoading"), std::string::npos);
+}
+
+TEST(Skins, TeeSettingsScrollBudgetFeedsFinalizeAndUploadLimits)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t FinalizeBudget = Source.find("return pGameClient->m_Skins.SettingsFinalizeBudgetForFrame();");
+	EXPECT_NE(FinalizeBudget, std::string::npos);
+
+	const size_t UploadBudget = Source.find("return pGameClient->m_Skins.SettingsGpuUploadFrameBudgetForFrame();");
+	EXPECT_NE(UploadBudget, std::string::npos);
+
+	const size_t ImmediateScrollContext = Source.find("return SettingsBuildFrameContext(PersistentContext.m_ScrollActive, ImmediateScrollInput, PersistentContext.m_PostScrollRecoveryFrames);");
+	EXPECT_NE(ImmediateScrollContext, std::string::npos);
+
+	const size_t ScrollRegionMouseDown = Source.find("(pGameClient->Input()->KeyPress(KEY_MOUSE_1) && pUi->HotScrollRegion() != nullptr)");
+	EXPECT_NE(ScrollRegionMouseDown, std::string::npos);
+}
+
+TEST(Skins, GpuUploadLimiterResetsBeforeSkinUpdateConsumesBudget)
+{
+	std::ifstream File("src/game/client/gameclient.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t OnUpdatePos = Source.find("void CGameClient::OnUpdate()");
+	ASSERT_NE(OnUpdatePos, std::string::npos);
+	const size_t OnRenderPos = Source.find("void CGameClient::OnRender()");
+	ASSERT_NE(OnRenderPos, std::string::npos);
+	const std::string OnUpdateBody = Source.substr(OnUpdatePos, OnRenderPos - OnUpdatePos);
+	EXPECT_NE(OnUpdateBody.find("m_Skins.PrepareSettingsThroughputForFrame();"), std::string::npos);
+	EXPECT_NE(OnUpdateBody.find("m_GpuUploadLimiter.OnFrameStart(FrameGpuUploadLimit);"), std::string::npos);
+	EXPECT_NE(OnUpdateBody.find("const int FrameGpuUploadLimit = TeeSettingsActive ? m_Skins.SettingsGpuUploadLimiterUnitsForFrame() : CGpuUploadLimiter::DefaultMaxUploadsPerFrame();"), std::string::npos);
+	EXPECT_NE(OnUpdateBody.find("m_Menus.ResetSettingsFrameBudgetForFrame(TeeSettingsActive, FrameSkinUploadBudget);"), std::string::npos);
+
+	const size_t OnRenderEnd = Source.find("const ColorRGBA ClearColor", OnRenderPos);
+	ASSERT_NE(OnRenderEnd, std::string::npos);
+	const std::string OnRenderPreamble = Source.substr(OnRenderPos, OnRenderEnd - OnRenderPos);
+	EXPECT_EQ(OnRenderPreamble.find("m_GpuUploadLimiter.OnFrameStart();"), std::string::npos);
+}
+
+TEST(Skins, SettingsWarmupBypassesPeriodicSkinUpdateThrottle)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t WarmupPos = Source.find("void CSkins::UpdateForSettingsWarmup()");
+	ASSERT_NE(WarmupPos, std::string::npos);
+	const size_t PreparePos = Source.find("void CSkins::PrepareSettingsThroughputForFrame()", WarmupPos);
+	ASSERT_NE(PreparePos, std::string::npos);
+	const std::string WarmupBody = Source.substr(WarmupPos, PreparePos - WarmupPos);
+
+	EXPECT_NE(WarmupBody.find("m_ContainerUpdateTime.reset();"), std::string::npos);
+	EXPECT_NE(WarmupBody.find("OnUpdate();"), std::string::npos);
+}
+
+TEST(Skins, BackgroundRequestedStatusUsesLoadingIndicator)
+{
+	using EIndicator = CSkins::CSkinContainer::EStatusIndicator;
+	using EState = CSkins::CSkinContainer::EState;
+
+	EXPECT_EQ(CSkins::CSkinContainer::StatusIndicator(EState::UNLOADED), EIndicator::LOADING);
+	EXPECT_EQ(CSkins::CSkinContainer::StatusIndicator(EState::BACKGROUND_REQUESTED), EIndicator::LOADING);
+	EXPECT_EQ(CSkins::CSkinContainer::StatusIndicator(EState::PENDING), EIndicator::LOADING);
+	EXPECT_EQ(CSkins::CSkinContainer::StatusIndicator(EState::LOADING), EIndicator::LOADING);
+	EXPECT_EQ(CSkins::CSkinContainer::StatusIndicator(EState::NOT_FOUND), EIndicator::NOT_FOUND);
+	EXPECT_EQ(CSkins::CSkinContainer::StatusIndicator(EState::ERROR), EIndicator::ERROR);
+	EXPECT_EQ(CSkins::CSkinContainer::StatusIndicator(EState::LOADED), EIndicator::NONE);
+}
+
+TEST(Skins, TeeSkinUploadRequiresWholeSourceTextureBudgetBeforeUpload)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t ProcessSkinPos = Source.find("CSkins::ESkinProcessResult CSkins::ProcessSkinContainer");
+	ASSERT_NE(ProcessSkinPos, std::string::npos);
+	const size_t LoadingStatsPos = Source.find("CSkins::CSkinLoadingStats CSkins::LoadingStats() const", ProcessSkinPos);
+	ASSERT_NE(LoadingStatsPos, std::string::npos);
+	const std::string ProcessSkinBody = Source.substr(ProcessSkinPos, LoadingStatsPos - ProcessSkinPos);
+
+	EXPECT_NE(ProcessSkinBody.find("CanUpload(SETTINGS_SKIN_SOURCE_TEXTURE_UPLOADS)"), std::string::npos);
+	EXPECT_NE(ProcessSkinBody.find("UploadBudget.m_MaxGpuUploads = 1;"), std::string::npos);
+	EXPECT_NE(ProcessSkinBody.find("SettingsResourceConsumeGpuUpload(UploadBudget, SettingsFrameBudgetOrNull(GameClient()))"), std::string::npos);
+	EXPECT_NE(ProcessSkinBody.find("LogSettingsSkinSourceWaitEvent(pSkinContainer->Name(), \"gpu_upload_budget\""), std::string::npos);
+	EXPECT_NE(ProcessSkinBody.find("LogSettingsSkinSourceWaitEvent(pSkinContainer->Name(), \"max_per_frame\""), std::string::npos);
+	EXPECT_NE(Source.find("static constexpr int SETTINGS_SKIN_SOURCE_TEXTURE_UPLOADS = 24;"), std::string::npos);
+	EXPECT_NE(Source.find("event=%s skin=%s artifact=source width=%d height=%d bytes=%d dur_ms=%.3f uploads=%d"), std::string::npos);
+	EXPECT_NE(Source.find("LogSettingsSkinPreviewSourceStageEvent(\"upload_done\""), std::string::npos);
+}
+
+TEST(Skins, TeeSettingsListUsesIdleBackgroundRequestsAfterVisibleSettle)
+{
+	std::ifstream File("src/game/client/components/menus_settings.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t RenderTeePos = Source.find("void CMenus::RenderSettingsTee(CUIRect MainView)");
+	ASSERT_NE(RenderTeePos, std::string::npos);
+	const size_t RenderTeeEnd = Source.find("void CMenus::RenderSettingsAppearance", RenderTeePos);
+	ASSERT_NE(RenderTeeEnd, std::string::npos);
+	const std::string RenderTeeBody = Source.substr(RenderTeePos, RenderTeeEnd - RenderTeePos);
+
+	EXPECT_NE(RenderTeeBody.find("RequestLoad(ESettingsResourcePriority::VISIBLE)"), std::string::npos);
+	EXPECT_EQ(RenderTeeBody.find("RequestLoad(ESettingsResourcePriority::PREFETCH)"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("std::vector<size_t> vVisibleSkinIndices;"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("vVisibleSkinIndices.push_back(i);"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("for(auto It = vVisibleSkinIndices.rbegin(); It != vVisibleSkinIndices.rend(); ++It)"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("const bool RequestWindowScrollBlocked = SkinListScrollInteraction || s_SkinListScrollCooldownFrames > 0;"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("const bool VisibleSettled = VisibleReadyCount == (int)vVisibleSkinIndices.size();"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("const int DefaultBackgroundRequestBudget = Throughput.m_BackgroundRequestBudget;"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("const auto BackgroundBudgetDecision = SettingsSkinBackgroundRequestBudgetDecision({"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("const int BackgroundRequestBudget = BackgroundBudgetDecision.m_RequestBudget;"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("vSkinList[BackgroundIndex].RequestLoad(ESettingsResourcePriority::BACKGROUND);"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("GameClient()->m_Skins.SetSettingsTeeVisibleSnapshot(VisibleSnapshot);"), std::string::npos);
+}
+
+TEST(Skins, TeeSourcePathEmitsRequestAndFrameCapPerfLogs)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("event=source_request skin=%s priority=%s state=%s"), std::string::npos);
+	EXPECT_NE(Source.find("event=source_wait skin=%s artifact=source reason=%s remaining_uploads=%d max_uploads=%d"), std::string::npos);
+	EXPECT_NE(Source.find("event=frame_cap gpu_cap=%d finalize_cap=%d loading_visible_cap=%d loading_other_cap=%d"), std::string::npos);
+	EXPECT_NE(Source.find("LogSettingsSkinSourceRequestEvent(pSkinContainer->Name(), Priority, pSkinContainer->m_State);"), std::string::npos);
+	EXPECT_NE(Source.find("LogSettingsSkinFrameCapEvent(GameClient());"), std::string::npos);
+}
+
+TEST(Skins, TeeSourcePathCapsActiveLoadingBeforeQueueFuse)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t StartLoadingPos = Source.find("void CSkins::UpdateStartLoading(CSkinLoadingStats &Stats)");
+	ASSERT_NE(StartLoadingPos, std::string::npos);
+	const size_t StartLoadingEnd = Source.find("CSkins::ESkinProcessResult CSkins::ProcessSkinContainer", StartLoadingPos);
+	ASSERT_NE(StartLoadingEnd, std::string::npos);
+	const std::string StartLoading = Source.substr(StartLoadingPos, StartLoadingEnd - StartLoadingPos);
+
+	EXPECT_NE(StartLoading.find("const bool BackgroundDrainActive = TeeSettingsActive ? m_SettingsThroughputControllerOutput.m_BackgroundDrainActive"), std::string::npos);
+	EXPECT_NE(StartLoading.find("const int CountFuseLimit = TeeSettingsActive ? m_SettingsThroughputControllerOutput.m_CountFuseLimit"), std::string::npos);
+	EXPECT_NE(StartLoading.find("const int NormalLoadingWindow = TeeSettingsActive ? m_SettingsThroughputControllerOutput.m_NormalLoadingWindow"), std::string::npos);
+	EXPECT_NE(StartLoading.find("const int VisibleLoadingWindow = TeeSettingsActive ? m_SettingsThroughputControllerOutput.m_VisibleLoadingWindow"), std::string::npos);
+	EXPECT_NE(StartLoading.find("m_SettingsSourceAdmissionTelemetry.m_VisibleReserve = TeeSettingsActive ? m_SettingsThroughputControllerOutput.m_VisibleReserve : 8;"), std::string::npos);
+	EXPECT_NE(StartLoading.find("const auto Admission = DetermineAdmission(pSkinContainer, Priority);"), std::string::npos);
+	EXPECT_NE(StartLoading.find("const auto SourceAdmission = SettingsSkinSourceAdmissionDecision({"), std::string::npos);
+	EXPECT_NE(StartLoading.find("Admission.m_pBlockReason = SettingsSkinSourceAdmissionBlockReasonName(SourceAdmission.m_BlockReason);"), std::string::npos);
+	EXPECT_NE(StartLoading.find("const bool CountFuseApplies = Admission.m_CountFuseApplies;"), std::string::npos);
+	EXPECT_NE(StartLoading.find("LogSettingsSkinSourceWaitEvent(pSkinContainer->Name(), Admission.m_pBlockReason"), std::string::npos);
+}
+
+TEST(Skins, TeeBackgroundWindowUsesRealDecodeJobSaturationSignal)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t PreparePos = Source.find("void CSkins::PrepareSettingsThroughputForFrame()");
+	ASSERT_NE(PreparePos, std::string::npos);
+	const size_t NextFunctionPos = Source.find("void CSkins::ClampSkinQueueIndex(int Dummy)", PreparePos);
+	ASSERT_NE(NextFunctionPos, std::string::npos);
+	const std::string PrepareBody = Source.substr(PreparePos, NextFunctionPos - PreparePos);
+
+	EXPECT_NE(PrepareBody.find("int LoadingJobsAwaitingResult = 0;"), std::string::npos);
+	EXPECT_NE(PrepareBody.find("int LoadingJobsReadyForMainThread = 0;"), std::string::npos);
+	EXPECT_NE(PrepareBody.find("if(!pSkinContainer->m_pLoadJob->Done())"), std::string::npos);
+	EXPECT_NE(PrepareBody.find("const bool DecodeJobsSaturated ="), std::string::npos);
+	EXPECT_NE(PrepareBody.find("LoadingJobsReadyForMainThread == 0"), std::string::npos);
+	EXPECT_NE(PrepareBody.find("m_SettingsThroughputControllerOutput = SettingsSkinThroughputControllerStep({"), std::string::npos);
+}
+
+TEST(Skins, TeeSettingsListEmitsRequestWindowPerfLogs)
+{
+	std::ifstream File("src/game/client/components/menus_settings.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("controller_reason=%s"), std::string::npos);
+	EXPECT_NE(Source.find("frame_time_avg_ms=%.3f render_frame_time_ms=%.3f admission_underfed=%d underfed_streak=%d"), std::string::npos);
+	EXPECT_NE(Source.find("visible_reserve_effective=%d"), std::string::npos);
+	EXPECT_NE(Source.find("GameClient()->m_Skins.SetSettingsTeeVisibleSnapshot(VisibleSnapshot);"), std::string::npos);
+	EXPECT_NE(Source.find("event=list_drain_summary dur_ms=%.3f uploads_done_total=%" PRIu64 " loaded_total=%" PRIu64 " uploads_per_sec=%.3f loaded_per_sec=%.3f requested=%d pending=%d loading=%d loaded=%d max_requested=%d max_pending=%d max_loading=%d max_real_inflight=%d count_fuse_limit=%d total_requested=%" PRIu64 " total_admitted=%" PRIu64 " total_started=%" PRIu64 " num_loading_window_waits=%d num_gpu_budget_waits=%d num_queue_fuse_waits=%d full_list_ready=%d final_real_inflight=%d last_wait_reason=%s last_dynamic_decision=%s last_request_budget_block_reason=%s"), std::string::npos);
+	EXPECT_NE(Source.find("event=admission_invariant_violation pending=%d loading=%d real_inflight=%d count_fuse_limit=%d"), std::string::npos);
+	EXPECT_NE(Source.find("if(gs_TeeListDrainPerfSession.m_Active)\n\t\t\tLogTeeListDrainSummary(Client(), GameClient()->m_Skins, GameClient()->m_Skins.LoadingStats(), false, RefreshNowNs);"), std::string::npos);
+	EXPECT_NE(Source.find("BeginTeeListDrainPerfSession(GameClient()->m_Skins, RefreshNowNs);"), std::string::npos);
+	EXPECT_NE(Source.find("m_SettingsHighPrioritySettled = VisibleSettled;"), std::string::npos);
+	EXPECT_NE(Source.find("if(PerfDebugEnabled() &&"), std::string::npos);
+	EXPECT_NE(Source.find("if(m_SettingsRuntimeMetadata.m_LastPage != SETTINGS_TEE)"), std::string::npos);
+}
+
+TEST(Skins, PrewarmPlayerPreviewReadyRequiresSelectedAndVisibleSourcesLoaded)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t PrewarmPos = Source.find("bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool ProgressiveListReady)");
+	ASSERT_NE(PrewarmPos, std::string::npos);
+	const size_t PrewarmEnd = Source.find("void CSkins::QueueSkinListPlanJob()", PrewarmPos);
+	ASSERT_NE(PrewarmEnd, std::string::npos);
+	const std::string PrewarmBody = Source.substr(PrewarmPos, PrewarmEnd - PrewarmPos);
+
+	EXPECT_NE(PrewarmBody.find("pSelectedContainer"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("SelectedReady"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("VisibleReadyCount"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("SettingsPreviewCacheContentHash()"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("DiskCacheArtifactsValid"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("FindTextures(CacheKey).has_value()"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("State == CSkinContainer::EState::LOADED"), std::string::npos);
+}
+
+TEST(Skins, PrewarmPlayerPreviewReadyNoLongerBuildsPreviewCacheKeys)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t PrewarmPos = Source.find("bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool ProgressiveListReady)");
+	ASSERT_NE(PrewarmPos, std::string::npos);
+	const size_t PrewarmEnd = Source.find("void CSkins::QueueSkinListPlanJob()", PrewarmPos);
+	ASSERT_NE(PrewarmEnd, std::string::npos);
+	const std::string PrewarmBody = Source.substr(PrewarmPos, PrewarmEnd - PrewarmPos);
+
+	EXPECT_EQ(PrewarmBody.find("SSettingsSkinPreviewCacheKey CacheKey"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("ColorBody"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("ColorFeet"), std::string::npos);
+}
+
+TEST(Skins, TeeSettingsRequestsNoLongerPromoteToPendingAtRequestSite)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t RequestLoadPos = Source.find("void CSkins::CSkinContainer::RequestLoad(ESettingsResourcePriority Priority)");
+	ASSERT_NE(RequestLoadPos, std::string::npos);
+	const size_t RequestLoadEnd = Source.find("CSkins::CSkinContainer::EState CSkins::CSkinContainer::DetermineInitialState() const", RequestLoadPos);
+	ASSERT_NE(RequestLoadEnd, std::string::npos);
+	const std::string RequestLoadBody = Source.substr(RequestLoadPos, RequestLoadEnd - RequestLoadPos);
+
+	EXPECT_NE(RequestLoadBody.find("const bool TeeSettingsActive = ActiveSettingsTeePage(m_pSkins->GameClient());"), std::string::npos);
+	EXPECT_NE(RequestLoadBody.find("SetState(EState::BACKGROUND_REQUESTED, Priority);"), std::string::npos);
+	EXPECT_EQ(RequestLoadBody.find("SetState(EState::PENDING, Priority);"), std::string::npos);
+}
+
+TEST(Skins, TeePrewarmNoLongerUsesImmediateBoolPath)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t PrewarmByNamesPos = Source.find("void CSkins::PrewarmByNames(const std::vector<std::string> &vNames, bool Immediate)");
+	ASSERT_NE(PrewarmByNamesPos, std::string::npos);
+	const size_t PrewarmReadyPos = Source.find("bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool ProgressiveListReady)", PrewarmByNamesPos);
+	ASSERT_NE(PrewarmReadyPos, std::string::npos);
+	const std::string PrewarmByNamesBody = Source.substr(PrewarmByNamesPos, PrewarmReadyPos - PrewarmByNamesPos);
+
+	EXPECT_EQ(PrewarmByNamesBody.find("RequestLoad(Immediate)"), std::string::npos);
+	EXPECT_NE(PrewarmByNamesBody.find("Immediate ? ESettingsResourcePriority::VISIBLE : ESettingsResourcePriority::PREFETCH"), std::string::npos);
+
+	const size_t FindImplPos = Source.find("const CSkins::CSkinContainer *CSkins::FindContainerImpl(const char *pName)");
+	ASSERT_NE(FindImplPos, std::string::npos);
+	const size_t FindOrNullptrPos = Source.find("const CSkin *CSkins::FindOrNullptr(const char *pName)", FindImplPos);
+	ASSERT_NE(FindOrNullptrPos, std::string::npos);
+	const std::string FindImplBody = Source.substr(FindImplPos, FindOrNullptrPos - FindImplPos);
+	EXPECT_NE(FindImplBody.find("ExistingSkin->second->RequestLoad(true);"), std::string::npos);
+}
+
+TEST(Skins, SourceResidencyNoLongerDependsOnPreviewCachePins)
 {
 	std::ifstream File("src/game/client/components/skins.cpp");
 	ASSERT_TRUE(File.good());
@@ -219,11 +635,50 @@ TEST(Skins, PreviewCachePinnedSkinsAreExcludedFromUnloadPaths)
 
 	const size_t UpdateUnload = Source.find("void CSkins::UpdateUnloadSkins");
 	ASSERT_NE(UpdateUnload, std::string::npos);
-	EXPECT_NE(Source.find("IsSettingsPreviewCachePinned()", UpdateUnload), std::string::npos);
+	EXPECT_EQ(Source.find("IsSettingsPreviewCachePinned()", UpdateUnload), std::string::npos);
 
 	const size_t ReclaimBackground = Source.find("bool CSkins::ReclaimBackgroundSkinForPriorityRequest");
 	ASSERT_NE(ReclaimBackground, std::string::npos);
-	EXPECT_NE(Source.find("IsSettingsPreviewCachePinned()", ReclaimBackground), std::string::npos);
+	EXPECT_EQ(Source.find("IsSettingsPreviewCachePinned()", ReclaimBackground), std::string::npos);
+	EXPECT_NE(Source.find("if(pSkinContainer->m_State == CSkinContainer::EState::LOADED)"), ReclaimBackground);
+	EXPECT_NE(Source.find("continue;"), ReclaimBackground);
+	EXPECT_EQ(Source.find("NumPendingLoadingLoaded"), std::string::npos);
+}
+
+TEST(Skins, SkinListWaitsForCompletePlanInsteadOfSeedingPlaceholderEntry)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_EQ(Source.find("SeedVisibleSkinListIfEmpty"), std::string::npos);
+	EXPECT_NE(Source.find("m_SkinList.m_vSkins = m_vPendingSkinListEntries;"), std::string::npos);
+}
+
+TEST(Skins, DirectoryScanPromotesDownloadContainersToLocal)
+{
+	std::ifstream File("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	const size_t ProcessDirectoryPos = Source.find("void CSkins::ProcessSkinDirectoryScanJob()");
+	ASSERT_NE(ProcessDirectoryPos, std::string::npos);
+	const size_t ProcessListPlanPos = Source.find("void CSkins::ProcessSkinListPlanJob()", ProcessDirectoryPos);
+	ASSERT_NE(ProcessListPlanPos, std::string::npos);
+	const std::string ProcessDirectoryBody = Source.substr(ProcessDirectoryPos, ProcessListPlanPos - ProcessDirectoryPos);
+
+	EXPECT_NE(ProcessDirectoryBody.find("pSkinContainer->Type() == CSkinContainer::EType::DOWNLOAD"), std::string::npos);
+	EXPECT_NE(ProcessDirectoryBody.find("pSkinContainer->m_Type = CSkinContainer::EType::LOCAL;"), std::string::npos);
+	EXPECT_NE(ProcessDirectoryBody.find("pSkinContainer->m_StorageType = StorageType;"), std::string::npos);
+	EXPECT_NE(ProcessDirectoryBody.find("pSkinContainer->m_pLoadJob->Abort();"), std::string::npos);
+	EXPECT_NE(ProcessDirectoryBody.find("if(OldState == CSkinContainer::EState::LOADED && pSkinContainer->m_pSkin)"), std::string::npos);
+	EXPECT_NE(ProcessDirectoryBody.find("pSkinContainer->m_pSkin->m_OriginalSkin.Unload(Graphics());"), std::string::npos);
+	EXPECT_NE(ProcessDirectoryBody.find("pSkinContainer->m_pSkin.reset();"), std::string::npos);
+	EXPECT_NE(ProcessDirectoryBody.find("pSkinContainer->SetState(CSkinContainer::EState::PENDING, OldPriority);"), std::string::npos);
 }
 
 TEST(Skins, SkinDataPreparationBuildsMergedMetricsWithoutGraphics)

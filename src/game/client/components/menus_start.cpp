@@ -67,7 +67,8 @@ void ComputeExternalButtons(const CUIRect &MainView, bool UseV2Layout, CUIRect &
 	ContainerStyle.m_AlignItems = EUiAlign::STRETCH;
 	ContainerStyle.m_JustifyContent = EUiAlign::END;
 
-	std::vector<SUiLayoutChild> vChildren(6);
+	static thread_local std::vector<SUiLayoutChild> vChildren;
+	vChildren.assign(6, SUiLayoutChild{});
 	for(SUiLayoutChild &Child : vChildren)
 	{
 		Child.m_Style.m_Height = SUiLength::Px(20.0f);
@@ -112,7 +113,8 @@ void ComputeMainButtons(const CUIRect &MenuArea, bool UseV2Layout, CUIRect aMenu
 	ContainerStyle.m_AlignItems = EUiAlign::STRETCH;
 	ContainerStyle.m_JustifyContent = EUiAlign::END;
 
-	std::vector<SUiLayoutChild> vChildren(5);
+	static thread_local std::vector<SUiLayoutChild> vChildren;
+	vChildren.assign(5, SUiLayoutChild{});
 	for(SUiLayoutChild &Child : vChildren)
 	{
 		Child.m_Style.m_Height = SUiLength::Px(40.0f);

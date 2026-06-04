@@ -34,8 +34,10 @@
 #include "components/players.h"
 #include "components/qmclient/jelly_tee.h"
 #include "components/qmclient/modes.h"
+#include "components/qmclient/perf_logging.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
+#include "components/settings_resource_jobs.h"
 #include "components/settings_runtime_cache.h"
 #include "components/skins.h"
 #include "components/skins7.h"
@@ -78,11 +80,35 @@
 
 #include <generated/client_data.h>
 #include <generated/client_data7.h>
+
+#include <inttypes.h>
+
+namespace
+{
+
+void LogSettingsLoadingPrewarmEvent(const IClient *pClient, const char *pEvent, int CompletedSteps, int MaxAttempts, int TeeWarmupEntries, int ConsecutiveNoProgressSteps, uint64_t UploadsCompleted, uint64_t LoadsCompleted)
+{
+	if(g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0)
+		return;
+	char aPayload[256];
+	str_format(aPayload, sizeof(aPayload), "event=%s steps=%d max_attempts=%d tee_entries=%d stall_steps=%d uploads_completed=%" PRIu64 " loads_completed=%" PRIu64,
+		pEvent != nullptr ? pEvent : "startup_prewarm",
+		CompletedSteps,
+		MaxAttempts,
+		TeeWarmupEntries,
+		ConsecutiveNoProgressSteps,
+		UploadsCompleted,
+		LoadsCompleted);
+	QmPerfLogPayload("perf/settings-warmup", aPayload, pClient, "settings:tee");
+}
+
+} // namespace
 #include <generated/protocol.h>
 #include <generated/protocol7.h>
 #include <generated/protocolglue.h>
 
 #include <game/client/projectile_data.h>
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/localization.h>
 #include <game/mapitems.h>
 #include <game/version.h>
@@ -93,29 +119,21 @@ namespace
 
 	bool PerfDebugEnabled()
 	{
-		return g_Config.m_QmPerfDebug != 0 || g_Config.m_QmPerfLogfile != 0;
+		return QmPerfEnabled();
 	}
 
 	double PerfDebugThresholdMs()
 	{
-		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
+		return QmPerfThresholdMs();
 	}
 
-	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	void LogPerfStage(const CGameClient *pGameClient, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 	{
-		if(!PerfDebugEnabled())
-			return;
-		if(!Force && DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/gameclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/gameclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+		QmPerfLogStage("perf/gameclient", pStage, DurationMs, Force, pGameClient != nullptr ? pGameClient->Client() : nullptr, nullptr, nullptr, pExtra);
 	}
 
-	struct SConfigIntAliasSync
-	{
+struct SConfigIntAliasSync
+{
 		int *m_pSource;
 		int *m_pTarget;
 	};
@@ -706,7 +724,7 @@ void CGameClient::OnInit()
 	// window not being focused after starting client.
 	Graphics()->SetWindowGrab(true);
 
-	PrewarmSettingsRuntimeCachesDuringLoading(pLoadingDDNetCaption);
+	PrewarmSettingsRuntimeCachesDuringLoading(pLoadingDDNetCaption, pLoadingMessageAssets);
 
 	CChecksumData *pChecksum = Client()->ChecksumData();
 	pChecksum->m_SizeofGameClient = sizeof(*this);
@@ -725,7 +743,7 @@ void CGameClient::OnInit()
 	log_trace("gameclient", "initialization finished after %.2fms", (time_get() - OnInitStart) * 1000.0f / (float)time_freq());
 }
 
-void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption)
+void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption, const char *pLoadingMessage)
 {
 	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
 		return;
@@ -734,17 +752,45 @@ void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoading
 	CUIRect TabBar, MainView;
 	Ui()->Screen()->HSplitTop(24.0f, &TabBar, &MainView);
 	m_Menus.PrepareSettingsRuntimeWarmupPlan();
-	const int MaxAttempts = maximum(CMenus::SettingsRuntimeCacheWarmupSteps() * 4, 1);
-	for(int Step = 0; Step < MaxAttempts; ++Step)
+	const int TeeWarmupEntries = SettingsTeeSkinListFirstPageWarmupEntries(MainView.h);
+	const int MaxAttempts = SettingsLoadingPrewarmMaxAttempts(CMenus::SettingsRuntimeCacheWarmupSteps(), TeeWarmupEntries);
+	const SSettingsResourceFrameContext TeePrewarmFrameContext = {};
+	int ConsecutiveNoProgressSteps = 0;
+	for(int Step = 0;; ++Step)
 	{
-		if(m_Menus.PrewarmSettingsRuntimeCaches(MainView))
+		m_Menus.ResetSettingsFrameBudgetForFrame(true);
+		const bool WarmupReady = m_Menus.PrewarmSettingsRuntimeCaches(MainView);
+		if(WarmupReady)
+		{
+			LogSettingsLoadingPrewarmEvent(Client(), "startup_ready", Step, MaxAttempts, TeeWarmupEntries, ConsecutiveNoProgressSteps, m_Skins.SettingsSourceUploadsCompleted(), m_Skins.SettingsSourceLoadsCompleted());
 			break;
-		m_Menus.RenderLoading(pLoadingCaption, Localize("Prewarming settings pages"), 0);
+		}
+		const uint64_t UploadsBefore = m_Skins.SettingsSourceUploadsCompleted();
+		const uint64_t LoadsBefore = m_Skins.SettingsSourceLoadsCompleted();
+		m_GpuUploadLimiter.OnFrameStart(SettingsSkinGpuUploadLimiterUnits(TeePrewarmFrameContext, true));
+		m_Skins.UpdateForSettingsWarmup();
+		const bool ProgressMade = m_Skins.SettingsSourceUploadsCompleted() != UploadsBefore ||
+			m_Skins.SettingsSourceLoadsCompleted() != LoadsBefore;
+		ConsecutiveNoProgressSteps = ProgressMade ? 0 : ConsecutiveNoProgressSteps + 1;
+		m_Menus.RenderLoading(pLoadingCaption, pLoadingMessage, 0);
+		const int CompletedSteps = Step + 1;
+		if(!SettingsLoadingPrewarmShouldKeepPumping(false, CompletedSteps, MaxAttempts, ConsecutiveNoProgressSteps))
+		{
+			LogSettingsLoadingPrewarmEvent(Client(), "startup_exhausted", CompletedSteps, MaxAttempts, TeeWarmupEntries, ConsecutiveNoProgressSteps, m_Skins.SettingsSourceUploadsCompleted(), m_Skins.SettingsSourceLoadsCompleted());
+			break;
+		}
 	}
 }
 
 void CGameClient::OnUpdate()
 {
+	const bool TeeSettingsActive = m_Menus.IsSettingsPageActive() && g_Config.m_UiSettingsPage == CMenus::SETTINGS_TEE;
+	m_Skins.PrepareSettingsThroughputForFrame();
+	const int FrameGpuUploadLimit = TeeSettingsActive ? m_Skins.SettingsGpuUploadLimiterUnitsForFrame() : CGpuUploadLimiter::DefaultMaxUploadsPerFrame();
+	const int FrameSkinUploadBudget = TeeSettingsActive ? m_Skins.SettingsGpuUploadFrameBudgetForFrame() : -1;
+	m_GpuUploadLimiter.OnFrameStart(FrameGpuUploadLimit);
+	m_Menus.ResetSettingsFrameBudgetForFrame(TeeSettingsActive, FrameSkinUploadBudget);
+
 	HandleLanguageChanged();
 
 	CUIElementBase::Init(Ui()); // update static pointer because game and editor use separate UI
@@ -1301,9 +1347,6 @@ void CGameClient::OnRender()
 {
 	CPerfTimer FrameTimer;
 
-	// Reset GPU upload limiter for this frame
-	m_GpuUploadLimiter.OnFrameStart();
-
 	const ColorRGBA ClearColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClOverlayEntities ? g_Config.m_ClBackgroundEntitiesColor : g_Config.m_ClBackgroundColor));
 	Graphics()->Clear(ClearColor.r, ClearColor.g, ClearColor.b);
 
@@ -1328,7 +1371,7 @@ void CGameClient::OnRender()
 	{
 		CPerfTimer StageTimer;
 		UpdatePositions();
-		LogPerfStage("update_positions", StageTimer.ElapsedMs());
+		LogPerfStage(this, "update_positions", StageTimer.ElapsedMs());
 	}
 
 	// display warnings
@@ -1351,13 +1394,13 @@ void CGameClient::OnRender()
 		CPerfTimer StageTimer;
 		m_Camera.UpdateCamera();
 		UpdateSpectatorCursor();
-		LogPerfStage("camera_and_cursor", StageTimer.ElapsedMs());
+		LogPerfStage(this, "camera_and_cursor", StageTimer.ElapsedMs());
 	}
 
 	{
 		CPerfTimer StageTimer;
 		m_UiRuntimeV2.OnRender();
-		LogPerfStage("ui_runtime_v2", StageTimer.ElapsedMs());
+		LogPerfStage(this, "ui_runtime_v2", StageTimer.ElapsedMs());
 	}
 
 	// render all systems
@@ -1368,21 +1411,21 @@ void CGameClient::OnRender()
 		{
 			CPerfTimer StageTimer;
 			pComponent->OnRender();
-			LogPerfStage("component_menus", StageTimer.ElapsedMs());
+			LogPerfStage(this, "component_menus", StageTimer.ElapsedMs());
 		}
 		else
 		{
 			pComponent->OnRender();
 		}
 	}
-	LogPerfStage("components_total", ComponentsTimer.ElapsedMs());
+	LogPerfStage(this, "components_total", ComponentsTimer.ElapsedMs());
 
 	// clear all events/input for this frame
 	{
 		CPerfTimer StageTimer;
 		Input()->Clear();
 		CLineInput::RenderCandidates();
-		LogPerfStage("input_clear_and_candidates", StageTimer.ElapsedMs());
+		LogPerfStage(this, "input_clear_and_candidates", StageTimer.ElapsedMs());
 	}
 
 	const bool WasNewTick = m_NewTick;
@@ -1395,7 +1438,7 @@ void CGameClient::OnRender()
 	if(g_Config.m_ClDummy && !Client()->DummyConnected())
 		g_Config.m_ClDummy = 0;
 
-	LogPerfStage("gameclient_onrender_total", FrameTimer.ElapsedMs());
+	LogPerfStage(this, "gameclient_onrender_total", FrameTimer.ElapsedMs());
 
 	// resend player and dummy info if it was filtered by server
 	if(m_aLocalIds[0] >= 0 && Client()->State() == IClient::STATE_ONLINE && !m_Menus.IsActive() && WasNewTick)

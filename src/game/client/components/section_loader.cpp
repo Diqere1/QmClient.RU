@@ -4,6 +4,7 @@
 #include <base/system.h>
 #include <engine/shared/config.h>
 #include <engine/storage.h>
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/components/settings_runtime_cache.h>
 
 #include <cstdlib>
@@ -419,12 +420,12 @@ bool CSectionLoader::Process()
 	// Profiling: log when budget is exceeded and perf-debug is enabled
 	if(g_Config.m_QmPerfDebug && m_TotalFrameTimeMs > 1.0)
 	{
-		char aBuf[256];
-		str_format(aBuf, sizeof(aBuf),
-			"section_loader: sections=%d budget=%.1fms actual=%.1fms complete=%d",
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload),
+			"stage=section_loader sections=%d budget_ms=%.1f actual_ms=%.1f complete=%d",
 			(int)m_vSections.size(), m_BudgetPerFrameMs, m_TotalFrameTimeMs,
 			m_bComplete ? 1 : 0);
-		dbg_msg("perf/section_loader", "%s", aBuf);
+		QmPerfLogPayload("perf/section_loader", aPayload);
 	}
 
 	return !m_bComplete;

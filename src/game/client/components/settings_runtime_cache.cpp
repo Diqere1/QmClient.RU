@@ -2,6 +2,7 @@
 
 #include <base/system.h>
 #include <game/client/components/menus.h>
+#include <game/client/components/qmclient/perf_logging.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -292,9 +293,13 @@ const char *SettingsWarmupMissReasonName(ESettingsWarmupMissReason Reason)
 	case ESettingsWarmupMissReason::PAGE_FBO_UNSUPPORTED: return "page_fbo_unsupported";
 	case ESettingsWarmupMissReason::PAGE_FBO_NOT_READY: return "page_fbo_not_ready";
 	case ESettingsWarmupMissReason::SECTION_FBO_NOT_READY: return "section_fbo_not_ready";
+	case ESettingsWarmupMissReason::DEPENDENCY_NOT_READY: return "dependency_not_ready";
 	case ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING: return "resource_plan_pending";
 	case ESettingsWarmupMissReason::JOB_RESULT_PENDING: return "job_result_pending";
 	case ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET: return "gpu_upload_budget";
+	case ESettingsWarmupMissReason::SHARED_HEAVY_BUDGET: return "shared_heavy_budget";
+	case ESettingsWarmupMissReason::UPLOAD_BYTES_BUDGET: return "upload_bytes_budget";
+	case ESettingsWarmupMissReason::OVERSIZED_UPLOAD_DEFERRED: return "oversized_upload_deferred";
 	case ESettingsWarmupMissReason::TEXT_BUDGET: return "text_budget";
 	case ESettingsWarmupMissReason::ACTIVE_ITEM: return "active_item";
 	case ESettingsWarmupMissReason::INVALID_RUNTIME_KEY: return "invalid_runtime_key";
@@ -339,11 +344,13 @@ bool SettingsRuntimeCacheAllowsVisibleCompactText(const char *pRenderName)
 
 void LogSettingsResourcePerf(int Page, const char *pJob, int Count, int Budget, int Remaining, ESettingsWarmupMissReason Reason, double DurationMs)
 {
-	if(g_Config.m_QmPerfDebug == 0)
+	if(!QmPerfEnabled())
 		return;
 	const std::string PageName = SettingsPageCacheKey(Page, -1);
-	dbg_msg("perf/settings-resource", "page=%s job=%s count=%d budget=%d remaining=%d reason=%s cost_ms=%.3f",
-		PageName.c_str(), pJob != nullptr ? pJob : "unknown", Count, Budget, Remaining, SettingsWarmupMissReasonName(Reason), DurationMs);
+	char aPayload[256];
+	str_format(aPayload, sizeof(aPayload), "job=%s count=%d budget=%d remaining=%d reason=%s cost_ms=%.3f",
+		pJob != nullptr ? pJob : "unknown", Count, Budget, Remaining, SettingsWarmupMissReasonName(Reason), DurationMs);
+	QmPerfLogPayload("perf/settings-resource", aPayload, nullptr, PageName.c_str());
 }
 
 bool SettingsInvalidationClearsTextPool(ESettingsInvalidationReason Reason)

@@ -95,6 +95,7 @@ struct SSettingsPageRuntimeCacheState
 	bool m_Valid = false;
 	bool m_DrawnOnce = false;
 	bool m_ResourcesReadyAtRecord = true;
+	bool m_DependentSubcachesReadyAtRecord = true;
 };
 
 constexpr bool SettingsPageRuntimeCacheMatches(const SSettingsPageRuntimeCacheState &Cache, int Page, int Tab, int Width, int Height, const SSettingsSectionCacheRuntimeKey &RuntimeKey)
