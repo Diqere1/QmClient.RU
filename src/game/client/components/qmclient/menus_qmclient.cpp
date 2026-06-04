@@ -26,6 +26,7 @@
 #include <game/client/components/countryflags.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/menus.h>
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/components/qmclient/keyword_reply_rules.h>
 #include <game/client/components/qmclient/translate_ui_settings.h>
 #include <game/client/components/skins.h>
@@ -88,35 +89,18 @@ namespace
 		return g_Config.m_QmPerfDebug != 0;
 	}
 
-	double PerfDebugThresholdMs()
-	{
-		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-	}
-
 	void LogQmPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
 	{
 		if(!PerfDebugEnabled())
 			return;
-		if(DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/qmclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+		QmPerfLogStage("perf/qmclient", pStage, DurationMs, Force, nullptr, nullptr, nullptr, pExtra);
 	}
 
 	[[maybe_unused]] void LogTClientPerfStage(const char *pStage, double DurationMs, bool Force = false, const char *pExtra = nullptr)
 	{
 		if(!PerfDebugEnabled())
 			return;
-		if(DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/tclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+		QmPerfLogStage("perf/tclient", pStage, DurationMs, Force, nullptr, nullptr, nullptr, pExtra);
 	}
 
 	const char *QmSettingsTabName(int Tab)
@@ -682,7 +666,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		else if(m_QmClientSettingsTab != s_PrevQmTab)
 		{
 			if(PerfDebugEnabled())
-				dbg_msg("perf/qmclient", "event=tab_switch from=%s to=%s", QmSettingsTabName(s_PrevQmTab), QmSettingsTabName(m_QmClientSettingsTab));
+			{
+				char aPayload[128];
+				str_format(aPayload, sizeof(aPayload), "event=tab_switch from=%s to=%s", QmSettingsTabName(s_PrevQmTab), QmSettingsTabName(m_QmClientSettingsTab));
+				QmPerfLogPayload("perf/qmclient", aPayload);
+			}
 			s_QmTabTransitionDirection = m_QmClientSettingsTab > s_PrevQmTab ? 1.0f : -1.0f;
 			TriggerUiSwitchAnimation(QmClientTabSwitchNode, 0.18f);
 			s_PrevQmTab = m_QmClientSettingsTab;

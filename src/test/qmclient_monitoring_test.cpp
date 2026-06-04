@@ -1,6 +1,10 @@
 #include <game/client/components/qmclient/monitoring.h>
+#include <game/client/components/qmclient/perf_logging.h>
 
 #include <gtest/gtest.h>
+
+#include <fstream>
+#include <sstream>
 
 TEST(QmMonitoringHelpers, ConnectionGradeTracksDisconnectedState)
 {
@@ -181,4 +185,81 @@ TEST(QmMonitoringHelpers, HudLayoutClampsPanelInsideScreenBounds)
 	EXPECT_FLOAT_EQ(Layout.m_PanelRect.y, 0.0f);
 	EXPECT_LE(Layout.m_PanelRect.x + Layout.m_PanelRect.w, 360.0f);
 	EXPECT_LE(Layout.m_PanelRect.y + Layout.m_PanelRect.h, 240.0f);
+}
+
+TEST(QmMonitoringHelpers, DeviceMetricsDefaultToUnavailable)
+{
+	SQmPerformanceMetrics Perf;
+	EXPECT_FALSE(Perf.m_DeviceSampleAvailable);
+	EXPECT_FLOAT_EQ(Perf.m_GpuUtilPct, -1.0f);
+	EXPECT_FLOAT_EQ(Perf.m_GpuDedicatedVramMb, -1.0f);
+	EXPECT_FLOAT_EQ(Perf.m_GpuSharedVramMb, -1.0f);
+	EXPECT_FLOAT_EQ(Perf.m_DiskReadMbPerSec, -1.0f);
+}
+
+TEST(QmMonitoringHelpers, DiskReadRateUsesMegabytesPerSecond)
+{
+	EXPECT_FLOAT_EQ(QmComputeDiskReadMbPerSec(0, 0, 1024 * 1024, 1000000000ull), -1.0f);
+	EXPECT_FLOAT_EQ(QmComputeDiskReadMbPerSec(0, 1000000000ull, 1024 * 1024, 2000000000ull), 1.0f);
+	EXPECT_FLOAT_EQ(QmComputeDiskReadMbPerSec(1024, 2000000000ull, 1024, 3000000000ull), 0.0f);
+	EXPECT_FLOAT_EQ(QmComputeDiskReadMbPerSec(2048, 5000000000ull, 1024, 4000000000ull), -1.0f);
+	EXPECT_FLOAT_EQ(QmComputeDiskReadMbPerSec(1024, 1000000000ull, 2048, 1000000000ull), -1.0f);
+}
+
+TEST(QmMonitoringHelpers, PerfConfigDefaultsUseLowThresholdWithoutJsonToggle)
+{
+	std::ifstream File("src/engine/shared/config_variables_qmclient.h");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("MACRO_CONFIG_INT(QmPerfDebugThresholdMs, qm_perf_debug_threshold_ms, 4, 1, 1000"), std::string::npos);
+	EXPECT_EQ(Source.find("MACRO_CONFIG_INT(QmPerfJson, qm_perf_json, 0, 0, 1"), std::string::npos);
+}
+
+TEST(QmMonitoringHelpers, PerfLoggingAlwaysEmitsJsonPayload)
+{
+	std::ifstream File("src/game/client/components/qmclient/perf_logging.h");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_EQ(Source.find("if(g_Config.m_QmPerfJson == 0)"), std::string::npos);
+	EXPECT_NE(Source.find("str_copy(aJson, \"{\", sizeof(aJson));"), std::string::npos);
+	EXPECT_NE(Source.find("dbg_msg(pSystem, \"%s\", aJson);"), std::string::npos);
+}
+
+TEST(QmMonitoringHelpers, PerfPayloadJsonFieldsPreserveSpaceContainingValues)
+{
+	char aJson[1024];
+	bool First = true;
+	str_copy(aJson, "{", sizeof(aJson));
+	QmPerfAppendPayloadJsonFields(aJson, sizeof(aJson), First, "event=source_request skin=My Skin Name priority=visible first_visible_skin=Another Skin");
+	str_append(aJson, "}", sizeof(aJson));
+
+	EXPECT_NE(str_find(aJson, "\"skin\":\"My Skin Name\""), nullptr);
+	EXPECT_NE(str_find(aJson, "\"priority\":\"visible\""), nullptr);
+	EXPECT_NE(str_find(aJson, "\"first_visible_skin\":\"Another Skin\""), nullptr);
+}
+
+TEST(QmMonitoringHelpers, RuntimePerfCallsitesUseSharedLoggingHelpers)
+{
+	for(const char *pPath : {
+		    "src/game/client/components/countryflags.cpp",
+		    "src/game/client/components/menus.cpp",
+		    "src/game/client/components/menus_settings_assets.cpp",
+		    "src/game/client/components/section_loader.cpp",
+		    "src/game/client/components/qmclient/menus_qmclient.cpp",
+		    "src/game/client/components/tclient/menus_tclient.cpp",
+	    })
+	{
+		std::ifstream File(pPath);
+		ASSERT_TRUE(File.good()) << pPath;
+		std::stringstream Buffer;
+		Buffer << File.rdbuf();
+		const std::string Source = Buffer.str();
+		EXPECT_EQ(Source.find("dbg_msg(\"perf/"), std::string::npos) << pPath;
+	}
 }

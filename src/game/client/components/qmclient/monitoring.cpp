@@ -1,4 +1,5 @@
 #include "monitoring.h"
+#include "perf_logging.h"
 
 #include <base/math.h>
 #include <base/system.h>
@@ -13,11 +14,15 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cinttypes>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cwchar>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 #if defined(CONF_FAMILY_UNIX)
 #include <sys/resource.h>
@@ -30,7 +35,16 @@
 #if defined(CONF_FAMILY_WINDOWS)
 #include <windows.h>
 
+#define IStorage IStorageCOM
+#include <dxgi1_4.h>
+#include <pdh.h>
+#include <pdhmsg.h>
 #include <psapi.h>
+#undef IStorage
+
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "pdh.lib")
+#pragma comment(lib, "psapi.lib")
 #endif
 
 namespace
@@ -531,6 +545,207 @@ namespace
 		return -1.0f;
 #endif
 	}
+
+	struct SDevicePerfSample
+	{
+		float m_GpuUtilPct = -1.0f;
+		float m_GpuDedicatedVramMb = -1.0f;
+		float m_GpuSharedVramMb = -1.0f;
+		float m_DiskReadMbPerSec = -1.0f;
+		bool m_Available = false;
+	};
+
+	struct SAsyncDevicePerfSampler
+	{
+		std::atomic<bool> m_Started{false};
+		std::atomic<bool> m_Enabled{false};
+		std::atomic<uint64_t> m_Version{0};
+		std::mutex m_Mutex;
+		SDevicePerfSample m_Sample;
+	};
+
+	static SAsyncDevicePerfSampler &DevicePerfSamplerState()
+	{
+		static SAsyncDevicePerfSampler s_State;
+		return s_State;
+	}
+
+#if defined(CONF_FAMILY_WINDOWS)
+	static float SampleGpuUtilPctWindows()
+	{
+		static bool s_Initialized = false;
+		static bool s_Primed = false;
+		static bool s_Available = false;
+		static PDH_HQUERY s_Query = nullptr;
+		static std::vector<PDH_HCOUNTER> s_vCounters;
+
+		if(!s_Initialized)
+		{
+			s_Initialized = true;
+			if(PdhOpenQueryW(nullptr, 0, &s_Query) == ERROR_SUCCESS)
+			{
+				DWORD PathSize = 0;
+				if(PdhExpandWildCardPathW(nullptr, L"\\GPU Engine(*)\\Utilization Percentage", nullptr, &PathSize, 0) == PDH_MORE_DATA)
+				{
+					std::vector<wchar_t> vPaths(PathSize);
+					if(PdhExpandWildCardPathW(nullptr, L"\\GPU Engine(*)\\Utilization Percentage", vPaths.data(), &PathSize, 0) == ERROR_SUCCESS)
+					{
+						for(const wchar_t *pPath = vPaths.data(); *pPath != L'\0'; pPath += std::wcslen(pPath) + 1)
+						{
+							PDH_HCOUNTER Counter = nullptr;
+							if(PdhAddEnglishCounterW(s_Query, pPath, 0, &Counter) == ERROR_SUCCESS)
+								s_vCounters.push_back(Counter);
+						}
+						s_Available = !s_vCounters.empty();
+						if(s_Available)
+						{
+							PdhCollectQueryData(s_Query);
+							s_Primed = true;
+						}
+					}
+				}
+			}
+		}
+
+		if(!s_Available || s_Query == nullptr)
+			return -1.0f;
+		if(!s_Primed)
+		{
+			s_Primed = PdhCollectQueryData(s_Query) == ERROR_SUCCESS;
+			return -1.0f;
+		}
+		if(PdhCollectQueryData(s_Query) != ERROR_SUCCESS)
+			return -1.0f;
+
+		double TotalUtil = 0.0;
+		bool AnyValue = false;
+		for(PDH_HCOUNTER Counter : s_vCounters)
+		{
+			PDH_FMT_COUNTERVALUE Value = {};
+			if(PdhGetFormattedCounterValue(Counter, PDH_FMT_DOUBLE, nullptr, &Value) == ERROR_SUCCESS && Value.CStatus == ERROR_SUCCESS)
+			{
+				TotalUtil += Value.doubleValue;
+				AnyValue = true;
+			}
+		}
+		return AnyValue ? std::clamp((float)TotalUtil, 0.0f, 100.0f) : -1.0f;
+	}
+
+	static void SampleGpuMemoryWindows(SDevicePerfSample &Sample)
+	{
+		static bool s_Initialized = false;
+		static IDXGIAdapter3 *s_pAdapter = nullptr;
+
+		if(!s_Initialized)
+		{
+			s_Initialized = true;
+			IDXGIFactory1 *pFactory = nullptr;
+			if(SUCCEEDED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void **>(&pFactory))))
+			{
+				IDXGIAdapter1 *pAdapter1 = nullptr;
+				if(SUCCEEDED(pFactory->EnumAdapters1(0, &pAdapter1)))
+				{
+					pAdapter1->QueryInterface(__uuidof(IDXGIAdapter3), reinterpret_cast<void **>(&s_pAdapter));
+					pAdapter1->Release();
+				}
+				pFactory->Release();
+			}
+		}
+
+		if(s_pAdapter == nullptr)
+			return;
+
+		DXGI_QUERY_VIDEO_MEMORY_INFO LocalInfo = {};
+		if(SUCCEEDED(s_pAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &LocalInfo)))
+			Sample.m_GpuDedicatedVramMb = (float)LocalInfo.CurrentUsage / (1024.0f * 1024.0f);
+
+		DXGI_QUERY_VIDEO_MEMORY_INFO NonLocalInfo = {};
+		if(SUCCEEDED(s_pAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &NonLocalInfo)))
+			Sample.m_GpuSharedVramMb = (float)NonLocalInfo.CurrentUsage / (1024.0f * 1024.0f);
+	}
+#endif
+
+	static SDevicePerfSample SampleDevicePerf()
+	{
+		SDevicePerfSample Sample;
+#if defined(CONF_FAMILY_WINDOWS)
+		const uint64_t NowNs = (uint64_t)time_get_nanoseconds().count();
+		static uint64_t s_LastReadBytes = 0;
+		static uint64_t s_LastReadTickNs = 0;
+
+		Sample.m_GpuUtilPct = SampleGpuUtilPctWindows();
+		SampleGpuMemoryWindows(Sample);
+
+		IO_COUNTERS IoCounters = {};
+		if(GetProcessIoCounters(GetCurrentProcess(), &IoCounters))
+		{
+			Sample.m_DiskReadMbPerSec = QmComputeDiskReadMbPerSec(s_LastReadBytes, s_LastReadTickNs, IoCounters.ReadTransferCount, NowNs);
+			s_LastReadBytes = IoCounters.ReadTransferCount;
+			s_LastReadTickNs = NowNs;
+		}
+
+		Sample.m_Available =
+			Sample.m_GpuUtilPct >= 0.0f ||
+			Sample.m_GpuDedicatedVramMb >= 0.0f ||
+			Sample.m_GpuSharedVramMb >= 0.0f ||
+			Sample.m_DiskReadMbPerSec >= 0.0f;
+#endif
+		return Sample;
+	}
+
+	static void EnsureDevicePerfSamplerStarted()
+	{
+		SAsyncDevicePerfSampler &State = DevicePerfSamplerState();
+		bool Expected = false;
+		if(!State.m_Started.compare_exchange_strong(Expected, true))
+			return;
+
+		std::thread([] {
+			SAsyncDevicePerfSampler &WorkerState = DevicePerfSamplerState();
+			while(true)
+			{
+				if(!WorkerState.m_Enabled.load(std::memory_order_relaxed))
+				{
+					std::this_thread::sleep_for(std::chrono::milliseconds(100));
+					continue;
+				}
+
+				SDevicePerfSample Sample = SampleDevicePerf();
+				{
+					std::lock_guard<std::mutex> Lock(WorkerState.m_Mutex);
+					WorkerState.m_Sample = Sample;
+				}
+				WorkerState.m_Version.fetch_add(1, std::memory_order_release);
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			}
+		}).detach();
+	}
+
+	static SDevicePerfSample CachedDevicePerfSample(bool Enabled, bool &NewSample)
+	{
+		static uint64_t s_LastSeenVersion = 0;
+
+		SAsyncDevicePerfSampler &State = DevicePerfSamplerState();
+		State.m_Enabled.store(Enabled, std::memory_order_relaxed);
+		if(!Enabled)
+		{
+			NewSample = false;
+			return {};
+		}
+
+		EnsureDevicePerfSamplerStarted();
+
+		SDevicePerfSample Sample;
+		{
+			std::lock_guard<std::mutex> Lock(State.m_Mutex);
+			Sample = State.m_Sample;
+		}
+
+		const uint64_t Version = State.m_Version.load(std::memory_order_acquire);
+		NewSample = Version != 0 && Version != s_LastSeenVersion;
+		s_LastSeenVersion = Version;
+		return Sample;
+	}
 }
 
 void CQmMonitoring::ResetHistory()
@@ -628,6 +843,42 @@ void CQmMonitoring::UpdatePerformanceMetrics(SQmPerformanceMetrics &Perf)
 	Perf.m_GraphicsMemory.m_BufferKiB = Graphics()->BufferMemoryUsage() / 1024;
 	Perf.m_GraphicsMemory.m_StreamedKiB = Graphics()->StreamedMemoryUsage() / 1024;
 	Perf.m_GraphicsMemory.m_StagingKiB = Graphics()->StagingMemoryUsage() / 1024;
+	if(QmPerfEnabled())
+	{
+		bool NewDeviceSample = false;
+		const SDevicePerfSample DeviceSample = CachedDevicePerfSample(true, NewDeviceSample);
+		Perf.m_GpuUtilPct = DeviceSample.m_GpuUtilPct;
+		Perf.m_GpuDedicatedVramMb = DeviceSample.m_GpuDedicatedVramMb;
+		Perf.m_GpuSharedVramMb = DeviceSample.m_GpuSharedVramMb;
+		Perf.m_DiskReadMbPerSec = DeviceSample.m_DiskReadMbPerSec;
+		Perf.m_DeviceSampleAvailable = DeviceSample.m_Available;
+
+		if(NewDeviceSample)
+		{
+			char aPayload[384];
+			str_format(aPayload, sizeof(aPayload),
+				"event=sample gpu_util_percent=%.3f gpu_dedicated_vram_mb=%.3f gpu_shared_vram_mb=%.3f cpu_process_percent=%.3f cpu_total_percent=%.3f memory_process_mb=%.3f disk_read_mb_s=%.3f sample_available=%d",
+				Perf.m_GpuUtilPct,
+				Perf.m_GpuDedicatedVramMb,
+				Perf.m_GpuSharedVramMb,
+				Perf.m_CpuUsagePct,
+				Perf.m_TotalCpuUsagePct,
+				Perf.m_MemoryUsageMb,
+				Perf.m_DiskReadMbPerSec,
+				Perf.m_DeviceSampleAvailable ? 1 : 0);
+			QmPerfLogPayload("perf/device", aPayload, Client());
+		}
+	}
+	else
+	{
+		bool NewDeviceSample = false;
+		(void)CachedDevicePerfSample(false, NewDeviceSample);
+		Perf.m_GpuUtilPct = -1.0f;
+		Perf.m_GpuDedicatedVramMb = -1.0f;
+		Perf.m_GpuSharedVramMb = -1.0f;
+		Perf.m_DiskReadMbPerSec = -1.0f;
+		Perf.m_DeviceSampleAvailable = false;
+	}
 	const float SnapshotLatencyMs = Client()->SnapshotLatencyMs();
 	Perf.m_PredictionStress =
 		std::max(Perf.m_PredictionTimeMs - SnapshotLatencyMs, 0.0f) +

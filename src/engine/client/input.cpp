@@ -8,10 +8,13 @@
 #include <base/system.h>
 
 #include <engine/console.h>
+#include <engine/client.h>
 #include <engine/graphics.h>
 #include <engine/input.h>
 #include <engine/keys.h>
 #include <engine/shared/config.h>
+
+#include <game/client/components/qmclient/perf_logging.h>
 
 #include <SDL.h>
 
@@ -39,25 +42,17 @@ namespace
 {
 bool PerfDebugEnabled()
 {
-	return g_Config.m_QmPerfDebug != 0;
+	return QmPerfEnabled();
 }
 
 double PerfDebugThresholdMs()
 {
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
+	return QmPerfThresholdMs();
 }
 
-void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+void LogPerfStage(IClient *pClient, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 {
-	if(!PerfDebugEnabled())
-		return;
-	if(!Force && DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/input", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/input", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	QmPerfLogStage("perf/input", pStage, DurationMs, Force, pClient, nullptr, nullptr, pExtra);
 }
 }
 
@@ -122,6 +117,7 @@ void CInput::Init()
 	m_pGraphics = Kernel()->RequestInterface<IEngineGraphics>();
 	m_pConsole = Kernel()->RequestInterface<IConsole>();
 	m_pConfigManager = Kernel()->RequestInterface<IConfigManager>();
+	m_pClient = Kernel()->RequestInterface<IClient>();
 
 	MouseModeRelative();
 
@@ -881,7 +877,7 @@ int CInput::Update()
 		{
 			char aExtra[128];
 			str_format(aExtra, sizeof(aExtra), "events=%d quit=1", EventCount);
-			LogPerfStage("sdl_poll_events", EventPumpTimer.ElapsedMs(), true, aExtra);
+			LogPerfStage(m_pClient, "sdl_poll_events", EventPumpTimer.ElapsedMs(), true, aExtra);
 			return 1;
 		}
 
@@ -894,7 +890,7 @@ int CInput::Update()
 
 	char aExtra[128];
 	str_format(aExtra, sizeof(aExtra), "events=%d has_composition=%d", EventCount, HasComposition() ? 1 : 0);
-	LogPerfStage("sdl_poll_events", EventPumpTimer.ElapsedMs(), EventCount > 64, aExtra);
+	LogPerfStage(m_pClient, "sdl_poll_events", EventPumpTimer.ElapsedMs(), EventCount > 64, aExtra);
 
 	return 0;
 }

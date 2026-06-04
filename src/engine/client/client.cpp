@@ -57,6 +57,7 @@
 
 #include <game/localization.h>
 #include <game/version.h>
+#include <game/client/components/qmclient/perf_logging.h>
 
 #if defined(CONF_VIDEORECORDER)
 #include "video.h"
@@ -72,28 +73,6 @@
 
 namespace
 {
-	bool PerfDebugEnabled()
-	{
-		return g_Config.m_QmPerfDebug != 0 || g_Config.m_QmPerfLogfile != 0;
-	}
-
-	double PerfDebugThresholdMs()
-	{
-		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-	}
-
-	void LogPerfStage(const char *pSystem, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
-	{
-		if(!PerfDebugEnabled())
-			return;
-		if(!Force && DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg(pSystem, "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg(pSystem, "stage=%s duration_ms=%.3f", pStage, DurationMs);
-	}
 }
 #ifdef main
 #undef main
@@ -1351,28 +1330,28 @@ void CClient::Render()
 	{
 		CPerfTimer StageTimer;
 		m_pEditor->OnRender();
-		LogPerfStage("perf/render", "editor_onrender", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "editor_onrender", StageTimer.ElapsedMs(), false, this);
 	}
 	else
 	{
 		CPerfTimer StageTimer;
 		GameClient()->OnRender();
-		LogPerfStage("perf/render", "gameclient_onrender", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "gameclient_onrender", StageTimer.ElapsedMs(), false, this);
 	}
 
 	{
 		CPerfTimer StageTimer;
 		RenderDebug();
-		LogPerfStage("perf/render", "client_render_debug", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "client_render_debug", StageTimer.ElapsedMs(), false, this);
 	}
 
 	{
 		CPerfTimer StageTimer;
 		RenderGraphs();
-		LogPerfStage("perf/render", "client_render_graphs", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "client_render_graphs", StageTimer.ElapsedMs(), false, this);
 	}
 
-	LogPerfStage("perf/render", "client_render_total", RenderTimer.ElapsedMs());
+	QmPerfLogStage("perf/render", "client_render_total", RenderTimer.ElapsedMs(), false, this);
 }
 
 const char *CClient::LoadMap(const char *pName, const char *pFilename, SHA256_DIGEST *pWantedSha256, unsigned WantedCrc)
@@ -3521,6 +3500,7 @@ void CClient::Run()
 	while(true)
 	{
 		CPerfTimer LoopTimer;
+		++m_PerfFrame;
 		set_new_tick();
 		UpdateHangHeartbeat();
 
@@ -3558,7 +3538,7 @@ void CClient::Run()
 			const bool QuitRequested = Input()->Update();
 			char aExtra[96];
 			str_format(aExtra, sizeof(aExtra), "state=%d quit=%d", State(), QuitRequested ? 1 : 0);
-			LogPerfStage("perf/main_thread", "input_update", StageTimer.ElapsedMs(), QuitRequested, aExtra);
+			QmPerfLogStage("perf/main_thread", "input_update", StageTimer.ElapsedMs(), QuitRequested, this, nullptr, nullptr, aExtra);
 			if(QuitRequested)
 			{
 				if(State() == IClient::STATE_QUITTING)
@@ -3583,7 +3563,7 @@ void CClient::Run()
 		{
 			CPerfTimer StageTimer;
 			Updater()->Update();
-			LogPerfStage("perf/main_thread", "updater_update", StageTimer.ElapsedMs());
+			QmPerfLogStage("perf/main_thread", "updater_update", StageTimer.ElapsedMs(), false, this);
 		}
 #endif
 
@@ -3591,7 +3571,7 @@ void CClient::Run()
 		{
 			CPerfTimer StageTimer;
 			Sound()->Update();
-			LogPerfStage("perf/main_thread", "sound_update", StageTimer.ElapsedMs());
+			QmPerfLogStage("perf/main_thread", "sound_update", StageTimer.ElapsedMs(), false, this);
 		}
 
 		if(CtrlShiftKey(KEY_D, LastD))
@@ -3626,7 +3606,7 @@ void CClient::Run()
 				Update();
 				char aExtra[96];
 				str_format(aExtra, sizeof(aExtra), "state=%d editor=%d", State(), m_EditorActive ? 1 : 0);
-				LogPerfStage("perf/main_thread", "client_update", StageTimer.ElapsedMs(), false, aExtra);
+				QmPerfLogStage("perf/main_thread", "client_update", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 			}
 			int64_t Now = time_get();
 
@@ -3681,14 +3661,14 @@ void CClient::Run()
 					Render();
 					char aExtra[64];
 					str_format(aExtra, sizeof(aExtra), "state=%d", State());
-					LogPerfStage("perf/main_thread", "frame_render", StageTimer.ElapsedMs(), false, aExtra);
+					QmPerfLogStage("perf/main_thread", "frame_render", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 				}
 				{
 					CPerfTimer StageTimer;
 					m_pGraphics->Swap();
 					char aExtra[64];
 					str_format(aExtra, sizeof(aExtra), "state=%d", State());
-					LogPerfStage("perf/main_thread", "graphics_swap", StageTimer.ElapsedMs(), false, aExtra);
+					QmPerfLogStage("perf/main_thread", "graphics_swap", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 				}
 			}
 			else if(!IsRenderActive)
@@ -3703,7 +3683,7 @@ void CClient::Run()
 		AutoCSV_Cleanup();
 
 		m_Fifo.Update();
-		LogPerfStage("perf/main_thread", "loop_total", LoopTimer.ElapsedMs());
+		QmPerfLogStage("perf/main_thread", "loop_total", LoopTimer.ElapsedMs(), false, this);
 
 		if(State() == IClient::STATE_QUITTING || State() == IClient::STATE_RESTARTING)
 			break;

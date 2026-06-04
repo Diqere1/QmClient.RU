@@ -75,10 +75,15 @@ struct SQmPerformanceMetrics
 	float m_CpuUsagePct = -1.0f;
 	float m_TotalCpuUsagePct = -1.0f;
 	float m_MemoryUsageMb = -1.0f;
+	float m_GpuUtilPct = -1.0f;
+	float m_GpuDedicatedVramMb = -1.0f;
+	float m_GpuSharedVramMb = -1.0f;
+	float m_DiskReadMbPerSec = -1.0f;
 	float m_PredictionTimeMs = 0.0f;
 	float m_PredictionStress = 0.0f;
 	int m_GameTick = 0;
 	int m_PredictedTick = 0;
+	bool m_DeviceSampleAvailable = false;
 	SGraphicsMemoryStats m_GraphicsMemory;
 };
 
@@ -171,6 +176,20 @@ inline float QmComputeTotalCpuUsagePct(uint64_t PrevIdle, uint64_t PrevTotal, ui
 inline float QmComputeRollbackMs(float GameTimeMarginMs)
 {
 	return GameTimeMarginMs < 0.0f ? -GameTimeMarginMs : 0.0f;
+}
+
+inline float QmComputeDiskReadMbPerSec(uint64_t PrevReadBytes, uint64_t PrevTickNs, uint64_t CurrentReadBytes, uint64_t CurrentTickNs)
+{
+	if(PrevTickNs == 0 || CurrentTickNs <= PrevTickNs || CurrentReadBytes < PrevReadBytes)
+		return -1.0f;
+
+	const uint64_t DeltaNs = CurrentTickNs - PrevTickNs;
+	if(DeltaNs == 0)
+		return -1.0f;
+
+	const double DeltaBytes = (double)(CurrentReadBytes - PrevReadBytes);
+	const double DeltaSeconds = (double)DeltaNs / 1000000000.0;
+	return DeltaSeconds > 0.0 ? (float)(DeltaBytes / (1024.0 * 1024.0) / DeltaSeconds) : -1.0f;
 }
 
 inline SQmNetworkMetrics::STrafficStats QmComputeTrafficStats(const NETSTATS &Prev, const NETSTATS &Current)
