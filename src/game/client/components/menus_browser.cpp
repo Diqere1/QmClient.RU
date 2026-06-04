@@ -3625,7 +3625,7 @@ void CMenus::RenderServerbrowserToolBox(CUIRect ToolBox)
 	}
 }
 
-void CMenus::RenderServerbrowser(CUIRect MainView)
+void CMenus::RenderServerbrowser(CUIRect MainView, bool DrawBackground)
 {
 	UpdateCommunityCache(false);
 
@@ -3666,7 +3666,8 @@ void CMenus::RenderServerbrowser(CUIRect MainView)
 	// clang-format on
 
 	CUIRect View = MainView;
-	View.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
+	if(DrawBackground)
+		View.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
 	View.Margin(10.0f, &View);
 
 	if(g_Config.m_UiPage == PAGE_FAVORITE_MAPS)

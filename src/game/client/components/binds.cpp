@@ -409,6 +409,21 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 	return Handled;
 }
 
+void CBinds::RefreshActiveBinds()
+{
+	for(const CBindSlot &Bind : m_vActiveBinds)
+	{
+		const char *pBind = Get(Bind);
+		if(pBind[0] == '\0')
+			continue;
+
+		ForEachTopLevelBindCommand(pBind, [&](const char *pCommand) {
+			if(pCommand[0] == '+')
+				Console()->ExecuteLineStroked(1, pCommand);
+		});
+	}
+}
+
 void CBinds::UnbindAll()
 {
 	for(auto &apKeyBinding : m_aapKeyBindings)

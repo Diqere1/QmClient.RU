@@ -10,6 +10,7 @@
 #include <generated/client_data.h>
 
 #include <game/client/animstate.h>
+#include <game/client/components/binds.h>
 #include <game/client/components/particles.h>
 #include <game/client/gameclient.h>
 #include <game/client/projectile_data.h>
@@ -700,6 +701,17 @@ void CFastPractice::CapturePracticeInputFilterStates()
 	}
 }
 
+void CFastPractice::PreserveCurrentPracticeInputFilterStates()
+{
+	for(auto &State : m_aPracticeInputFilterStates)
+	{
+		State.m_LeftReleased = true;
+		State.m_RightReleased = true;
+		State.m_JumpReleased = true;
+		State.m_HookReleased = true;
+	}
+}
+
 void CFastPractice::FilterPracticeInput(CNetObj_PlayerInput &Input, int InputConn, bool Commit)
 {
 	const int Slot = InputConn ^ g_Config.m_ClDummy;
@@ -796,10 +808,12 @@ void CFastPractice::CaptureServerLockedInputs()
 	}
 }
 
-void CFastPractice::Enable()
+void CFastPractice::Enable(bool PreserveHeldInput)
 {
 	if(m_Enabled || !CanEnable())
 		return;
+
+	GameClient()->m_Binds.RefreshActiveBinds();
 
 	const int ActiveConn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 	const int InactiveConn = ActiveConn ^ 1;
@@ -831,6 +845,8 @@ void CFastPractice::Enable()
 	CaptureServerLockedInputs();
 	CaptureServerReleasedFireStates();
 	CapturePracticeInputFilterStates();
+	if(PreserveHeldInput)
+		PreserveCurrentPracticeInputFilterStates();
 	ReleaseBufferedActionInputState();
 	m_Enabled = true;
 	m_PracticeBaseWorld.m_GameTick = Client()->PredGameTick(g_Config.m_ClDummy);
@@ -957,12 +973,12 @@ void CFastPractice::Disable()
 		m_aPostPracticeInputSuppressTicks.fill(2);
 }
 
-void CFastPractice::Toggle()
+void CFastPractice::Toggle(bool PreserveHeldInput)
 {
 	if(m_Enabled)
 		Disable();
 	else
-		Enable();
+		Enable(PreserveHeldInput);
 }
 
 bool CFastPractice::ConsumeKillCommand()

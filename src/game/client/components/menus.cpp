@@ -1798,15 +1798,6 @@ void CMenus::Render()
 		{
 			RenderBackground();
 		}
-		// Keep this overlay neutral so the UI color setting does not tint the
-		// start menu background image.
-		{
-			const uint64_t OverlayKey = BuildUiAnimNodeKey(MakeUiScopeHash("menu_bg_overlay"), 0);
-			const float FadeIn = ResolveUiAnimValue(GameClient()->UiRuntimeV2()->AnimRuntime(), OverlayKey, EUiAnimProperty::ALPHA, 1.0f, ui_curve::DECELERATE.m_DurationSec + 0.1f, ui_curve::DECELERATE.m_Easing);
-			const ColorRGBA Overlay(0.02f, 0.04f, 0.07f, 0.40f * FadeIn);
-			const CUIRect FullScreen = *Ui()->Screen();
-			FullScreen.Draw(Overlay, IGraphics::CORNER_NONE, 0.0f);
-		}
 		ms_ColorTabbarInactive = ms_ColorTabbarInactiveOutgame;
 		ms_ColorTabbarActive = ms_ColorTabbarActiveOutgame;
 		ms_ColorTabbarHover = ms_ColorTabbarHoverOutgame;
@@ -1883,7 +1874,7 @@ void CMenus::Render()
 			}
 			else if((m_MenuPage >= PAGE_INTERNET && m_MenuPage <= PAGE_FAVORITE_COMMUNITY_5) || m_MenuPage == PAGE_FAVORITE_MAPS)
 			{
-				RenderServerbrowser(MainView);
+				RenderServerbrowser(MainView, true);
 			}
 			else if(m_MenuPage == PAGE_DEMOS)
 			{
@@ -1900,6 +1891,13 @@ void CMenus::Render()
 			char aContentExtra[128];
 			str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", pPageName, TransitionActive ? 1 : 0);
 			LogPerfStage("offline_page_content", ContentTimer.ElapsedMs(), TransitionActive, aContentExtra);
+			if(Client()->State() != ClientState)
+			{
+				if(TransitionActive)
+					Ui()->ClipDisable();
+				LogPerfStage("menus_render_total", RenderTimer.ElapsedMs(), true, "state=changed_during_offline_content");
+				return;
+			}
 
 			if(TransitionActive && TransitionAlpha > 0.0f)
 			{
@@ -1988,6 +1986,13 @@ void CMenus::Render()
 			char aContentExtra[128];
 			str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", pPageName, TransitionActive ? 1 : 0);
 			LogPerfStage("ingame_page_content", ContentTimer.ElapsedMs(), TransitionActive, aContentExtra);
+			if(Client()->State() != ClientState)
+			{
+				if(TransitionActive)
+					Ui()->ClipDisable();
+				LogPerfStage("menus_render_total", RenderTimer.ElapsedMs(), true, "state=changed_during_ingame_content");
+				return;
+			}
 
 			if(TransitionActive && TransitionAlpha > 0.0f)
 			{

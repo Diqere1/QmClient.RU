@@ -2,6 +2,7 @@
 
 #include <base/math.h>
 
+#include <engine/client.h>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 
@@ -759,6 +760,9 @@ void CBackgroundParticles::RenderParticle(const SParticle &Particle, vec2 Center
 
 void CBackgroundParticles::OnRender()
 {
+	if(Client()->State() == IClient::STATE_CONNECTING || Client()->State() == IClient::STATE_LOADING)
+		return;
+
 	if(!g_Config.m_Qm3DParticles)
 	{
 		m_LastConfiguredCount = -1;

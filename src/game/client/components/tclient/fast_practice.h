@@ -23,8 +23,8 @@ public:
 
 	bool Enabled() const { return m_Enabled; }
 	bool CanEnable() const;
-	void Toggle();
-	void Enable();
+	void Toggle(bool PreserveHeldInput = false);
+	void Enable(bool PreserveHeldInput = false);
 	void Disable();
 	bool ConsumeKillCommand();
 	bool ConsumeSpectatorCommand();
@@ -155,6 +155,7 @@ private:
 	void CaptureServerReleasedFireStates();
 	void ReleaseBufferedActionInputState();
 	void CapturePracticeInputFilterStates();
+	void PreserveCurrentPracticeInputFilterStates();
 	void FilterPracticeInput(CNetObj_PlayerInput &Input, int InputConn, bool Commit);
 
 	void EchoPractice(const char *pFormat, ...) const;
