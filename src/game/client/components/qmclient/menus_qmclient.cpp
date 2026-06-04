@@ -1272,6 +1272,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		SystemMediaControls,
 		Background3D,
 		WeaponTrajectory,
+		WeaponAnimation,
 	};
 
 	enum class EQmModuleColumn
@@ -1314,6 +1315,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::SystemMediaControls: return "system_media_controls";
 		case EQmModuleId::Background3D: return "background_3d";
 		case EQmModuleId::WeaponTrajectory: return "weapon_trajectory";
+		case EQmModuleId::WeaponAnimation: return "weapon_animation";
 		}
 		return "unknown";
 	};
@@ -1338,7 +1340,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		const char *m_pKey;
 	};
 
-	constexpr size_t kQmModuleCount = 30;
+	constexpr size_t kQmModuleCount = 31;
 
 	// Layout string format: key:column:order; entries separated by ';'.
 	static const std::array<SQmModuleEntry, kQmModuleCount> s_aQmModuleDefaults = {{{EQmModuleId::Info, EQmModuleColumn::Full, 0, "info"},
@@ -1358,19 +1360,20 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{EQmModuleId::QiaFen, EQmModuleColumn::Left, 11, "qiafen"},
 		{EQmModuleId::PieMenu, EQmModuleColumn::Left, 12, "pie_menu"},
 		{EQmModuleId::CameraView, EQmModuleColumn::Right, 0, "camera_view"},
-		{EQmModuleId::EntityOverlay, EQmModuleColumn::Right, 1, "entity_overlay"},
-		{EQmModuleId::Laser, EQmModuleColumn::Right, 2, "laser"},
-		{EQmModuleId::PlayerStats, EQmModuleColumn::Right, 3, "player_stats"},
-		{EQmModuleId::CollisionHitbox, EQmModuleColumn::Right, 4, "collision_hitbox"},
-		{EQmModuleId::FavoriteMaps, EQmModuleColumn::Right, 5, "favorite_maps"},
-		{EQmModuleId::HJAssist, EQmModuleColumn::Right, 6, "hj_assist"},
-		{EQmModuleId::SpeedrunTimer, EQmModuleColumn::Right, 7, "speedrun_timer"},
-		{EQmModuleId::InputOverlay, EQmModuleColumn::Right, 8, "input_overlay"},
-		{EQmModuleId::Voice, EQmModuleColumn::Right, 9, "voice"},
-		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 10, "dummy_miniview"},
-		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 11, "dynamic_island"},
-		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 12, "system_media_controls"},
-		{EQmModuleId::Background3D, EQmModuleColumn::Right, 13, "background_3d"}}};
+		{EQmModuleId::WeaponAnimation, EQmModuleColumn::Right, 1, "weapon_animation"},
+		{EQmModuleId::EntityOverlay, EQmModuleColumn::Right, 2, "entity_overlay"},
+		{EQmModuleId::Laser, EQmModuleColumn::Right, 3, "laser"},
+		{EQmModuleId::PlayerStats, EQmModuleColumn::Right, 4, "player_stats"},
+		{EQmModuleId::CollisionHitbox, EQmModuleColumn::Right, 5, "collision_hitbox"},
+		{EQmModuleId::FavoriteMaps, EQmModuleColumn::Right, 6, "favorite_maps"},
+		{EQmModuleId::HJAssist, EQmModuleColumn::Right, 7, "hj_assist"},
+		{EQmModuleId::SpeedrunTimer, EQmModuleColumn::Right, 8, "speedrun_timer"},
+		{EQmModuleId::InputOverlay, EQmModuleColumn::Right, 9, "input_overlay"},
+		{EQmModuleId::Voice, EQmModuleColumn::Right, 10, "voice"},
+		{EQmModuleId::DummyMiniView, EQmModuleColumn::Right, 11, "dummy_miniview"},
+		{EQmModuleId::DynamicIsland, EQmModuleColumn::Right, 12, "dynamic_island"},
+		{EQmModuleId::SystemMediaControls, EQmModuleColumn::Right, 13, "system_media_controls"},
+		{EQmModuleId::Background3D, EQmModuleColumn::Right, 14, "background_3d"}}};
 
 	static std::array<SQmModuleEntry, kQmModuleCount> s_aQmModuleLayout = s_aQmModuleDefaults;
 	static char s_aQmModuleLayoutConfigCache[sizeof(g_Config.m_QmSidebarCardOrder)] = {};
@@ -1521,7 +1524,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			}
 		};
 
-		AppendBalancedGroup({EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi});
+		AppendBalancedGroup({EQmModuleId::ChatBubble, EQmModuleId::CameraView, EQmModuleId::WeaponAnimation, EQmModuleId::Streamer, EQmModuleId::EntityOverlay, EQmModuleId::Laser, EQmModuleId::CollisionHitbox, EQmModuleId::TranslateUi});
 		AppendBalancedGroup({EQmModuleId::GoresActor, EQmModuleId::Gores, EQmModuleId::FocusMode, EQmModuleId::KeyBinds, EQmModuleId::MiniFeatures, EQmModuleId::WeaponTrajectory, EQmModuleId::FriendNotify, EQmModuleId::BlockWords, EQmModuleId::Translate, EQmModuleId::QiaFen, EQmModuleId::PieMenu, EQmModuleId::FavoriteMaps, EQmModuleId::HJAssist});
 		AppendBalancedGroup({EQmModuleId::DummyMiniView, EQmModuleId::Coords, EQmModuleId::PlayerStats, EQmModuleId::SpeedrunTimer, EQmModuleId::InputOverlay, EQmModuleId::Voice, EQmModuleId::DynamicIsland, EQmModuleId::SystemMediaControls, EQmModuleId::Background3D});
 
@@ -2143,6 +2146,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::KeyBinds: return "按键绑定 anjian bangding bind 快捷键 kuaijiejian 常用绑定 changyong bangding 武器辅助线 fuzhuxian 异常断开 yichang duankai timeout disconnect";
 		case EQmModuleId::MiniFeatures: return "梦的小功能 meng xiaogongneng 粒子拖尾 lizi tuowei 远程粒子 yuancheng lizi 计分板查分 chafen 聊天框淡出 liaotian danchu 表情选择 biaoqing xuanze 动画优化 donghua youhua 复读 fudu 锤人换皮 chuiren huanpi 随机表情 suiji biaoqing 连击 lianji combo 说话不弹表情 shuo hua biaoqing 本地彩虹名字 caihong mingzi 位置跳跃提示 tiaoyue tishi 计分板Qm标识 qm biaoshi scoreboard badge 更新 gengxin 版本 banben 过旧 guojiu 提示 tishi outdated version warning 新版UI xinban ui settings page shezhi yemian";
 		case EQmModuleId::WeaponTrajectory: return "武器辅助线 wuqi fuzhuxian weapon trajectory 弹道辅助线 dandao fuzhuxian 线宽 xian kuan 透明度 toumingdu 始终显示 shizhong xianshi 按键显示 anjian xianshi";
+		case EQmModuleId::WeaponAnimation: return "武器动画 wuqi donghua weapon animation 切换武器动画 qiehuan wuqi donghua weapon switch animation 滑入 huaru 旋转 xuanzhuan";
 		case EQmModuleId::CameraView: return "镜头 jingtou camera drift 漂移 piaoyi dynamic fov 动态视野 dongtai shiye 纵横比 zonghengbi aspect ratio preset 预设 yushe 自定义 zidinyi 视野视角 shijiao";
 		case EQmModuleId::DummyMiniView: return "分身小窗 fenshen xiaochuang dummy mini view 预览 yulan 缩放 suofang 小窗大小 daxiao 离开视角 offscreen 自动显示 zidong xianshi";
 		case EQmModuleId::Coords: return "显示坐标 xianshi zuobiao coords position 自己坐标 ziji 他人坐标 taren 显示x xianshi x 显示y xianshi y 对齐提示 duiqi tishi 严格对齐 yange duiqi";
@@ -2183,6 +2187,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case QMCLIENT_SETTINGS_TAB_VISUAL:
 			return Id == EQmModuleId::ChatBubble ||
 			       Id == EQmModuleId::CameraView ||
+			       Id == EQmModuleId::WeaponAnimation ||
 			       Id == EQmModuleId::Streamer ||
 			       Id == EQmModuleId::EntityOverlay ||
 			       Id == EQmModuleId::Laser ||
@@ -2490,6 +2495,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			return {2, Localize("梦的小功能"), Localize("只有你想不到,没有梦做不到")};
 		case EQmModuleId::WeaponTrajectory:
 			return {2, Localize("武器辅助线"), Localize("显示枪榴弹和激光轨迹预览")};
+		case EQmModuleId::WeaponAnimation:
+			return {2, Localize("武器动画"), Localize("切换武器时播放滑入旋转动画")};
 		case EQmModuleId::CameraView:
 			return {10, Localize("镜头与视野"), Localize("调整游戏镜头和视野设置")};
 		case EQmModuleId::DummyMiniView:
@@ -4948,6 +4955,29 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					if(AspectChanged)
 						GameClient()->TClientComponent().QueueAspectApply();
 				}
+
+				CardContent.HSplitTop(LG_CardPadding, nullptr, &CardContent);
+				Column.y = CardContent.y;
+				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;
+				RegisterModuleCard(pModule, ColumnId, s_GlassCards.back());
+				HandleModuleDragState(pModule, s_GlassCards.back());
+			}
+			break;
+			case EQmModuleId::WeaponAnimation:
+			{
+				// ========== 模块: 武器动画 ==========
+				Column.HSplitTop(LG_CardSpacing, nullptr, &Column);
+				CUIRect CardWeaponAnimationStart = Column;
+				s_GlassCards.push_back(CardWeaponAnimationStart);
+
+				Column.HSplitTop(LG_CardPadding, nullptr, &Column);
+				Column.VSplitLeft(LG_CardPadding, nullptr, &CardContent);
+				CardContent.VSplitRight(LG_CardPadding, &CardContent, nullptr);
+				DoModuleHeadline(CardContent, 2, Localize("武器动画"), Localize("切换武器时播放滑入旋转动画"));
+
+				CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmWeaponSwitchAnim, Localize("切换武器动画"), &g_Config.m_QmWeaponSwitchAnim, &Row, LG_LineHeight);
+				CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
 
 				CardContent.HSplitTop(LG_CardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;
