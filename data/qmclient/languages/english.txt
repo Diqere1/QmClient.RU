@@ -178,6 +178,12 @@ X 对齐颜色
 切换失败
 == Switch failed
 
+切换武器动画
+== Weapon switch animation
+
+切换武器时播放滑入旋转动画
+== Play a slide-in rotation animation when switching weapons
+
 判定时间
 == Detection time
 
@@ -672,6 +678,9 @@ X 对齐颜色
 
 武器辅助线
 == Weapon Trajectory
+
+武器动画
+== Weapon animation
 
 死亡不透明度
 == Death opacity
