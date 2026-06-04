@@ -1428,6 +1428,7 @@ void CQmClient::ResetQmClientRecognitionTasks()
 	AbortTask(m_pQmClientUsersTask);
 	AbortTask(m_pQmClientUsersSendTask);
 	m_pQmClientUsersParseJob = nullptr;
+	m_QmClientDistributionSuccessLatched = false;
 	m_aQmClientAuthToken[0] = '\0';
 	m_aQmClientPendingVoicePresenceServerAddress[0] = '\0';
 	m_QmClientPendingVoicePresencePlayers = 0;
@@ -1659,7 +1660,8 @@ void CQmClient::FetchQmClientUsers()
 	m_pQmClientUsersTask->IpResolve(IPRESOLVE::V4);
 	m_pQmClientUsersTask->LogProgress(HTTPLOG::FAILURE);
 	Http()->Run(m_pQmClientUsersTask);
-	LogQmClientDistributionRequestEvent("request", aUrl);
+	if(!m_QmClientDistributionSuccessLatched)
+		LogQmClientDistributionRequestEvent("request", aUrl);
 }
 
 void CQmClient::FinishQmClientAuthToken()
@@ -1707,6 +1709,7 @@ void CQmClient::FinishQmClientUsers()
 
 		if(!Result.m_Parsed)
 		{
+			m_QmClientDistributionSuccessLatched = false;
 			LogQmClientDistributionFailureEvent("parse_failed", "users payload could not be parsed");
 			return;
 		}
@@ -1714,7 +1717,9 @@ void CQmClient::FinishQmClientUsers()
 		m_vQmClientServerDistribution = std::move(Result.m_vServerDistribution);
 		m_QmClientOnlineUserCount = Result.m_OnlineUserCount;
 		m_QmClientOnlineDummyCount = Result.m_OnlineDummyCount;
-		LogQmClientDistributionEvent("parse_ok", Result.m_OnlineUserCount, Result.m_OnlineDummyCount, (int)Result.m_vLocalServerMarks.size());
+		if(!m_QmClientDistributionSuccessLatched)
+			LogQmClientDistributionEvent("parse_ok", Result.m_OnlineUserCount, Result.m_OnlineDummyCount, (int)Result.m_vLocalServerMarks.size());
+		m_QmClientDistributionSuccessLatched = true;
 		for(const auto &Mark : Result.m_vLocalServerMarks)
 		{
 			GameClient()->MarkQ1menGSyncClient(Mark.m_ClientId, ExpireTick, Mark.m_FootParticlesEnabled, Mark.m_RemoteParticlesEnabled, Mark.m_Qid.c_str());
@@ -1742,6 +1747,7 @@ void CQmClient::FinishQmClientUsers()
 		char aFailure[128];
 		str_format(aFailure, sizeof(aFailure), "state=%d status=%d", (int)m_pQmClientUsersTask->State(), StatusCode);
 		m_pQmClientUsersTask = nullptr;
+		m_QmClientDistributionSuccessLatched = false;
 		LogQmClientDistributionFailureEvent("request_failed", aFailure);
 		return;
 	}
