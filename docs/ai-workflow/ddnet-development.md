@@ -8,10 +8,10 @@ DDNet 兼容性优先级高于泛化的现代 C++ 偏好。
 
 没有明确批准时，不要改这些：
 
-- Network protocol fields or layout.
-- Demo, skin, map, config, or save file formats.
-- Physics, collision, prediction, snapshots, inputs, timing, replay, or map behavior.
-- Anything that makes existing ranks unreachable or existing maps easier.
+- 网络协议字段或布局。
+- Demo、皮肤、地图、配置或存档文件格式。
+- 物理、碰撞、预测、快照、输入、时序、回放或地图行为。
+- 任何会导致现有排名无法达成或现有地图变得更简单的改动。
 
 如果任务触碰到这些区域，先指出风险，再开始实现，并把补丁保持在最小范围。
 
@@ -26,46 +26,46 @@ QmClient 的常规范围包括：
 - `data/languages/simplified_chinese.txt`
 - `docs/info.json`
 - `qmclient_scripts/`
-- `.ai/`、`AGENTS.md`、`CLAUDE.md` 和其他 agent/harness 文件
+- `docs/ai-workflow/`、`AGENTS.md`、`CLAUDE.md` 和其他 agent/harness 文件
 
 没有明确请求时，以下内容都算超范围：
 
-- Upstream engine core outside QmClient config.
-- Server gameplay, editor internals, protocol, physics, collision, prediction, snapshots, replay behavior.
-- Third-party libraries in `ddnet-libs/` or `src/engine/external/`.
-- Release CI workflow behavior.
+- QmClient 配置以外的上游引擎核心。
+- 服务端玩法、地图编辑器内部、协议、物理、碰撞、预测、快照、回放行为。
+- `ddnet-libs/` 或 `src/engine/external/` 中的第三方库。
+- Release CI workflow 行为。
 
 ## 风格
 
 优先遵循现有 DDNet 风格，而不是泛化的 C++ 风格：
 
-- Prefer UpperCamelCase for local variables, methods, and classes outside special areas like `src/base`.
-- Use existing prefixes: `m_` members, `g_` globals, `s_` statics, `p` pointers, `a` fixed arrays, `v` vectors, `C` classes, `I` interfaces.
-- Prefer semantic names. Short loop variables are acceptable only when the scope is tiny and obvious.
-- Prefer early returns and small focused functions, but do not split code so much that DDNet-style readability suffers.
+- 局部变量、方法和类名使用大驼峰（UpperCamelCase），`src/base` 等特殊区域除外。
+- 沿用现有前缀：`m_` 成员、`g_` 全局、`s_` 静态、`p` 指针、`a` 固定数组、`v` 向量、`C` 类、`I` 接口。
+- 优先使用语义化命名。短循环变量仅在作用域极小且含义明确时可接受。
+- 优先使用 early return 和小而专注的函数，但不要拆分到影响 DDNet 风格可读性的程度。
 
 ## 现代 C++
 
 如果和当前模块风格匹配，可以使用：
 
 - `constexpr`
-- `enum class` with `E...` names and uppercase values
+- `enum class`（使用 `E...` 命名，值大写）
 - `std::optional`
 - `std::variant`
-- move semantics
+- 移动语义
 - `std::array`
-- carefully scoped `std::string_view`
+- 谨慎限定范围的 `std::string_view`
 
 避免：
 
-- raw `new` / `delete` unless the surrounding code owns objects that way
-- unnecessary macros
+- 原始 `new` / `delete`，除非周围代码本身就以这种方式管理对象所有权
+- 不必要的宏
 - `goto`
-- assignment inside `if` conditions
-- treating integers as booleans
-- hidden ownership transfer
-- unnecessary heap allocation
-- broad template or RAII rewrites that do not match the module
+- `if` 条件内赋值
+- 将整数当作布尔值使用
+- 隐藏的所有权转移
+- 不必要的堆分配
+- 与当前模块风格不匹配的大范围模板或 RAII 重写
 
 ## 运行时与热路径
 
@@ -73,13 +73,13 @@ DDNet 是实时联网游戏。先判断代码是不是跑在每帧、每 tick、
 
 要特别警惕：
 
-- heap allocations in render/tick paths
-- repeated string construction
-- repeated sorting or scanning
-- repeated `TextWidth` or layout computation
-- config writes on unchanged state
-- serialization/deserialization inside frequent loops
-- extra network bandwidth or protocol growth
+- 渲染/tick 路径中的堆分配
+- 重复的字符串构造
+- 重复的排序或扫描
+- 重复的 `TextWidth` 或布局计算
+- 对未变更状态写入配置
+- 频繁循环中的序列化/反序列化
+- 额外的网络带宽或协议增长
 
 不要过早优化，但也不要把明显的热路径浪费带进去。
 
@@ -94,13 +94,13 @@ DDNet 是实时联网游戏。先判断代码是不是跑在每帧、每 tick、
 
 重点检查：
 
-- dangling pointers or references
-- returning references to local data
-- invalidated iterators
-- out-of-bounds access
-- use-after-free or double free
-- uninitialized reads
-- `string_view` or pointer lifetime mismatches
+- 悬空指针或引用
+- 返回局部数据的引用
+- 迭代器失效
+- 越界访问
+- use-after-free 或 double free
+- 未初始化读取
+- `string_view` 或指针生命周期不匹配
 
 当代码使用缓存、静态或全局状态时，要考虑初始化顺序和线程安全。
 

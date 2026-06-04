@@ -4,19 +4,19 @@ data/
 !/data/
 
 # Local documentation
-dyl/
-docs/dyl
-!docs/dyl/QmClient_docs
-docs/html
+docs/dyl/BestClient/
 .ruff_cache
 
 # Agent workspace files
-CODEX.md
-Codex.md
-docs/superpowers/
 .agents/
 .codex/
 .codegraph/
+
+# Local perf tooling artifacts
+qmclient_scripts/perf/node_modules/
+
+# Local Codex screenshots
+.codex-*.png
 .superpowers
 .trae
 .claude

@@ -26,7 +26,7 @@
 
 - 跑仓库级 `quick/default/full` 门禁
 - 跑严格构建、`/analyze`、clang-tidy、ASan
-- 校验 `AGENTS.md` / `CLAUDE.md` / 精简 `.ai/` / CI 入口是否一致
+- 校验 `AGENTS.md` / `CLAUDE.md` / 精简 `docs/ai-workflow/` / CI 入口是否一致
 - 维护 baseline debt allowlist
 
 ### 2. 构建与平台辅助
@@ -182,5 +182,5 @@ python qmclient_scripts/gate/check_gate.py --mode default --base-ref main --expl
 
 ## 关联文档
 
-- `.ai/meta.md`
-- `.ai/verification.md`
+- `docs/ai-workflow/meta.md`
+- `docs/ai-workflow/verification.md`

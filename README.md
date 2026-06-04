@@ -1,7 +1,7 @@
 # Q1menG Client
 
 <p align="center">
-   <img src="data\qmclient\gui_logo.png" alt="Q1menG Client Logo" style="width:60%; max-width:760px;" />
+   <img src="data/qmclient/gui_logo.png" alt="Q1menG Client Logo" style="width:60%; max-width:760px;" />
 </p>
 
 <p align="center">
@@ -35,8 +35,8 @@ We would like to thank all contributors who have submitted code, reported issues
 Use the repository wrapper so `cmake` always runs inside a configured MSVC developer environment, even from a normal PowerShell or `cmd.exe` session:
 
 ```bat
-qmclient_scripts\cmake-windows.cmd -S . -B cmake-build-release
-qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target game-client -j 10
+qmclient_scripts/cmake-windows.cmd -S . -B cmake-build-release
+qmclient_scripts/cmake-windows.cmd --build cmake-build-release --target game-client -j 10
 ```
 
 ### macOS / Linux / already-initialised developer shell
@@ -51,9 +51,9 @@ cmake --build cmake-build-release --target game-client -j 10
 ### Windows
 
 ```bat
-qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target run_cxx_tests
-qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target run_rust_tests
-qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target run_tests
+qmclient_scripts/cmake-windows.cmd --build cmake-build-release --target run_cxx_tests
+qmclient_scripts/cmake-windows.cmd --build cmake-build-release --target run_rust_tests
+qmclient_scripts/cmake-windows.cmd --build cmake-build-release --target run_tests
 ```
 
 ### macOS / Linux / already-initialised developer shell

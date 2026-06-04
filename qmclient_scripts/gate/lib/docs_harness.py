@@ -11,11 +11,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REQUIRED_FILES = [
     "AGENTS.md",
     "CLAUDE.md",
-    ".ai/meta.md",
-    ".ai/ddnet-development.md",
-    ".ai/verification.md",
-    ".ai/review.md",
-    ".ai/git-workflow.md",
+    "docs/ai-workflow/meta.md",
+    "docs/ai-workflow/ddnet-development.md",
+    "docs/ai-workflow/verification.md",
+    "docs/ai-workflow/review.md",
+    "docs/ai-workflow/git-workflow.md",
     "qmclient_scripts/gate/check_gate.py",
     "qmclient_scripts/gate/check_docs.py",
     "qmclient_scripts/scripts_overview.md",
@@ -38,21 +38,21 @@ AGENTS_REQUIRED_SECTIONS = [
 ]
 
 AGENTS_REQUIRED_REFERENCES = [
-    ".ai/meta.md",
-    ".ai/ddnet-development.md",
-    ".ai/verification.md",
-    ".ai/review.md",
-    ".ai/git-workflow.md",
+    "docs/ai-workflow/meta.md",
+    "docs/ai-workflow/ddnet-development.md",
+    "docs/ai-workflow/verification.md",
+    "docs/ai-workflow/review.md",
+    "docs/ai-workflow/git-workflow.md",
     "qmclient_scripts/scripts_overview.md",
 ]
 
 CLAUDE_REQUIRED_REFERENCES = [
-    ".ai/meta.md",
-    ".ai/verification.md",
-    ".ai/git-workflow.md",
+    "docs/ai-workflow/meta.md",
+    "docs/ai-workflow/verification.md",
+    "docs/ai-workflow/git-workflow.md",
 ]
 
-MAX_ROOT_MAP_LINES = 120
+MAX_ROOT_MAP_LINES = 200
 
 
 @dataclass

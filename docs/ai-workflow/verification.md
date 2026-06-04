@@ -8,18 +8,18 @@
 python qmclient_scripts/gate/check_docs.py
 ```
 
-当你改了 `AGENTS.md`、`CLAUDE.md`、`.ai/`、`docs/superpowers/plans/`、`docs/superpowers/specs/`、governance workflow 文件或 gate 脚本后，都要跑这一项。
+当你改了 `AGENTS.md`、`CLAUDE.md`、`docs/ai-workflow/`、`docs/superpowers/plans/`、`docs/superpowers/specs/`、governance workflow 文件或 gate 脚本后，都要跑这一项。
 
 ## 构建
 
 Windows 推荐：
 
 ```pwsh
-qmclient_scripts\cmake-windows.cmd -G Ninja -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
-qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target game-client -j 10
+qmclient_scripts/cmake-windows.cmd -G Ninja -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
+qmclient_scripts/cmake-windows.cmd --build cmake-build-release --target game-client -j 10
 ```
 
-说明：当前仓库的自动化与 Agent 会话在 Windows 上默认走 `qmclient_scripts\cmake-windows.cmd`，因为不能假设当前 PowerShell 已经注入了可用的 MSVC 环境。当前 canonical 的 `cmake-build-*` 目录按 Ninja 生成器维护；只有在调用方已经明确处于可用的 VS/MSVC shell 时，才可以直接使用裸 `cmake`。
+说明：当前仓库的自动化与 Agent 会话在 Windows 上默认走 `qmclient_scripts/cmake-windows.cmd`，因为不能假设当前 PowerShell 已经注入了可用的 MSVC 环境。当前 canonical 的 `cmake-build-*` 目录按 Ninja 生成器维护；只有在调用方已经明确处于可用的 VS/MSVC shell 时，才可以直接使用裸 `cmake`。
 
 Linux/macOS：
 
@@ -33,9 +33,9 @@ cmake --build cmake-build-release --target game-client -j 10
 Windows:
 
 ```pwsh
-qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target testrunner -j 10
-cmake-build-release\testrunner.exe
-qmclient_scripts\cmake-windows.cmd --build cmake-build-release --target run_rust_tests
+qmclient_scripts/cmake-windows.cmd --build cmake-build-release --target testrunner -j 10
+cmake-build-release/testrunner.exe
+qmclient_scripts/cmake-windows.cmd --build cmake-build-release --target run_rust_tests
 ```
 
 说明：常规运行/测试目录默认是 `cmake-build-release`；C++ 测试主路径是先构建 `testrunner`，再直接执行测试二进制。`default/full` gate 里的严格构建与静态分析会另外使用 `cmake-build-debug` 和 `cmake-build-analyze`。
