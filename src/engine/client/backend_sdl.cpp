@@ -1009,6 +1009,16 @@ static void DisplayToVideoMode(CVideoMode *pVMode, SDL_DisplayMode *pMode, float
 	pVMode->m_Format = pMode->format;
 }
 
+static bool IsPlausibleRefreshRate(int RefreshRate)
+{
+	return RefreshRate >= 0 && RefreshRate <= 1000;
+}
+
+static bool IsPlausibleWindowSize(int Width, int Height)
+{
+	return Width >= 320 && Height >= 240 && Width <= 16384 && Height <= 16384;
+}
+
 void CGraphicsBackend_SDL_GL::GetVideoModes(CVideoMode *pModes, int MaxModes, int *pNumModes, float HiDPIScale, int MaxWindowWidth, int MaxWindowHeight, int ScreenId)
 {
 	SDL_DisplayMode DesktopMode;
@@ -1249,6 +1259,17 @@ int CGraphicsBackend_SDL_GL::Init(const char *pName, int *pScreen, int *pWidth, 
 
 	*pDesktopWidth = DisplayMode.w;
 	*pDesktopHeight = DisplayMode.h;
+	if(!IsPlausibleWindowSize(*pWidth, *pHeight))
+	{
+		log_warn("gfx", "Ignoring implausible configured window size: %dx%d", *pWidth, *pHeight);
+		*pWidth = DisplayMode.w;
+		*pHeight = DisplayMode.h;
+	}
+	if(!IsPlausibleRefreshRate(*pRefreshRate))
+	{
+		log_warn("gfx", "Ignoring implausible configured refresh rate: %d", *pRefreshRate);
+		*pRefreshRate = 0;
+	}
 
 	// fetch supported video modes
 	bool SupportedResolution = false;

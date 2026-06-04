@@ -745,41 +745,12 @@ void CGameClient::OnInit()
 
 void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption, const char *pLoadingMessage)
 {
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
-		return;
+	(void)pLoadingCaption;
+	(void)pLoadingMessage;
 
-	Ui()->MapScreen();
-	CUIRect TabBar, MainView;
-	Ui()->Screen()->HSplitTop(24.0f, &TabBar, &MainView);
-	m_Menus.PrepareSettingsRuntimeWarmupPlan();
-	const int TeeWarmupEntries = SettingsTeeSkinListFirstPageWarmupEntries(MainView.h);
-	const int MaxAttempts = SettingsLoadingPrewarmMaxAttempts(CMenus::SettingsRuntimeCacheWarmupSteps(), TeeWarmupEntries);
-	const SSettingsResourceFrameContext TeePrewarmFrameContext = {};
-	int ConsecutiveNoProgressSteps = 0;
-	for(int Step = 0;; ++Step)
-	{
-		m_Menus.ResetSettingsFrameBudgetForFrame(true);
-		const bool WarmupReady = m_Menus.PrewarmSettingsRuntimeCaches(MainView);
-		if(WarmupReady)
-		{
-			LogSettingsLoadingPrewarmEvent(Client(), "startup_ready", Step, MaxAttempts, TeeWarmupEntries, ConsecutiveNoProgressSteps, m_Skins.SettingsSourceUploadsCompleted(), m_Skins.SettingsSourceLoadsCompleted());
-			break;
-		}
-		const uint64_t UploadsBefore = m_Skins.SettingsSourceUploadsCompleted();
-		const uint64_t LoadsBefore = m_Skins.SettingsSourceLoadsCompleted();
-		m_GpuUploadLimiter.OnFrameStart(SettingsSkinGpuUploadLimiterUnits(TeePrewarmFrameContext, true));
-		m_Skins.UpdateForSettingsWarmup();
-		const bool ProgressMade = m_Skins.SettingsSourceUploadsCompleted() != UploadsBefore ||
-			m_Skins.SettingsSourceLoadsCompleted() != LoadsBefore;
-		ConsecutiveNoProgressSteps = ProgressMade ? 0 : ConsecutiveNoProgressSteps + 1;
-		m_Menus.RenderLoading(pLoadingCaption, pLoadingMessage, 0);
-		const int CompletedSteps = Step + 1;
-		if(!SettingsLoadingPrewarmShouldKeepPumping(false, CompletedSteps, MaxAttempts, ConsecutiveNoProgressSteps))
-		{
-			LogSettingsLoadingPrewarmEvent(Client(), "startup_exhausted", CompletedSteps, MaxAttempts, TeeWarmupEntries, ConsecutiveNoProgressSteps, m_Skins.SettingsSourceUploadsCompleted(), m_Skins.SettingsSourceLoadsCompleted());
-			break;
-		}
-	}
+	// Do not pump settings resources synchronously during startup. Runtime menu
+	// prewarm still runs with per-frame budgets once the menu is interactive.
+	return;
 }
 
 void CGameClient::OnUpdate()

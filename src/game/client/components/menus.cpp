@@ -173,6 +173,59 @@ namespace
 		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 	}
 
+	ColorRGBA MenuUiColorSurface(float AlphaScale, float ColorScale)
+	{
+		ColorHSLA UiHsla(g_Config.m_UiColor, true);
+		UiHsla = UiHsla.UnclampLighting(0.42f);
+		const ColorRGBA UiColor = color_cast<ColorRGBA>(UiHsla);
+		const float BaseAlpha = maximum(UiColor.a, 0.70f);
+		return ColorRGBA(
+			std::clamp(UiColor.r * ColorScale, 0.0f, 1.0f),
+			std::clamp(UiColor.g * ColorScale, 0.0f, 1.0f),
+			std::clamp(UiColor.b * ColorScale, 0.0f, 1.0f),
+			std::clamp(BaseAlpha * AlphaScale, 0.0f, 1.0f));
+	}
+
+	ColorRGBA MenuUiColorAccent(float AlphaScale)
+	{
+		ColorHSLA UiHsla(g_Config.m_UiColor, true);
+		UiHsla = UiHsla.UnclampLighting(0.48f);
+		const ColorRGBA UiColor = color_cast<ColorRGBA>(UiHsla);
+		return UiColor.WithAlpha(std::clamp(maximum(UiColor.a, 0.85f) * AlphaScale, 0.0f, 1.0f));
+	}
+
+	ColorRGBA MenuTabDefaultColor()
+	{
+		return MenuUiColorSurface(0.45f, 0.16f);
+	}
+
+	ColorRGBA MenuIconButtonDefaultColor()
+	{
+		const bool UseNewUi = g_Config.m_QmNewUi != 0;
+		return UseNewUi ? MenuTabDefaultColor() : ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f);
+	}
+
+	ColorRGBA MenuTabActiveColor()
+	{
+		return MenuUiColorSurface(0.82f, 0.22f);
+	}
+
+	ColorRGBA MenuTabHoverColor()
+	{
+		return MenuUiColorSurface(0.62f, 0.20f);
+	}
+
+	ColorRGBA MenuDangerTabDefaultColor()
+	{
+		const ColorRGBA Base = MenuTabDefaultColor();
+		return ColorRGBA(maximum(Base.r, 0.20f), Base.g * 0.35f, Base.b * 0.35f, maximum(Base.a, 0.32f));
+	}
+
+	ColorRGBA MenuDangerTabHoverColor()
+	{
+		return ColorRGBA(1.0f, 0.15f, 0.15f, 0.52f);
+	}
+
 	int64_t PerfDebugStartTime()
 	{
 		return PerfDebugEnabled() ? time_get() : 0;
@@ -419,6 +472,12 @@ ColorRGBA CMenus::MenuPanelElevatedColor(float AlphaScale) const
 {
 	const ColorRGBA Base = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMenuPanelColor));
 	return Base.WithAlpha(std::clamp((g_Config.m_ClMenuPanelElevatedOpacity / 100.0f) * AlphaScale, 0.0f, 1.0f));
+}
+
+ColorRGBA CMenus::SettingsTabbarColor(float AlphaScale) const
+{
+	const ColorRGBA Base = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMenuPanelColor));
+	return Base.WithAlpha(std::clamp((g_Config.m_ClSettingsTabbarOpacity / 100.0f) * AlphaScale, 0.0f, 1.0f));
 }
 
 int CMenus::DoButton_Toggle(const void *pId, int Checked, const CUIRect *pRect, bool Active, const unsigned Flags)
@@ -970,13 +1029,17 @@ int CMenus::DoMenuTabV2(CButtonContainer *pButtonContainer, const char *pText, b
 	// overrides are honored when supplied (Quit red, Home news green, favorite
 	// community appear-fade etc.); otherwise we fall back to feat-003 tokens.
 	const bool Hover = Ui()->HotItem() == static_cast<const void *>(pButtonContainer);
+	const bool UseNewUi = g_Config.m_QmNewUi != 0;
+	const ColorRGBA DefaultColor = UseNewUi ? MenuTabDefaultColor() : ms_ColorTabbarInactive;
+	const ColorRGBA ActiveColor = UseNewUi ? MenuTabActiveColor() : ms_ColorTabbarActive;
+	const ColorRGBA HoverColor = UseNewUi ? MenuTabHoverColor() : ms_ColorTabbarHover;
 	ColorRGBA Target;
-	if(Active)
-		Target = pCustomActive != nullptr ? *pCustomActive : ui_token::color::ACCENT_PRIMARY_DIM;
-	else if(Hover)
-		Target = pCustomHover != nullptr ? *pCustomHover : ui_token::color::SURFACE_HIGHLIGHT;
+	if(Hover)
+		Target = pCustomHover != nullptr ? *pCustomHover : HoverColor;
+	else if(Active)
+		Target = pCustomActive != nullptr ? *pCustomActive : ActiveColor;
 	else
-		Target = pCustomDefault != nullptr ? *pCustomDefault : ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f);
+		Target = pCustomDefault != nullptr ? *pCustomDefault : DefaultColor;
 
 	const uint64_t NodeKey = BuildUiAnimNodeKey(MakeUiScopeHash("menubar_v2_tab"), reinterpret_cast<uint64_t>(pButtonContainer));
 	CUiV2AnimationRuntime &AnimRt = GameClient()->UiRuntimeV2()->AnimRuntime();
@@ -1043,20 +1106,22 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 	const float MenubarIconButtonSize = Box.h;
 	const float MenubarIconGap = 10.0f;
 	const float MenubarItemGap = 6.0f;
-	const ColorRGBA IconButtonDefault(0.0f, 0.0f, 0.0f, 0.0f);
-	const ColorRGBA IconButtonActive = MenuPanelElevatedColor(0.95f);
-	const ColorRGBA IconButtonHover = MenuPanelColor(0.55f);
+	const bool UseNewUi = g_Config.m_QmNewUi != 0;
+	const ColorRGBA IconButtonDefault = MenuIconButtonDefaultColor();
+	const ColorRGBA IconButtonActive = MenuTabActiveColor();
+	const ColorRGBA IconButtonHover = MenuTabHoverColor();
 	const ColorRGBA HomeButtonDefault = ui_token::color::ACCENT_PRIMARY.WithMultipliedAlpha(0.95f);
 	const ColorRGBA HomeButtonHover = ui_token::color::ACCENT_PRIMARY;
+	const ColorRGBA QuitButtonDefault = MenuDangerTabDefaultColor();
+	const ColorRGBA QuitButtonHover = MenuDangerTabHoverColor();
 	Box.VSplitRight(MenubarIconButtonSize, &Box, &Button);
 	static CButtonContainer s_QuitButton;
-	ColorRGBA QuitColor(1, 0, 0, 0.5f);
 	{
 		CUIRect QuitButton = Button;
 		const float CircleSize = minimum(QuitButton.w, QuitButton.h);
 		QuitButton.x += (QuitButton.w - CircleSize) / 2.0f;
 		QuitButton.w = CircleSize;
-		if(DoMenuTabV2(&s_QuitButton, FONT_ICON_POWER_OFF, false, &QuitButton, IGraphics::CORNER_ALL, &IconButtonDefault, nullptr, &QuitColor))
+		if(DoMenuTabV2(&s_QuitButton, FONT_ICON_POWER_OFF, false, &QuitButton, IGraphics::CORNER_ALL, &QuitButtonDefault, nullptr, &QuitButtonHover))
 		{
 			if(GameClient()->Editor()->HasUnsavedData() || (GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmQuitTime && g_Config.m_ClConfirmQuitTime >= 0) || m_MenusIngameTouchControls.UnsavedChanges() || GameClient()->m_TouchControls.HasEditingChanges())
 			{
@@ -1078,7 +1143,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		const float CircleSize = minimum(SettingsButton.w, SettingsButton.h);
 		SettingsButton.x += (SettingsButton.w - CircleSize) / 2.0f;
 		SettingsButton.w = CircleSize;
-		if(DoMenuTabV2(&s_SettingsButton, FONT_ICON_GEAR, ActivePage == PAGE_SETTINGS, &SettingsButton, IGraphics::CORNER_ALL, &IconButtonDefault, &IconButtonActive, &IconButtonHover))
+		if(DoMenuTabV2(&s_SettingsButton, FONT_ICON_GEAR, ActivePage == PAGE_SETTINGS, &SettingsButton, IGraphics::CORNER_ALL, &IconButtonDefault, UseNewUi ? &IconButtonActive : nullptr, UseNewUi ? &IconButtonHover : nullptr))
 		{
 			NewPage = PAGE_SETTINGS;
 		}
@@ -1094,7 +1159,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		const float CircleSize = minimum(EditorButton.w, EditorButton.h);
 		EditorButton.x += (EditorButton.w - CircleSize) / 2.0f;
 		EditorButton.w = CircleSize;
-		if(DoMenuTabV2(&s_EditorButton, FONT_ICON_PEN_TO_SQUARE, false, &EditorButton, IGraphics::CORNER_ALL, &IconButtonDefault, nullptr, &IconButtonHover))
+		if(DoMenuTabV2(&s_EditorButton, FONT_ICON_PEN_TO_SQUARE, false, &EditorButton, IGraphics::CORNER_ALL, &IconButtonDefault, nullptr, UseNewUi ? &IconButtonHover : nullptr))
 		{
 			g_Config.m_ClEditor = 1;
 		}
@@ -1111,7 +1176,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			const float CircleSize = minimum(DemoButton.w, DemoButton.h);
 			DemoButton.x += (DemoButton.w - CircleSize) / 2.0f;
 			DemoButton.w = CircleSize;
-			if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &DemoButton, IGraphics::CORNER_ALL, &IconButtonDefault, &IconButtonActive, &IconButtonHover))
+			if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &DemoButton, IGraphics::CORNER_ALL, &IconButtonDefault, UseNewUi ? &IconButtonActive : nullptr, UseNewUi ? &IconButtonHover : nullptr))
 			{
 				NewPage = PAGE_DEMOS;
 			}
@@ -1287,9 +1352,9 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			AnimatedButton.x += (Button.w - RevealWidth) * 0.5f;
 			AnimatedButton.w = RevealWidth;
 
-			ColorRGBA InactiveColor = ms_ColorTabbarInactive;
-			ColorRGBA ActiveColor = ms_ColorTabbarActive;
-			ColorRGBA HoverColor = ms_ColorTabbarHover;
+			ColorRGBA InactiveColor = UseNewUi ? MenuTabDefaultColor() : ms_ColorTabbarInactive;
+			ColorRGBA ActiveColor = UseNewUi ? MenuTabActiveColor() : ms_ColorTabbarActive;
+			ColorRGBA HoverColor = UseNewUi ? MenuTabHoverColor() : ms_ColorTabbarHover;
 			InactiveColor.a *= AppearStrength;
 			ActiveColor.a *= AppearStrength;
 			HoverColor.a *= AppearStrength;
@@ -1393,7 +1458,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			const float CircleSize = minimum(DemoButton.w, DemoButton.h);
 			DemoButton.x += (DemoButton.w - CircleSize) / 2.0f;
 			DemoButton.w = CircleSize;
-			if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &DemoButton, IGraphics::CORNER_ALL, &IconButtonDefault, &IconButtonActive, &IconButtonHover))
+			if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &DemoButton, IGraphics::CORNER_ALL, &IconButtonDefault, UseNewUi ? &IconButtonActive : nullptr, UseNewUi ? &IconButtonHover : nullptr))
 			{
 				NewPage = PAGE_DEMOS;
 			}
@@ -1420,7 +1485,8 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		const uint64_t IndicatorNode = BuildUiAnimNodeKey(MakeUiScopeHash("menubar_v2_indicator"), static_cast<uint64_t>(ClientState));
 		CUiV2AnimationRuntime &AnimRt = GameClient()->UiRuntimeV2()->AnimRuntime();
 		const CUIRect IndicatorRect = ResolveUiAnimValueRect(AnimRt, IndicatorNode, IndicatorTarget, ui_curve::EMPHASIZED.m_DurationSec, ui_curve::EMPHASIZED.m_Easing);
-		IndicatorRect.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_ALL, 1.5f);
+		const ColorRGBA IndicatorColor = g_Config.m_QmNewUi != 0 ? MenuUiColorAccent(1.0f) : ui_token::color::ACCENT_PRIMARY;
+		IndicatorRect.Draw(IndicatorColor, IGraphics::CORNER_ALL, 1.5f);
 	}
 
 	if(NewPage != -1)
@@ -1990,7 +2056,6 @@ void CMenus::Render()
 		{
 			RenderBackground();
 		}
-<<<<<<< HEAD
 		// feat-004: deep glass overlay on the menu background so feat-003 cards
 		// and the modern nav widgets read with adequate contrast. Fades in
 		// over 0.4s on first entry so the transition out of the loading screen
@@ -2002,8 +2067,6 @@ void CMenus::Render()
 			const CUIRect FullScreen = *Ui()->Screen();
 			FullScreen.Draw(Overlay, IGraphics::CORNER_NONE, 0.0f);
 		}
-=======
->>>>>>> 4fc26774d (fix(client):修复游戏内菜单与进服加载显示异常)
 		ms_ColorTabbarInactive = ms_ColorTabbarInactiveOutgame;
 		ms_ColorTabbarActive = ms_ColorTabbarActiveOutgame;
 		ms_ColorTabbarHover = ms_ColorTabbarHoverOutgame;

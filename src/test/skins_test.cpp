@@ -424,7 +424,7 @@ TEST(Skins, TeeSkinUploadRequiresWholeSourceTextureBudgetBeforeUpload)
 	EXPECT_NE(ProcessSkinBody.find("LogSettingsSkinSourceWaitEvent(pSkinContainer->Name(), \"max_per_frame\""), std::string::npos);
 	EXPECT_NE(Source.find("static constexpr int SETTINGS_SKIN_SOURCE_TEXTURE_UPLOADS = 24;"), std::string::npos);
 	EXPECT_NE(Source.find("event=%s skin=%s artifact=source width=%d height=%d bytes=%d dur_ms=%.3f uploads=%d"), std::string::npos);
-	EXPECT_NE(Source.find("LogSettingsSkinPreviewSourceStageEvent(\"upload_done\""), std::string::npos);
+	EXPECT_NE(Source.find("LogSettingsSkinSourceStageEvent(\"upload_done\""), std::string::npos);
 }
 
 TEST(Skins, TeeSettingsListUsesIdleBackgroundRequestsAfterVisibleSettle)

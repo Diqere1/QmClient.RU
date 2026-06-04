@@ -3478,7 +3478,7 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		{
 			const bool ResourcesReady = PrewarmSettingsPageResources(JobPage, PageTab, ContentView);
 			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, Job.m_ScrollY, ResourcesReady);
-			m_aSettingsPagePrewarmed[Slot] = ResourcesReady && PageReady;
+			m_aSettingsPagePrewarmed[Slot] = SettingsPageCanUsePageFbo(JobPage, SETTINGS_ASSETS, -1, PageTab) ? (ResourcesReady && PageReady) : ResourcesReady;
 			if(m_aSettingsPagePrewarmed[Slot])
 				++m_SettingsStartupWarmupCursor;
 		}

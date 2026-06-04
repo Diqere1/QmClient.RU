@@ -850,35 +850,6 @@ const char *SettingsSkinEffectiveFrameContextName(const SSettingsResourceFrameCo
 	return "idle_visible";
 }
 
-bool SettingsSkinPreviewObligationCanAdmitNewSource(bool CountGateReached, int ActiveSources, int MaxSources)
-{
-	(void)CountGateReached;
-	(void)ActiveSources;
-	(void)MaxSources;
-	return true;
-}
-
-bool SettingsSkinPreviewObligationRaisesSourcePriority(bool HasPendingPreviewObligation, bool StablePreviewAlreadyExists)
-{
-	return HasPendingPreviewObligation && !StablePreviewAlreadyExists;
-}
-
-bool SettingsSkinPreviewObligationShouldPin(bool InVisibleRange, bool StablePreviewAlreadyExists, bool CountGateReached)
-{
-	(void)CountGateReached;
-	return InVisibleRange && !StablePreviewAlreadyExists;
-}
-
-bool SettingsSkinPreviewObligationShouldPin(const SSettingsSkinPreviewObligationState &State)
-{
-	return SettingsSkinPreviewObligationShouldPin(State.m_Visible, State.m_HasStablePreview, State.m_CountGateReached);
-}
-
-bool SettingsSkinSourceFallbackShouldPin(bool SourceLoaded, bool CachedPreviewReady)
-{
-	return SourceLoaded && !CachedPreviewReady;
-}
-
 size_t SettingsSkinSourceBytesEstimate(int Width, int Height, int PixelCopies)
 {
 	if(Width <= 0 || Height <= 0 || PixelCopies <= 0)
@@ -889,11 +860,6 @@ size_t SettingsSkinSourceBytesEstimate(int Width, int Height, int PixelCopies)
 bool SettingsSkinResidencyShouldReclaim(bool BytesBudgetExceeded, bool CountFuseExceeded)
 {
 	return BytesBudgetExceeded || CountFuseExceeded;
-}
-
-bool SettingsSkinResidencyShouldReclaimSourceBeforeStablePreview(bool BytesBudgetExceeded, bool HasStablePreview)
-{
-	return BytesBudgetExceeded && HasStablePreview;
 }
 
 const char *SettingsWorkshopCatalogSourceName(ESettingsWorkshopCatalogSource Source)
@@ -1080,7 +1046,8 @@ bool SettingsPageCanUsePageFbo(int Page, int AssetsPage, int DynamicPreviewPage,
 {
 	const bool IsTClientSettingsPage = Page == CMenus::SETTINGS_TCLIENT && Tab == 0;
 	const bool IsTeeSettingsPage = Page == CMenus::SETTINGS_TEE || Page == CMenus::SETTINGS_PLAYER;
-	return Page >= 0 && Page != AssetsPage && Page != DynamicPreviewPage && !IsTClientSettingsPage && !IsTeeSettingsPage;
+	const bool IsSystemSettingsPage = Page == CMenus::SETTINGS_GRAPHICS;
+	return Page >= 0 && Page != AssetsPage && Page != DynamicPreviewPage && !IsTClientSettingsPage && !IsTeeSettingsPage && !IsSystemSettingsPage;
 }
 
 const char *SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason StopReason)

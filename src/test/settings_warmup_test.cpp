@@ -1,7 +1,6 @@
 #include <game/client/components/settings_warmup.h>
 #include <game/client/components/menus.h>
 #include <game/client/components/settings_resource_jobs.h>
-#include <game/client/components/settings_skin_preview_cache.h>
 
 #include <fstream>
 #include <sstream>
@@ -283,7 +282,7 @@ TEST(SettingsWarmup, SettingsFrameBudgetResetsBeforeUpdatePhaseConsumers)
 	EXPECT_NE(MenusHeaderSource.find("SettingsApplyActiveTeeSkinFrameBudget(m_SettingsFrameBudget, TeeSettingsActive);"), std::string::npos);
 }
 
-TEST(SettingsWarmup, LoadingPrewarmPumpsSkinUpdatesForTeeSources)
+TEST(SettingsWarmup, LoadingPrewarmDoesNotPumpResourceWork)
 {
 	std::ifstream GameClientFile("src/game/client/gameclient.cpp");
 	ASSERT_TRUE(GameClientFile.good());
@@ -297,17 +296,12 @@ TEST(SettingsWarmup, LoadingPrewarmPumpsSkinUpdatesForTeeSources)
 	ASSERT_NE(OnUpdatePos, std::string::npos);
 	const std::string PrewarmBody = GameClientSource.substr(PrewarmPos, OnUpdatePos - PrewarmPos);
 
-	EXPECT_NE(PrewarmBody.find("const int TeeWarmupEntries = SettingsTeeSkinListFirstPageWarmupEntries(MainView.h);"), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("const int MaxAttempts = SettingsLoadingPrewarmMaxAttempts(CMenus::SettingsRuntimeCacheWarmupSteps(), TeeWarmupEntries);"), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("const bool WarmupReady = m_Menus.PrewarmSettingsRuntimeCaches(MainView);"), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("ConsecutiveNoProgressSteps"), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("SettingsLoadingPrewarmShouldKeepPumping(false, CompletedSteps, MaxAttempts, ConsecutiveNoProgressSteps)"), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("LogSettingsLoadingPrewarmEvent(Client(), \"startup_ready\""), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("LogSettingsLoadingPrewarmEvent(Client(), \"startup_exhausted\""), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("m_Menus.ResetSettingsFrameBudgetForFrame(true);"), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("m_GpuUploadLimiter.OnFrameStart(SettingsSkinGpuUploadLimiterUnits(TeePrewarmFrameContext, true));"), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("m_Skins.UpdateForSettingsWarmup();"), std::string::npos);
-	EXPECT_NE(PrewarmBody.find("m_Menus.RenderLoading(pLoadingCaption, pLoadingMessage, 0);"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("(void)pLoadingCaption;"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("(void)pLoadingMessage;"), std::string::npos);
+	EXPECT_NE(PrewarmBody.find("return;"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("m_Menus.PrewarmSettingsRuntimeCaches(MainView);"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("m_Skins.UpdateForSettingsWarmup();"), std::string::npos);
+	EXPECT_EQ(PrewarmBody.find("m_Menus.RenderLoading(pLoadingCaption, pLoadingMessage, 0);"), std::string::npos);
 	EXPECT_NE(GameClientSource.find("PrewarmSettingsRuntimeCachesDuringLoading(pLoadingDDNetCaption, pLoadingMessageAssets);"), std::string::npos);
 	EXPECT_EQ(PrewarmBody.find("maximum(CMenus::SettingsRuntimeCacheWarmupSteps() * 4, 1)"), std::string::npos);
 	EXPECT_EQ(PrewarmBody.find("m_Skins.OnUpdate();"), std::string::npos);
@@ -1064,8 +1058,28 @@ TEST(SettingsResourceJobs, AssetsPageRejectsWholePageFbo)
 	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_ASSETS, CMenus::SETTINGS_ASSETS));
 	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_TEE, CMenus::SETTINGS_ASSETS));
 	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_PLAYER, CMenus::SETTINGS_ASSETS));
+	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_GRAPHICS, CMenus::SETTINGS_ASSETS));
 	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_TCLIENT, CMenus::SETTINGS_ASSETS));
 	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_LANGUAGE, CMenus::SETTINGS_ASSETS));
+}
+
+TEST(SettingsWarmup, GraphicsPageRuntimeWarmupDoesNotRenderSystemControls)
+{
+	std::ifstream MenusSourceFile("src/game/client/components/menus.cpp");
+	ASSERT_TRUE(MenusSourceFile.good());
+	std::stringstream MenusBuffer;
+	MenusBuffer << MenusSourceFile.rdbuf();
+	const std::string MenusSource = MenusBuffer.str();
+
+	const size_t WarmupPos = MenusSource.find("bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY, bool ResourcesReady)");
+	ASSERT_NE(WarmupPos, std::string::npos);
+	const size_t DrawPos = MenusSource.find("bool CMenus::DrawSettingsPageRuntimeCache", WarmupPos);
+	ASSERT_NE(DrawPos, std::string::npos);
+	const std::string WarmupBody = MenusSource.substr(WarmupPos, DrawPos - WarmupPos);
+
+	EXPECT_NE(WarmupBody.find("if(!SettingsPageCanUsePageFbo(Page, SETTINGS_ASSETS))"), std::string::npos);
+	EXPECT_NE(WarmupBody.find("RenderSettingsGraphics(CacheView);"), std::string::npos);
+	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_GRAPHICS, CMenus::SETTINGS_ASSETS));
 }
 
 TEST(SettingsResourceJobs, AssetWarmupTracksAllTabsAndCycles)
@@ -1796,46 +1810,6 @@ TEST(SettingsResourceJobs, TeeBackgroundWindowShrinksWhenDecodeJobsSaturate)
 	EXPECT_EQ(Update.m_Decision, ESettingsSkinBackgroundWindowDecision::DECREASE);
 }
 
-TEST(SettingsResourceJobs, VisiblePreviewObligationCanBypassLoadedMaxCountFuse)
-{
-	EXPECT_TRUE(SettingsSkinPreviewObligationCanAdmitNewSource(true, 256, 256));
-	EXPECT_TRUE(SettingsSkinPreviewObligationCanAdmitNewSource(false, 255, 256));
-}
-
-TEST(SettingsResourceJobs, PreviewObligationOnlyReordersEvictionWithinAdmittedSources)
-{
-	EXPECT_TRUE(SettingsSkinPreviewObligationRaisesSourcePriority(true, false));
-}
-
-TEST(SettingsResourceJobs, PreviewObligationLifecycleHandlesVisibleExitAndStablePromotion)
-{
-	EXPECT_TRUE(SettingsSkinPreviewObligationShouldPin(true, false, false));
-	EXPECT_FALSE(SettingsSkinPreviewObligationShouldPin(false, true, false));
-	EXPECT_TRUE(SettingsSkinPreviewObligationShouldPin(true, false, true));
-}
-
-TEST(SettingsResourceJobs, SourceFallbackPinsOnlyLoadedRowsWithoutCachedPreview)
-{
-	EXPECT_TRUE(SettingsSkinSourceFallbackShouldPin(true, false));
-	EXPECT_FALSE(SettingsSkinSourceFallbackShouldPin(true, true));
-	EXPECT_FALSE(SettingsSkinSourceFallbackShouldPin(false, false));
-}
-
-TEST(SettingsResourceJobs, PreviewObligationDoesNotSharePinAcrossDifferentArtifactKeys)
-{
-	SSettingsSkinPreviewCacheKey A{"default", 3, 64, "hash-a", 0, false};
-	SSettingsSkinPreviewCacheKey B{"default", 3, 64, "hash-b", 0, false};
-	EXPECT_NE(A, B);
-	EXPECT_FALSE(SettingsSkinPreviewObligationSharesPin(A, B));
-}
-
-TEST(SettingsResourceJobs, CacheDisabledVariantsDoNotCreatePreviewObligation)
-{
-	EXPECT_FALSE(SettingsSkinPreviewShouldCreateObligation(ESettingsSkinPreviewCacheDisabledReason::WHITE_FEET));
-	EXPECT_FALSE(SettingsSkinPreviewShouldCreateObligation(ESettingsSkinPreviewCacheDisabledReason::SIXUP));
-	EXPECT_FALSE(SettingsSkinPreviewShouldCreateObligation(ESettingsSkinPreviewCacheDisabledReason::BACKEND_UNSUPPORTED));
-}
-
 TEST(SettingsResourceJobs, SourceBytesEstimateExceedsZeroForLoadedSkin)
 {
 	EXPECT_GT(SettingsSkinSourceBytesEstimate(256, 128, 2), 0u);
@@ -1849,11 +1823,6 @@ TEST(SettingsResourceJobs, BytesBudgetCanTriggerReclaimBeforeCountFuse)
 TEST(SettingsResourceJobs, CountFuseStillAppliesWhenBytesBudgetIsWithinLimit)
 {
 	EXPECT_TRUE(SettingsSkinResidencyShouldReclaim(false, true));
-}
-
-TEST(SettingsResourceJobs, LowBudgetPrefersReclaimingSourceCapabilityBeforeStablePreview)
-{
-	EXPECT_TRUE(SettingsSkinResidencyShouldReclaimSourceBeforeStablePreview(true, true));
 }
 
 TEST(SettingsResourceJobs, WorkshopInstalledAssetCanUseWorkshopCatalogAndLocalBytes)

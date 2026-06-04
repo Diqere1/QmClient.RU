@@ -53,13 +53,6 @@ struct SSettingsResourceFrameContext
 	bool m_HighPrioritySettled = false;
 };
 
-struct SSettingsSkinPreviewObligationState
-{
-	bool m_Visible = false;
-	bool m_HasStablePreview = false;
-	bool m_CountGateReached = false;
-};
-
 enum class ESettingsResourcePriority
 {
 	BACKGROUND,
@@ -304,14 +297,8 @@ const char *SettingsSkinBackgroundWindowDecisionName(ESettingsSkinBackgroundWind
 const char *SettingsSkinThroughputControllerModeName(ESettingsSkinThroughputControllerMode Mode);
 const char *SettingsSkinThroughputControllerReasonName(ESettingsSkinThroughputControllerReason Reason);
 const char *SettingsSkinEffectiveFrameContextName(const SSettingsResourceFrameContext &Context, bool TeeSettingsActive);
-bool SettingsSkinPreviewObligationCanAdmitNewSource(bool CountGateReached, int ActiveSources, int MaxSources);
-bool SettingsSkinPreviewObligationRaisesSourcePriority(bool HasPendingPreviewObligation, bool StablePreviewAlreadyExists);
-bool SettingsSkinPreviewObligationShouldPin(bool InVisibleRange, bool StablePreviewAlreadyExists, bool CountGateReached);
-bool SettingsSkinPreviewObligationShouldPin(const SSettingsSkinPreviewObligationState &State);
-bool SettingsSkinSourceFallbackShouldPin(bool SourceLoaded, bool CachedPreviewReady);
 size_t SettingsSkinSourceBytesEstimate(int Width, int Height, int PixelCopies);
 bool SettingsSkinResidencyShouldReclaim(bool BytesBudgetExceeded, bool CountFuseExceeded);
-bool SettingsSkinResidencyShouldReclaimSourceBeforeStablePreview(bool BytesBudgetExceeded, bool HasStablePreview);
 const char *SettingsWorkshopCatalogSourceName(ESettingsWorkshopCatalogSource Source);
 const char *SettingsWorkshopBytesSourceName(ESettingsWorkshopBytesSource Source);
 void SettingsApplyActiveTeeSkinFrameBudget(SSettingsWarmupFrameBudget &Budget, bool TeeSettingsActive);

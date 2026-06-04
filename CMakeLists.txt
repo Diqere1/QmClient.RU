@@ -2721,8 +2721,6 @@ if(CLIENT)
     components/settings_runtime_cache.h
     components/settings_resource_jobs.cpp
     components/settings_resource_jobs.h
-    components/settings_skin_preview_cache.cpp
-    components/settings_skin_preview_cache.h
     components/settings_warmup.cpp
     components/settings_warmup.h
     components/skins.cpp
@@ -3454,6 +3452,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     prng_test.cpp
     qm_chat_interactions_test.cpp
     qm_hud_notifications_test.cpp
+    qm_new_ui_menu_branch_test.cpp
     qm_modes_test.cpp
     QmUiTokensTest.cpp
     qmclient_monitoring_test.cpp
@@ -3464,7 +3463,6 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     serverbrowser_test.cpp
     serverinfo_test.cpp
     settings_warmup_test.cpp
-    settings_skin_preview_cache_test.cpp
     skin_transition_test.cpp
     skins_test.cpp
     render_target_test.cpp
@@ -3501,7 +3499,6 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/components/settings_runtime_cache.cpp
     src/game/client/components/settings_resource_jobs.cpp
     src/game/client/components/settings_warmup.cpp
-    src/game/client/components/settings_skin_preview_cache.cpp
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp

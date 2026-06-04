@@ -822,8 +822,14 @@ int CInput::Update()
 			{
 #if SDL_VERSION_ATLEAST(2, 0, 18)
 			case SDL_WINDOWEVENT_DISPLAY_CHANGED:
-				Graphics()->SwitchWindowScreen(Event.display.data1, false);
+			{
+				const int DisplayIndex = Event.window.data1;
+				if(DisplayIndex >= 0 && DisplayIndex < Graphics()->GetNumScreens())
+					Graphics()->SwitchWindowScreen(DisplayIndex, false);
+				else
+					log_warn("gfx", "Ignoring invalid display index from SDL_WINDOWEVENT_DISPLAY_CHANGED: %d", DisplayIndex);
 				break;
+			}
 #endif
 			case SDL_WINDOWEVENT_MOVED:
 				Graphics()->Move(Event.window.data1, Event.window.data2);

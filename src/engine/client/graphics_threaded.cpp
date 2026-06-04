@@ -81,6 +81,23 @@ static bool IsMainThread()
 	return std::this_thread::get_id() == gs_MainThreadId;
 }
 
+static bool IsPlausibleWindowRefreshRate(int RefreshRate)
+{
+	return RefreshRate >= 0 && RefreshRate <= 1000;
+}
+
+static bool IsPlausibleWindowSize(int Width, int Height)
+{
+	return Width >= 320 && Height >= 240 && Width <= 16384 && Height <= 16384;
+}
+
+static int LogicalWindowSizeFromViewport(int ViewportSize, float HiDPIScale)
+{
+	if(HiDPIScale > 0.0f)
+		return std::max(round_to_int(ViewportSize / HiDPIScale), 1);
+	return ViewportSize;
+}
+
 static bool CommandBufferCanFitCommands(CCommandBuffer &CommandBuffer, size_t FirstCommandSize, size_t SecondCommandSize)
 {
 	auto &Buffer = CommandBuffer.m_CmdBuffer;
@@ -3491,6 +3508,25 @@ void CGraphics_Threaded::GotResized(int w, int h, int RefreshRate)
 	// if RefreshRate is -1 use the current config refresh rate
 	if(RefreshRate == -1)
 		RefreshRate = g_Config.m_GfxScreenRefreshRate;
+	if(!IsPlausibleWindowRefreshRate(RefreshRate))
+	{
+		log_warn("gfx", "Ignoring implausible refresh rate during resize: %d", RefreshRate);
+		RefreshRate = m_ScreenRefreshRate;
+	}
+	if(!IsPlausibleWindowSize(w, h))
+	{
+		log_warn("gfx", "Ignoring implausible resize dimensions: %dx%d", w, h);
+		if(IsPlausibleWindowSize(g_Config.m_GfxScreenWidth, g_Config.m_GfxScreenHeight))
+		{
+			w = g_Config.m_GfxScreenWidth;
+			h = g_Config.m_GfxScreenHeight;
+		}
+		else
+		{
+			w = LogicalWindowSizeFromViewport(m_ScreenWidth, m_ScreenHiDPIScale);
+			h = LogicalWindowSizeFromViewport(m_ScreenHeight, m_ScreenHiDPIScale);
+		}
+	}
 
 	// if the size change event is triggered, set all parameters and change the viewport
 	auto PrevCanvasWidth = m_ScreenWidth;

@@ -3543,6 +3543,7 @@ enum
 void CMenus::RenderServerbrowserTabBar(CUIRect TabBar)
 {
 	CUIRect FilterTabButton, InfoTabButton, FriendsTabButton, QmTabButton;
+	const bool UseNewUi = g_Config.m_QmNewUi != 0;
 	TabBar.VSplitLeft(TabBar.w / 4.0f, &FilterTabButton, &TabBar);
 	TabBar.VSplitLeft(TabBar.w / 3.0f, &InfoTabButton, &TabBar);
 	TabBar.VSplitLeft(TabBar.w / 2.0f, &FriendsTabButton, &QmTabButton);
@@ -3553,8 +3554,9 @@ void CMenus::RenderServerbrowserTabBar(CUIRect TabBar)
 	FriendsTabButton.VSplitRight(3.0f, &FriendsTabButton, nullptr);
 	QmTabButton.VSplitLeft(3.0f, nullptr, &QmTabButton);
 
-	const ColorRGBA ColorActive = MenuPanelElevatedColor(0.92f);
-	const ColorRGBA ColorInactive = MenuPanelColor(0.70f);
+	const ColorRGBA ColorActive = UseNewUi ? MenuPanelElevatedColor(0.92f) : ms_ColorTabbarActive;
+	const ColorRGBA ColorInactive = UseNewUi ? MenuPanelColor(0.70f) : ms_ColorTabbarInactive;
+	const ColorRGBA ColorHover = UseNewUi ? MenuPanelElevatedColor(0.82f) : ms_ColorTabbarHover;
 
 	if(!Ui()->IsPopupOpen() && Ui()->ConsumeHotkey(CUi::HOTKEY_TAB))
 	{
@@ -3566,21 +3568,21 @@ void CMenus::RenderServerbrowserTabBar(CUIRect TabBar)
 	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
 
 	static CButtonContainer s_FilterTabButton;
-	if(DoButton_MenuTab(&s_FilterTabButton, FONT_ICON_LIST_UL, g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_FILTERS, &FilterTabButton, IGraphics::CORNER_ALL, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_FILTER], &ColorInactive, &ColorActive))
+	if(DoButton_MenuTab(&s_FilterTabButton, FONT_ICON_LIST_UL, g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_FILTERS, &FilterTabButton, IGraphics::CORNER_ALL, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_FILTER], &ColorInactive, &ColorActive, &ColorHover))
 	{
 		g_Config.m_UiToolboxPage = UI_TOOLBOX_PAGE_FILTERS;
 	}
 	GameClient()->m_Tooltips.DoToolTip(&s_FilterTabButton, &FilterTabButton, Localize("Server filter"));
 
 	static CButtonContainer s_InfoTabButton;
-	if(DoButton_MenuTab(&s_InfoTabButton, FONT_ICON_INFO, g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_INFO, &InfoTabButton, IGraphics::CORNER_ALL, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_INFO], &ColorInactive, &ColorActive))
+	if(DoButton_MenuTab(&s_InfoTabButton, FONT_ICON_INFO, g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_INFO, &InfoTabButton, IGraphics::CORNER_ALL, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_INFO], &ColorInactive, &ColorActive, &ColorHover))
 	{
 		g_Config.m_UiToolboxPage = UI_TOOLBOX_PAGE_INFO;
 	}
 	GameClient()->m_Tooltips.DoToolTip(&s_InfoTabButton, &InfoTabButton, Localize("Server info"));
 
 	static CButtonContainer s_FriendsTabButton;
-	if(DoButton_MenuTab(&s_FriendsTabButton, FONT_ICON_HEART, g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_FRIENDS, &FriendsTabButton, IGraphics::CORNER_ALL, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_FRIENDS], &ColorInactive, &ColorActive))
+	if(DoButton_MenuTab(&s_FriendsTabButton, FONT_ICON_HEART, g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_FRIENDS, &FriendsTabButton, IGraphics::CORNER_ALL, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_FRIENDS], &ColorInactive, &ColorActive, &ColorHover))
 	{
 		g_Config.m_UiToolboxPage = UI_TOOLBOX_PAGE_FRIENDS;
 	}
@@ -3589,7 +3591,7 @@ void CMenus::RenderServerbrowserTabBar(CUIRect TabBar)
 	TextRender()->SetRenderFlags(0);
 	TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 	static CButtonContainer s_QmTabButton;
-	if(DoButton_MenuTab(&s_QmTabButton, Localize("Qm"), g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_QM, &QmTabButton, IGraphics::CORNER_ALL, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_QM], &ColorInactive, &ColorActive))
+	if(DoButton_MenuTab(&s_QmTabButton, Localize("Qm"), g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_QM, &QmTabButton, IGraphics::CORNER_ALL, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_QM], &ColorInactive, &ColorActive, &ColorHover))
 	{
 		g_Config.m_UiToolboxPage = UI_TOOLBOX_PAGE_QM;
 	}
@@ -3687,10 +3689,13 @@ void CMenus::RenderServerbrowser(CUIRect MainView, bool DrawBackground)
 	*/
 	// clang-format on
 
+	(void)DrawBackground;
+	const bool UseNewUi = g_Config.m_QmNewUi != 0;
 	CUIRect View = MainView;
-	if(DrawBackground)
-		View.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
-	View.Margin(10.0f, &View);
+	if(UseNewUi)
+		View.Margin(6.0f, &View);
+	else
+		View.Margin(std::clamp(View.w * 0.008f, 4.0f, 8.0f), &View);
 
 	if(g_Config.m_UiPage == PAGE_FAVORITE_MAPS)
 	{
@@ -3701,17 +3706,29 @@ void CMenus::RenderServerbrowser(CUIRect MainView, bool DrawBackground)
 	CUIRect ServerListBase, StatusBox, ToolBoxBase, TabBar;
 	CUIRect ContentLayout = View;
 	CUIRect ServerListWithGap;
-	ContentLayout.VSplitRight(205.0f, &ServerListWithGap, &ToolBoxBase);
-	ServerListWithGap.VSplitRight(10.0f, &ServerListBase, nullptr);
-	ServerListBase.HSplitBottom(10.0f, &ServerListBase, nullptr);
-	ServerListBase.HSplitBottom(84.0f, &ServerListBase, &StatusBox);
-	ServerListBase.HSplitBottom(10.0f, &ServerListBase, nullptr);
-	ServerListBase.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, 10.0f);
-	StatusBox.Draw(MenuPanelElevatedColor(), IGraphics::CORNER_ALL, 10.0f);
-	ToolBoxBase.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, 10.0f);
-	ServerListBase.Margin(10.0f, &ServerListBase);
-	StatusBox.Margin(10.0f, &StatusBox);
-	ToolBoxBase.Margin(10.0f, &ToolBoxBase);
+	const float ToolBoxWidth = UseNewUi ? 205.0f : 188.0f;
+	const float ColumnGap = UseNewUi ? 10.0f : 6.0f;
+	const float StatusHeight = UseNewUi ? 84.0f : 76.0f;
+	ContentLayout.VSplitRight(ToolBoxWidth, &ServerListWithGap, &ToolBoxBase);
+	ServerListWithGap.VSplitRight(ColumnGap, &ServerListBase, nullptr);
+	ServerListBase.HSplitBottom(ColumnGap, &ServerListBase, nullptr);
+	ServerListBase.HSplitBottom(StatusHeight, &ServerListBase, &StatusBox);
+	ServerListBase.HSplitBottom(ColumnGap, &ServerListBase, nullptr);
+	if(UseNewUi)
+	{
+		ServerListBase.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, 10.0f);
+		StatusBox.Draw(MenuPanelElevatedColor(), IGraphics::CORNER_ALL, 10.0f);
+		ToolBoxBase.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, 10.0f);
+		ServerListBase.Margin(10.0f, &ServerListBase);
+		StatusBox.Margin(10.0f, &StatusBox);
+		ToolBoxBase.Margin(10.0f, &ToolBoxBase);
+	}
+	else
+	{
+		ServerListBase.Margin(std::clamp(ServerListBase.w * 0.006f, 1.0f, 4.0f), &ServerListBase);
+		StatusBox.Margin(std::clamp(StatusBox.w * 0.006f, 1.0f, 4.0f), &StatusBox);
+		ToolBoxBase.Margin(std::clamp(ToolBoxBase.w * 0.006f, 1.0f, 4.0f), &ToolBoxBase);
+	}
 
 	float TransitionOffset = 0.0f;
 	const float TransitionStrength = ReadUiSwitchAnimation(UiAnimNodeKey("browser_page_switch"));
