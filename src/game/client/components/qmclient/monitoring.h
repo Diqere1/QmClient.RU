@@ -11,6 +11,11 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <cstdint>
+#include <functional>
+#include <mutex>
+#include <thread>
 
 enum class EQmConnectionGrade
 {
@@ -86,6 +91,62 @@ struct SQmPerformanceMetrics
 	bool m_DeviceSampleAvailable = false;
 	SGraphicsMemoryStats m_GraphicsMemory;
 };
+
+struct SQmDevicePerfSample
+{
+	float m_GpuUtilPct = -1.0f;
+	float m_GpuDedicatedVramMb = -1.0f;
+	float m_GpuSharedVramMb = -1.0f;
+	float m_DiskReadMbPerSec = -1.0f;
+	bool m_Available = false;
+};
+
+struct SQmDevicePerfSnapshot
+{
+	SQmDevicePerfSample m_Sample;
+	uint64_t m_Version = 0;
+};
+
+class CQmDevicePerfSnapshotCache
+{
+public:
+	SQmDevicePerfSnapshot Publish(const SQmDevicePerfSample &Sample);
+	void Reset();
+	SQmDevicePerfSnapshot Snapshot() const;
+
+private:
+	mutable std::mutex m_Mutex;
+	SQmDevicePerfSnapshot m_Snapshot;
+};
+
+class CQmAsyncDevicePerfSampler
+{
+public:
+	using FSampleOverride = std::function<SQmDevicePerfSample()>;
+
+	explicit CQmAsyncDevicePerfSampler(FSampleOverride SampleOverride = {}, std::chrono::milliseconds PollInterval = std::chrono::milliseconds(100));
+	~CQmAsyncDevicePerfSampler();
+
+	void EnsureStarted();
+	void SetEnabled(bool Enabled);
+	void Stop();
+	SQmDevicePerfSnapshot Snapshot() const;
+
+private:
+	void Run();
+
+	FSampleOverride m_SampleOverride;
+	std::chrono::milliseconds m_PollInterval;
+	CQmDevicePerfSnapshotCache m_Cache;
+	std::thread m_Thread;
+	mutable std::mutex m_StateMutex;
+	std::condition_variable m_StateCv;
+	bool m_Started = false;
+	bool m_Enabled = false;
+	bool m_StopRequested = false;
+};
+
+void QmUpdateDevicePerfSamplerState(CQmAsyncDevicePerfSampler &Sampler, bool Enabled);
 
 struct SQmDiagnosticVerdict
 {
@@ -488,6 +549,7 @@ class CQmMonitoring : public CComponent
 public:
 	int Sizeof() const override { return sizeof(*this); }
 	void OnInit() override;
+	void OnShutdown() override;
 	void OnStateChange(int NewState, int OldState) override;
 	void OnRender() override;
 

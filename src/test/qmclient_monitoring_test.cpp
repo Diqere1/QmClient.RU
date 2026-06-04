@@ -1,10 +1,14 @@
+#define CONF_TEST 1
 #include <game/client/components/qmclient/monitoring.h>
 #include <game/client/components/qmclient/perf_logging.h>
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 TEST(QmMonitoringHelpers, ConnectionGradeTracksDisconnectedState)
 {
@@ -195,6 +199,121 @@ TEST(QmMonitoringHelpers, DeviceMetricsDefaultToUnavailable)
 	EXPECT_FLOAT_EQ(Perf.m_GpuDedicatedVramMb, -1.0f);
 	EXPECT_FLOAT_EQ(Perf.m_GpuSharedVramMb, -1.0f);
 	EXPECT_FLOAT_EQ(Perf.m_DiskReadMbPerSec, -1.0f);
+}
+
+namespace
+{
+
+template<typename TPredicate>
+bool WaitUntil(TPredicate Predicate, std::chrono::milliseconds Timeout = std::chrono::milliseconds(200))
+{
+	const auto Deadline = std::chrono::steady_clock::now() + Timeout;
+	while(std::chrono::steady_clock::now() < Deadline)
+	{
+		if(Predicate())
+			return true;
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+	return Predicate();
+}
+
+} // namespace
+
+TEST(QmMonitoringHelpers, DevicePerfSnapshotCacheReturnsConsistentVersionedSnapshot)
+{
+	CQmDevicePerfSnapshotCache Cache;
+
+	SQmDevicePerfSample First;
+	First.m_GpuUtilPct = 11.0f;
+	First.m_GpuDedicatedVramMb = 101.0f;
+	First.m_Available = true;
+	const SQmDevicePerfSnapshot FirstSnapshot = Cache.Publish(First);
+
+	SQmDevicePerfSample Second;
+	Second.m_GpuUtilPct = 27.5f;
+	Second.m_GpuDedicatedVramMb = 205.0f;
+	Second.m_GpuSharedVramMb = 17.0f;
+	Second.m_DiskReadMbPerSec = 3.5f;
+	Second.m_Available = true;
+	const SQmDevicePerfSnapshot Published = Cache.Publish(Second);
+
+	const SQmDevicePerfSnapshot Read = Cache.Snapshot();
+	EXPECT_GT(Published.m_Version, FirstSnapshot.m_Version);
+	EXPECT_EQ(Read.m_Version, Published.m_Version);
+	EXPECT_FLOAT_EQ(Read.m_Sample.m_GpuUtilPct, Second.m_GpuUtilPct);
+	EXPECT_FLOAT_EQ(Read.m_Sample.m_GpuDedicatedVramMb, Second.m_GpuDedicatedVramMb);
+	EXPECT_FLOAT_EQ(Read.m_Sample.m_GpuSharedVramMb, Second.m_GpuSharedVramMb);
+	EXPECT_FLOAT_EQ(Read.m_Sample.m_DiskReadMbPerSec, Second.m_DiskReadMbPerSec);
+	EXPECT_EQ(Read.m_Sample.m_Available, Second.m_Available);
+}
+
+TEST(QmMonitoringHelpers, DevicePerfSnapshotCacheKeepsSampleAndVersionConsistentAcrossThreads)
+{
+	CQmDevicePerfSnapshotCache Cache;
+	std::atomic<bool> Stop{false};
+	std::atomic<int> MismatchCount{0};
+
+	std::thread Writer([&]() {
+		for(uint64_t Version = 1; Version <= 2000; ++Version)
+		{
+			SQmDevicePerfSample Sample;
+			Sample.m_GpuUtilPct = (float)Version;
+			Sample.m_GpuDedicatedVramMb = (float)Version * 2.0f;
+			Sample.m_Available = true;
+			Cache.Publish(Sample);
+		}
+		Stop.store(true, std::memory_order_release);
+	});
+
+	std::thread Reader([&]() {
+		while(!Stop.load(std::memory_order_acquire))
+		{
+			const SQmDevicePerfSnapshot Snapshot = Cache.Snapshot();
+			if(Snapshot.m_Version == 0)
+				continue;
+			if(Snapshot.m_Sample.m_GpuUtilPct != (float)Snapshot.m_Version ||
+				Snapshot.m_Sample.m_GpuDedicatedVramMb != (float)Snapshot.m_Version * 2.0f)
+			{
+				MismatchCount.fetch_add(1, std::memory_order_relaxed);
+			}
+		}
+	});
+
+	Writer.join();
+	Reader.join();
+	EXPECT_EQ(MismatchCount.load(std::memory_order_relaxed), 0);
+}
+
+TEST(QmMonitoringHelpers, DevicePerfSamplerStateStopsWorkerOnDisableAndCanRestart)
+{
+	std::atomic<int> SampleCalls{0};
+	auto SampleFn = [&SampleCalls]() {
+		SQmDevicePerfSample Sample;
+		Sample.m_GpuUtilPct = (float)SampleCalls.fetch_add(1, std::memory_order_relaxed) + 1.0f;
+		Sample.m_Available = true;
+		return Sample;
+	};
+
+	CQmAsyncDevicePerfSampler Sampler(SampleFn, std::chrono::milliseconds(5));
+	QmUpdateDevicePerfSamplerState(Sampler, false);
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	EXPECT_EQ(SampleCalls.load(std::memory_order_relaxed), 0);
+
+	QmUpdateDevicePerfSamplerState(Sampler, true);
+	ASSERT_TRUE(WaitUntil([&]() { return SampleCalls.load(std::memory_order_relaxed) >= 2; }));
+
+	QmUpdateDevicePerfSamplerState(Sampler, false);
+	const int CallsAfterDisable = SampleCalls.load(std::memory_order_relaxed);
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	EXPECT_EQ(SampleCalls.load(std::memory_order_relaxed), CallsAfterDisable);
+	const SQmDevicePerfSnapshot ClearedSnapshot = Sampler.Snapshot();
+	EXPECT_EQ(ClearedSnapshot.m_Version, 0u);
+	EXPECT_FALSE(ClearedSnapshot.m_Sample.m_Available);
+	EXPECT_FLOAT_EQ(ClearedSnapshot.m_Sample.m_GpuUtilPct, -1.0f);
+
+	QmUpdateDevicePerfSamplerState(Sampler, true);
+	ASSERT_TRUE(WaitUntil([&]() { return SampleCalls.load(std::memory_order_relaxed) > CallsAfterDisable; }));
+	Sampler.Stop();
 }
 
 TEST(QmMonitoringHelpers, DiskReadRateUsesMegabytesPerSecond)

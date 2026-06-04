@@ -2687,6 +2687,7 @@ if(CLIENT)
     components/qmclient/modes.cpp
     components/qmclient/modes.h
     components/qmclient/monitoring.cpp
+    components/qmclient/monitoring_device_perf.cpp
     components/qmclient/monitoring.h
     components/qmclient/qmclient.cpp
     components/qmclient/qmclient.h
@@ -3507,6 +3508,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/generated/client_data.h
     src/generated/client_data7.h
     src/game/client/components/qmclient/hud_notification_rules.cpp
+    src/game/client/components/qmclient/monitoring_device_perf.cpp
     src/game/client/components/qmclient/modes.cpp
     src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp
