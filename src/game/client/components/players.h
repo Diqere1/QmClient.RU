@@ -46,6 +46,8 @@ class CPlayers : public CComponent
 
 	int m_WeaponEmoteQuadContainerIndex;
 	int m_aWeaponSpriteMuzzleQuadContainerIndex[NUM_WEAPONS];
+	int m_aWeaponSwitchLastWeapon[MAX_CLIENTS] = {};
+	double m_aWeaponSwitchStartTime[MAX_CLIENTS] = {};
 
 	void CreateNinjaTeeRenderInfo();
 	void CreateSpectatorTeeRenderInfo();

@@ -9,7 +9,7 @@
 
 // Centralized design tokens for feat-003. Inspired by Steam Library (deep blue
 // glass surface with #66c0f4 accent). Values are unscaled — callers apply
-// responsive UiScale on top, matching existing LG_* convention in
+// responsive UiScale on top, matching existing Lg* convention in
 // menus_qmclient.cpp.
 
 namespace ui_token::color

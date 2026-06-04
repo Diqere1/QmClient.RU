@@ -127,6 +127,7 @@ MACRO_CONFIG_INT(QmWeaponTrajectory, qm_weapon_trajectory, 1, 0, 2, CFGFLAG_CLIE
 MACRO_CONFIG_COL(QmWeaponTrajectoryColor, qm_weapon_trajectory_color, 16750899, CFGFLAG_CLIENT | CFGFLAG_SAVE, "武器弹道辅助线颜色")
 MACRO_CONFIG_INT(QmWeaponTrajectoryWidth, qm_weapon_trajectory_width, 2, 1, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "武器弹道辅助线宽度")
 MACRO_CONFIG_INT(QmWeaponTrajectoryAlpha, qm_weapon_trajectory_alpha, 70, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "武器弹道辅助线透明度")
+MACRO_CONFIG_INT(QmWeaponSwitchAnim, qm_weapon_switch_anim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "切换武器时播放滑入旋转动画")
 MACRO_CONFIG_INT(QmDeepflyMode, qm_deepfly_mode, 0, 0, 3, CFGFLAG_CLIENT, "Deepfly模式（0=正常，1=DF，2=HDF，3=自定义）")
 
 // Auto Unspec on Unfreeze / 解冻自动取消旁观

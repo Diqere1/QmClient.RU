@@ -885,6 +885,33 @@ void CPlayers::RenderPlayer(
 			float Recoil = 0.0f;
 			vec2 WeaponPosition;
 			bool IsSit = Inactive && !InAir && Stationary;
+			vec2 WeaponSwitchOffset = vec2(0.0f, 0.0f);
+			float WeaponSwitchAngle = 0.0f;
+			if(Local)
+			{
+				int &LastWeapon = m_aWeaponSwitchLastWeapon[ClientId];
+				double &SwitchStartTime = m_aWeaponSwitchStartTime[ClientId];
+				if(LastWeapon != Player.m_Weapon)
+				{
+					if(LastWeapon != -1)
+						SwitchStartTime = Client()->LocalTime();
+					LastWeapon = Player.m_Weapon;
+				}
+
+				if(g_Config.m_QmWeaponSwitchAnim)
+				{
+					constexpr float SwitchAnimDuration = 0.3f;
+					const float TimeSinceSwitch = (float)(Client()->LocalTime() - SwitchStartTime);
+					if(TimeSinceSwitch >= 0.0f && TimeSinceSwitch < SwitchAnimDuration)
+					{
+						const float Progress = TimeSinceSwitch / SwitchAnimDuration;
+						const float InvProgress = 1.0f - Progress;
+						const float Ease = 1.0f - InvProgress * InvProgress * InvProgress;
+						WeaponSwitchOffset += mix(Direction * 40.0f, vec2(0.0f, 0.0f), Ease);
+						WeaponSwitchAngle += (1.0f - Ease) * pi * 2.0f;
+					}
+				}
+			}
 
 			if(Player.m_Weapon == WEAPON_HAMMER)
 			{
@@ -905,16 +932,16 @@ void CPlayers::RenderPlayer(
 					if(!Inactive || LastAttackTime * HammerAnimationTimeScale < 1.0f)
 					{
 						if(Direction.x < 0)
-							Graphics()->QuadsSetRotation(-pi / 2 - State.GetAttach()->m_Angle * pi * 2);
+							Graphics()->QuadsSetRotation(-pi / 2 - State.GetAttach()->m_Angle * pi * 2 + WeaponSwitchAngle);
 						else
-							Graphics()->QuadsSetRotation(-pi / 2 + State.GetAttach()->m_Angle * pi * 2);
+							Graphics()->QuadsSetRotation(-pi / 2 + State.GetAttach()->m_Angle * pi * 2 + WeaponSwitchAngle);
 					}
 					else
 					{
-						Graphics()->QuadsSetRotation(Direction.x < 0 ? 100.0f : 500.0f);
+						Graphics()->QuadsSetRotation((Direction.x < 0 ? 100.0f : 500.0f) + WeaponSwitchAngle);
 					}
 
-					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
+					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x + WeaponSwitchOffset.x, WeaponPosition.y + WeaponSwitchOffset.y);
 					break;
 				}
 				case 1:
@@ -932,9 +959,10 @@ void CPlayers::RenderPlayer(
 					QuadsRotation += Angle;
 					if(Direction.x < 0.0f)
 						QuadsRotation += pi;
+					QuadsRotation += WeaponSwitchAngle;
 
 					Graphics()->QuadsSetRotation(QuadsRotation);
-					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
+					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x + WeaponSwitchOffset.x, WeaponPosition.y + WeaponSwitchOffset.y);
 					break;
 				}
 				case 2:
@@ -948,8 +976,8 @@ void CPlayers::RenderPlayer(
 					if(IsSit)
 						WeaponPosition.y += 3.0f;
 
-					Graphics()->QuadsSetRotation(Angle + 2 * pi);
-					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
+					Graphics()->QuadsSetRotation(Angle + 2 * pi + WeaponSwitchAngle);
+					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x + WeaponSwitchOffset.x, WeaponPosition.y + WeaponSwitchOffset.y);
 					RenderHand(&RenderInfo,
 						Position + Direction * g_pData->m_Weapons.m_aId[WEAPON_GUN].m_Offsetx - Direction * Recoil * 10.0f + vec2(0.0f, g_pData->m_Weapons.m_aId[WEAPON_GUN].m_Offsety),
 						Direction, -3 * pi / 4, vec2(-15, 4), Alpha);
@@ -964,6 +992,7 @@ void CPlayers::RenderPlayer(
 				WeaponPosition.y += g_pData->m_Weapons.m_aId[CurrentWeapon].m_Offsety;
 				if(IsSit)
 					WeaponPosition.y += 3.0f;
+				WeaponPosition += WeaponSwitchOffset;
 
 				if(Direction.x < 0.0f)
 				{
@@ -1043,7 +1072,8 @@ void CPlayers::RenderPlayer(
 					WeaponPosition.y += 3.0f;
 				if(Player.m_Weapon == WEAPON_GUN && g_Config.m_ClOldGunPosition)
 					WeaponPosition.y -= 8;
-				Graphics()->QuadsSetRotation(State.GetAttach()->m_Angle * pi * 2 + Angle);
+				WeaponPosition += WeaponSwitchOffset;
+				Graphics()->QuadsSetRotation(State.GetAttach()->m_Angle * pi * 2 + Angle + WeaponSwitchAngle);
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 			}
 
@@ -1842,6 +1872,7 @@ void CPlayers::CreateSpectatorTeeRenderInfo()
 
 void CPlayers::OnInit()
 {
+	std::fill(std::begin(m_aWeaponSwitchLastWeapon), std::end(m_aWeaponSwitchLastWeapon), -1);
 	m_WeaponEmoteQuadContainerIndex = Graphics()->CreateQuadContainer(false);
 
 	Graphics()->SetColor(1.f, 1.f, 1.f, 1.f);
