@@ -1849,23 +1849,7 @@ void CTClient::RandomFeetColor()
 void CTClient::RandomSkin(void *pUserData)
 {
 	CTClient *pThis = static_cast<CTClient *>(pUserData);
-	const auto &Skins = pThis->GameClient()->m_Skins.SkinList(0).Skins();
-	if(Skins.empty())
-	{
-		return;
-	}
-	const CSkins::CSkinListEntry &Skin = Skins[std::rand() % (int)Skins.size()];
-	str_copy(g_Config.m_ClPlayerSkin, Skin.SkinContainer()->Name());
-	if(Skin.ColorKey().has_value())
-	{
-		const auto &ColorKey = Skin.ColorKey().value();
-		g_Config.m_ClPlayerUseCustomColor = ColorKey.m_UseCustomColor ? 1 : 0;
-		if(ColorKey.m_UseCustomColor)
-		{
-			g_Config.m_ClPlayerColorBody = ColorKey.m_ColorBody;
-			g_Config.m_ClPlayerColorFeet = ColorKey.m_ColorFeet;
-		}
-	}
+	pThis->GameClient()->m_Skins.RandomizeSkin(0);
 }
 
 void CTClient::RandomFlag(void *pUserData)

@@ -75,6 +75,7 @@ public:
 	void UpdateVisibleRect(EHudEditorElement Element, const CUIRect &RenderedRect);
 
 	STransformScope BeginTransform(EHudEditorElement Element, const CUIRect &DefaultRect, bool Scalable = true, bool ApplyMapScreen = true);
+	STransformScope BeginTransform(EHudEditorElement Element, const CUIRect &TransformRect, const CUIRect &VisibleRect, bool Scalable = true, bool ApplyMapScreen = true);
 	void EndTransform(const STransformScope &Scope);
 
 private:
@@ -92,6 +93,8 @@ private:
 		CUIRect m_Rect{};
 		float m_BaseWidth = 0.0f;
 		float m_BaseHeight = 0.0f;
+		float m_StateOffsetX = 0.0f;
+		float m_StateOffsetY = 0.0f;
 		bool m_Scalable = true;
 	};
 
@@ -118,7 +121,7 @@ private:
 	void ParseLayoutConfig(const char *pConfig);
 	void SaveLayoutConfig();
 	void ResetLayoutConfig();
-	void ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight) const;
+	void ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight, float StateOffsetX, float StateOffsetY) const;
 	SElementState &EnsureState(EHudEditorElement Element);
 	const SElementState &State(EHudEditorElement Element) const;
 	int FindHoveredVisibleElement() const;

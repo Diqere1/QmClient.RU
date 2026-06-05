@@ -960,6 +960,85 @@ bool CFastPractice::ConsumeKillCommand()
 	return true;
 }
 
+void CFastPractice::StandbyCharacter(CCharacter *pChar) const
+{
+	if(!pChar)
+		return;
+
+	CNetObj_PlayerInput NeutralInput = *pChar->LatestInput();
+	NeutralizeInput(NeutralInput);
+	pChar->SetInput(&NeutralInput);
+
+	CCharacterCore Core = pChar->GetCore();
+	Core.m_Vel = vec2(0.0f, 0.0f);
+	Core.m_Direction = 0;
+	Core.m_Input = NeutralInput;
+	Core.m_HookState = HOOK_RETRACTED;
+	Core.SetHookedPlayer(-1);
+	Core.m_HookPos = Core.m_Pos;
+	Core.m_HookDir = vec2(0.0f, 0.0f);
+	Core.m_HookTick = 0;
+	Core.m_NewHook = false;
+	Core.m_TriggeredEvents = 0;
+	pChar->SetCore(Core);
+}
+
+bool CFastPractice::ConsumeSpectatorCommand()
+{
+	if(!m_Enabled)
+		return false;
+	if(Client()->State() != IClient::STATE_ONLINE)
+		return false;
+
+	int LocalClientId = -1;
+	int DummyClientId = -1;
+	if(!ResolvePracticeRoles(LocalClientId, DummyClientId))
+	{
+		Disable();
+		return true;
+	}
+	if(!m_PracticeWorldInitialized && !InitPracticeWorld())
+	{
+		Disable();
+		return true;
+	}
+
+	SyncPracticeWorldConfig();
+	m_PracticeBaseWorld.m_GameTick = Client()->PredGameTick(g_Config.m_ClDummy);
+
+	StandbyCharacter(m_PracticeBaseWorld.GetCharacterById(LocalClientId));
+	if(m_RequireDummy && DummyClientId >= 0)
+		StandbyCharacter(m_PracticeBaseWorld.GetCharacterById(DummyClientId));
+
+	CaptureServerReleasedFireStates();
+	CapturePracticeInputFilterStates();
+	ReleaseBufferedActionInputState();
+	m_SuppressFireOnNextPredictTick = true;
+	m_InputSuppressTicks = std::max(m_InputSuppressTicks, 2);
+
+	GameClient()->m_PredictedWorld.CopyWorldClean(&m_PracticeBaseWorld);
+	GameClient()->m_PrevPredictedWorld.CopyWorldClean(&m_PracticeBaseWorld);
+	if(CCharacter *pPredChar = GameClient()->m_PredictedWorld.GetCharacterById(LocalClientId))
+	{
+		GameClient()->m_PredictedChar = pPredChar->GetCore();
+		GameClient()->m_PredictedPrevChar = pPredChar->GetCore();
+		GameClient()->m_aClients[LocalClientId].m_Predicted = pPredChar->GetCore();
+		GameClient()->m_aClients[LocalClientId].m_PrevPredicted = pPredChar->GetCore();
+	}
+	if(m_RequireDummy && DummyClientId >= 0)
+	{
+		if(CCharacter *pPredDummy = GameClient()->m_PredictedWorld.GetCharacterById(DummyClientId))
+		{
+			GameClient()->m_aClients[DummyClientId].m_Predicted = pPredDummy->GetCore();
+			GameClient()->m_aClients[DummyClientId].m_PrevPredicted = pPredDummy->GetCore();
+		}
+	}
+	GameClient()->m_PredictedTick = m_PracticeBaseWorld.GameTick();
+	GameClient()->m_PredictedDummyId = CurrentPracticeDummyId();
+	ResetAttackTickHistory();
+	return true;
+}
+
 void CFastPractice::ResetPracticeToAnchor()
 {
 	if(!m_Enabled)
