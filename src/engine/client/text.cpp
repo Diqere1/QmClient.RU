@@ -1488,6 +1488,7 @@ public:
 		Cursor.m_FontSize = FontSize;
 		Cursor.m_Flags = Flags;
 		Cursor.m_LineWidth = LineWidth;
+		Cursor.m_CalculateVisualBoundingBox = TextSizeProps.m_pVisualTop != nullptr || TextSizeProps.m_pVisualBottom != nullptr;
 		TextEx(&Cursor, pText, StrLength);
 		if(TextSizeProps.m_pHeight != nullptr)
 			*TextSizeProps.m_pHeight = Cursor.Height();
@@ -1495,6 +1496,10 @@ public:
 			*TextSizeProps.m_pAlignedFontSize = Cursor.m_AlignedFontSize;
 		if(TextSizeProps.m_pMaxCharacterHeightInLine != nullptr)
 			*TextSizeProps.m_pMaxCharacterHeightInLine = Cursor.m_MaxCharacterHeight;
+		if(TextSizeProps.m_pVisualTop != nullptr)
+			*TextSizeProps.m_pVisualTop = Cursor.m_HasVisualBoundingBox ? Cursor.m_VisualTop - Cursor.m_StartY : 0.0f;
+		if(TextSizeProps.m_pVisualBottom != nullptr)
+			*TextSizeProps.m_pVisualBottom = Cursor.m_HasVisualBoundingBox ? Cursor.m_VisualBottom - Cursor.m_StartY : Cursor.Height();
 		if(TextSizeProps.m_pLineCount != nullptr)
 			*TextSizeProps.m_pLineCount = Cursor.m_LineCount;
 		return Cursor.m_LongestLineWidth;
@@ -1997,6 +2002,24 @@ public:
 					const float TmpY = (DrawY + pCursor->m_AlignedFontSize);
 					const float CharX = (DrawX + CharKerning) + BearingX;
 					const float CharY = TmpY - BearingY;
+					if(pCursor->m_CalculateVisualBoundingBox && pGlyph->m_CharHeight > 0.0f)
+					{
+						const float FillTopOffset = ((pGlyph->m_Height - pGlyph->m_CharHeight) * 0.5f) * Scale * pCursor->m_AlignedFontSize;
+						const float FillHeight = pGlyph->m_CharHeight * Scale * pCursor->m_AlignedFontSize;
+						const float CharTop = CharY - CharHeight + FillTopOffset;
+						const float CharBottom = CharTop + FillHeight;
+						if(!pCursor->m_HasVisualBoundingBox)
+						{
+							pCursor->m_HasVisualBoundingBox = true;
+							pCursor->m_VisualTop = CharTop;
+							pCursor->m_VisualBottom = CharBottom;
+						}
+						else
+						{
+							pCursor->m_VisualTop = minimum(pCursor->m_VisualTop, CharTop);
+							pCursor->m_VisualBottom = maximum(pCursor->m_VisualBottom, CharBottom);
+						}
+					}
 
 					// Check if we have any color split
 					ColorRGBA Color = m_Color;

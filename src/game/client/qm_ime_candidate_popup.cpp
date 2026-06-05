@@ -38,9 +38,9 @@ struct SImeTextMetrics
 {
 	float m_Width = 0.0f;
 	float m_Height = 0.0f;
-	float m_BiggestCharacterHeight = 0.0f;
+	float m_VisualTop = 0.0f;
+	float m_VisualHeight = 0.0f;
 	float m_DrawOffsetX = 0.0f;
-	float m_DrawOffsetY = 0.0f;
 };
 
 struct SImeCandidateMetrics
@@ -84,20 +84,19 @@ SImeTextMetrics MeasureImeText(ITextRender *pTextRender, float FontSize, const c
 	if(pTextRender == nullptr || pText == nullptr || pText[0] == '\0')
 		return Metrics;
 
-	const STextBoundingBox Box = pTextRender->TextBoundingBox(FontSize, pText, -1, -1.0f, 0.0f, TEXTFLAG_DISALLOW_NEWLINE);
 	float TextHeight = 0.0f;
-	float BiggestCharacterHeight = 0.0f;
+	float VisualTop = 0.0f;
+	float VisualBottom = 0.0f;
 	STextSizeProperties TextSizeProps{};
 	TextSizeProps.m_pHeight = &TextHeight;
-	TextSizeProps.m_pMaxCharacterHeightInLine = &BiggestCharacterHeight;
+	TextSizeProps.m_pVisualTop = &VisualTop;
+	TextSizeProps.m_pVisualBottom = &VisualBottom;
 	const float AdvanceWidth = pTextRender->TextWidth(FontSize, pText, -1, -1.0f, TEXTFLAG_DISALLOW_NEWLINE, TextSizeProps);
-	const float VisualLeft = minimum(0.0f, Box.m_X);
-	const float VisualRight = maximum(AdvanceWidth, Box.Right());
-	Metrics.m_Width = maximum(0.0f, VisualRight - VisualLeft) + 2.0f * Ime.m_TextSafePaddingX;
+	Metrics.m_Width = maximum(0.0f, AdvanceWidth) + 2.0f * Ime.m_TextSafePaddingX;
 	Metrics.m_Height = maximum(0.0f, TextHeight);
-	Metrics.m_BiggestCharacterHeight = maximum(0.0f, BiggestCharacterHeight);
-	Metrics.m_DrawOffsetX = Ime.m_TextSafePaddingX - VisualLeft;
-	Metrics.m_DrawOffsetY = -Box.m_Y;
+	Metrics.m_VisualTop = VisualTop;
+	Metrics.m_VisualHeight = maximum(0.0f, VisualBottom - VisualTop);
+	Metrics.m_DrawOffsetX = Ime.m_TextSafePaddingX;
 	return Metrics;
 }
 
@@ -108,8 +107,8 @@ void DrawImeText(ITextRender *pTextRender, float VisualX, float RectY, float Rec
 
 	pTextRender->TextColor(WithAlpha(Color, Alpha));
 	CTextCursor Cursor;
-	const float VisualHeight = Metrics.m_BiggestCharacterHeight > 0.0f ? Metrics.m_BiggestCharacterHeight : Metrics.m_Height;
-	const float TextY = RectY + (RectH - VisualHeight) * 0.5f - (Metrics.m_Height - VisualHeight) + Metrics.m_DrawOffsetY;
+	const float VisualHeight = Metrics.m_VisualHeight > 0.0f ? Metrics.m_VisualHeight : Metrics.m_Height;
+	const float TextY = RectY + (RectH - VisualHeight) * 0.5f - Metrics.m_VisualTop;
 	Cursor.SetPosition(vec2(VisualX + Metrics.m_DrawOffsetX, TextY));
 	Cursor.m_FontSize = FontSize;
 	Cursor.m_Flags = TEXTFLAG_RENDER | TEXTFLAG_DISALLOW_NEWLINE;
@@ -199,14 +198,14 @@ void CQmImeCandidatePopup::Render(CGameClient *pGameClient, const SQmImePopupSta
 	const int SelectedIndex = qm_ime_overlay::NormalizeSelectedCandidateIndex(DrawState.m_SelectedIndex, CandidateCount);
 
 	std::array<SImeCandidateMetrics, MAX_VISIBLE_CANDIDATES> aCandidateMetrics;
-	float CandidateTextHeight = MeasureImeText(pTextRender, Ime.m_FontCandidate, "国g", Ime).m_Height;
+	float CandidateTextHeight = MeasureImeText(pTextRender, Ime.m_FontCandidate, "国g", Ime).m_VisualHeight;
 	for(int i = 0; i < CandidateCount; ++i)
 	{
 		char aNum[4];
 		str_format(aNum, sizeof(aNum), "%d", (i + 1) % 10);
 		aCandidateMetrics[i].m_Num = MeasureImeText(pTextRender, Ime.m_FontCandidate, aNum, Ime);
 		aCandidateMetrics[i].m_Text = MeasureImeText(pTextRender, Ime.m_FontCandidate, DrawState.m_vCandidates[i].c_str(), Ime);
-		CandidateTextHeight = maximum(CandidateTextHeight, maximum(aCandidateMetrics[i].m_Num.m_Height, aCandidateMetrics[i].m_Text.m_Height));
+		CandidateTextHeight = maximum(CandidateTextHeight, maximum(aCandidateMetrics[i].m_Num.m_VisualHeight, aCandidateMetrics[i].m_Text.m_VisualHeight));
 	}
 
 	const auto CandidateNaturalWidthForWindow = [&](int Start, int Count) {
@@ -324,9 +323,7 @@ void CQmImeCandidatePopup::Render(CGameClient *pGameClient, const SQmImePopupSta
 	pTextRender->TextOutlineColor(0.0f, 0.0f, 0.0f, 0.0f);
 
 	CUIRect Content;
-	Panel.Margin(Ime.m_PaddingX, &Content);
-	Content.y += Ime.m_PaddingY;
-	Content.h -= 2.0f * Ime.m_PaddingY;
+	Panel.Margin(vec2(Ime.m_PaddingX, Ime.m_PaddingY), &Content);
 
 	if(HasCandidates)
 	{
