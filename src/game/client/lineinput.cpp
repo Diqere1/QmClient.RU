@@ -562,6 +562,78 @@ bool CLineInput::ValidateActiveInputRenderedThisFrame()
 	return false;
 }
 
+void CLineInput::RenderLegacyCandidates()
+{
+	if(!ValidateActiveInputRenderedThisFrame())
+		return;
+
+	const int CandidateCount = Input()->GetCandidateCount();
+	if(!Input()->HasComposition() || CandidateCount <= 0)
+		return;
+
+	const float FontSize = 7.0f;
+	const float Padding = 1.0f;
+	const float Margin = 4.0f;
+	const float Height = 300.0f;
+	const float Width = Height * Graphics()->ScreenAspect();
+	const int ScreenWidth = maximum(Graphics()->ScreenWidth(), 1);
+	const int ScreenHeight = maximum(Graphics()->ScreenHeight(), 1);
+
+	Graphics()->MapScreen(0.0f, 0.0f, Width, Height);
+
+	float LongestCandidateWidth = 0.0f;
+	for(int i = 0; i < CandidateCount; ++i)
+		LongestCandidateWidth = maximum(LongestCandidateWidth, TextRender()->TextWidth(FontSize, Input()->GetCandidate(i)));
+
+	const float NumOffset = 8.0f;
+	const float RectWidth = LongestCandidateWidth + Margin + NumOffset + 2.0f * Padding;
+	const float RectHeight = CandidateCount * (FontSize + 2.0f * Padding) + Margin;
+
+	vec2 Position = ms_CompositionWindowPosition / vec2(ScreenWidth, ScreenHeight) * vec2(Width, Height);
+	Position.y += Margin;
+
+	if(Position.x + RectWidth + Margin > Width)
+		Position.x -= Position.x + RectWidth + Margin - Width;
+
+	if(Position.y + RectHeight + Margin > Height)
+		Position.y -= RectHeight + ms_CompositionLineHeight / ScreenHeight * Height + 2.0f * Margin;
+
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	Graphics()->BlendNormal();
+
+	Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.8f);
+	IGraphics::CQuadItem Quad(Position.x + 0.75f, Position.y + 0.75f, RectWidth, RectHeight);
+	Graphics()->QuadsDrawTL(&Quad, 1);
+
+	Graphics()->SetColor(0.15f, 0.15f, 0.15f, 1.0f);
+	Quad = IGraphics::CQuadItem(Position.x, Position.y, RectWidth, RectHeight);
+	Graphics()->QuadsDrawTL(&Quad, 1);
+
+	const int SelectedIndex = qm_ime_overlay::NormalizeSelectedCandidateIndex(Input()->GetCandidateSelectedIndex(), CandidateCount);
+	if(SelectedIndex >= 0)
+	{
+		Graphics()->SetColor(0.1f, 0.4f, 0.8f, 1.0f);
+		Quad = IGraphics::CQuadItem(Position.x + Margin / 4.0f, Position.y + Margin / 2.0f + SelectedIndex * (FontSize + 2.0f * Padding), RectWidth - Margin / 2.0f, FontSize + 2.0f * Padding);
+		Graphics()->QuadsDrawTL(&Quad, 1);
+	}
+	Graphics()->QuadsEnd();
+
+	for(int i = 0; i < CandidateCount; ++i)
+	{
+		char aBuf[3];
+		str_format(aBuf, sizeof(aBuf), "%d.", (i + 1) % 10);
+
+		const float PosX = Position.x + Margin / 2.0f + Padding;
+		const float PosY = Position.y + Margin / 2.0f + i * (FontSize + 2.0f * Padding) + Padding;
+		TextRender()->TextColor(0.6f, 0.6f, 0.6f, 1.0f);
+		TextRender()->Text(PosX, PosY, FontSize, aBuf);
+		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+		TextRender()->Text(PosX + NumOffset, PosY, FontSize, Input()->GetCandidate(i));
+	}
+	TextRender()->TextColor(TextRender()->DefaultTextColor());
+}
+
 void CLineInput::SetCompositionWindowPosition(vec2 Anchor, float LineHeight)
 {
 	float ScreenX0, ScreenY0, ScreenX1, ScreenY1;

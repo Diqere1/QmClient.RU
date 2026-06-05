@@ -115,6 +115,7 @@ public:
 		ms_pInput = pInput;
 		ms_pTextRender = pTextRender;
 	}
+	static void RenderLegacyCandidates();
 	static bool ValidateActiveInputRenderedThisFrame();
 
 	static CLineInput *GetActiveInput() { return ms_pActiveInput; }
