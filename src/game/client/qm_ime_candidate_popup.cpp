@@ -27,7 +27,6 @@ constexpr int MAX_VISIBLE_CANDIDATES = 16;
 constexpr float POPUP_IN_DURATION = 0.12f;
 constexpr float POPUP_OUT_DURATION = 0.08f;
 constexpr float SELECTED_DURATION = 0.08f;
-constexpr float TEXT_OPTICAL_CENTER_BIAS = 0.11f;
 
 struct SImeCandidateCell
 {
@@ -39,6 +38,7 @@ struct SImeTextMetrics
 {
 	float m_Width = 0.0f;
 	float m_Height = 0.0f;
+	float m_BiggestCharacterHeight = 0.0f;
 	float m_DrawOffsetX = 0.0f;
 	float m_DrawOffsetY = 0.0f;
 };
@@ -85,11 +85,17 @@ SImeTextMetrics MeasureImeText(ITextRender *pTextRender, float FontSize, const c
 		return Metrics;
 
 	const STextBoundingBox Box = pTextRender->TextBoundingBox(FontSize, pText, -1, -1.0f, 0.0f, TEXTFLAG_DISALLOW_NEWLINE);
-	const float AdvanceWidth = pTextRender->TextWidth(FontSize, pText, -1, -1.0f, TEXTFLAG_DISALLOW_NEWLINE);
+	float TextHeight = 0.0f;
+	float BiggestCharacterHeight = 0.0f;
+	STextSizeProperties TextSizeProps{};
+	TextSizeProps.m_pHeight = &TextHeight;
+	TextSizeProps.m_pMaxCharacterHeightInLine = &BiggestCharacterHeight;
+	const float AdvanceWidth = pTextRender->TextWidth(FontSize, pText, -1, -1.0f, TEXTFLAG_DISALLOW_NEWLINE, TextSizeProps);
 	const float VisualLeft = minimum(0.0f, Box.m_X);
 	const float VisualRight = maximum(AdvanceWidth, Box.Right());
 	Metrics.m_Width = maximum(0.0f, VisualRight - VisualLeft) + 2.0f * Ime.m_TextSafePaddingX;
-	Metrics.m_Height = maximum(0.0f, Box.m_H);
+	Metrics.m_Height = maximum(0.0f, TextHeight);
+	Metrics.m_BiggestCharacterHeight = maximum(0.0f, BiggestCharacterHeight);
 	Metrics.m_DrawOffsetX = Ime.m_TextSafePaddingX - VisualLeft;
 	Metrics.m_DrawOffsetY = -Box.m_Y;
 	return Metrics;
@@ -102,7 +108,8 @@ void DrawImeText(ITextRender *pTextRender, float VisualX, float RectY, float Rec
 
 	pTextRender->TextColor(WithAlpha(Color, Alpha));
 	CTextCursor Cursor;
-	const float TextY = RectY + (RectH - Metrics.m_Height) * 0.5f + Metrics.m_DrawOffsetY - FontSize * TEXT_OPTICAL_CENTER_BIAS;
+	const float VisualHeight = Metrics.m_BiggestCharacterHeight > 0.0f ? Metrics.m_BiggestCharacterHeight : Metrics.m_Height;
+	const float TextY = RectY + (RectH - VisualHeight) * 0.5f - (Metrics.m_Height - VisualHeight) + Metrics.m_DrawOffsetY;
 	Cursor.SetPosition(vec2(VisualX + Metrics.m_DrawOffsetX, TextY));
 	Cursor.m_FontSize = FontSize;
 	Cursor.m_Flags = TEXTFLAG_RENDER | TEXTFLAG_DISALLOW_NEWLINE;
