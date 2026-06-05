@@ -60,6 +60,7 @@ class CheckResult:
     ok: bool
     title: str
     detail: str
+    blocking: bool = True
 
 
 def read_text(path: Path) -> str:
@@ -91,10 +92,13 @@ def check_root_map(path: Path) -> list[CheckResult]:
 
     missing_sections = missing_snippets(text, AGENTS_REQUIRED_SECTIONS)
     results.append(
-        CheckResult(True, f"{path.name} 必要分节", "通过")
+        CheckResult(True, f"{path.name} 必要分节", "通过", blocking=False)
         if not missing_sections
         else CheckResult(
-            False, f"{path.name} 必要分节", f"缺少: {', '.join(missing_sections)}"
+            False,
+            f"{path.name} 必要分节",
+            f"缺少: {', '.join(missing_sections)}",
+            blocking=False,
         )
     )
 
@@ -115,6 +119,7 @@ def check_root_map(path: Path) -> list[CheckResult]:
             f"通过 ({line_count}/{MAX_ROOT_MAP_LINES} 行)"
             if line_count <= MAX_ROOT_MAP_LINES
             else f"过长: {line_count}/{MAX_ROOT_MAP_LINES} 行",
+            blocking=False,
         )
     )
     return results

@@ -21,6 +21,7 @@ qmclient_scripts/perf/node_modules/
 .trae
 .claude
 skills/
+docs/Promting.md
 
 # tmp
 tmp/
@@ -178,4 +179,3 @@ tags
 /build
 
 !steam_api.dll
-AGENTS.md
