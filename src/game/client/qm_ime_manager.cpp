@@ -141,6 +141,7 @@ void CQmImeManager::RenderCandidatePopup()
 	if(g_Config.m_QmNewIme == 0)
 	{
 		m_CandidatePopup.Reset();
+		CLineInput::RenderLegacyCandidates();
 		return;
 	}
 
