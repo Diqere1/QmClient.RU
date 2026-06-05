@@ -27,6 +27,7 @@ constexpr int MAX_VISIBLE_CANDIDATES = 16;
 constexpr float POPUP_IN_DURATION = 0.12f;
 constexpr float POPUP_OUT_DURATION = 0.08f;
 constexpr float SELECTED_DURATION = 0.08f;
+constexpr float TEXT_OPTICAL_CENTER_BIAS = 0.11f;
 
 struct SImeCandidateCell
 {
@@ -102,7 +103,7 @@ void DrawImeText(ITextRender *pTextRender, float VisualX, float RectY, float Rec
 	pTextRender->TextColor(WithAlpha(Color, Alpha));
 	CTextCursor Cursor;
 	Cursor.SetPosition(vec2(VisualX + Metrics.m_DrawOffsetX,
-		RectY + (RectH - Metrics.m_Height) * 0.5f + Metrics.m_DrawOffsetY));
+		RectY + (RectH - Metrics.m_Height) * 0.5f + Metrics.m_DrawOffsetY + FontSize * TEXT_OPTICAL_CENTER_BIAS));
 	Cursor.m_FontSize = FontSize;
 	Cursor.m_Flags = TEXTFLAG_RENDER | TEXTFLAG_DISALLOW_NEWLINE;
 	pTextRender->TextEx(&Cursor, pText);
