@@ -102,8 +102,8 @@ void DrawImeText(ITextRender *pTextRender, float VisualX, float RectY, float Rec
 
 	pTextRender->TextColor(WithAlpha(Color, Alpha));
 	CTextCursor Cursor;
-	Cursor.SetPosition(vec2(VisualX + Metrics.m_DrawOffsetX,
-		RectY + (RectH - Metrics.m_Height) * 0.5f + Metrics.m_DrawOffsetY + FontSize * TEXT_OPTICAL_CENTER_BIAS));
+	const float TextY = RectY + (RectH - Metrics.m_Height) * 0.5f + Metrics.m_DrawOffsetY - FontSize * TEXT_OPTICAL_CENTER_BIAS;
+	Cursor.SetPosition(vec2(VisualX + Metrics.m_DrawOffsetX, TextY));
 	Cursor.m_FontSize = FontSize;
 	Cursor.m_Flags = TEXTFLAG_RENDER | TEXTFLAG_DISALLOW_NEWLINE;
 	pTextRender->TextEx(&Cursor, pText);
