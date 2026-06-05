@@ -3,10 +3,14 @@
 #include "lineinput.h"
 
 #include "ui.h"
+#include "QmUi/QmTheme.h"
 
 #include <engine/external/tinyexpr.h>
 #include <engine/keys.h>
 #include <engine/shared/config.h>
+
+#include <algorithm>
+#include <cmath>
 
 IInput *CLineInput::ms_pInput = nullptr;
 ITextRender *CLineInput::ms_pTextRender = nullptr;
@@ -15,6 +19,7 @@ IClient *CLineInput::ms_pClient = nullptr;
 
 CLineInput *CLineInput::ms_pActiveInput = nullptr;
 EInputPriority CLineInput::ms_ActiveInputPriority = EInputPriority::NONE;
+bool CLineInput::ms_TextInputAutoManaged = false;
 
 vec2 CLineInput::ms_CompositionWindowPosition = vec2(0.0f, 0.0f);
 float CLineInput::ms_CompositionLineHeight = 0.0f;
@@ -482,7 +487,7 @@ STextBoundingBox CLineInput::Render(const CUIRect *pRect, float FontSize, int Al
 			Cursor.m_SelectionHeightFactor = 0.1f;
 			Cursor.m_SelectionStart = str_utf8_offset_bytes_to_chars(pDisplayStr, DisplayCursorOffset);
 			Cursor.m_SelectionEnd = str_utf8_offset_bytes_to_chars(pDisplayStr, DisplayCompositionEnd);
-			TextRender()->TextSelectionColor(1.0f, 1.0f, 1.0f, 0.8f);
+			TextRender()->TextSelectionColor(qm_theme::IME.m_CompositionSelection);
 			TextRender()->TextEx(&Cursor, pDisplayStr);
 			TextRender()->TextSelectionColor(TextRender()->DefaultTextSelectionColor());
 		}
@@ -526,7 +531,7 @@ STextBoundingBox CLineInput::Render(const CUIRect *pRect, float FontSize, int Al
 		CaretCursor.m_LineWidth = LineWidth;
 		CaretCursor.m_LineSpacing = LineSpacing;
 		CaretCursor.m_CursorMode = TEXT_CURSOR_CURSOR_MODE_SET;
-		CaretCursor.m_CursorCharacter = str_utf8_offset_bytes_to_chars(pDisplayStr, DisplayCursorOffset);
+		CaretCursor.m_CursorCharacter = str_utf8_offset_bytes_to_chars(pDisplayStr, CaretOffset);
 		TextRender()->TextEx(&CaretCursor, pDisplayStr);
 		SetCompositionWindowPosition(CaretCursor.m_CursorRenderedPosition + vec2(0.0f, CaretCursor.m_AlignedFontSize / 2.0f), CaretCursor.m_AlignedFontSize);
 	}
@@ -546,101 +551,32 @@ STextBoundingBox CLineInput::Render(const CUIRect *pRect, float FontSize, int Al
 	return Cursor.BoundingBox();
 }
 
-void CLineInput::RenderCandidates()
+bool CLineInput::ValidateActiveInputRenderedThisFrame()
 {
 	// Check if the active line input was not rendered and deactivate it in that case.
 	// This can happen e.g. when an input in the ingame menu is active and the menu is
 	// closed or when switching between menu and editor with an active input.
 	CLineInput *pActiveInput = GetActiveInput();
-	if(pActiveInput != nullptr)
+	if(pActiveInput == nullptr)
+		return false;
+	if(pActiveInput->m_WasRendered)
 	{
-		if(pActiveInput->m_WasRendered)
-		{
-			pActiveInput->m_WasRendered = false;
-		}
-		else
-		{
-			pActiveInput->Deactivate();
-			return;
-		}
+		pActiveInput->m_WasRendered = false;
+		return true;
 	}
-
-	if(!Input()->HasComposition() || !Input()->GetCandidateCount())
-		return;
-
-	const float FontSize = 7.0f;
-	const float Padding = 1.0f;
-	const float Margin = 4.0f;
-	const float Height = 300.0f;
-	const float Width = Height * Graphics()->ScreenAspect();
-	const int ScreenWidth = Graphics()->ScreenWidth();
-	const int ScreenHeight = Graphics()->ScreenHeight();
-
-	Graphics()->MapScreen(0.0f, 0.0f, Width, Height);
-
-	// Determine longest candidate width
-	float LongestCandidateWidth = 0.0f;
-	for(int i = 0; i < Input()->GetCandidateCount(); ++i)
-		LongestCandidateWidth = maximum(LongestCandidateWidth, TextRender()->TextWidth(FontSize, Input()->GetCandidate(i)));
-
-	const float NumOffset = 8.0f;
-	const float RectWidth = LongestCandidateWidth + Margin + NumOffset + 2.0f * Padding;
-	const float RectHeight = Input()->GetCandidateCount() * (FontSize + 2.0f * Padding) + Margin;
-
-	vec2 Position = ms_CompositionWindowPosition / vec2(ScreenWidth, ScreenHeight) * vec2(Width, Height);
-	Position.y += Margin;
-
-	// Move candidate window left if needed
-	if(Position.x + RectWidth + Margin > Width)
-		Position.x -= Position.x + RectWidth + Margin - Width;
-
-	// Move candidate window up if needed
-	if(Position.y + RectHeight + Margin > Height)
-		Position.y -= RectHeight + ms_CompositionLineHeight / ScreenHeight * Height + 2.0f * Margin;
-
-	Graphics()->TextureClear();
-	Graphics()->QuadsBegin();
-	Graphics()->BlendNormal();
-
-	// Draw window shadow
-	Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.8f);
-	IGraphics::CQuadItem Quad = IGraphics::CQuadItem(Position.x + 0.75f, Position.y + 0.75f, RectWidth, RectHeight);
-	Graphics()->QuadsDrawTL(&Quad, 1);
-
-	// Draw window background
-	Graphics()->SetColor(0.15f, 0.15f, 0.15f, 1.0f);
-	Quad = IGraphics::CQuadItem(Position.x, Position.y, RectWidth, RectHeight);
-	Graphics()->QuadsDrawTL(&Quad, 1);
-
-	// Draw selected entry highlight
-	Graphics()->SetColor(0.1f, 0.4f, 0.8f, 1.0f);
-	Quad = IGraphics::CQuadItem(Position.x + Margin / 4.0f, Position.y + Margin / 2.0f + Input()->GetCandidateSelectedIndex() * (FontSize + 2.0f * Padding), RectWidth - Margin / 2.0f, FontSize + 2.0f * Padding);
-	Graphics()->QuadsDrawTL(&Quad, 1);
-	Graphics()->QuadsEnd();
-
-	// Draw candidates
-	for(int i = 0; i < Input()->GetCandidateCount(); ++i)
-	{
-		char aBuf[3];
-		str_format(aBuf, sizeof(aBuf), "%d.", (i + 1) % 10);
-
-		const float PosX = Position.x + Margin / 2.0f + Padding;
-		const float PosY = Position.y + Margin / 2.0f + i * (FontSize + 2.0f * Padding) + Padding;
-		TextRender()->TextColor(0.6f, 0.6f, 0.6f, 1.0f);
-		TextRender()->Text(PosX, PosY, FontSize, aBuf);
-		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-		TextRender()->Text(PosX + NumOffset, PosY, FontSize, Input()->GetCandidate(i));
-	}
+	pActiveInput->Deactivate();
+	return false;
 }
 
 void CLineInput::SetCompositionWindowPosition(vec2 Anchor, float LineHeight)
 {
 	float ScreenX0, ScreenY0, ScreenX1, ScreenY1;
-	const int ScreenWidth = Graphics()->ScreenWidth();
-	const int ScreenHeight = Graphics()->ScreenHeight();
+	const int ScreenWidth = maximum(Graphics()->ScreenWidth(), 1);
+	const int ScreenHeight = maximum(Graphics()->ScreenHeight(), 1);
 	Graphics()->GetScreen(&ScreenX0, &ScreenY0, &ScreenX1, &ScreenY1);
 
-	const vec2 ScreenScale = vec2(ScreenWidth / (ScreenX1 - ScreenX0), ScreenHeight / (ScreenY1 - ScreenY0));
+	const vec2 ScreenScale = vec2(ScreenWidth / std::max(1.0f, ScreenX1 - ScreenX0),
+		ScreenHeight / std::max(1.0f, ScreenY1 - ScreenY0));
 	ms_CompositionWindowPosition = Anchor * ScreenScale;
 	ms_CompositionLineHeight = LineHeight * ScreenScale.y;
 	Input()->SetCompositionWindowPosition(ms_CompositionWindowPosition.x, ms_CompositionWindowPosition.y, ms_CompositionLineHeight);
@@ -670,12 +606,14 @@ void CLineInput::Deactivate() const
 
 void CLineInput::OnActivate()
 {
-	Input()->StartTextInput();
+	if(!TextInputAutoManaged())
+		Input()->StartTextInput();
 }
 
 void CLineInput::OnDeactivate()
 {
-	Input()->StopTextInput();
+	if(!TextInputAutoManaged())
+		Input()->StopTextInput();
 	m_MouseSelection.m_Selecting = false;
 }
 

@@ -168,6 +168,7 @@ option(SECURITY_COMPILER_FLAGS "Whether to set security-relevant compiler flags 
 option(QM_DISABLE_PARALLEL_COMPILE "Disable /MP for compiler warnings-sensitive gates" OFF)
 option(QM_MSVC_ANALYZE "Enable MSVC /analyze static analysis (Windows only)" OFF)
 option(QM_STRICT_WARNINGS "Treat compiler warnings as errors" OFF)
+option(QM_BUILD_ICON_ATLAS "Build QmClient Tabler PNG icon atlas from SVG sources" ON)
 
 if(TARGET_OS STREQUAL "android")
   set(DISCORD OFF)
@@ -1590,6 +1591,13 @@ set(EXPECTED_DATA
   languages/traditional_chinese.txt
   languages/turkish.txt
   languages/ukrainian.txt
+  qmclient/icons/qm_icons_1x.json
+  qmclient/icons/qm_icons_1x.png
+  qmclient/icons/qm_icons_2x.json
+  qmclient/icons/qm_icons_2x.png
+  qmclient/icons/qm_icons_4x.json
+  qmclient/icons/qm_icons_4x.png
+  qmclient/icons/README.md
   qmclient/languages/index.txt
   qmclient/languages/arabic.txt
   qmclient/languages/azerbaijani.txt
@@ -1619,6 +1627,7 @@ set(EXPECTED_DATA
   qmclient/languages/persian.txt
   qmclient/languages/polish.txt
   qmclient/languages/portuguese.txt
+  qmclient/languages/README.txt
   qmclient/languages/romanian.txt
   qmclient/languages/russian.txt
   qmclient/languages/serbian.txt
@@ -2011,7 +2020,7 @@ set(EXPECTED_DATA
   wordlist.txt
 )
 
-set_glob(DATA GLOB_RECURSE "cfg;chai;frag;json;map;otf;png;rcss;rml;rules;ttc;ttf;txt;vert;wv" data ${EXPECTED_DATA})
+set_glob(DATA GLOB_RECURSE "cfg;chai;frag;json;map;md;otf;png;rcss;rml;rules;ttc;ttf;txt;vert;wv" data ${EXPECTED_DATA})
 
 ########################################################################
 # COPY DATA AND SHARED LIBS
@@ -2171,6 +2180,30 @@ add_custom_command(OUTPUT "src/generated/wordlist.h"
     scripts/wordlist.py
 )
 
+file(GLOB QM_ICON_ATLAS_SVG_SOURCES
+  datasrc/qm_icons/tabler/*.svg
+)
+add_custom_target(qm-icon-atlas
+  COMMAND ${Python3_EXECUTABLE}
+    scripts/qm_build_icon_atlas.py
+    --source datasrc/qm_icons/tabler
+    --output data/qmclient/icons
+    --sizes 1 2 4
+    --base-size 24
+    --padding 4
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  DEPENDS
+    scripts/qm_build_icon_atlas.py
+    ${QM_ICON_ATLAS_SVG_SOURCES}
+  COMMENT "Building QmClient Tabler icon PNG atlases"
+)
+
+if(QM_BUILD_ICON_ATLAS)
+  if(TARGET sync_runtime_data)
+    add_dependencies(sync_runtime_data qm-icon-atlas)
+  endif()
+endif()
+
 ########################################################################
 # SHARED
 ########################################################################
@@ -2250,6 +2283,7 @@ set_src(ENGINE_INTERFACE GLOB src/engine
 set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   assertion_logger.cpp
   assertion_logger.h
+  client_brand.h
   compression.cpp
   compression.h
   config.cpp
@@ -2601,6 +2635,18 @@ if(CLIENT)
     QmUi/QmAnimCurves.h
     QmUi/QmAnimResolve.cpp
     QmUi/QmAnimResolve.h
+    QmUi/QmLayout.cpp
+    QmUi/QmLayout.h
+    QmUi/QmLegacy.cpp
+    QmUi/QmLegacy.h
+    QmUi/QmMotion.h
+    QmUi/QmRender.cpp
+    QmUi/QmRender.h
+    QmUi/QmRt.cpp
+    QmUi/QmRt.h
+    QmUi/QmTheme.h
+    QmUi/QmTree.cpp
+    QmUi/QmTree.h
     QmUi/UiButtons.cpp
     QmUi/UiButtons.h
     QmUi/UiContainers.h
@@ -2613,16 +2659,6 @@ if(CLIENT)
     QmUi/UiNavigation.h
     QmUi/UiOverlays.h
     QmUi/UiTokens.h
-    QmUi/QmLayout.cpp
-    QmUi/QmLayout.h
-    QmUi/QmLegacy.cpp
-    QmUi/QmLegacy.h
-    QmUi/QmRender.cpp
-    QmUi/QmRender.h
-    QmUi/QmRt.cpp
-    QmUi/QmRt.h
-    QmUi/QmTree.cpp
-    QmUi/QmTree.h
     animstate.cpp
     animstate.h
     component.cpp
@@ -2839,12 +2875,12 @@ if(CLIENT)
     gameclient.h
     laser_data.cpp
     laser_data.h
+    lineinput.cpp
+    lineinput.h
     live/live_director.cpp
     live/live_director.h
     live/live_replay_buffer.cpp
     live/live_replay_buffer.h
-    lineinput.cpp
-    lineinput.h
     pickup_data.cpp
     pickup_data.h
     prediction/entities/character.cpp
@@ -2867,6 +2903,14 @@ if(CLIENT)
     prediction/gameworld.h
     projectile_data.cpp
     projectile_data.h
+    qm_command_router.cpp
+    qm_command_router.h
+    qm_icon_manager.cpp
+    qm_icon_manager.h
+    qm_ime_candidate_popup.cpp
+    qm_ime_candidate_popup.h
+    qm_ime_manager.cpp
+    qm_ime_manager.h
     race.cpp
     race.h
     render.cpp
@@ -3612,7 +3656,10 @@ add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/src/generated/checksum.cpp
 if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
   set_src(TESTS GLOB src/test
     QmAnimTest.cpp
+    QmDummyCommandTest.cpp
+    QmIconAtlasTest.cpp
     QmLayoutTest.cpp
+    QmUiTokensTest.cpp
     aio_test.cpp
     assets_editor_layout_test.cpp
     assets_preview_scale_test.cpp
@@ -3738,8 +3785,12 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     $<TARGET_OBJECTS:engine-shared>
     $<TARGET_OBJECTS:game-shared>
     $<TARGET_OBJECTS:rust-bridge-shared>
+    src/generated/client_data.h
+    src/generated/client_data7.h
+    src/generated/data_types.h
     ${DEPS}
   )
+  add_dependencies(${TARGET_TESTRUNNER} generate_protocol)
   target_link_libraries(${TARGET_TESTRUNNER} ${PNG_LIBRARIES} ${WebP_LIBRARIES} ${GTEST_LIBRARIES} ${LIBS_SERVER})
   target_include_directories(${TARGET_TESTRUNNER} SYSTEM PRIVATE
     ${GTEST_INCLUDE_DIRS}

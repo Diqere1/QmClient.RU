@@ -589,6 +589,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		Ctx.m_pTextRender = TextRender();
 		Ctx.m_pTooltips = &GameClient()->m_Tooltips;
 		Ctx.m_pAnim = &GameClient()->UiRuntimeV2()->AnimRuntime();
+		Ctx.m_pIconManager = GameClient()->QmIconManager();
 		Ctx.m_ScopeHash = MakeUiScopeHash("qm_ui_dogfood");
 		RenderQmUiDogfood(Ctx, MainView);
 		return;
@@ -600,6 +601,59 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	CUIRect TabContentClip = MainView;
 	if(ContributorsPage)
 		m_QmClientSettingsTab = QMCLIENT_SETTINGS_TAB_CONTRIBUTORS;
+
+	auto IsQmNewFeatureMarkRead = [](const char *pId) {
+		if(pId == nullptr || pId[0] == '\0')
+			return true;
+
+		char aNeedle[128];
+		str_format(aNeedle, sizeof(aNeedle), ";%s;", pId);
+		char aMarks[sizeof(g_Config.m_QmNewFeatureMarksRead) + 2];
+		str_format(aMarks, sizeof(aMarks), ";%s;", g_Config.m_QmNewFeatureMarksRead);
+		return str_find(aMarks, aNeedle) != nullptr;
+	};
+
+	auto MarkQmNewFeatureRead = [&](const char *pId) {
+		if(IsQmNewFeatureMarkRead(pId))
+			return;
+
+		if(g_Config.m_QmNewFeatureMarksRead[0] != '\0')
+			str_append(g_Config.m_QmNewFeatureMarksRead, ";", sizeof(g_Config.m_QmNewFeatureMarksRead));
+		str_append(g_Config.m_QmNewFeatureMarksRead, pId, sizeof(g_Config.m_QmNewFeatureMarksRead));
+	};
+
+	auto MarkQmNewFeatureHovered = [&](const char *pId, const CUIRect &Rect) {
+		if(!IsQmNewFeatureMarkRead(pId) && Ui()->MouseHovered(&Rect))
+			MarkQmNewFeatureRead(pId);
+	};
+
+	auto AnyQmNewFeatureUnread = [&](const char *const *ppIds, int NumIds) {
+		for(int i = 0; i < NumIds; ++i)
+		{
+			if(ppIds[i] != nullptr && !IsQmNewFeatureMarkRead(ppIds[i]))
+				return true;
+		}
+		return false;
+	};
+
+	auto DrawQmNewFeatureDot = [&](const CUIRect &Rect) {
+		CUIRect Dot;
+		constexpr float DotSize = 6.0f;
+		Dot.w = DotSize;
+		Dot.h = DotSize;
+		Dot.x = Rect.x + Rect.w - DotSize - 3.0f;
+		Dot.y = Rect.y + 3.0f;
+		Dot.Draw(ColorRGBA(1.0f, 0.12f, 0.16f, 0.95f), IGraphics::CORNER_ALL, DotSize * 0.5f);
+	};
+
+	auto QmNewFeatureLabel = [&](const char *pText, const char *pId, char *pBuf, size_t BufSize) -> const char * {
+		if(!IsQmNewFeatureMarkRead(pId))
+		{
+			str_format(pBuf, BufSize, "%s [new]", pText);
+			return pBuf;
+		}
+		return pText;
+	};
 
 	{
 		if(m_QmClientSettingsTab < 0 || m_QmClientSettingsTab >= NUMBER_OF_QMCLIENT_SETTINGS_TABS)
@@ -647,8 +701,25 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						    Tab == NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1 ? IGraphics::CORNER_R :
 												  IGraphics::CORNER_NONE;
 				const bool ClickedSearchBlurredTab = Ui()->MouseButtonClicked(0) && Ui()->MouseHovered(&Button) && ReleaseActiveQmClientSearchInput();
-				if(DoButton_MenuTab(&s_aPageTabs[Tab], s_apQmTabNames[Tab], m_QmClientSettingsTab == Tab, &Button, Corners, nullptr, nullptr, nullptr, nullptr, 4.0f) || ClickedSearchBlurredTab)
+				const char *pTabName = s_apQmTabNames[Tab];
+				char aVisualTabName[64];
+				if(Tab == QMCLIENT_SETTINGS_TAB_VISUAL)
+				{
+					const char *pNewFeatureId = "qm_2_62_8_visual_tab";
+					const char *apVisualFeatureIds[] = {
+						pNewFeatureId,
+						"qm_2_62_8_weapon_animation",
+						"qm_2_62_8_weapon_switch_scope",
+					};
+					if(AnyQmNewFeatureUnread(apVisualFeatureIds, (int)std::size(apVisualFeatureIds)))
+						DrawQmNewFeatureDot(Button);
+					pTabName = QmNewFeatureLabel(pTabName, pNewFeatureId, aVisualTabName, sizeof(aVisualTabName));
+				}
+				const bool ClickedTab = DoButton_MenuTab(&s_aPageTabs[Tab], pTabName, m_QmClientSettingsTab == Tab, &Button, Corners, nullptr, nullptr, nullptr, nullptr, 4.0f);
+				if(ClickedTab || ClickedSearchBlurredTab)
 					m_QmClientSettingsTab = Tab;
+				if(Tab == QMCLIENT_SETTINGS_TAB_VISUAL && (m_QmClientSettingsTab == Tab || Ui()->MouseHovered(&Button)))
+					MarkQmNewFeatureRead("qm_2_62_8_visual_tab");
 			}
 
 			char aTabExtra[96];
@@ -731,12 +802,20 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	const float LgLabelBaseWidth = CompactLayout ? 148.0f : 170.0f;
 	const float LgLabelMinWidth = CompactLayout ? 96.0f : 120.0f;
 	const float LgLabelWidth = std::clamp(LgLabelBaseWidth * UiScale, LgLabelMinWidth, LgLabelMaxWidth); // 左侧标签列宽度（固定）
+	const float LG_HeadlineSize = LgHeadlineSize;
+	const float LG_TipHeight = LgTipHeight;
+	const float LG_TipSize = LgTipSize;
+	const float LG_LineHeight = LgLineHeight;
+	const float LG_LabelWidth = LgLabelWidth;
+	const float LG_BodySize = LgBodySize;
+	const float LG_LineSpacing = LgLineSpacing;
 
 	// === 颜色定义 ===
 	const ColorRGBA LgGlassColor(0.08f, 0.09f, 0.12f, LgCardAlpha);
 	const ColorRGBA LgHighlightColor(1.0f, 1.0f, 1.0f, 0.05f);
 	const ColorRGBA LgShadowColor(0.0f, 0.0f, 0.0f, 0.12f);
 	const ColorRGBA LgTipTextColor(1.0f, 1.0f, 1.0f, 0.65f);
+	const ColorRGBA LG_TipTextColor = LgTipTextColor;
 
 	CUIRect LeftView, RightView;
 
@@ -836,6 +915,25 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		{
 			TextRender()->TextColor(LgTipTextColor);
 			Ui()->DoLabel(&TipRect, pTip, LgTipSize, TEXTALIGN_ML);
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
+		}
+	};
+	auto DoModuleHeadlineNew = [&](CUIRect &Content, int RainbowIndex, const char *pTitle, const char *pTip, const char *pNewFeatureId) {
+		CUIRect TitleRect, TipRect;
+		Content.HSplitTop(LG_HeadlineSize, &TitleRect, &Content);
+		const bool Unread = !IsQmNewFeatureMarkRead(pNewFeatureId);
+		char aTitle[128];
+		TextRender()->TextColor(GetRainbowColor(RainbowIndex));
+		Ui()->DoLabel(&TitleRect, QmNewFeatureLabel(pTitle, pNewFeatureId, aTitle, sizeof(aTitle)), LG_HeadlineSize, TEXTALIGN_ML);
+		TextRender()->TextColor(TextRender()->DefaultTextColor());
+		if(Unread)
+			DrawQmNewFeatureDot(TitleRect);
+		MarkQmNewFeatureHovered(pNewFeatureId, TitleRect);
+		Content.HSplitTop(LG_TipHeight, &TipRect, &Content);
+		if(pTip && pTip[0] != '\0' && Ui()->MouseHovered(&TitleRect))
+		{
+			TextRender()->TextColor(LG_TipTextColor);
+			Ui()->DoLabel(&TipRect, pTip, LG_TipSize, TEXTALIGN_ML);
 			TextRender()->TextColor(TextRender()->DefaultTextColor());
 		}
 	};
@@ -2365,6 +2463,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		int m_RainbowIndex;
 		const char *m_pTitle;
 		const char *m_pTip;
+		const char *m_pNewFeatureId = nullptr;
 	};
 
 	auto GetQmModuleHeadlineInfo = [&](EQmModuleId Id) -> SQmModuleHeadlineInfo {
@@ -2395,7 +2494,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		case EQmModuleId::WeaponTrajectory:
 			return {2, Localize("武器辅助线"), Localize("显示枪榴弹和激光轨迹预览")};
 		case EQmModuleId::WeaponAnimation:
-			return {2, Localize("武器动画"), Localize("切换武器时播放滑入旋转动画")};
+			return {2, Localize("武器动画"), Localize("切换武器时播放滑入旋转动画"), "qm_2_62_8_weapon_animation"};
 		case EQmModuleId::CameraView:
 			return {
 				10,
@@ -2949,7 +3048,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Column.HSplitTop(LgCardPadding, nullptr, &Column);
 				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
 				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
-				DoModuleHeadline(CardContent, HeadlineInfo.m_RainbowIndex, HeadlineInfo.m_pTitle, HeadlineInfo.m_pTip);
+				if(HeadlineInfo.m_pNewFeatureId != nullptr)
+					DoModuleHeadlineNew(CardContent, HeadlineInfo.m_RainbowIndex, HeadlineInfo.m_pTitle, HeadlineInfo.m_pTip, HeadlineInfo.m_pNewFeatureId);
+				else
+					DoModuleHeadline(CardContent, HeadlineInfo.m_RainbowIndex, HeadlineInfo.m_pTitle, HeadlineInfo.m_pTip);
 
 				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;
@@ -3103,6 +3205,24 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				if(g_Config.m_QmAxiomAutoLogin)
 				{
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
+					auto DoPasswordToggleButton = [&](CButtonContainer *pButton, bool Visible, const CUIRect &ButtonRect) {
+						const EQmIcon Icon = Visible ? EQmIcon::EYE_OFF : EQmIcon::EYE;
+						const char *pFallbackIcon = Visible ? FONT_ICON_EYE_SLASH : FONT_ICON_EYE;
+						CQmIconManager *pIconManager = GameClient()->QmIconManager();
+						if(pIconManager == nullptr || !pIconManager->IsReady())
+							return Ui()->DoButton_FontIcon(pButton, pFallbackIcon, 0, &ButtonRect, BUTTONFLAG_LEFT) != 0;
+
+						ButtonRect.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f * Ui()->ButtonColorMul(pButton)), IGraphics::CORNER_ALL, 5.0f);
+
+						CUIRect IconRect;
+						ButtonRect.HMargin(2.0f, &IconRect);
+						IconRect.Margin(IconRect.h * 0.20f, &IconRect);
+						const EQmIconState IconState = Ui()->HotItem() == pButton ? EQmIconState::HOVER : EQmIconState::NORMAL;
+						if(!pIconManager->RenderIcon(Icon, IconRect, IconState))
+							return Ui()->DoButton_FontIcon(pButton, pFallbackIcon, 0, &ButtonRect, BUTTONFLAG_LEFT) != 0;
+						return Ui()->DoButtonLogic(pButton, 0, &ButtonRect, BUTTONFLAG_LEFT) != 0;
+					};
+					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
 					Ui()->DoLabel(&LabelCol, Localize("Axiom 主号密码"), LgBodySize, TEXTALIGN_ML);
 					CUIRect PasswordEditRect, PasswordToggleRect;
@@ -3110,7 +3230,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					static CLineInput s_AxiomLoginPassword(g_Config.m_QmAxiomLoginPassword, sizeof(g_Config.m_QmAxiomLoginPassword));
 					s_AxiomLoginPassword.SetHidden(!s_ShowAxiomPassword);
 					Ui()->DoEditBox(&s_AxiomLoginPassword, &PasswordEditRect, LgBodySize);
-					if(Ui()->DoButton_FontIcon(&s_AxiomPasswordToggleButton, s_ShowAxiomPassword ? FONT_ICON_EYE_SLASH : FONT_ICON_EYE, 0, &PasswordToggleRect, BUTTONFLAG_LEFT))
+					if(DoPasswordToggleButton(&s_AxiomPasswordToggleButton, s_ShowAxiomPassword, PasswordToggleRect))
 						s_ShowAxiomPassword = !s_ShowAxiomPassword;
 					CardContent.HSplitTop(LgLineSpacing * 0.7f, nullptr, &CardContent);
 
@@ -3122,7 +3242,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					static CLineInput s_AxiomDummyLoginPassword(g_Config.m_QmAxiomDummyLoginPassword, sizeof(g_Config.m_QmAxiomDummyLoginPassword));
 					s_AxiomDummyLoginPassword.SetHidden(!s_ShowAxiomDummyPassword);
 					Ui()->DoEditBox(&s_AxiomDummyLoginPassword, &DummyPasswordEditRect, LgBodySize);
-					if(Ui()->DoButton_FontIcon(&s_AxiomDummyPasswordToggleButton, s_ShowAxiomDummyPassword ? FONT_ICON_EYE_SLASH : FONT_ICON_EYE, 0, &DummyPasswordToggleRect, BUTTONFLAG_LEFT))
+					if(DoPasswordToggleButton(&s_AxiomDummyPasswordToggleButton, s_ShowAxiomDummyPassword, DummyPasswordToggleRect))
 						s_ShowAxiomDummyPassword = !s_ShowAxiomDummyPassword;
 					CardContent.HSplitTop(LgLineSpacing * 0.7f, nullptr, &CardContent);
 				}
@@ -4880,12 +5000,35 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Column.HSplitTop(LgCardPadding, nullptr, &Column);
 				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
 				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
-				DoModuleHeadline(CardContent, 2, Localize("武器动画"), Localize("切换武器时播放滑入旋转动画"));
+				DoModuleHeadlineNew(CardContent, 2, Localize("武器动画"), Localize("切换武器时播放滑入旋转动画"), "qm_2_62_8_weapon_animation");
 
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmWeaponSwitchAnim, Localize("切换武器动画"), &g_Config.m_QmWeaponSwitchAnim, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
+				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
+				if(g_Config.m_QmWeaponSwitchAnim)
+				{
+					CardContent.HSplitTop(LG_LineHeight, &Row, &CardContent);
+					static std::vector<const char *> s_WeaponSwitchAnimScopeDropDownNames;
+					s_WeaponSwitchAnimScopeDropDownNames = {Localize("仅自己"), Localize("本地"), Localize("所有人")};
+					static CUi::SDropDownState s_WeaponSwitchAnimScopeDropDownState;
+					static CScrollRegion s_WeaponSwitchAnimScopeDropDownScrollRegion;
+					s_WeaponSwitchAnimScopeDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_WeaponSwitchAnimScopeDropDownScrollRegion;
+					Row.VSplitLeft(LG_LabelWidth, &LabelCol, &ControlCol);
+					const char *pScopeNewFeatureId = "qm_2_62_8_weapon_switch_scope";
+					const bool ScopeFeatureUnread = !IsQmNewFeatureMarkRead(pScopeNewFeatureId);
+					char aScopeLabel[128];
+					Ui()->DoLabel(&LabelCol, QmNewFeatureLabel(Localize("动画范围"), pScopeNewFeatureId, aScopeLabel, sizeof(aScopeLabel)), LG_BodySize, TEXTALIGN_ML);
+					if(ScopeFeatureUnread)
+						DrawQmNewFeatureDot(LabelCol);
+					MarkQmNewFeatureHovered(pScopeNewFeatureId, Row);
+					const int WeaponSwitchAnimScope = std::clamp(g_Config.m_QmWeaponSwitchAnimScope, 0, 2);
+					const int WeaponSwitchAnimScopeNew = Ui()->DoDropDown(&ControlCol, WeaponSwitchAnimScope, s_WeaponSwitchAnimScopeDropDownNames.data(), s_WeaponSwitchAnimScopeDropDownNames.size(), s_WeaponSwitchAnimScopeDropDownState);
+					if(g_Config.m_QmWeaponSwitchAnimScope != WeaponSwitchAnimScopeNew)
+						g_Config.m_QmWeaponSwitchAnimScope = WeaponSwitchAnimScopeNew;
+					CardContent.HSplitTop(LG_LineSpacing, nullptr, &CardContent);
+				}
 				CardContent.HSplitTop(LgCardPadding, nullptr, &CardContent);
 				Column.y = CardContent.y;
 				s_GlassCards.back().h = Column.y - s_GlassCards.back().y;

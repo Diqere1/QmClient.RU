@@ -75,33 +75,33 @@ static const char *FavoriteMapCategoryDisplayName(const char *pType)
 	if(!pType || pType[0] == '\0')
 		return Localize("未知");
 	if(str_comp_nocase(pType, "DDmaX Easy") == 0)
-		return Localize("Classic easy");
+		return Localize("古典.easy");
 	if(str_comp_nocase(pType, "DDmaX Next") == 0)
-		return Localize("Classic next");
+		return Localize("古典.next");
 	if(str_comp_nocase(pType, "DDmaX Pro") == 0)
-		return Localize("Classic pro");
+		return Localize("古典.pro");
 	if(str_comp_nocase(pType, "DDmaX Nut") == 0)
-		return Localize("Classic nut");
+		return Localize("古典.nut");
 	if(str_comp_nocase(pType, "DDmaX") == 0)
-		return Localize("Classic");
+		return Localize("古典");
 	if(str_comp_nocase(pType, "Novice") == 0)
-		return Localize("Novice");
+		return Localize("简单");
 	if(str_comp_nocase(pType, "Moderate") == 0)
-		return Localize("Moderate");
+		return Localize("中阶");
 	if(str_comp_nocase(pType, "Brutal") == 0)
-		return Localize("Brutal");
+		return Localize("高阶");
 	if(str_comp_nocase(pType, "Insane") == 0)
-		return Localize("Insane");
+		return Localize("疯狂");
 	if(str_comp_nocase(pType, "Dummy") == 0)
 		return Localize("分身");
 	if(str_comp_nocase(pType, "Solo") == 0)
-		return Localize("Solo");
+		return Localize("单人");
 	if(str_comp_nocase(pType, "Oldschool") == 0)
-		return Localize("Oldschool");
+		return Localize("传统");
 	if(str_comp_nocase(pType, "Race") == 0)
-		return Localize("Race");
+		return Localize("竞速");
 	if(str_comp_nocase(pType, "Fun") == 0)
-		return Localize("Fun");
+		return Localize("娱乐");
 	if(str_comp_nocase(pType, "Event") == 0)
 		return Localize("Event");
 	return Localize("未知");

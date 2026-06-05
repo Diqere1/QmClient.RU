@@ -11,6 +11,8 @@
 #include "QmAnimResolve.h"
 #include "UiTokens.h"
 
+#include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace ui_widget
@@ -24,7 +26,8 @@ int TabBar(const IUiContext &Ctx, const char *const *ppLabels, int Count, int *p
 	// Static identity pool — caller-side need not allocate CButtonContainer
 	// per tab. We index by (TabBar address, tab index) which is stable as long
 	// as the caller's TabBar invocation site is stable.
-	static std::vector<CButtonContainer> s_vBtnPool;
+	static std::unordered_map<std::uintptr_t, std::vector<CButtonContainer>> s_vButtonPools;
+	std::vector<CButtonContainer> &s_vBtnPool = s_vButtonPools[reinterpret_cast<std::uintptr_t>(pActive)];
 	const std::size_t Needed = static_cast<std::size_t>(Count);
 	if(s_vBtnPool.size() < Needed)
 		s_vBtnPool.resize(Needed);
@@ -33,8 +36,6 @@ int TabBar(const IUiContext &Ctx, const char *const *ppLabels, int Count, int *p
 	CUIRect Tabs = Rect;
 	CUIRect TabsRow, Underline;
 	Tabs.HSplitBottom(2.0f, &TabsRow, &Underline);
-
-	float ActiveTabX = Rect.x + TabWidth * static_cast<float>(*pActive);
 
 	for(int i = 0; i < Count; ++i)
 	{
@@ -54,8 +55,8 @@ int TabBar(const IUiContext &Ctx, const char *const *ppLabels, int Count, int *p
 	float SlideX = Rect.x + TabWidth * static_cast<float>(*pActive);
 	if(Ctx.m_pAnim != nullptr)
 	{
-		const uint64_t NodeKey = BuildUiAnimNodeKey(Ctx.m_ScopeHash, reinterpret_cast<uint64_t>(ppLabels));
-		SlideX = ResolveUiAnimValue(*Ctx.m_pAnim, NodeKey, EUiAnimProperty::POS_X, ActiveTabX, ui_curve::EMPHASIZED.m_DurationSec, ui_curve::EMPHASIZED.m_Easing);
+		const uint64_t NodeKey = BuildUiAnimNodeKey(Ctx.m_ScopeHash, reinterpret_cast<uint64_t>(pActive));
+		SlideX = ResolveUiAnimValue(*Ctx.m_pAnim, NodeKey, EUiAnimProperty::POS_X, SlideX, ui_curve::EMPHASIZED.m_DurationSec, ui_curve::EMPHASIZED.m_Easing);
 	}
 
 	CUIRect Indicator;

@@ -4,6 +4,9 @@
 #define GAME_CLIENT_GAMECLIENT_H
 
 #include "render.h"
+#include "qm_command_router.h"
+#include "qm_icon_manager.h"
+#include "qm_ime_manager.h"
 
 #include <base/color.h>
 #include <base/vmath.h>
@@ -14,6 +17,7 @@
 #include <engine/console.h>
 #include <engine/input.h>
 #include <engine/keys.h>
+#include <engine/shared/client_brand.h>
 #include <engine/shared/config.h>
 #include <engine/shared/snapshot.h>
 
@@ -334,6 +338,9 @@ private:
 	CCollision m_Collision;
 	CUi m_UI;
 	CUiRuntimeV2 m_UiRuntimeV2;
+	CQmCommandRouter m_QmCommandRouter;
+	CQmIconManager m_QmIconManager;
+	CQmImeManager m_QmImeManager;
 	CRaceHelper m_RaceHelper;
 
 	void ProcessEvents();
@@ -438,6 +445,10 @@ public:
 	class CUi *Ui() { return &m_UI; }
 	class CUiRuntimeV2 *UiRuntimeV2() { return &m_UiRuntimeV2; }
 	const class CUiRuntimeV2 *UiRuntimeV2() const { return &m_UiRuntimeV2; }
+	class CQmCommandRouter *QmCommandRouter() { return &m_QmCommandRouter; }
+	const class CQmCommandRouter *QmCommandRouter() const { return &m_QmCommandRouter; }
+	class CQmIconManager *QmIconManager() { return &m_QmIconManager; }
+	const class CQmIconManager *QmIconManager() const { return &m_QmIconManager; }
 	class ISound *Sound() const { return m_pSound; }
 	class IInput *Input() const { return m_pInput; }
 	class IStorage *Storage() const { return m_pStorage; }
@@ -840,6 +851,7 @@ public:
 	void *TranslateGameMsg(int *pMsgId, CUnpacker *pUnpacker, int Conn);
 	int TranslateSnap(CSnapshot *pSnapDstSix, CSnapshot *pSnapSrcSeven, int Conn, bool Dummy) override;
 	void OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dummy) override;
+	void OnClientBrandsMessage(CUnpacker *pUnpacker) override;
 	bool OnDemoPlaybackMessage(int MsgId, CUnpacker *pUnpacker) override;
 	void ResetDemoPlaybackState() override;
 	void InvalidateSnapshot() override;
@@ -917,6 +929,7 @@ public:
 	CNetObj_PlayerInput m_DummyInput;
 	CNetObj_PlayerInput m_HammerInput;
 	unsigned int m_DummyFire;
+	bool m_QmDummyInputForceSend = false;
 	bool m_ReceivedDDNetPlayer;
 
 	class CTeamsCore m_Teams;
@@ -1181,13 +1194,15 @@ public:
 
 	// Q1menG Client Recognition
 	void ClearQ1menGSyncMarks();
-	void MarkQ1menGSyncClient(int ClientId, int64_t ExpireTick, bool FootParticlesEnabled, bool RemoteParticlesEnabled, const char *pQid = nullptr);
+	void MarkQ1menGSyncClient(int ClientId, int64_t ExpireTick, bool FootParticlesEnabled, bool RemoteParticlesEnabled, const char *pQid = nullptr, EClientBrand ClientBrand = EClientBrand::QM);
 	bool IsQ1menGClientRecognized(int ClientId) const;
 	const char *GetQ1menGClientQid(int ClientId) const;
 	bool ShouldRenderQ1menGRemoteFootParticles(int ClientId) const;
 	void ClearQmVoiceSyncMarks();
 	void MarkQmVoiceSupportedClient(int ClientId, int64_t ExpireTick);
 	bool IsQmVoiceSupportedClient(int ClientId) const;
+	void ClearClientBrands();
+	EClientBrand ClientBrand(const char *pName) const;
 
 private:
 	std::vector<CSnapEntities> m_vSnapEntities;
@@ -1240,8 +1255,11 @@ private:
 	int64_t m_aQ1menGSyncMarkUntil[MAX_CLIENTS] = {0};
 	bool m_aQ1menGSyncFootParticlesEnabled[MAX_CLIENTS] = {false};
 	bool m_aQ1menGSyncRemoteParticlesEnabled[MAX_CLIENTS] = {false};
+	EClientBrand m_aQ1menGSyncClientBrands[MAX_CLIENTS] = {};
 	char m_aaQ1menGSyncQid[MAX_CLIENTS][33] = {{0}};
 	int64_t m_aQmVoiceSyncMarkUntil[MAX_CLIENTS] = {0};
+	char m_aaClientBrandNames[MAX_CLIENTS][MAX_NAME_LENGTH] = {};
+	EClientBrand m_aClientBrands[MAX_CLIENTS] = {};
 
 	void LoadMapSettings();
 	CMapBugs m_MapBugs;

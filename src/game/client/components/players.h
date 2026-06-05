@@ -43,11 +43,12 @@ class CPlayers : public CComponent
 		const CNetObj_Character *pPlayerChar,
 		int ClientId);
 	bool IsPlayerInfoAvailable(int ClientId) const;
+	bool ShouldRenderWeaponSwitchAnim(int ClientId) const;
 
 	int m_WeaponEmoteQuadContainerIndex;
 	int m_aWeaponSpriteMuzzleQuadContainerIndex[NUM_WEAPONS];
-	int m_aWeaponSwitchLastWeapon[MAX_CLIENTS] = {};
-	double m_aWeaponSwitchStartTime[MAX_CLIENTS] = {};
+	int m_aWeaponSwitchLastWeapons[MAX_CLIENTS];
+	double m_aWeaponSwitchStartTimes[MAX_CLIENTS];
 
 	void CreateNinjaTeeRenderInfo();
 	void CreateSpectatorTeeRenderInfo();
@@ -63,6 +64,7 @@ public:
 		float Intra = 0.0f);
 
 	int Sizeof() const override { return sizeof(*this); }
+	void OnReset() override;
 	void OnInit() override;
 	void OnRender() override;
 

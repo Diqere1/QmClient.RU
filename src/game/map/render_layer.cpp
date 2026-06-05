@@ -341,38 +341,75 @@ void CRenderLayerTile::RenderTileLayer(const ColorRGBA &Color, const CRenderLaye
 
 	if(IsVisibleInClipRegion(m_LayerClip))
 	{
-		// create the indice buffers we want to draw -- reuse them
-		std::vector<char *> vpIndexOffsets;
-		std::vector<unsigned int> vDrawCounts;
+		float VisibleX0 = ScreenX0;
+		float VisibleY0 = ScreenY0;
+		float VisibleX1 = ScreenX1;
+		float VisibleY1 = ScreenY1;
+		if(m_LayerClip.has_value())
+		{
+			const CClipRegion &Clip = m_LayerClip.value();
+			VisibleX0 = std::max(VisibleX0, Clip.m_X);
+			VisibleY0 = std::max(VisibleY0, Clip.m_Y);
+			VisibleX1 = std::min(VisibleX1, Clip.m_X + Clip.m_Width);
+			VisibleY1 = std::min(VisibleY1, Clip.m_Y + Clip.m_Height);
+		}
 
-		int X0 = std::max(ScreenRectX0, 0);
-		int X1 = std::min(ScreenRectX1, (int)Visuals.m_Width);
+		// create the indice buffers we want to draw -- reuse them
+		m_vpRenderTileLayerIndexOffsets.clear();
+		m_vRenderTileLayerDrawCounts.clear();
+
+		int VisibleRectY0 = std::floor(VisibleY0 / 32);
+		int VisibleRectX0 = std::floor(VisibleX0 / 32);
+		int VisibleRectY1 = std::ceil(VisibleY1 / 32);
+		int VisibleRectX1 = std::ceil(VisibleX1 / 32);
+
+		int X0 = std::max(VisibleRectX0, 0);
+		int X1 = std::min(VisibleRectX1, (int)Visuals.m_Width);
 		int XR = X1 == std::numeric_limits<int>::min() ? X1 : X1 - 1;
 		if(X0 <= XR)
 		{
-			int Y0 = std::max(ScreenRectY0, 0);
-			int Y1 = std::min(ScreenRectY1, (int)Visuals.m_Height);
+			int Y0 = std::max(VisibleRectY0, 0);
+			int Y1 = std::min(VisibleRectY1, (int)Visuals.m_Height);
 
 			unsigned long long Reserve = absolute(Y1 - Y0) + 1;
-			vpIndexOffsets.reserve(Reserve);
-			vDrawCounts.reserve(Reserve);
+			m_vpRenderTileLayerIndexOffsets.reserve(Reserve);
+			m_vRenderTileLayerDrawCounts.reserve(Reserve);
 
 			for(int y = Y0; y < Y1; ++y)
 			{
-				dbg_assert(Visuals.m_vTilesOfLayer[y * Visuals.m_Width + XR].IndexBufferByteOffset() >= Visuals.m_vTilesOfLayer[y * Visuals.m_Width + X0].IndexBufferByteOffset(), "Tile offsets are not monotone.");
-				unsigned int NumVertices = ((Visuals.m_vTilesOfLayer[y * Visuals.m_Width + XR].IndexBufferByteOffset() - Visuals.m_vTilesOfLayer[y * Visuals.m_Width + X0].IndexBufferByteOffset()) / sizeof(unsigned int)) + (Visuals.m_vTilesOfLayer[y * Visuals.m_Width + XR].DoDraw() ? 6lu : 0lu);
+				const auto &StartTileVisual = Visuals.m_vTilesOfLayer[y * Visuals.m_Width + X0];
+				const auto &EndTileVisual = Visuals.m_vTilesOfLayer[y * Visuals.m_Width + XR];
+				const offset_ptr RowStartOffset = StartTileVisual.IndexBufferByteOffset();
+				const offset_ptr RowEndOffset = EndTileVisual.IndexBufferByteOffset();
+				dbg_assert(RowEndOffset >= RowStartOffset, "Tile offsets are not monotone.");
+				unsigned int NumVertices = ((RowEndOffset - RowStartOffset) / sizeof(unsigned int)) + (EndTileVisual.DoDraw() ? 6lu : 0lu);
 
 				if(NumVertices)
 				{
-					vpIndexOffsets.push_back((offset_ptr_size)Visuals.m_vTilesOfLayer[y * Visuals.m_Width + X0].IndexBufferByteOffset());
-					vDrawCounts.push_back(NumVertices);
+					if(!m_vpRenderTileLayerIndexOffsets.empty())
+					{
+						const offset_ptr LastOffset = (offset_ptr)m_vpRenderTileLayerIndexOffsets.back();
+						const offset_ptr LastEndOffset = LastOffset + (offset_ptr)m_vRenderTileLayerDrawCounts.back() * sizeof(unsigned int);
+						if(LastEndOffset == RowStartOffset)
+						{
+							unsigned int &MergedDrawCount = m_vRenderTileLayerDrawCounts.back();
+							if(std::numeric_limits<unsigned int>::max() - MergedDrawCount >= NumVertices)
+							{
+								MergedDrawCount += NumVertices;
+								continue;
+							}
+						}
+					}
+
+					m_vpRenderTileLayerIndexOffsets.push_back((offset_ptr_size)RowStartOffset);
+					m_vRenderTileLayerDrawCounts.push_back(NumVertices);
 				}
 			}
 
-			int DrawCount = vpIndexOffsets.size();
+			int DrawCount = m_vpRenderTileLayerIndexOffsets.size();
 			if(DrawCount != 0)
 			{
-				Graphics()->RenderTileLayer(Visuals.m_BufferContainerIndex, Color, vpIndexOffsets.data(), vDrawCounts.data(), DrawCount);
+				Graphics()->RenderTileLayer(Visuals.m_BufferContainerIndex, Color, m_vpRenderTileLayerIndexOffsets.data(), m_vRenderTileLayerDrawCounts.data(), DrawCount);
 			}
 		}
 	}

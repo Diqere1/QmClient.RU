@@ -4,6 +4,8 @@
 #define GAME_CLIENT_QMUI_UIOVERLAYS_H
 
 #include <engine/graphics.h>
+#include <engine/shared/config.h>
+#include <engine/textrender.h>
 
 #include <game/client/components/tooltips.h>
 #include <game/client/ui.h>
@@ -32,6 +34,88 @@ struct SModalProps
 	const char *m_pTitle = nullptr;
 	bool m_EscToClose = true;
 };
+
+struct SToastProps
+{
+	float m_Width = 280.0f;
+	float m_Height = 38.0f;
+	float m_Margin = ui_token::spacing::LG;
+	const char *m_pText = nullptr;
+};
+
+struct SToastState
+{
+	bool m_WasVisible = false;
+};
+
+inline bool Toast(const IUiContext &Ctx, const void *pId, SToastState *pState, bool Visible, const CUIRect &ScreenRect, const SToastProps &Props)
+{
+	if(Ctx.m_pUi == nullptr || Props.m_pText == nullptr || Props.m_pText[0] == '\0')
+		return false;
+
+	CUIRect Target;
+	Target.w = Props.m_Width;
+	Target.h = Props.m_Height;
+	Target.x = ScreenRect.x + (ScreenRect.w - Target.w) * 0.5f;
+	Target.y = ScreenRect.y + ScreenRect.h - Props.m_Margin - Target.h;
+
+	const float HiddenY = Target.y + Target.h + Props.m_Margin;
+	float CurrentY = Visible ? Target.y : HiddenY;
+	float Alpha = Visible ? 1.0f : 0.0f;
+
+	if(Ctx.m_pAnim != nullptr)
+	{
+		const uint64_t NodeKey = BuildUiAnimNodeKey(Ctx.m_ScopeHash, reinterpret_cast<uint64_t>(pId));
+		if(Visible && pState != nullptr && !pState->m_WasVisible)
+		{
+			Ctx.m_pAnim->SetValue(NodeKey, EUiAnimProperty::POS_Y, HiddenY);
+			Ctx.m_pAnim->SetValue(NodeKey, EUiAnimProperty::ALPHA, 0.0f);
+		}
+		CurrentY = ResolveUiAnimValue(*Ctx.m_pAnim, NodeKey, EUiAnimProperty::POS_Y, Visible ? Target.y : HiddenY, ui_token::motion::TOAST_SLIDE.m_DurationSec, ui_token::motion::TOAST_SLIDE.m_Easing);
+		Alpha = ResolveUiAnimValue(*Ctx.m_pAnim, NodeKey, EUiAnimProperty::ALPHA, Visible ? 1.0f : 0.0f, ui_token::motion::TOAST_SLIDE.m_DurationSec, ui_token::motion::TOAST_SLIDE.m_Easing);
+		if(!Visible && Alpha <= 0.01f && !Ctx.m_pAnim->HasActiveAnimation(NodeKey, EUiAnimProperty::ALPHA))
+		{
+			if(pState != nullptr)
+				pState->m_WasVisible = false;
+			return false;
+		}
+	}
+	else if(!Visible)
+	{
+		if(pState != nullptr)
+			pState->m_WasVisible = false;
+		return false;
+	}
+
+	if(pState != nullptr)
+		pState->m_WasVisible = Visible;
+
+	CUIRect ToastRect = Target;
+	ToastRect.y = CurrentY;
+
+	ColorRGBA Shadow = ui_token::color::SURFACE_SHADOW;
+	Shadow.a *= Alpha;
+	CUIRect ShadowRect = ToastRect;
+	ShadowRect.x += ui_token::elevation::SHADOW_X_HIGH;
+	ShadowRect.y += ui_token::elevation::SHADOW_Y_HIGH;
+	ShadowRect.Draw(Shadow, IGraphics::CORNER_ALL, ui_token::radius::BASE);
+
+	ColorRGBA Bg = ui_token::color::SURFACE_ELEVATED;
+	Bg.a *= Alpha;
+	ToastRect.Draw(Bg, IGraphics::CORNER_ALL, ui_token::radius::BASE);
+
+	ColorRGBA Text = ui_token::color::TEXT_PRIMARY;
+	Text.a *= Alpha;
+	if(Ctx.m_pTextRender != nullptr)
+		Ctx.m_pTextRender->TextColor(Text);
+	CUIRect Label;
+	ToastRect.Margin(ui_token::spacing::MD, &Label);
+	Ctx.m_pUi->DoLabel(&Label, Props.m_pText, ui_token::font::BODY, TEXTALIGN_ML);
+	if(Ctx.m_pTextRender != nullptr)
+		Ctx.m_pTextRender->TextColor(Ctx.m_pTextRender->DefaultTextColor());
+
+	return true;
+}
 
 // Centered modal with overlay backdrop, scale-in animation and optional ESC
 // dismissal. Renders inline when *pOpen is true; Body is invoked with the
@@ -63,7 +147,7 @@ bool Modal(const IUiContext &Ctx, const void *pId, bool *pOpen, const CUIRect &S
 		// First frame after open we need to seed Scale at 0.92 so the spring
 		// has somewhere to travel from. Done by snapping if very close to 1
 		// without prior history.
-		if(Scale > 0.99f && !Ctx.m_pAnim->HasActiveAnimation(NodeKey, EUiAnimProperty::SCALE))
+		if(g_Config.m_QmUiMotionLevel != 0 && Scale > 0.99f && !Ctx.m_pAnim->HasActiveAnimation(NodeKey, EUiAnimProperty::SCALE))
 		{
 			Ctx.m_pAnim->SetValue(NodeKey, EUiAnimProperty::SCALE, 0.92f);
 			Scale = 0.92f;

@@ -10,6 +10,7 @@
 class CUi;
 class CMenus;
 class CUiV2AnimationRuntime;
+class CQmIconManager;
 class CTooltips;
 class ITextRender;
 
@@ -22,6 +23,7 @@ struct IUiContext
 {
 	CUi *m_pUi = nullptr;
 	CUiV2AnimationRuntime *m_pAnim = nullptr;
+	CQmIconManager *m_pIconManager = nullptr;
 	CMenus *m_pMenus = nullptr;
 	CTooltips *m_pTooltips = nullptr;
 	ITextRender *m_pTextRender = nullptr;

@@ -26,6 +26,8 @@ const CLIENT_VERSION_FETCH_TIMEOUT_MS = Number(process.env.CLIENT_VERSION_FETCH_
 const CLIENT_RELEASES_API_URL = process.env.CLIENT_RELEASES_API_URL || `https://api.github.com/repos/${CLIENT_RELEASE_OWNER}/${CLIENT_RELEASE_REPO}/releases/latest`;
 const CLIENT_FALLBACK_TAG = process.env.CLIENT_LATEST_TAG || `v${CLIENT_VERSION_FALLBACK}`;
 const CLIENT_FALLBACK_RELEASE_URL = process.env.CLIENT_RELEASE_URL || BuildClientReleaseUrl(CLIENT_FALLBACK_TAG);
+const MAX_CLIENT_ID_LEN = Number(process.env.MAX_CLIENT_ID_LEN || 64);
+const MAX_PLAYER_NAME_LEN = Number(process.env.MAX_PLAYER_NAME_LEN || 32);
 
 if(TRUST_PROXY)
 {
@@ -259,9 +261,52 @@ function IsValidServerAddress(ServerAddress)
 	return true;
 }
 
+function IsValidClientId(ClientId)
+{
+	return typeof ClientId === "string" &&
+		ClientId.length >= 8 &&
+		ClientId.length <= MAX_CLIENT_ID_LEN &&
+		/^[A-Za-z0-9_-]+$/.test(ClientId);
+}
+
+function NormalizePlayerName(PlayerName)
+{
+	if(typeof PlayerName !== "string")
+	{
+		return "";
+	}
+	return PlayerName.trim().slice(0, MAX_PLAYER_NAME_LEN);
+}
+
+function NormalizeClientType(ClientType, DefaultType = "qm")
+{
+	if(typeof ClientType !== "string")
+		return DefaultType;
+
+	const Normalized = ClientType.trim().toLowerCase();
+	if(Normalized === "arg" || Normalized === "arghena")
+		return "arg";
+	if(Normalized === "qm" || Normalized === "qmclient" || Normalized === "q1meng")
+		return "qm";
+	return DefaultType;
+}
+
+function NormalizeOptionalClientId(ClientId)
+{
+	return IsValidClientId(ClientId) ? ClientId : "";
+}
+
 function IsValidPlayerId(PlayerId)
 {
 	return Number.isInteger(PlayerId) && PlayerId >= 0 && PlayerId < 64;
+}
+
+function NormalizeOptionalPlayerId(PlayerId)
+{
+	if(PlayerId === undefined || PlayerId === null || PlayerId === "")
+		return null;
+	const Value = Number(PlayerId);
+	return IsValidPlayerId(Value) ? Value : null;
 }
 
 app.get("/healthz", (_req, res) => {
@@ -316,6 +361,8 @@ app.post("/report", (req, res) => {
 	const Token = Body.auth_token;
 	const Timestamp = Number(Body.timestamp);
 	const Players = Array.isArray(Body.players) ? Body.players : [];
+	const ReportClientType = NormalizeClientType(Body.client_type || Body.type);
+	const ReportClientId = NormalizeOptionalClientId(Body.client_id || Body.machine_hash);
 
 	if(!IsValidServerAddress(ServerAddress))
 	{
@@ -347,14 +394,29 @@ app.post("/report", (req, res) => {
 	{
 		if(!Player || typeof Player !== "object")
 			continue;
-		const PlayerId = Number(Player.player_id);
-		if(!IsValidPlayerId(PlayerId))
+		const PlayerName = NormalizePlayerName(typeof Player.player_name === "string" ? Player.player_name : Player.name);
+		const PlayerId = NormalizeOptionalPlayerId(Player.player_id);
+		if(PlayerName === "" && PlayerId === null)
 			continue;
+		const Dummy = !!Player.dummy;
+		const FootParticlesEnabled = !!Player.foot_particles_enabled;
+		const RemoteParticlesEnabled = !!Player.remote_particles_enabled;
+		const VoiceSupported = Player.voice_supported !== false;
+		const ClientType = NormalizeClientType(Player.client_type || Player.type, ReportClientType);
+		const ClientId = NormalizeOptionalClientId(Player.client_id || Player.machine_hash) || ReportClientId;
+		const IdentityKey = PlayerName !== "" ? `name:${PlayerName}` : `id:${PlayerId}`;
 
-		const Key = `${ServerAddress}|${PlayerId}`;
+		const Key = `${ServerAddress}|${IdentityKey}`;
 		g_Users.set(Key, {
 			server_address: ServerAddress,
+			player_name: PlayerName,
 			player_id: PlayerId,
+			dummy: Dummy,
+			client_type: ClientType,
+			client_id: ClientId,
+			foot_particles_enabled: FootParticlesEnabled,
+			remote_particles_enabled: RemoteParticlesEnabled,
+			voice_supported: VoiceSupported,
 			updated_at: Now,
 			expiresAt: Now + REPORT_TTL_SEC
 		});
@@ -366,9 +428,18 @@ app.post("/report", (req, res) => {
 
 app.get("/users.json", (_req, res) => {
 	Cleanup();
-	const Users = Array.from(g_Users.values()).map((User) => ({
-		server_address: User.server_address,
-		player_id: User.player_id,
+const Users = Array.from(g_Users.values()).map((User) => ({
+	server_address: User.server_address,
+	...(User.player_name ? { player_name: User.player_name } : {}),
+	...(IsValidPlayerId(User.player_id) ? { player_id: User.player_id } : {}),
+	dummy: !!User.dummy,
+	client_type: User.client_type,
+		type: User.client_type,
+		client_id: User.client_id || "",
+		qid: User.client_id || "",
+		foot_particles_enabled: !!User.foot_particles_enabled,
+		remote_particles_enabled: !!User.remote_particles_enabled,
+		voice_supported: User.voice_supported !== false,
 		updated_at: User.updated_at
 	}));
 	res.json({ users: Users });

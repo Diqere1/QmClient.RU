@@ -85,6 +85,9 @@ private:
 	int m_CompositionCursor;
 	std::vector<std::string> m_vCandidates;
 	int m_CandidateSelectedIndex;
+	int m_CandidatePageStart;
+	int m_CandidatePageSize;
+	int m_CandidateTotalCount;
 
 	// events
 	std::vector<CEvent> m_vInputEvents;
@@ -156,9 +159,12 @@ public:
 	bool HasComposition() const override { return !m_CompositionString.empty(); }
 	int GetCompositionCursor() const override { return m_CompositionCursor; }
 	int GetCompositionLength() const override { return m_CompositionString.length(); }
-	const char *GetCandidate(int Index) const override { return m_vCandidates[Index].c_str(); }
+	const char *GetCandidate(int Index) const override { return in_range<size_t>(Index, 0, m_vCandidates.size()) ? m_vCandidates[Index].c_str() : ""; }
 	int GetCandidateCount() const override { return m_vCandidates.size(); }
 	int GetCandidateSelectedIndex() const override { return m_CandidateSelectedIndex; }
+	int GetCandidatePageStart() const override { return m_CandidatePageStart; }
+	int GetCandidatePageSize() const override { return m_CandidatePageSize; }
+	int GetCandidateTotalCount() const override { return m_CandidateTotalCount; }
 	void SetCompositionWindowPosition(float X, float Y, float H) override;
 
 	bool GetDropFile(char *aBuf, int Len) override;

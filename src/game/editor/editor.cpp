@@ -7962,7 +7962,7 @@ void CEditor::OnRender()
 	Ui()->ClearHotkeys();
 	Input()->Clear();
 
-	CLineInput::RenderCandidates();
+	CLineInput::ValidateActiveInputRenderedThisFrame();
 
 #if defined(CONF_DEBUG)
 	m_Map.CheckIntegrity();

@@ -19,6 +19,7 @@
 #include <engine/shared/netban.h>
 #include <engine/shared/network.h>
 #include <engine/shared/protocol.h>
+#include <engine/shared/client_brand.h>
 #include <engine/shared/snapshot.h>
 #include <engine/shared/qm_live_protocol.h>
 #include <engine/shared/uuid_manager.h>
@@ -208,6 +209,7 @@ public:
 		int m_KcpConv;
 		int64_t m_KcpNegotiatedTime;
 		bool m_CapabilitiesSent;
+		EClientBrand m_ClientBrand;
 
 		// DNSBL
 		EDnsblState m_DnsblState;
@@ -358,6 +360,10 @@ public:
 
 	void SendRconType(int ClientId, bool UsernameReq);
 	void SendCapabilities(int ClientId);
+	void SendClientBrands(int ClientId);
+	void SendClientBrandsToKnownClients();
+	void UpdateClientBrand(int ClientId, const char *pVersionString);
+	bool CanReceiveClientBrands(int ClientId) const;
 	int QmLiveCapabilities() const;
 	int NumQmLiveObservers() const;
 	void SendQmLiveObserverAccept(int ClientId);

@@ -89,6 +89,38 @@ namespace
 		{&CConfig::m_ClSndMuteMapSound, FontIcons::FONT_ICON_MAP, "地图音效", "屏蔽地图环境与脚本触发音效。"},
 	};
 	static_assert((sizeof(gs_aSoundMuteButtonDefs) / sizeof(gs_aSoundMuteButtonDefs[0])) == 9, "Sound mute button count mismatch");
+constexpr float CLIENT_BRAND_LABEL_GAP = 3.0f;
+
+ColorRGBA ClientBrandScoreboardColor(EClientBrand Brand, float Alpha)
+{
+	switch(Brand)
+	{
+	case EClientBrand::QM:
+		return ColorRGBA(0.38f, 0.89f, 1.0f, Alpha);
+	case EClientBrand::ARG:
+		return ColorRGBA(1.0f, 0.66f, 0.28f, Alpha);
+	case EClientBrand::NONE:
+		return ColorRGBA(1.0f, 1.0f, 1.0f, Alpha);
+	}
+	return ColorRGBA(1.0f, 1.0f, 1.0f, Alpha);
+}
+
+float ScoreboardUiAlpha(float AlphaScale)
+{
+	const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
+	return std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f);
+}
+
+ColorRGBA ScoreboardWithUiAlpha(ColorRGBA Color, float AlphaScale)
+{
+	Color.a = ScoreboardUiAlpha(AlphaScale);
+	return Color;
+}
+
+ColorRGBA ScoreboardGlassSurface(float AlphaScale)
+{
+	return ui_token::color::SURFACE_GLASS.WithAlpha(ScoreboardUiAlpha(AlphaScale));
+}
 }
 
 CScoreboard::CScoreboard()
@@ -318,7 +350,7 @@ void CScoreboard::RenderTitle(CUIRect TitleBar, int Team, const char *pTitle)
 void CScoreboard::RenderGoals(CUIRect Goals)
 {
 	const float ContentAlpha = m_AnimContentAlpha;
-	Goals.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f * ContentAlpha), IGraphics::CORNER_ALL, 7.5f);
+	Goals.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f), ContentAlpha), IGraphics::CORNER_ALL, 7.5f);
 	Goals.VMargin(5.0f, &Goals);
 
 	const float FontSize = 10.0f;
@@ -374,14 +406,14 @@ void CScoreboard::RenderSpectators(CUIRect Spectators)
 	}
 
 	const float CornerRadius = 7.5f;
-	SpectatorPanel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f * ContentAlpha), IGraphics::CORNER_ALL, CornerRadius);
+	SpectatorPanel.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f), ContentAlpha), IGraphics::CORNER_ALL, CornerRadius);
 	CUIRect SpectatorList = SpectatorPanel;
 	SpectatorList.Margin(5.0f, &SpectatorList);
 
 	CUIRect MediaControls;
 	if(ShowMediaControls)
 	{
-		MediaPanel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f * ContentAlpha), IGraphics::CORNER_ALL, CornerRadius);
+		MediaPanel.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f), ContentAlpha), IGraphics::CORNER_ALL, CornerRadius);
 		MediaControls = MediaPanel;
 		MediaControls.Margin(5.0f, &MediaControls);
 	}
@@ -800,7 +832,7 @@ void CScoreboard::RenderSoundMuteBar(CUIRect ScoreboardRect)
 	InfoRect.x = std::clamp(InfoRect.x, ScreenMargin, pScreen->w - InfoRect.w - ScreenMargin);
 	InfoRect.y = std::clamp(InfoRect.y, ScreenMargin, pScreen->h - InfoRect.h - ScreenMargin);
 
-	InfoRect.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f * InfoAlpha * ContentAlpha), IGraphics::CORNER_ALL, 6.0f);
+	InfoRect.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f), InfoAlpha * ContentAlpha), IGraphics::CORNER_ALL, 6.0f);
 
 	CUIRect InfoContent = InfoRect;
 	InfoContent.Margin(Padding, &InfoContent);
@@ -908,7 +940,9 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
 		FontSize = 5.0f;
 	}
 
-	const float ScoreOffset = Scoreboard.x + 20.0f;
+	const float ClientBrandLength = g_Config.m_QmClientShowBadge ? maximum(TextRender()->TextWidth(FontSize, "Qm"), TextRender()->TextWidth(FontSize, "Arg")) + CLIENT_BRAND_LABEL_GAP : 0.0f;
+	const float ClientBrandOffset = Scoreboard.x + 10.0f;
+	const float ScoreOffset = Scoreboard.x + 20.0f + ClientBrandLength;
 	const float ScoreLength = TextRender()->TextWidth(FontSize, TimeScore ? "00:00:00" : "99999");
 	// Points column: placed between Score and Tee (only when enabled)
 	const float PointsLength = ShowPoints ? (LowScoreboardWidth ? TextRender()->TextWidth(FontSize, "99999") : TextRender()->TextWidth(FontSize, "999999")) : 0.0f;
@@ -1126,6 +1160,17 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
 					IsSameClan = true;
 				}
 			}
+
+			const EClientBrand ClientBrand = GameClient()->ClientBrand(ClientData.m_aName);
+			if(!HideIdentity && g_Config.m_QmClientShowBadge && ClientBrand != EClientBrand::NONE)
+			{
+				const char *pClientBrandLabel = ClientBrandPrefix(ClientBrand);
+				const float ClientBrandWidth = TextRender()->TextWidth(FontSize, pClientBrandLabel);
+				const float ClientBrandX = ClientBrandOffset + maximum(0.0f, ClientBrandLength - CLIENT_BRAND_LABEL_GAP - ClientBrandWidth) / 2.0f;
+				TextRender()->TextColor(ClientBrandScoreboardColor(ClientBrand, ItemAlpha));
+				TextRender()->Text(ClientBrandX, Row.y + (Row.h - FontSize) / 2.0f, FontSize, pClientBrandLabel);
+				TextRender()->TextColor(TextColor);
+			}
 			// Points column: render actual points value, right-aligned (only when enabled)
 			if(ShowPoints)
 			{
@@ -1226,13 +1271,6 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
 					TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 				}
 
-				if(!HideIdentity && g_Config.m_QmClientShowBadge && ClientId >= 0 && GameClient()->GetQ1menGClientQid(ClientId)[0] != '\0')
-				{
-					TextRender()->TextColor(ColorRGBA(0.38f, 0.89f, 1.0f, ItemAlpha));
-					TextRender()->TextEx(&Cursor, "Qm ");
-					TextRender()->TextColor(NameColor);
-				}
-
 				// TClient
 				if(!HideIdentity && ClientId >= 0 && g_Config.m_TcWarList && g_Config.m_TcWarListScoreboard && GameClient()->m_WarList.GetAnyWar(ClientId))
 					TextRender()->TextColor(GameClient()->m_WarList.GetNameplateColor(ClientId).WithMultipliedAlpha(ItemAlpha));
@@ -1328,7 +1366,7 @@ void CScoreboard::RenderRecordingNotification(float x)
 	const float FontSize = 10.0f;
 
 	CUIRect Rect = {x, 0.0f, TextRender()->TextWidth(FontSize, aBuf) + 30.0f, 25.0f};
-	Rect.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f * ContentAlpha), IGraphics::CORNER_B, 7.5f);
+	Rect.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), ContentAlpha), IGraphics::CORNER_B, 7.5f);
 	CUIRect Circle;
 	CUIRect TextRect;
 	{
@@ -1423,9 +1461,11 @@ void CScoreboard::OnRender()
 	// Scoreboard width: clamp to screen width for narrow aspect ratios
 	const float ScreenMargin = 10.0f;
 	const float MaxScoreboardWidth = maximum(200.0f, Screen.w - ScreenMargin);
-	const float BaseScoreboardSmallWidth = g_Config.m_QmScoreboardPoints ? (450.0f + 10.0f) : 450.0f;
+	const int ScoreboardColumns = Teams ? 2 : (NumPlayers <= 16 ? 1 : (NumPlayers <= 64 ? 2 : 3));
+	const float ClientBrandExtraWidth = g_Config.m_QmClientShowBadge ? maximum(TextRender()->TextWidth(12.0f, "Qm"), TextRender()->TextWidth(12.0f, "Arg")) + CLIENT_BRAND_LABEL_GAP : 0.0f;
+	const float BaseScoreboardSmallWidth = (g_Config.m_QmScoreboardPoints ? (450.0f + 10.0f) : 450.0f) + ClientBrandExtraWidth;
 	const float ScoreboardSmallWidth = minimum(BaseScoreboardSmallWidth, MaxScoreboardWidth);
-	const float BaseScoreboardWidth = !Teams && NumPlayers <= 16 ? ScoreboardSmallWidth : 850.0f;
+	const float BaseScoreboardWidth = !Teams && NumPlayers <= 16 ? ScoreboardSmallWidth : 850.0f + ClientBrandExtraWidth * ScoreboardColumns;
 	const float ScoreboardWidth = minimum(BaseScoreboardWidth, MaxScoreboardWidth);
 	const float TitleHeight = 30.0f;
 
@@ -1442,7 +1482,7 @@ void CScoreboard::OnRender()
 		pSortLabel = TimeScore ? Localize("Current: Time") : Localize("Current: Score");
 	const float SortButtonWidth = TextRender()->TextWidth(SortButtonFontSize, pSortLabel) + 18.0f;
 	const ColorRGBA SortButtonBaseColor = g_Config.m_QmScoreboardSortMode ? ColorRGBA(0.25f, 0.55f, 0.8f, 0.6f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f);
-	const ColorRGBA SortButtonColor = SortButtonBaseColor.WithMultipliedAlpha(m_AnimContentAlpha);
+	const ColorRGBA SortButtonColor = ScoreboardWithUiAlpha(SortButtonBaseColor, m_AnimContentAlpha);
 	auto &&DoSortButton = [&](CUIRect Rect) {
 		Rect.VMargin(4.0f, &Rect);
 		Rect.HMargin(6.0f, &Rect);
@@ -1559,10 +1599,10 @@ void CScoreboard::OnRender()
 			SortButton = CUiV2LegacyAdapter::ToCUIRect(vTitleChildren[1].m_Box);
 		}
 
-		RedTitle.Draw(ui_token::color::DANGER.WithMultipliedAlpha(0.45f * BackgroundAlphaFinal), IGraphics::CORNER_T, ui_token::radius::CARD);
-		BlueTitleBackground.Draw(ui_token::color::ACCENT_PRIMARY_DIM.WithMultipliedAlpha(2.1f * BackgroundAlphaFinal), IGraphics::CORNER_T, ui_token::radius::CARD);
-		RedScoreboard.Draw(ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(BackgroundAlphaFinal), IGraphics::CORNER_B, ui_token::radius::CARD);
-		BlueScoreboard.Draw(ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(BackgroundAlphaFinal), IGraphics::CORNER_B, ui_token::radius::CARD);
+		RedTitle.Draw(ScoreboardWithUiAlpha(ui_token::color::DANGER, BackgroundAlphaFinal), IGraphics::CORNER_T, ui_token::radius::CARD);
+		BlueTitleBackground.Draw(ScoreboardWithUiAlpha(ui_token::color::ACCENT_PRIMARY_DIM, BackgroundAlphaFinal), IGraphics::CORNER_T, ui_token::radius::CARD);
+		RedScoreboard.Draw(ScoreboardGlassSurface(BackgroundAlphaFinal), IGraphics::CORNER_B, ui_token::radius::CARD);
+		BlueScoreboard.Draw(ScoreboardGlassSurface(BackgroundAlphaFinal), IGraphics::CORNER_B, ui_token::radius::CARD);
 
 		RenderTitle(RedTitleContent, TEAM_RED, pRedTeamName == nullptr ? Localize("Red team") : pRedTeamName);
 		RenderTitle(BlueTitleContent, TEAM_BLUE, pBlueTeamName == nullptr ? Localize("Blue team") : pBlueTeamName);
@@ -1572,7 +1612,7 @@ void CScoreboard::OnRender()
 	}
 	else
 	{
-		Scoreboard.Draw(ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(BackgroundAlphaFinal), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		Scoreboard.Draw(ScoreboardGlassSurface(BackgroundAlphaFinal), IGraphics::CORNER_ALL, ui_token::radius::CARD);
 
 		const char *pTitle;
 		if(pGameInfoObj && (pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_GAMEOVER))
