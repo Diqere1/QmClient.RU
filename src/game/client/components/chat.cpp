@@ -2637,6 +2637,9 @@ void CChat::SendChatOnConn(int Conn, int Team, const char *pLine)
 		return;
 #endif
 
+	if(pLine == nullptr)
+		return;
+
 	// don't send empty messages
 	if(*str_utf8_skip_whitespaces(pLine) == '\0')
 		return;

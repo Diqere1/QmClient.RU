@@ -1950,14 +1950,14 @@ TEST(VoiceCore, BuiltPacketsFollowPositiveProtocolPaths)
 		EVoiceIncomingPacketDecision::HANDLE_PONG);
 }
 
-TEST(QmClient, ParseQmClientUsersJsonSupportsLegacyFieldsAndLocalMarks)
+TEST(QmClient, ParseQmClientUsersJsonSupportsNameFieldsAndLocalMarks)
 {
 	const char *pJsonText =
 		"{\"users\":["
-		"{\"server_address\":\"addr-b\",\"player_id\":2,\"dummy\":true},"
-		"{\"server\":\"addr-a\",\"id\":7,\"qid\":\"qm-7\",\"foot_particles_enabled\":1,"
+		"{\"server_address\":\"addr-b\",\"player_name\":\"RemoteDummy\",\"dummy\":true},"
+		"{\"server\":\"addr-a\",\"name\":\"QmSeven\",\"client_type\":\"arg\",\"qid\":\"qm-7\",\"foot_particles_enabled\":1,"
 		"\"remote_particles_enabled\":true,\"voice_supported\":0},"
-		"{\"server_address\":\"addr-a\",\"player_id\":8,\"dummy\":false}"
+		"{\"server_address\":\"addr-a\",\"player_name\":\"QmEight\",\"dummy\":false,\"type\":\"qm\"}"
 		"]}";
 
 	json_value *pJson = json_parse(pJsonText, str_length(pJsonText));
@@ -1977,14 +1977,16 @@ TEST(QmClient, ParseQmClientUsersJsonSupportsLegacyFieldsAndLocalMarks)
 	EXPECT_EQ(Result.m_OnlineDummyCount, 1);
 
 	ASSERT_EQ(Result.m_vLocalServerMarks.size(), 2u);
-	EXPECT_EQ(Result.m_vLocalServerMarks[0].m_ClientId, 7);
+	EXPECT_EQ(Result.m_vLocalServerMarks[0].m_Name, "QmSeven");
 	EXPECT_TRUE(Result.m_vLocalServerMarks[0].m_FootParticlesEnabled);
 	EXPECT_TRUE(Result.m_vLocalServerMarks[0].m_RemoteParticlesEnabled);
 	EXPECT_FALSE(Result.m_vLocalServerMarks[0].m_VoiceSupported);
+	EXPECT_EQ(Result.m_vLocalServerMarks[0].m_ClientBrand, EClientBrand::ARG);
 	EXPECT_EQ(Result.m_vLocalServerMarks[0].m_Qid, "qm-7");
 
-	EXPECT_EQ(Result.m_vLocalServerMarks[1].m_ClientId, 8);
+	EXPECT_EQ(Result.m_vLocalServerMarks[1].m_Name, "QmEight");
 	EXPECT_TRUE(Result.m_vLocalServerMarks[1].m_VoiceSupported);
+	EXPECT_EQ(Result.m_vLocalServerMarks[1].m_ClientBrand, EClientBrand::QM);
 
 	json_value_free(pJson);
 }
@@ -1993,10 +1995,11 @@ TEST(QmClient, ParseQmClientUsersJsonRejectsMissingUsersArrayAndSkipsBrokenEntri
 {
 	const char *pJsonText =
 		"["
-		"{\"server_address\":\"addr-a\",\"player_id\":3,\"dummy\":0},"
-		"{\"server_address\":17,\"player_id\":4},"
+		"{\"server_address\":\"addr-a\",\"player_name\":\"QmThree\",\"dummy\":0},"
+		"{\"server_address\":17,\"player_name\":\"QmFour\"},"
 		"{\"server_address\":\"addr-a\"},"
-		"{\"server_address\":\"addr-a\",\"player_id\":5,\"voice_supported\":true}"
+		"{\"server_address\":\"addr-a\",\"player_id\":5,\"voice_supported\":true},"
+		"{\"server_address\":\"addr-a\",\"name\":\"QmFive\",\"voice_supported\":true}"
 		"]";
 
 	json_value *pJson = json_parse(pJsonText, str_length(pJsonText));
@@ -2008,10 +2011,12 @@ TEST(QmClient, ParseQmClientUsersJsonRejectsMissingUsersArrayAndSkipsBrokenEntri
 	EXPECT_EQ(Result.m_OnlineUserCount, 2);
 	EXPECT_EQ(Result.m_OnlineDummyCount, 0);
 	ASSERT_EQ(Result.m_vLocalServerMarks.size(), 2u);
-	EXPECT_EQ(Result.m_vLocalServerMarks[0].m_ClientId, 3);
+	EXPECT_EQ(Result.m_vLocalServerMarks[0].m_Name, "QmThree");
 	EXPECT_TRUE(Result.m_vLocalServerMarks[0].m_VoiceSupported);
-	EXPECT_EQ(Result.m_vLocalServerMarks[1].m_ClientId, 5);
+	EXPECT_EQ(Result.m_vLocalServerMarks[0].m_ClientBrand, EClientBrand::QM);
+	EXPECT_EQ(Result.m_vLocalServerMarks[1].m_Name, "QmFive");
 	EXPECT_TRUE(Result.m_vLocalServerMarks[1].m_VoiceSupported);
+	EXPECT_EQ(Result.m_vLocalServerMarks[1].m_ClientBrand, EClientBrand::QM);
 
 	json_value_free(pJson);
 

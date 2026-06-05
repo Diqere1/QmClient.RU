@@ -36,6 +36,7 @@
 #include <engine/shared/protocol.h>
 #include <engine/shared/protocol7.h>
 #include <engine/shared/protocol_ex.h>
+#include <engine/shared/client_brand.h>
 #include <engine/shared/rust_version.h>
 #include <engine/shared/snapshot.h>
 #include <engine/storage.h>
@@ -234,6 +235,7 @@ void CServer::CClient::Reset()
 	m_KcpConv = 0;
 	m_KcpNegotiatedTime = 0;
 	m_CapabilitiesSent = false;
+	m_ClientBrand = EClientBrand::NONE;
 	m_QmLiveObserver = false;
 	m_IsLiveObserver = false;
 	m_QmLiveCapabilities = 0;
@@ -476,7 +478,8 @@ bool CServer::WouldClientClanChange(int ClientId, const char *pClanRequest)
 
 void CServer::SetClientName(int ClientId, const char *pName)
 {
-	SetClientNameImpl(ClientId, pName, true);
+	if(SetClientNameImpl(ClientId, pName, true))
+		SendClientBrandsToKnownClients();
 }
 
 void CServer::SetClientClan(int ClientId, const char *pClan)
@@ -1335,11 +1338,13 @@ int CServer::DelClientCallback(int ClientId, const char *pReason, void *pUser)
 	pThis->m_aClients[ClientId].m_IsLiveObserver = false;
 	pThis->m_aClients[ClientId].m_QmLiveCapabilities = 0;
 	pThis->m_aClients[ClientId].m_ForceHighBandwidthOnSpectate = false;
+	pThis->m_aClients[ClientId].m_ClientBrand = EClientBrand::NONE;
 	pThis->m_aPrevStates[ClientId] = CClient::STATE_EMPTY;
 	pThis->m_aClients[ClientId].m_Snapshots.PurgeAll();
 	pThis->m_aClients[ClientId].m_Sixup = false;
 	pThis->m_aClients[ClientId].m_RedirectDropTime = 0;
 	pThis->m_aClients[ClientId].m_HasPersistentData = false;
+	pThis->SendClientBrandsToKnownClients();
 
 	pThis->GameServer()->TeehistorianRecordPlayerDrop(ClientId, pReason);
 	pThis->Antibot()->OnEngineClientDrop(ClientId, pReason);
@@ -1387,6 +1392,59 @@ void CServer::SendCapabilities(int ClientId)
 	Msg.AddInt(Flags); // flags
 	SendMsg(&Msg, MSGFLAG_VITAL, ClientId);
 	m_aClients[ClientId].m_CapabilitiesSent = true;
+}
+
+bool CServer::CanReceiveClientBrands(int ClientId) const
+{
+	return ClientId >= 0 && ClientId < MAX_CLIENTS &&
+	       m_aClients[ClientId].m_State >= CClient::STATE_READY &&
+	       m_aClients[ClientId].m_ClientBrand != EClientBrand::NONE &&
+	       !m_aClients[ClientId].m_IsLiveObserver;
+}
+
+void CServer::SendClientBrands(int ClientId)
+{
+	if(!CanReceiveClientBrands(ClientId))
+		return;
+
+	int NumEntries = 0;
+	for(int OtherId = 0; OtherId < MAX_CLIENTS; ++OtherId)
+	{
+		if(m_aClients[OtherId].m_State == CClient::STATE_INGAME && m_aClients[OtherId].m_ClientBrand != EClientBrand::NONE && !m_aClients[OtherId].m_IsLiveObserver)
+			++NumEntries;
+	}
+
+	CMsgPacker Msg(NETMSG_CLIENT_BRANDS, true);
+	Msg.AddInt(CLIENT_BRANDS_PROTOCOL_VERSION);
+	Msg.AddInt(NumEntries);
+	for(int OtherId = 0; OtherId < MAX_CLIENTS; ++OtherId)
+	{
+		if(m_aClients[OtherId].m_State != CClient::STATE_INGAME || m_aClients[OtherId].m_ClientBrand == EClientBrand::NONE || m_aClients[OtherId].m_IsLiveObserver)
+			continue;
+
+		Msg.AddString(m_aClients[OtherId].m_aName, MAX_NAME_LENGTH);
+		Msg.AddInt(static_cast<int>(m_aClients[OtherId].m_ClientBrand));
+	}
+	SendMsg(&Msg, MSGFLAG_VITAL, ClientId);
+}
+
+void CServer::SendClientBrandsToKnownClients()
+{
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+		SendClientBrands(ClientId);
+}
+
+void CServer::UpdateClientBrand(int ClientId, const char *pVersionString)
+{
+	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
+		return;
+
+	const EClientBrand ClientBrand = ClientBrandFromVersionString(pVersionString);
+	if(m_aClients[ClientId].m_ClientBrand == ClientBrand)
+		return;
+
+	m_aClients[ClientId].m_ClientBrand = ClientBrand;
+	SendClientBrandsToKnownClients();
 }
 
 int CServer::QmLiveCapabilities() const
@@ -1950,6 +2008,7 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 				m_aClients[ClientId].m_DDNetVersionSettled = true;
 				m_aClients[ClientId].m_GotDDNetVersionPacket = true;
 				m_aClients[ClientId].m_State = CClient::STATE_AUTH;
+				UpdateClientBrand(ClientId, pDDNetVersionStr);
 				SendCapabilities(ClientId);
 			}
 		}
@@ -2110,6 +2169,7 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 					SendMsg(&ServerInfoMessage, MSGFLAG_VITAL | MSGFLAG_FLUSH, ClientId);
 				}
 				GameServer()->OnClientEnter(ClientId);
+				SendClientBrandsToKnownClients();
 			}
 		}
 		else if(Msg == NETMSG_INPUT)
@@ -4998,6 +5058,7 @@ bool CServer::SetTimedOut(int ClientId, int OrigId)
 	m_NetServer.ResumeOldConnection(ClientId, OrigId);
 
 	m_aClients[ClientId].m_Sixup = m_aClients[OrigId].m_Sixup;
+	const EClientBrand OrigClientBrand = m_aClients[OrigId].m_ClientBrand;
 
 	DelClientCallback(OrigId, "Timeout Protection used", this);
 	m_aClients[ClientId].m_AuthKey = -1;
@@ -5005,6 +5066,8 @@ bool CServer::SetTimedOut(int ClientId, int OrigId)
 	m_aClients[ClientId].m_DDNetVersion = m_aClients[OrigId].m_DDNetVersion;
 	m_aClients[ClientId].m_GotDDNetVersionPacket = m_aClients[OrigId].m_GotDDNetVersionPacket;
 	m_aClients[ClientId].m_DDNetVersionSettled = m_aClients[OrigId].m_DDNetVersionSettled;
+	m_aClients[ClientId].m_ClientBrand = OrigClientBrand;
+	SendClientBrandsToKnownClients();
 	return true;
 }
 

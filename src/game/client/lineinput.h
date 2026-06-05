@@ -20,6 +20,18 @@ enum class EInputPriority
 	CONSOLE,
 };
 
+namespace qm_ime_overlay
+{
+inline int NormalizeSelectedCandidateIndex(int SelectedIndex, int CandidateCount)
+{
+	if(CandidateCount <= 0)
+		return -1;
+	if(SelectedIndex < 0 || SelectedIndex >= CandidateCount)
+		return 0;
+	return SelectedIndex;
+}
+} // namespace qm_ime_overlay
+
 // line input helper
 class CLineInput
 {
@@ -49,6 +61,7 @@ private:
 
 	static CLineInput *ms_pActiveInput;
 	static EInputPriority ms_ActiveInputPriority;
+	static bool ms_TextInputAutoManaged;
 
 	static vec2 ms_CompositionWindowPosition;
 	static float ms_CompositionLineHeight;
@@ -102,9 +115,14 @@ public:
 		ms_pInput = pInput;
 		ms_pTextRender = pTextRender;
 	}
-	static void RenderCandidates();
+	static bool ValidateActiveInputRenderedThisFrame();
 
 	static CLineInput *GetActiveInput() { return ms_pActiveInput; }
+	static EInputPriority GetActiveInputPriority() { return ms_ActiveInputPriority; }
+	static void SetTextInputAutoManaged(bool Managed) { ms_TextInputAutoManaged = Managed; }
+	static bool TextInputAutoManaged() { return ms_TextInputAutoManaged; }
+	static vec2 GetCompositionWindowPosition() { return ms_CompositionWindowPosition; }
+	static float GetCompositionLineHeight() { return ms_CompositionLineHeight; }
 
 	CLineInput()
 	{

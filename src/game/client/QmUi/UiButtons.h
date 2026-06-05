@@ -5,6 +5,7 @@
 
 #include "UiContext.h"
 
+enum class EQmIcon;
 class CButtonContainer;
 class CUIRect;
 
@@ -24,6 +25,7 @@ bool SecondaryButton(const IUiContext &Ctx, CButtonContainer *pBtn, const char *
 // with hover color animation. Useful for compact toolbar entries (close, refresh,
 // settings glyphs).
 bool IconButton(const IUiContext &Ctx, CButtonContainer *pBtn, const char *pIcon, const CUIRect &Rect, bool Disabled = false);
+bool IconButton(const IUiContext &Ctx, CButtonContainer *pBtn, EQmIcon Icon, const char *pFallbackIcon, const CUIRect &Rect, bool Disabled = false);
 
 } // namespace ui_widget
 

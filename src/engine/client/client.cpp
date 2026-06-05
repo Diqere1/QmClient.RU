@@ -42,6 +42,7 @@
 #include <engine/shared/protocol.h>
 #include <engine/shared/protocol7.h>
 #include <engine/shared/protocol_ex.h>
+#include <engine/shared/client_brand.h>
 #include <engine/shared/protocolglue.h>
 #include <engine/shared/rust_version.h>
 #include <engine/shared/snapshot.h>
@@ -2082,6 +2083,10 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			EnableQmLiveCompatDirector(Reason, pReasonText);
 		}
 #endif
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CLIENT_BRANDS)
+		{
+			GameClient()->OnClientBrandsMessage(&Unpacker);
+		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_MAP_CHANGE)
 		{
 			if(m_CanReceiveServerCapabilities)

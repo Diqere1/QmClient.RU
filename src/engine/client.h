@@ -408,6 +408,7 @@ public:
 	virtual void OnScreenshotTaken(class CImageInfo &&Image) = 0;
 	virtual void OnConnected() = 0;
 	virtual void OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dummy) = 0;
+	virtual void OnClientBrandsMessage(CUnpacker *pUnpacker) = 0;
 	virtual bool OnDemoPlaybackMessage(int MsgId, CUnpacker *pUnpacker) = 0;
 	virtual void ResetDemoPlaybackState() = 0;
 	virtual void OnPredict() = 0;

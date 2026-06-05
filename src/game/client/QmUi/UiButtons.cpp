@@ -5,6 +5,7 @@
 #include <engine/graphics.h>
 
 #include <game/client/components/menus.h>
+#include <game/client/qm_icon_manager.h>
 #include <game/client/ui.h>
 #include <game/client/ui_rect.h>
 
@@ -82,6 +83,38 @@ bool IconButton(const IUiContext &Ctx, CButtonContainer *pBtn, const char *pIcon
 	}
 
 	const int Result = Ctx.m_pUi->DoButton_FontIcon(pBtn, pIcon, 0, &Rect, BUTTONFLAG_LEFT, IGraphics::CORNER_ALL, !Disabled, BgColor);
+	return Result != 0;
+}
+
+bool IconButton(const IUiContext &Ctx, CButtonContainer *pBtn, EQmIcon Icon, const char *pFallbackIcon, const CUIRect &Rect, bool Disabled)
+{
+	if(Ctx.m_pUi == nullptr || pBtn == nullptr)
+		return false;
+
+	const bool HoverPrev = Ctx.m_pUi->HotItem() == static_cast<const void *>(pBtn);
+	const ColorRGBA Target = HoverPrev ? ui_token::color::ACCENT_PRIMARY_DIM : ColorRGBA{0.0f, 0.0f, 0.0f, 0.0f};
+	ColorRGBA BgColor = Target;
+	if(Ctx.m_pAnim != nullptr)
+	{
+		const uint64_t NodeKey = BuildUiAnimNodeKey(Ctx.m_ScopeHash, reinterpret_cast<uint64_t>(pBtn));
+		BgColor = ResolveUiAnimValueColor(*Ctx.m_pAnim, NodeKey, Target, ui_token::motion::BTN_HOVER.m_DurationSec, ui_token::motion::BTN_HOVER.m_Easing);
+	}
+
+	Rect.Draw(BgColor, IGraphics::CORNER_ALL, ui_token::radius::BASE);
+	const int Result = Disabled ? 0 : Ctx.m_pUi->DoButtonLogic(pBtn, 0, &Rect, BUTTONFLAG_LEFT);
+
+	const float IconSide = minimum(Rect.w, Rect.h) * 0.58f;
+	CUIRect IconRect;
+	IconRect.w = IconSide;
+	IconRect.h = IconSide;
+	IconRect.x = Rect.x + (Rect.w - IconSide) * 0.5f;
+	IconRect.y = Rect.y + (Rect.h - IconSide) * 0.5f;
+	const EQmIconState IconState = Disabled ? EQmIconState::DISABLED : (HoverPrev ? EQmIconState::HOVER : EQmIconState::NORMAL);
+	if(Ctx.m_pIconManager == nullptr || !Ctx.m_pIconManager->RenderIcon(Icon, IconRect, IconState))
+	{
+		Ctx.m_pUi->DoLabel(&IconRect, pFallbackIcon, IconRect.h * CUi::ms_FontmodHeight, TEXTALIGN_MC);
+	}
+
 	return Result != 0;
 }
 

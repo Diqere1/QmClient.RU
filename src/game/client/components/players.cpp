@@ -33,6 +33,7 @@
 #include <game/client/prediction/entities/character.h>
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 
 static float CalculateHandAngle(vec2 Dir, float AngleOffset)
@@ -67,6 +68,10 @@ static int LocalDummyIndexForClient(const CGameClient *pGameClient, int ClientId
 	}
 	return -1;
 }
+
+constexpr int QM_WEAPON_SWITCH_ANIM_SCOPE_OWN = 0;
+constexpr int QM_WEAPON_SWITCH_ANIM_SCOPE_LOCAL = 1;
+constexpr int QM_WEAPON_SWITCH_ANIM_SCOPE_ALL = 2;
 
 static bool HasQmJellyHammerImpact(const CGameClient *pGameClient, int ClientId)
 {
@@ -876,19 +881,20 @@ void CPlayers::RenderPlayer(
 			bool IsSit = Inactive && !InAir && Stationary;
 			vec2 WeaponSwitchOffset = vec2(0.0f, 0.0f);
 			float WeaponSwitchAngle = 0.0f;
-			if(Local)
+			const bool WeaponSwitchAnimEnabled = g_Config.m_QmWeaponSwitchAnim && ShouldRenderWeaponSwitchAnim(ClientId);
+			if(ClientId >= 0 && ClientId < MAX_CLIENTS)
 			{
-				if(m_WeaponSwitchLastWeapon != Player.m_Weapon)
+				if(m_aWeaponSwitchLastWeapons[ClientId] != Player.m_Weapon)
 				{
-					if(m_WeaponSwitchLastWeapon != -1)
-						m_WeaponSwitchStartTime = Client()->LocalTime();
-					m_WeaponSwitchLastWeapon = Player.m_Weapon;
+					if(WeaponSwitchAnimEnabled && m_aWeaponSwitchLastWeapons[ClientId] != -1)
+						m_aWeaponSwitchStartTimes[ClientId] = Client()->LocalTime();
+					m_aWeaponSwitchLastWeapons[ClientId] = Player.m_Weapon;
 				}
 
-				if(g_Config.m_QmWeaponSwitchAnim)
+				if(WeaponSwitchAnimEnabled)
 				{
 					constexpr float SwitchAnimDuration = 0.3f;
-					const float TimeSinceSwitch = (float)(Client()->LocalTime() - m_WeaponSwitchStartTime);
+					const float TimeSinceSwitch = (float)(Client()->LocalTime() - m_aWeaponSwitchStartTimes[ClientId]);
 					if(TimeSinceSwitch >= 0.0f && TimeSinceSwitch < SwitchAnimDuration)
 					{
 						const float Progress = TimeSinceSwitch / SwitchAnimDuration;
@@ -1646,6 +1652,24 @@ inline bool CPlayers::IsPlayerInfoAvailable(int ClientId) const
 	       GameClient()->m_Snap.m_apPlayerInfos[ClientId] != nullptr;
 }
 
+bool CPlayers::ShouldRenderWeaponSwitchAnim(int ClientId) const
+{
+	if(ClientId < 0)
+		return false;
+
+	switch(std::clamp(g_Config.m_QmWeaponSwitchAnimScope, QM_WEAPON_SWITCH_ANIM_SCOPE_OWN, QM_WEAPON_SWITCH_ANIM_SCOPE_ALL))
+	{
+	case QM_WEAPON_SWITCH_ANIM_SCOPE_OWN:
+		return ClientId == GameClient()->m_Snap.m_LocalClientId;
+	case QM_WEAPON_SWITCH_ANIM_SCOPE_LOCAL:
+		return GameClient()->IsLocalClientId(ClientId);
+	case QM_WEAPON_SWITCH_ANIM_SCOPE_ALL:
+		return true;
+	default:
+		return false;
+	}
+}
+
 void CPlayers::OnRender()
 {
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
@@ -1842,8 +1866,16 @@ void CPlayers::CreateSpectatorTeeRenderInfo()
 	m_pSpectatorTeeRenderInfo = GameClient()->CreateManagedTeeRenderInfo(SpectatorTeeRenderInfo, SpectatorSkinDescriptor);
 }
 
+void CPlayers::OnReset()
+{
+	std::fill(std::begin(m_aWeaponSwitchLastWeapons), std::end(m_aWeaponSwitchLastWeapons), -1);
+	std::fill(std::begin(m_aWeaponSwitchStartTimes), std::end(m_aWeaponSwitchStartTimes), 0.0);
+}
+
 void CPlayers::OnInit()
 {
+	OnReset();
+
 	m_WeaponEmoteQuadContainerIndex = Graphics()->CreateQuadContainer(false);
 
 	Graphics()->SetColor(1.f, 1.f, 1.f, 1.f);

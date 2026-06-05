@@ -236,6 +236,8 @@ void CGameClient::OnConsoleInit()
 	m_pUpdater = Kernel()->RequestInterface<IUpdater>();
 #endif
 	m_pHttp = Kernel()->RequestInterface<IHttp>();
+	m_QmCommandRouter.Init(this);
+	m_QmImeManager.Init(this);
 
 	// make a list of all the systems, make sure to add them in the correct render order
 	m_vpAll.insert(m_vpAll.end(), {&m_Skins,
@@ -362,6 +364,7 @@ void CGameClient::OnConsoleInit()
 	// let all the other components register their console commands
 	for(auto &pComponent : m_vpAll)
 		pComponent->OnConsoleInit();
+	m_QmCommandRouter.OnConsoleInit();
 
 	static SConfigIntAliasSync s_aLegacyToQmHudAliases[] = {
 		{&g_Config.m_ClScoreboardPointsLegacy, &g_Config.m_QmScoreboardPoints},
@@ -581,6 +584,7 @@ void CGameClient::OnInit()
 	m_UiRuntimeV2.Init(this);
 	m_RenderTools.Init(Graphics(), TextRender(), this); // TClient
 	m_RenderMap.Init(Graphics(), TextRender());
+	m_QmIconManager.Init(Graphics(), Storage(), Console());
 
 	if(GIT_SHORTREV_HASH)
 	{
@@ -936,7 +940,11 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		return 0;
 	}
 
-	if(!g_Config.m_ClDummyHammer)
+	const bool QmManualDummyInputActive =
+		m_QmDummyInputForceSend ||
+		qm_dummy_command::HasHeldInput(m_DummyInput);
+
+	if(!g_Config.m_ClDummyHammer || QmManualDummyInputActive)
 	{
 		if(m_DummyFire != 0)
 		{
@@ -944,12 +952,15 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 			m_DummyFire = 0;
 		}
 
-		if(!Force && (!m_DummyInput.m_Direction && !m_DummyInput.m_Jump && !m_DummyInput.m_Hook))
+		const bool QmForceSend = m_QmDummyInputForceSend;
+		const bool HasHeldDummyInput = qm_dummy_command::HasHeldInput(m_DummyInput);
+		if(!Force && !QmForceSend && !HasHeldDummyInput)
 		{
 			return 0;
 		}
 
 		mem_copy(pData, &m_DummyInput, sizeof(m_DummyInput));
+		m_QmDummyInputForceSend = false;
 		return sizeof(m_DummyInput);
 	}
 	else
@@ -1092,6 +1103,7 @@ void CGameClient::OnReset()
 
 	std::fill(std::begin(m_aLastPos), std::end(m_aLastPos), vec2(0.0f, 0.0f));
 	std::fill(std::begin(m_aLastActive), std::end(m_aLastActive), false);
+	ClearClientBrands();
 
 	m_GameOver = false;
 	m_GamePaused = false;
@@ -1135,6 +1147,7 @@ void CGameClient::OnReset()
 	m_DummyInput = {};
 	m_HammerInput = {};
 	m_DummyFire = 0;
+	m_QmDummyInputForceSend = false;
 	m_ReceivedDDNetPlayer = false;
 
 	m_Teams.Reset();
@@ -1212,6 +1225,7 @@ void CGameClient::OnReset()
 	m_CursorInfo.m_NumSamples = 0;
 
 	m_UiRuntimeV2.Reset();
+	m_QmImeManager.Reset();
 	if(m_pJellyTee)
 		m_pJellyTee->Reset();
 
@@ -2100,8 +2114,9 @@ void CGameClient::OnRender()
 	// clear all events/input for this frame
 	{
 		CPerfTimer StageTimer;
+		m_QmImeManager.RenderCandidatePopup();
+		m_QmImeManager.OnFrame();
 		Input()->Clear();
-		CLineInput::RenderCandidates();
 		LogPerfStage("input_clear_and_candidates", StageTimer.ElapsedMs());
 	}
 
@@ -2197,6 +2212,7 @@ void CGameClient::OnDummyDisconnect()
 	m_aLastPredictedAirJumpTick[1] = -1;
 	m_PredictedDummyId = -1;
 	m_FastPractice.InvalidateBufferedInputState();
+	m_QmCommandRouter.ResetDummyInputState();
 }
 
 int CGameClient::LastRaceTick() const
@@ -2756,6 +2772,47 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 	}
 }
 
+void CGameClient::OnClientBrandsMessage(CUnpacker *pUnpacker)
+{
+	const int Version = pUnpacker->GetInt();
+	const int NumEntries = pUnpacker->GetInt();
+	if(pUnpacker->Error() || Version != CLIENT_BRANDS_PROTOCOL_VERSION || NumEntries < 0 || NumEntries > MAX_CLIENTS)
+		return;
+
+	char aaClientBrandNames[MAX_CLIENTS][MAX_NAME_LENGTH] = {};
+	EClientBrand aClientBrands[MAX_CLIENTS] = {};
+	int NumValidEntries = 0;
+	for(int Entry = 0; Entry < NumEntries; ++Entry)
+	{
+		const char *pName = pUnpacker->GetString(CUnpacker::SANITIZE_CC);
+		const EClientBrand Brand = ClientBrandFromInt(pUnpacker->GetInt());
+		if(pUnpacker->Error())
+			return;
+		if(pName[0] == '\0' || Brand == EClientBrand::NONE)
+			continue;
+
+		bool Found = false;
+		for(int Existing = 0; Existing < NumValidEntries; ++Existing)
+		{
+			if(str_comp(aaClientBrandNames[Existing], pName) == 0)
+			{
+				aClientBrands[Existing] = Brand;
+				Found = true;
+				break;
+			}
+		}
+		if(Found || NumValidEntries >= MAX_CLIENTS)
+			continue;
+
+		str_copy(aaClientBrandNames[NumValidEntries], pName);
+		aClientBrands[NumValidEntries] = Brand;
+		++NumValidEntries;
+	}
+
+	mem_copy(m_aaClientBrandNames, aaClientBrandNames, sizeof(m_aaClientBrandNames));
+	mem_copy(m_aClientBrands, aClientBrands, sizeof(m_aClientBrands));
+}
+
 bool CGameClient::OnDemoPlaybackMessage(int MsgId, CUnpacker *pUnpacker)
 {
 	if(MsgId == NETMSG_QM_DEMO_HUD_STATE)
@@ -2867,6 +2924,7 @@ void CGameClient::OnWindowResize()
 		pComponent->OnWindowResize();
 
 	Ui()->OnWindowResize();
+	m_QmIconManager.RefreshForCurrentDpi();
 }
 
 void CGameClient::OnLanguageChange()
@@ -7400,6 +7458,8 @@ void CGameClient::DummyResetInput()
 	if(!Client()->DummyConnected())
 		return;
 
+	m_QmCommandRouter.ResetDummyInputState();
+
 	if((m_DummyInput.m_Fire & 1) != 0)
 		m_DummyInput.m_Fire++;
 
@@ -7942,11 +8002,12 @@ void CGameClient::ClearQ1menGSyncMarks()
 	std::fill(std::begin(m_aQ1menGSyncMarkUntil), std::end(m_aQ1menGSyncMarkUntil), 0);
 	std::fill(std::begin(m_aQ1menGSyncFootParticlesEnabled), std::end(m_aQ1menGSyncFootParticlesEnabled), false);
 	std::fill(std::begin(m_aQ1menGSyncRemoteParticlesEnabled), std::end(m_aQ1menGSyncRemoteParticlesEnabled), false);
+	std::fill(std::begin(m_aQ1menGSyncClientBrands), std::end(m_aQ1menGSyncClientBrands), EClientBrand::NONE);
 	for(auto &aQid : m_aaQ1menGSyncQid)
 		aQid[0] = '\0';
 }
 
-void CGameClient::MarkQ1menGSyncClient(int ClientId, int64_t ExpireTick, bool FootParticlesEnabled, bool RemoteParticlesEnabled, const char *pQid)
+void CGameClient::MarkQ1menGSyncClient(int ClientId, int64_t ExpireTick, bool FootParticlesEnabled, bool RemoteParticlesEnabled, const char *pQid, EClientBrand ClientBrand)
 {
 	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
 		return;
@@ -7955,6 +8016,7 @@ void CGameClient::MarkQ1menGSyncClient(int ClientId, int64_t ExpireTick, bool Fo
 	m_aQ1menGSyncMarkUntil[ClientId] = maximum(m_aQ1menGSyncMarkUntil[ClientId], ExpireTick);
 	m_aQ1menGSyncFootParticlesEnabled[ClientId] = FootParticlesEnabled;
 	m_aQ1menGSyncRemoteParticlesEnabled[ClientId] = RemoteParticlesEnabled;
+	m_aQ1menGSyncClientBrands[ClientId] = ClientBrand == EClientBrand::NONE ? EClientBrand::QM : ClientBrand;
 	if(pQid && pQid[0] != '\0')
 		str_copy(m_aaQ1menGSyncQid[ClientId], pQid, sizeof(m_aaQ1menGSyncQid[ClientId]));
 }
@@ -8005,4 +8067,35 @@ bool CGameClient::IsQmVoiceSupportedClient(int ClientId) const
 		return false;
 
 	return m_aQmVoiceSyncMarkUntil[ClientId] > time_get();
+}
+
+void CGameClient::ClearClientBrands()
+{
+	for(auto &aName : m_aaClientBrandNames)
+		aName[0] = '\0';
+	std::fill(std::begin(m_aClientBrands), std::end(m_aClientBrands), EClientBrand::NONE);
+}
+
+EClientBrand CGameClient::ClientBrand(const char *pName) const
+{
+	if(!pName || pName[0] == '\0')
+		return EClientBrand::NONE;
+	for(int Entry = 0; Entry < MAX_CLIENTS; ++Entry)
+	{
+		if(m_aClientBrands[Entry] != EClientBrand::NONE && str_comp(m_aaClientBrandNames[Entry], pName) == 0)
+			return m_aClientBrands[Entry];
+	}
+	const int64_t Now = time_get();
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+	{
+		if(m_aQ1menGSyncMarkUntil[ClientId] > Now && m_aQ1menGSyncClientBrands[ClientId] != EClientBrand::NONE && m_aClients[ClientId].m_Active && str_comp(m_aClients[ClientId].m_aName, pName) == 0)
+			return m_aQ1menGSyncClientBrands[ClientId];
+	}
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+	{
+		const int ClientId = m_aLocalIds[Dummy];
+		if(ClientId >= 0 && ClientId < MAX_CLIENTS && m_aClients[ClientId].m_Active && str_comp(m_aClients[ClientId].m_aName, pName) == 0)
+			return EClientBrand::QM;
+	}
+	return EClientBrand::NONE;
 }

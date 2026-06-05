@@ -92,6 +92,8 @@ MACRO_CONFIG_INT(QmAspectRatio, qm_aspect_ratio, 178, 100, 300, CFGFLAG_CLIENT |
 
 // Misc visual
 MACRO_CONFIG_INT(QmWeaponSwitchAnim, qm_weapon_switch_anim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "切换武器时播放滑入旋转动画")
+MACRO_CONFIG_INT(QmWeaponSwitchAnimScope, qm_weapon_switch_anim_scope, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "武器切换动画范围: 0=仅自己 1=本地+分身 2=所有玩家")
+MACRO_CONFIG_STR(QmNewFeatureMarksRead, qm_new_feature_marks_read, 1024, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "已读的设置界面新功能标识")
 MACRO_CONFIG_INT(QmJellyTee, qm_jelly_tee, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "启用 Q 弹 Tee 形变")
 MACRO_CONFIG_INT(QmJellyTeeOthers, qm_jelly_tee_others, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "将 Q 弹 Tee 形变应用到其他玩家")
 MACRO_CONFIG_INT(QmJellyTeeStrength, qm_jelly_tee_strength, 500, 0, 1000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Q 弹 Tee 形变强度")
