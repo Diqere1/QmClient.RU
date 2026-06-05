@@ -50,22 +50,13 @@ struct SImeCandidateMetrics
 
 bool HasPopupContent(const SQmImePopupState &State)
 {
-	return State.m_Visible && !State.m_Disabled && (!State.m_Composition.empty() || !State.m_vCandidates.empty());
+	return State.m_Visible && !State.m_Disabled && !State.m_vCandidates.empty();
 }
 
 ColorRGBA WithAlpha(ColorRGBA Color, float Alpha)
 {
 	Color.a *= Alpha;
 	return Color;
-}
-
-bool UseDarkMaterial(const CGameClient *pGameClient)
-{
-	const ColorRGBA ClearColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClOverlayEntities ? g_Config.m_ClBackgroundEntitiesColor : g_Config.m_ClBackgroundColor));
-	const float Luma = ClearColor.r * 0.2126f + ClearColor.g * 0.7152f + ClearColor.b * 0.0722f;
-	if(pGameClient != nullptr && pGameClient->m_Menus.IsActive())
-		return Luma < 0.62f;
-	return Luma < 0.48f;
 }
 
 float ResolveMotionValue(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, EUiAnimProperty Property, float Target, float DurationSec)
@@ -161,12 +152,10 @@ void CQmImeCandidatePopup::Render(CGameClient *pGameClient, const SQmImePopupSta
 
 	IGraphics *pGraphics = pGameClient->Graphics();
 	ITextRender *pTextRender = pGameClient->TextRender();
-	const bool Dark = UseDarkMaterial(pGameClient);
-	const qm_theme::SImeTheme &Ime = qm_theme::ImeTheme(Dark);
+	const qm_theme::SImeTheme &Ime = qm_theme::ImeTheme(true);
 	const unsigned OldRenderFlags = pTextRender->GetRenderFlags();
 	pTextRender->SetRenderFlags(OldRenderFlags | TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT);
 
-	const bool HasComposition = !DrawState.m_Composition.empty();
 	const bool HasCandidates = !DrawState.m_vCandidates.empty();
 	const int CandidateCount = minimum((int)DrawState.m_vCandidates.size(), MAX_VISIBLE_CANDIDATES);
 	const int PageCount = CandidatePageCount(DrawState);
@@ -212,9 +201,6 @@ void CQmImeCandidatePopup::Render(CGameClient *pGameClient, const SQmImePopupSta
 		CandidateTextHeight = maximum(CandidateTextHeight, maximum(aCandidateMetrics[i].m_Num.m_Height, aCandidateMetrics[i].m_Text.m_Height));
 	}
 
-	const SImeTextMetrics CompositionTextMetrics = HasComposition ? MeasureImeText(pTextRender, Ime.m_FontComposition, DrawState.m_Composition.c_str(), Ime) : SImeTextMetrics{};
-	const float CompositionNaturalWidth = HasComposition ? CompositionTextMetrics.m_Width + 2.0f * Ime.m_CompositionTextPaddingX : 0.0f;
-
 	const auto CandidateNaturalWidthForWindow = [&](int Start, int Count) {
 		float CandidateNaturalWidth = 0.0f;
 		for(int Offset = 0; Offset < Count; ++Offset)
@@ -231,7 +217,7 @@ void CQmImeCandidatePopup::Render(CGameClient *pGameClient, const SQmImePopupSta
 			return 0;
 		return std::clamp(SelectedIndex - Count + 1, 0, maximum(0, CandidateCount - Count));
 	};
-	const float CandidateFitPanelWidth = maximum(PreferredMaxPanelWidth, minimum(ScreenMaxPanelWidth, CompositionNaturalWidth + 2.0f * Ime.m_PaddingX));
+	const float CandidateFitPanelWidth = PreferredMaxPanelWidth;
 	const auto FitCandidates = [&](float FitTrailingWidth, int &CandidateStart, int &CandidateDisplayCount) {
 		CandidateDisplayCount = CandidateCount;
 		CandidateStart = CandidateStartForCount(CandidateDisplayCount);
@@ -259,23 +245,18 @@ void CQmImeCandidatePopup::Render(CGameClient *pGameClient, const SQmImePopupSta
 	}
 
 	const float CandidateNaturalWidth = HasCandidates ? CandidateNaturalWidthForWindow(CandidateStart, CandidateDisplayCount) + TrailingWidth : 0.0f;
-	const float ContentWidth = maximum(HasCandidates ? CandidateNaturalWidth : 0.0f, CompositionNaturalWidth);
+	const float ContentWidth = HasCandidates ? CandidateNaturalWidth : 0.0f;
 	const float NeededPanelWidth = ContentWidth + 2.0f * Ime.m_PaddingX;
 	const bool SingleLongCandidate = HasCandidates && CandidateDisplayCount <= 1 && NeededPanelWidth > PreferredMaxPanelWidth;
-	const bool LongCompositionOnly = HasComposition && !HasCandidates && NeededPanelWidth > PreferredMaxPanelWidth;
-	const float PanelMaxWidth = (SingleLongCandidate || LongCompositionOnly) ? ScreenMaxPanelWidth : PreferredMaxPanelWidth;
+	const float PanelMaxWidth = SingleLongCandidate ? ScreenMaxPanelWidth : PreferredMaxPanelWidth;
 	const float PanelWidth = std::clamp(NeededPanelWidth, Ime.m_MinWidth, PanelMaxWidth);
-	const float CompositionTextHeight = maximum(CompositionTextMetrics.m_Height, MeasureImeText(pTextRender, Ime.m_FontComposition, "国g", Ime).m_Height);
 	const float RowHeight = maximum(Ime.m_RowHeight, CandidateTextHeight + 2.0f * Ime.m_TextSafePaddingY);
-	const float CompositionHeight = HasComposition ? maximum(Ime.m_CompositionRowHeight, CompositionTextHeight + 2.0f * Ime.m_TextSafePaddingY) : 0.0f;
-	const float RowGap = HasComposition && HasCandidates ? Ime.m_RowGap : 0.0f;
-	const float PanelHeight = 2.0f * Ime.m_PaddingY + CompositionHeight + RowGap + (HasCandidates ? RowHeight : 0.0f);
+	const float PanelHeight = 2.0f * Ime.m_PaddingY + RowHeight;
 
 	vec2 Anchor = DrawState.m_AnchorScreen / vec2((float)ScreenWidth, (float)ScreenHeight) * vec2(Width, Height);
-	const float LineHeight = DrawState.m_LineHeightScreen / (float)ScreenHeight * Height;
 	const float PopupGap = 2.2f;
 	vec2 Position = vec2(Anchor.x, Anchor.y + PopupGap);
-	const float AboveY = Anchor.y - LineHeight - PanelHeight - PopupGap;
+	const float AboveY = Anchor.y - PanelHeight - PopupGap;
 	if(Position.y + PanelHeight + Margin > Height && AboveY >= Margin)
 		Position.y = AboveY;
 
@@ -328,7 +309,7 @@ void CQmImeCandidatePopup::Render(CGameClient *pGameClient, const SQmImePopupSta
 	TopGlow.h = 0.45f;
 	TopGlow.x += Ime.m_Radius * 0.35f;
 	TopGlow.w -= Ime.m_Radius * 0.70f;
-	TopGlow.Draw(WithAlpha(Dark ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.11f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.46f), Alpha), IGraphics::CORNER_T, 0.0f);
+	TopGlow.Draw(WithAlpha(ColorRGBA(1.0f, 1.0f, 1.0f, 0.11f), Alpha), IGraphics::CORNER_T, 0.0f);
 
 	const ColorRGBA OldTextColor = pTextRender->GetTextColor();
 	const ColorRGBA OldOutlineColor = pTextRender->GetTextOutlineColor();
@@ -338,31 +319,6 @@ void CQmImeCandidatePopup::Render(CGameClient *pGameClient, const SQmImePopupSta
 	Panel.Margin(Ime.m_PaddingX, &Content);
 	Content.y += Ime.m_PaddingY;
 	Content.h -= 2.0f * Ime.m_PaddingY;
-
-	if(HasComposition)
-	{
-		CUIRect CompositionRect;
-		Content.HSplitTop(CompositionHeight, &CompositionRect, &Content);
-		CompositionRect.Draw(WithAlpha(Ime.m_CompositionBg, Alpha), IGraphics::CORNER_ALL, maximum(1.0f, Ime.m_Radius - 1.0f));
-		CUIRect Underline = CompositionRect;
-		Underline.x += Ime.m_CompositionTextPaddingX;
-		Underline.y = CompositionRect.y + CompositionRect.h - 1.15f;
-		Underline.w = minimum(CompositionTextMetrics.m_Width, maximum(1.0f, CompositionRect.w - 2.0f * Ime.m_CompositionTextPaddingX));
-		Underline.h = 0.45f;
-		Underline.Draw(WithAlpha(Ime.m_CompositionUnderline, Alpha), IGraphics::CORNER_ALL, 0.25f);
-		DrawImeText(pTextRender,
-			CompositionRect.x + Ime.m_CompositionTextPaddingX,
-			CompositionRect.y,
-			CompositionRect.h,
-			Ime.m_FontComposition,
-			DrawState.m_Composition.c_str(),
-			CompositionTextMetrics,
-			Ime.m_TextMuted,
-			Alpha);
-
-		if(HasCandidates)
-			Content.HSplitTop(Ime.m_RowGap, nullptr, &Content);
-	}
 
 	if(HasCandidates)
 	{
