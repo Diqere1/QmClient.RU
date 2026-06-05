@@ -138,6 +138,12 @@ SQmImePopupState CQmImeManager::BuildPopupState() const
 
 void CQmImeManager::RenderCandidatePopup()
 {
+	if(g_Config.m_QmNewIme == 0)
+	{
+		m_CandidatePopup.Reset();
+		return;
+	}
+
 	const bool ActiveInputRendered = CLineInput::ValidateActiveInputRenderedThisFrame();
 	SQmImePopupState State;
 	if(ActiveInputRendered)
