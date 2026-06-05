@@ -27,13 +27,14 @@ docs(ai): 精简 agent 文档体系并补充 git 规范
 
 ## Commit Body
 
-只有在一句标题说不清时才写 body。
+本仓库默认写 body，不把 body 省略为例外。
 
 建议写：
 
 - 改动原因
 - 关键做法
 - 影响范围
+- 需要时按 `## FEAT`、`## FIX`、`## DEL` 分组展开
 
 不要把验证日志整段贴进 commit body。
 
@@ -103,7 +104,7 @@ Release-EN: English release note
 - `FIX`
 - `DEL`
 
-这三组是给用户看的归纳，不替代真实 git commit message。
+这三组既可用于最终汇报，也可用于 commit body 分组；真正必须固定的是 commit subject 的格式。
 
 
 # 最终汇报示例（不是 commit message）
