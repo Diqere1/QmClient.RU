@@ -2672,6 +2672,11 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelElevatedOpacity, &g_Config.m_ClMenuPanelElevatedOpacity, &Button, Localize("菜单强调面板透明度"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
+
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
 	if(Ui()->DoScrollbarOption(&g_Config.m_ClSettingsTabbarOpacity, &g_Config.m_ClSettingsTabbarOpacity, &Button, Localize("设置栏透明度"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
 		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
 

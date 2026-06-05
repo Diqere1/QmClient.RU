@@ -3716,9 +3716,10 @@ void CMenus::RenderServerbrowser(CUIRect MainView, bool DrawBackground)
 	const float StatusHeight = UseNewUi ? 84.0f : 76.0f;
 	ContentLayout.VSplitRight(ToolBoxWidth, &ServerListWithGap, &ToolBoxBase);
 	ServerListWithGap.VSplitRight(ColumnGap, &ServerListBase, nullptr);
-	ServerListBase.HSplitBottom(ColumnGap, &ServerListBase, nullptr);
-	ServerListBase.HSplitBottom(StatusHeight, &ServerListBase, &StatusBox);
-	ServerListBase.HSplitBottom(ColumnGap, &ServerListBase, nullptr);
+	CUIRect ServerListStackBase = ServerListBase;
+	ServerListStackBase.HSplitBottom(StatusHeight, &ServerListBase, &StatusBox);
+	StatusBox.y = ServerListStackBase.y + ServerListStackBase.h - StatusHeight;
+	ServerListBase.h = maximum(StatusBox.y - ColumnGap - ServerListBase.y, 0.0f);
 	if(UseNewUi)
 	{
 		ServerListBase.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, 10.0f);

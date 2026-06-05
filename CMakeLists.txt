@@ -1623,7 +1623,6 @@ set(EXPECTED_DATA
   qmclient/languages/russian.txt
   qmclient/languages/serbian.txt
   qmclient/languages/serbian_cyrillic.txt
-  qmclient/languages/simplified_chinese.txt
   qmclient/languages/slovak.txt
   qmclient/languages/spanish.txt
   qmclient/languages/swedish.txt
@@ -2754,6 +2753,8 @@ if(CLIENT)
     components/qmclient/translate_parse.h
     components/qmclient/translate_ui_settings.cpp
     components/qmclient/translate_ui_settings.h
+    components/qmclient/update_version.cpp
+    components/qmclient/update_version.h
     components/qmclient/voice_capture_pipeline.cpp
     components/qmclient/voice_capture_pipeline.h
     components/qmclient/voice_component.cpp
@@ -3656,6 +3657,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     qm_new_ui_menu_branch_test.cpp
     qm_live_client_test.cpp
     qm_modes_test.cpp
+    qmclient_update_version_test.cpp
     QmUiTokensTest.cpp
     qmclient_monitoring_test.cpp
     score_test.cpp
@@ -3711,6 +3713,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/live/live_director.cpp
     src/game/client/live/live_replay_buffer.cpp
     src/game/client/components/qmclient/modes.cpp
+    src/game/client/components/qmclient/update_version.cpp
     src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp
     src/game/client/components/qmclient/voice_capture_pipeline.cpp

@@ -4,8 +4,41 @@
 45°瞄准
 == 45° Aim
 
+视觉
+== Visuals
+
+功能
+== Functions
+
+贡献者
+== Contributors
+
+配置
+== Config
+
+展开模块
+== Expand module
+
+折叠模块
+== Minimize module
+
+腾讯云
+== Tencent Cloud
+
 Axiom 主号密码
 == Axiom main account password
+
+Axiom 分身自动登录成功
+== Axiom auto login succeeded
+
+Axiom 分身自动登录失败，正在重试
+== Axiom dummy auto login failed, retrying
+
+Axiom 分身自动登录
+== Axiom dummy auto login
+
+正在尝试 Axiom 分身自动登录
+== Trying Axiom dummy auto login
 
 Axiom 分身密码
 == Axiom dummy password
@@ -127,11 +160,50 @@ X 对齐颜色
 你想跑出怎样的人生?
 == What kind of life do you want to run?
 
+你已经是最新版本
+== You are already on the latest version
+
+更新提示
+== Update notice
+
+当前版本不是最新版，请前往 QQ 群更新最新版
+== Your current version is outdated. Please update from the QQ group.
+
 你最爱的地图管家
 == Your favorite map manager
 
 使用分身回复
 == Reply with dummy
+
+Gores 模式
+== Gores Mode
+
+收藏的地图
+== Favorite maps
+
+你最爱的地图管家
+== Favorite map manager
+
+HJ 辅助
+== HJ assist
+
+解冻辅助
+== Unfreeze automation helpers
+
+自动切换到解冻的 Tee
+== Auto switch to the tee that got unfrozen
+
+解冻后自动关闭当前聊天
+== Automatically close the current chat after waking from freeze
+
+在另一个 Tee 上显示解冻提示
+== Show wake-up popup on the other tee
+
+自动队锁
+== Auto team lock
+
+队锁延迟
+== Lock delay
 
 使用原始样式
 == Use original style
@@ -801,6 +873,60 @@ X 对齐颜色
 
 粒子碰撞
 == Particle collision
+
+粒子数量
+== Particle count
+
+粒子透明度
+== Particle alpha
+
+最小尺寸
+== Min size
+
+最大尺寸
+== Max size
+
+粒子速度
+== Particle speed
+
+粒子深度
+== Particle depth
+
+视野边距
+== View margin
+
+淡入时间
+== Fade in
+
+淡出时间
+== Fade out
+
+推开半径
+== Push radius
+
+推开强度
+== Push strength
+
+随机
+== Random
+
+辉光透明度
+== Glow alpha
+
+辉光偏移
+== Glow offset
+
+拖尾长度
+== Trail length
+
+拖尾透明度
+== Trail alpha
+
+脉冲强度
+== Pulse strength
+
+闪烁强度
+== Twinkle strength
 
 粒子类型
 == Particle type

@@ -313,11 +313,11 @@ void CMenusStart::RenderStartMenuImpl(CUIRect MainView, bool UseV2Layout)
 	CUIRect UpdateToDateText;
 	MainView.HSplitTop(15.0f, &UpdateToDateText, nullptr);
 	UpdateToDateText.VSplitRight(40.0f, &UpdateToDateText, nullptr);
-	if(!GameClient()->m_TClient.m_FetchedTClientInfo)
+	if(!GameClient()->m_TClient.m_FetchedQmClientUpdateInfo)
 	{
 		Ui()->DoLabel(&UpdateToDateText, Localize("(Fetching Update Info)"), 14.0f, TEXTALIGN_MR);
 	}
-	else if(GameClient()->m_TClient.NeedUpdate())
+	else if(GameClient()->m_TClient.NeedQmClientUpdate())
 	{
 		Ui()->DoLabel(&UpdateToDateText, Localize("(需要更新)"), 14.0f, TEXTALIGN_MR);
 	}

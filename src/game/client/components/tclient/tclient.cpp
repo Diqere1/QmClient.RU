@@ -1,5 +1,7 @@
 #include "tclient.h"
 
+#include <game/client/components/qmclient/update_version.h>
+
 #include <base/hash.h>
 #include <base/log.h>
 #include <base/str.h>
@@ -57,8 +59,8 @@
 #include <windows.h>
 #endif
 
-static constexpr const char *TCLIENT_INFO_URL = "http://42.194.185.210:8080/client/version";
-static constexpr const char *TCLIENT_UPDATE_EXE_URL = "https://github.com/wxj881027/QmClient/releases/latest/download/DDNet.exe";
+static constexpr const char *QMCLIENT_INFO_URL = "http://42.194.185.210:8080/client/version";
+static constexpr const char *QMCLIENT_UPDATE_EXE_URL = "https://github.com/wxj881027/QmClient/releases/latest/download/DDNet.exe";
 static constexpr const char *MAP_CATEGORY_CACHE_FILE = "qmclient/map_categories.json";
 static constexpr int64_t MAP_CATEGORY_CACHE_SAVE_DELAY_SEC = 5;
 static constexpr const char *MAP_NOTES_FILE = "qmclient/map_notes.json";
@@ -574,7 +576,7 @@ void CTClient::OnInit()
 {
 	TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
 	m_pGraphics = Kernel()->RequestInterface<IEngineGraphics>();
-	FetchTClientInfo();
+	FetchQmClientUpdateInfo();
 
 	// 先在 qmclient/ 目录找，找不到再返回上一级目录找
 	const bool MissingQmClientFolder = !Storage()->FolderExists("qmclient", IStorage::TYPE_ALL);
@@ -612,7 +614,7 @@ void CTClient::OnShutdown()
 		}
 	};
 
-	AbortTask(m_pTClientInfoTask);
+	AbortTask(m_pQmClientUpdateInfoTask);
 	AbortTask(m_pUpdateExeTask);
 	if(m_MapNotesDirty)
 		SaveMapNotes();
@@ -1214,7 +1216,7 @@ void CTClient::TrySendAxiomLogin()
 
 	if(!m_AxiomAutoLoginAnnounced)
 	{
-		GameClient()->Echo(Localize("Attempting Axiom auto login"));
+		GameClient()->Echo(Localize("正在尝试 Axiom 自动登录"));
 		m_AxiomAutoLoginAnnounced = true;
 	}
 }
@@ -1259,7 +1261,7 @@ void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
 		m_AxiomAutoLoginSucceeded = true;
 		m_AxiomAutoLoginWaitingReply = false;
 		m_AxiomAutoLoginNextTryTick = 0;
-		GameClient()->Echo(Localize("Axiom auto login succeeded"));
+		GameClient()->Echo(Localize("Axiom 自动登录成功"));
 	}
 	else if(Failure)
 	{
@@ -1267,12 +1269,12 @@ void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
 		if(m_AxiomAutoLoginAttempts < QMCLIENT_AXIOM_AUTO_LOGIN_MAX_ATTEMPTS)
 		{
 			m_AxiomAutoLoginNextTryTick = time_get() + (int64_t)QMCLIENT_AXIOM_AUTO_LOGIN_RETRY_DELAY_SECONDS * time_freq();
-			GameClient()->Echo(Localize("Axiom auto login failed, retrying"));
+			GameClient()->Echo(Localize("Axiom 自动登录失败，正在重试"));
 		}
 		else
 		{
 			m_AxiomAutoLoginNextTryTick = 0;
-			GameClient()->Echo(Localize("Axiom auto login failed"));
+			GameClient()->Echo(Localize("Axiom 自动登录失败"));
 		}
 	}
 }
@@ -1967,34 +1969,34 @@ void CTClient::OnUpdate()
 		SetForcedAspect();
 	}
 
-	if(m_pTClientInfoTask)
+	if(m_pQmClientUpdateInfoTask)
 	{
-		if(m_pTClientInfoTask->Done())
+		if(m_pQmClientUpdateInfoTask->Done())
 		{
-			const bool InfoOk = m_pTClientInfoTask->State() == EHttpState::DONE;
+			const bool InfoOk = m_pQmClientUpdateInfoTask->State() == EHttpState::DONE;
 			if(InfoOk)
 			{
-				FinishTClientInfo();
+				FinishQmClientUpdateInfo();
 			}
-			ResetTClientInfoTask();
+			ResetQmClientUpdateInfoTask();
 
-			if(m_AutoUpdateAfterCheck)
+			if(m_QmClientAutoUpdateAfterCheck)
 			{
-				if(!InfoOk || !m_FetchedTClientInfo)
+				if(!InfoOk || !m_FetchedQmClientUpdateInfo)
 				{
 					Client()->AddWarning(SWarning(Localize("Update"), Localize("Failed to check for updates")));
 				}
-				else if(!NeedUpdate())
+				else if(!NeedQmClientUpdate())
 				{
-					Client()->AddWarning(SWarning(Localize("Update"), Localize("You are already on the latest version")));
+					Client()->AddWarning(SWarning(Localize("更新提示"), Localize("你已经是最新版本")));
 				}
 				else
 				{
 					Client()->AddWarning(SWarning(Localize("更新提示"), Localize("当前版本不是最新版，请前往 QQ 群更新最新版")));
 				}
-				m_AutoUpdateAfterCheck = false;
+				m_QmClientAutoUpdateAfterCheck = false;
 			}
-			else if(g_Config.m_QmShowOutdatedVersionWarning && InfoOk && m_FetchedTClientInfo && NeedUpdate())
+			else if(g_Config.m_QmShowOutdatedVersionWarning && InfoOk && m_FetchedQmClientUpdateInfo && NeedQmClientUpdate())
 			{
 				Client()->AddWarning(SWarning(Localize("更新提示"), Localize("当前版本不是最新版，请前往 QQ 群更新最新版")));
 			}
@@ -3050,19 +3052,19 @@ void CTClient::CheckAutoCloseChatOnUnfreeze()
 	}
 }
 
-bool CTClient::NeedUpdate()
+bool CTClient::NeedQmClientUpdate()
 {
-	return str_comp(m_aVersionStr, "0") != 0;
+	return str_comp(m_aQmClientLatestVersionStr, "0") != 0;
 }
 
-void CTClient::RequestUpdateCheckAndUpdate()
+void CTClient::RequestQmClientUpdateCheckAndUpdate()
 {
-	if((m_pTClientInfoTask && !m_pTClientInfoTask->Done()) || (m_pUpdateExeTask && !m_pUpdateExeTask->Done()))
+	if((m_pQmClientUpdateInfoTask && !m_pQmClientUpdateInfoTask->Done()) || (m_pUpdateExeTask && !m_pUpdateExeTask->Done()))
 		return;
 
-	m_AutoUpdateAfterCheck = true;
-	m_FetchedTClientInfo = false;
-	FetchTClientInfo();
+	m_QmClientAutoUpdateAfterCheck = true;
+	m_FetchedQmClientUpdateInfo = false;
+	FetchQmClientUpdateInfo();
 }
 
 void CTClient::StartUpdateDownload()
@@ -3077,7 +3079,7 @@ void CTClient::StartUpdateDownload()
 
 	ResetUpdateExeTask();
 	IStorage::FormatTmpPath(m_aUpdateExeTmp, sizeof(m_aUpdateExeTmp), PLAT_CLIENT_EXEC);
-	m_pUpdateExeTask = HttpGet(TCLIENT_UPDATE_EXE_URL);
+	m_pUpdateExeTask = HttpGet(QMCLIENT_UPDATE_EXE_URL);
 	m_pUpdateExeTask->Timeout(CTimeout{10000, 0, 500, 10});
 	m_pUpdateExeTask->IpResolve(IPRESOLVE::V4);
 	m_pUpdateExeTask->WriteToFile(Storage(), m_aUpdateExeTmp, -2);
@@ -3108,53 +3110,32 @@ bool CTClient::ReplaceClientFromUpdate()
 	return Success;
 }
 
-void CTClient::ResetTClientInfoTask()
+void CTClient::ResetQmClientUpdateInfoTask()
 {
-	if(m_pTClientInfoTask)
+	if(m_pQmClientUpdateInfoTask)
 	{
-		m_pTClientInfoTask->Abort();
-		m_pTClientInfoTask = NULL;
+		m_pQmClientUpdateInfoTask->Abort();
+		m_pQmClientUpdateInfoTask = NULL;
 	}
 }
 
-void CTClient::FetchTClientInfo()
+void CTClient::FetchQmClientUpdateInfo()
 {
-	if(m_pTClientInfoTask && !m_pTClientInfoTask->Done())
+	if(m_pQmClientUpdateInfoTask && !m_pQmClientUpdateInfoTask->Done())
 		return;
 	char aUrl[256];
-	str_format(aUrl, sizeof(aUrl), "%s?current=%s", TCLIENT_INFO_URL, QMCLIENT_VERSION);
-	m_pTClientInfoTask = HttpGet(aUrl);
-	m_pTClientInfoTask->AllowInsecureProtocol();
-	m_pTClientInfoTask->Timeout(CTimeout{10000, 0, 500, 10});
-	m_pTClientInfoTask->IpResolve(IPRESOLVE::V4);
-	m_pTClientInfoTask->LogProgress(HTTPLOG::FAILURE);
-	Http()->Run(m_pTClientInfoTask);
+	str_format(aUrl, sizeof(aUrl), "%s?current=%s", QMCLIENT_INFO_URL, QMCLIENT_VERSION);
+	m_pQmClientUpdateInfoTask = HttpGet(aUrl);
+	m_pQmClientUpdateInfoTask->AllowInsecureProtocol();
+	m_pQmClientUpdateInfoTask->Timeout(CTimeout{10000, 0, 500, 10});
+	m_pQmClientUpdateInfoTask->IpResolve(IPRESOLVE::V4);
+	m_pQmClientUpdateInfoTask->LogProgress(HTTPLOG::FAILURE);
+	Http()->Run(m_pQmClientUpdateInfoTask);
 }
 
-static void NormalizeTCVersion(const char *pStr, char *pBuf, size_t BufSize)
+void CTClient::FinishQmClientUpdateInfo()
 {
-	if(!pBuf || BufSize == 0)
-		return;
-	pBuf[0] = '\0';
-	if(!pStr)
-		return;
-
-	pStr = str_skip_whitespaces_const(pStr);
-	if(pStr[0] == 'v' || pStr[0] == 'V')
-		pStr++;
-
-	str_copy(pBuf, pStr, BufSize);
-	int End = str_length(pBuf);
-	while(End > 0 && str_isspace(pBuf[End - 1]))
-	{
-		pBuf[End - 1] = '\0';
-		End--;
-	}
-}
-
-void CTClient::FinishTClientInfo()
-{
-	json_value *pJson = m_pTClientInfoTask->ResultJson();
+	json_value *pJson = m_pQmClientUpdateInfoTask->ResultJson();
 	if(!pJson)
 		return;
 	const json_value &Json = *pJson;
@@ -3162,20 +3143,17 @@ void CTClient::FinishTClientInfo()
 
 	if(CurrentVersion.type == json_string)
 	{
-		char aLatestVersionStr[64];
-		NormalizeTCVersion(CurrentVersion, aLatestVersionStr, sizeof(aLatestVersionStr));
-		char aCurVersionStr[64];
-		NormalizeTCVersion(QMCLIENT_VERSION, aCurVersionStr, sizeof(aCurVersionStr));
-		if(aLatestVersionStr[0] != '\0' && str_comp(aLatestVersionStr, aCurVersionStr) != 0)
+		const char *pLatestVersion = json_string_get(&CurrentVersion);
+		if(IsQmClientRemoteVersionNewer(pLatestVersion, QMCLIENT_VERSION))
 		{
-			str_copy(m_aVersionStr, aLatestVersionStr);
+			str_copy(m_aQmClientLatestVersionStr, pLatestVersion, sizeof(m_aQmClientLatestVersionStr));
 		}
 		else
 		{
-			m_aVersionStr[0] = '0';
-			m_aVersionStr[1] = '\0';
+			m_aQmClientLatestVersionStr[0] = '0';
+			m_aQmClientLatestVersionStr[1] = '\0';
 		}
-		m_FetchedTClientInfo = true;
+		m_FetchedQmClientUpdateInfo = true;
 	}
 
 	json_value_free(pJson);
@@ -4093,8 +4071,8 @@ void CTClient::ApplyGoresFastInputLink(bool AutoMapCheck)
 		char aGoresMsg[128];
 		str_format(aGoresMsg, sizeof(aGoresMsg), "%s%s: %s",
 			GoresActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
-			Localize("Gores Mode"),
-			Localize(GoresActive ? "On" : "Off"));
+			Localize("Gores 模式"),
+			Localize(GoresActive ? "开" : "关"));
 		GameClient()->Echo(aGoresMsg, true);
 	}
 

@@ -3757,10 +3757,11 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 			DrawHeight};
 	};
 
-	auto DrawPreviewFrame = [&](const CUIRect &TextureRect) {
+	auto DrawPreviewFrame = [&](const CUIRect &TextureRect) -> CUIRect {
 		CUIRect PreviewFrame = TextureRect;
 		PreviewFrame.Margin(2.0f, &PreviewFrame);
 		PreviewFrame.Draw(ColorRGBA(0.03f, 0.05f, 0.08f, 0.18f), IGraphics::CORNER_ALL, 10.0f);
+		return PreviewFrame;
 	};
 
 	auto RenderEntityBgFallback = [&](const CUIRect &Rect) {
@@ -4302,10 +4303,10 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 				AuthorProps.m_MaxWidth = static_cast<int>(HeaderLayout.m_AuthorRect.w);
 				Ui()->DoLabel(&HeaderLayout.m_AuthorRect, "--", 7.0f, TEXTALIGN_ML, AuthorProps);
 			}
-			DrawPreviewFrame(HeaderLayout.m_TextureRect);
+			const CUIRect PreviewFrameRect = DrawPreviewFrame(HeaderLayout.m_TextureRect);
 			if(pItem->m_RenderTexture.IsValid())
 			{
-				const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureHeight);
+				const CUIRect PreviewRect = ComputePreviewDrawRect(PreviewFrameRect, TextureWidth, TextureHeight);
 				Graphics()->WrapClamp();
 				Graphics()->TextureSet(pItem->m_RenderTexture);
 				Graphics()->QuadsBegin();
@@ -5287,8 +5288,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 								{TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK},
 							};
 
-							DrawPreviewFrame(HeaderLayout.m_TextureRect);
-							const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureWidth);
+							const CUIRect PreviewFrameRect = DrawPreviewFrame(HeaderLayout.m_TextureRect);
+							const CUIRect PreviewRect = ComputePreviewDrawRect(PreviewFrameRect, TextureWidth, TextureWidth);
 							float TileSize = PreviewRect.w / (float)COLS;
 							float OffX = PreviewRect.x;
 							float OffY = PreviewRect.y + (PreviewRect.h - ROWS * TileSize) / 2.0f;
@@ -5324,7 +5325,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					}
 					else
 					{
-						DrawPreviewFrame(HeaderLayout.m_TextureRect);
+						const CUIRect PreviewFrameRect = DrawPreviewFrame(HeaderLayout.m_TextureRect);
 						IGraphics::CTextureHandle Tex = pItem->m_RenderTexture;
 						if(!Tex.IsValid())
 						{
@@ -5339,7 +5340,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 						}
 						if(Tex.IsValid())
 						{
-							const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureHeight);
+							const CUIRect PreviewRect = ComputePreviewDrawRect(PreviewFrameRect, TextureWidth, TextureHeight);
 							Graphics()->WrapClamp();
 							Graphics()->TextureSet(Tex);
 							Graphics()->QuadsBegin();
@@ -5399,7 +5400,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					if(HeaderLayout.m_HasStatusTag)
 						RenderAssetStatusTag(HeaderLayout.m_StatusTagRect, Asset.m_Installed);
 
-					DrawPreviewFrame(HeaderLayout.m_TextureRect);
+					const CUIRect PreviewFrameRect = DrawPreviewFrame(HeaderLayout.m_TextureRect);
 					if(s_CurCustomTab == ASSETS_TAB_ENTITIES && gs_SettingsAssetsEntityGamePreview && Asset.m_ThumbTexture.IsValid())
 					{
 						static const int COLS = 7, ROWS = 7;
@@ -5413,7 +5414,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 							{TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK, TILE_NOHOOK},
 						};
 
-						const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureWidth);
+						const CUIRect PreviewRect = ComputePreviewDrawRect(PreviewFrameRect, TextureWidth, TextureWidth);
 						float TileSize = PreviewRect.w / (float)COLS;
 						float OffX = PreviewRect.x;
 						float OffY = PreviewRect.y + (PreviewRect.h - ROWS * TileSize) / 2.0f;
@@ -5448,7 +5449,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					}
 					else if(Asset.m_ThumbTexture.IsValid())
 					{
-						const CUIRect PreviewRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureHeight);
+						const CUIRect PreviewRect = ComputePreviewDrawRect(PreviewFrameRect, TextureWidth, TextureHeight);
 						Graphics()->WrapClamp();
 						Graphics()->TextureSet(Asset.m_ThumbTexture);
 						Graphics()->QuadsBegin();
@@ -5460,7 +5461,7 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 					}
 					else
 					{
-						CUIRect LoadingRect = ComputePreviewDrawRect(HeaderLayout.m_TextureRect, TextureWidth, TextureHeight);
+						CUIRect LoadingRect = ComputePreviewDrawRect(PreviewFrameRect, TextureWidth, TextureHeight);
 						LoadingRect.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.10f), IGraphics::CORNER_ALL, 6.0f);
 						Ui()->DoLabel(&LoadingRect, Localize("Loading…"), 10.0f, TEXTALIGN_MC);
 					}

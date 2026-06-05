@@ -570,6 +570,16 @@ static void SyncQmHudLegacyAliasesFromQm()
 	g_Config.m_ClSmtcShowHudLegacy = g_Config.m_QmSmtcShowHud;
 }
 
+static void LoadQmClientLanguageOverlay(CLocalizationDatabase &Localization, const char *pLanguageFile, IStorage *pStorage, IConsole *pConsole)
+{
+	if(str_comp(pLanguageFile, "languages/simplified_chinese.txt") == 0)
+		return;
+	const char *pQmLanguageFile = pLanguageFile[0] != '\0' ? pLanguageFile : "languages/english.txt";
+	char aBuf[512];
+	str_format(aBuf, sizeof(aBuf), "qmclient/%s", pQmLanguageFile);
+	Localization.Load(aBuf, pStorage, pConsole, false);
+}
+
 void CGameClient::InitializeLanguage()
 {
 	// set the language
@@ -577,11 +587,7 @@ void CGameClient::InitializeLanguage()
 	if(g_Config.m_ClShowWelcome)
 		g_Localization.SelectDefaultLanguage(Console(), g_Config.m_ClLanguagefile, sizeof(g_Config.m_ClLanguagefile));
 	g_Localization.Load(g_Config.m_ClLanguagefile, Storage(), Console());
-
-	// TClient
-	char aBuf[512];
-	str_format(aBuf, sizeof(aBuf), "qmclient/%s", g_Config.m_ClLanguagefile);
-	g_Localization.Load(aBuf, Storage(), Console(), false);
+	LoadQmClientLanguageOverlay(g_Localization, g_Config.m_ClLanguagefile, Storage(), Console());
 }
 
 void CGameClient::ForceUpdateConsoleRemoteCompletionSuggestions()
@@ -2960,11 +2966,7 @@ void CGameClient::HandleLanguageChanged()
 	m_LanguageChanged = false;
 
 	g_Localization.Load(g_Config.m_ClLanguagefile, Storage(), Console());
-
-	// TClient
-	char aBuf[512];
-	str_format(aBuf, sizeof(aBuf), "qmclient/%s", g_Config.m_ClLanguagefile);
-	g_Localization.Load(aBuf, Storage(), Console(), false);
+	LoadQmClientLanguageOverlay(g_Localization, g_Config.m_ClLanguagefile, Storage(), Console());
 
 	TextRender()->SetFontLanguageVariant(g_Config.m_ClLanguagefile);
 	m_Menus.InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::LANGUAGE_CHANGED);

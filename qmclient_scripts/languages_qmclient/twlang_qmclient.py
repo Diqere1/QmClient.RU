@@ -68,10 +68,16 @@ def decode(fileobj, elements_per_key):
 def check_file(path):
     with open(path, encoding="utf-8") as fileobj:
         matches = re.findall(
-            r"(TCLocalize|TCLocalizable)\s*\(\s*\"((?:(?:\\\")|[^\"])+)\"(?:\s*,\s*\"((?:(?:\\\")|[^\"])+)\")?\s*\)",
+            r"(?:Localize|Localizable|TCLocalize|TCLocalizable)\s*\(\s*\"((?:(?:\\\")|[^\"])+)\"(?:\s*,\s*\"((?:(?:\\\")|[^\"])+)\")?\s*\)",
             fileobj.read(),
         )
-    return matches
+    normalized = []
+    for sentence in matches:
+        if len(sentence) == 2:
+            normalized.append((sentence[0], sentence[1]))
+        else:
+            normalized.append((sentence[1], sentence[2]))
+    return normalized
 
 
 @functools.lru_cache(None)
@@ -83,10 +89,7 @@ def check_folder(path):
             if not any(f.endswith(x) for x in [".cpp", ".c", ".h"]):
                 continue
             for sentence in check_file(os.path.join(path2, f)):
-                key = (
-                    sentence[1:][0].replace('\\"', '"'),
-                    sentence[1:][1].replace('\\"', '"'),
-                )
+                key = (sentence[0].replace('\\"', '"'), sentence[1].replace('\\"', '"'))
                 englishlist[key] = None
     return englishlist
 

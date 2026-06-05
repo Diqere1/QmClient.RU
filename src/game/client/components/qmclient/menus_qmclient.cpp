@@ -631,11 +631,11 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		if(s_apQmTabNames[0] == nullptr || str_comp(s_aQmLanguageFile, g_Config.m_ClLanguagefile) != 0)
 		{
 			str_copy(s_aQmLanguageFile, g_Config.m_ClLanguagefile, sizeof(s_aQmLanguageFile));
-			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_VISUAL] = Localize("Visuals");
-			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_FUNCTION] = Localize("Functions");
+			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_VISUAL] = Localize("视觉");
+			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_FUNCTION] = Localize("功能");
 			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_HUD] = Localize("HUD");
-			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_CONTRIBUTORS] = Localize("Contributors");
-			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_CONFIG] = Localize("Config");
+			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_CONTRIBUTORS] = Localize("贡献者");
+			s_apQmTabNames[QMCLIENT_SETTINGS_TAB_CONFIG] = Localize("配置");
 		}
 
 		{
@@ -1955,8 +1955,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				&s_aModuleCollapseButtons[ModuleIndex],
 				&ButtonRect,
 				Collapsed ?
-					Localize("Expand module") :
-					Localize("Minimize module"));
+					Localize("展开模块") :
+					Localize("折叠模块"));
 		}
 	};
 
@@ -3779,7 +3779,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 				static std::vector<const char *> s_TranslateBackendDropDownNames;
-				s_TranslateBackendDropDownNames = {Localize("Tencent Cloud"), "LibreTranslate", "FTAPI", "LLM API"};
+				s_TranslateBackendDropDownNames = {Localize("腾讯云"), "LibreTranslate", "FTAPI", "LLM API"};
 				static CUi::SDropDownState s_TranslateBackendDropDownState;
 				static CScrollRegion s_TranslateBackendDropDownScrollRegion;
 				s_TranslateBackendDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_TranslateBackendDropDownScrollRegion;
@@ -5232,7 +5232,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Column.HSplitTop(LgCardPadding, nullptr, &Column);
 				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
 				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
-				DoModuleHeadline(CardContent, 7, Localize("Favorite maps"), Localize("Favorite map manager"));
+				DoModuleHeadline(CardContent, 7, Localize("收藏的地图"), Localize("你最爱的地图管家"));
 
 				// 收藏地图列表
 				const auto &FavMaps = GameClient()->TClientComponent().GetFavoriteMaps();
@@ -5507,29 +5507,29 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				Column.HSplitTop(LgCardPadding, nullptr, &Column);
 				Column.VSplitLeft(LgCardPadding, nullptr, &CardContent);
 				CardContent.VSplitRight(LgCardPadding, &CardContent, nullptr);
-				DoModuleHeadline(CardContent, 11, Localize("HJ assist"), Localize("Unfreeze automation helpers"));
+				DoModuleHeadline(CardContent, 11, Localize("HJ 辅助"), Localize("解冻辅助"));
 
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoUnspecOnUnfreeze, Localize("解冻时自动取消旁观"), &g_Config.m_QmAutoUnspecOnUnfreeze, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoSwitchOnUnfreeze, Localize("Auto switch to the tee that got unfrozen"), &g_Config.m_QmAutoSwitchOnUnfreeze, &Row, LgLineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoSwitchOnUnfreeze, Localize("自动切换到解冻的 Tee"), &g_Config.m_QmAutoSwitchOnUnfreeze, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoCloseChatOnUnfreeze, Localize("Automatically close the current chat after waking from freeze"), &g_Config.m_QmAutoCloseChatOnUnfreeze, &Row, LgLineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoCloseChatOnUnfreeze, Localize("解冻后自动关闭当前聊天"), &g_Config.m_QmAutoCloseChatOnUnfreeze, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFreezeWakeupPopup, Localize("Show wake-up popup on the other tee"), &g_Config.m_QmFreezeWakeupPopup, &Row, LgLineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmFreezeWakeupPopup, Localize("在另一个 Tee 上显示解冻提示"), &g_Config.m_QmFreezeWakeupPopup, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 				CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoTeamLock, Localize("Auto team lock"), &g_Config.m_QmAutoTeamLock, &Row, LgLineHeight);
+				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmAutoTeamLock, Localize("自动队锁"), &g_Config.m_QmAutoTeamLock, &Row, LgLineHeight);
 				CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				if(g_Config.m_QmAutoTeamLock)
 				{
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					Row.VSplitLeft(LgLabelWidth, &LabelCol, &ControlCol);
-					Ui()->DoLabel(&LabelCol, Localize("Lock delay"), LgBodySize, TEXTALIGN_ML);
+					Ui()->DoLabel(&LabelCol, Localize("队锁延迟"), LgBodySize, TEXTALIGN_ML);
 					static int s_QmAutoTeamLockDelayInputId;
 					RenderSliderWithValueInput(&s_QmAutoTeamLockDelayInputId, ControlCol, &g_Config.m_QmAutoTeamLockDelay, 0, 30, "s");
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
@@ -6487,38 +6487,38 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					static int s_Qm3DParticleCountInputId;
-					RenderIntOption(&s_Qm3DParticleCountInputId, Localize("Particle count"), &g_Config.m_Qm3DParticlesCount, 1, 200);
+					RenderIntOption(&s_Qm3DParticleCountInputId, Localize("粒子数量"), &g_Config.m_Qm3DParticlesCount, 1, 200);
 					static int s_Qm3DParticleAlphaInputId;
-					RenderIntOption(&s_Qm3DParticleAlphaInputId, Localize("Particle alpha"), &g_Config.m_Qm3DParticlesAlpha, 1, 100, "%");
+					RenderIntOption(&s_Qm3DParticleAlphaInputId, Localize("粒子透明度"), &g_Config.m_Qm3DParticlesAlpha, 1, 100, "%");
 					static int s_Qm3DParticleMinSizeInputId;
-					RenderIntOption(&s_Qm3DParticleMinSizeInputId, Localize("Min size"), &g_Config.m_Qm3DParticlesSizeMin, 2, 64);
+					RenderIntOption(&s_Qm3DParticleMinSizeInputId, Localize("最小尺寸"), &g_Config.m_Qm3DParticlesSizeMin, 2, 64);
 					if(g_Config.m_Qm3DParticlesSizeMax < g_Config.m_Qm3DParticlesSizeMin)
 						g_Config.m_Qm3DParticlesSizeMax = g_Config.m_Qm3DParticlesSizeMin;
 					static int s_Qm3DParticleMaxSizeInputId;
-					RenderIntOption(&s_Qm3DParticleMaxSizeInputId, Localize("Max size"), &g_Config.m_Qm3DParticlesSizeMax, g_Config.m_Qm3DParticlesSizeMin, 64);
+					RenderIntOption(&s_Qm3DParticleMaxSizeInputId, Localize("最大尺寸"), &g_Config.m_Qm3DParticlesSizeMax, g_Config.m_Qm3DParticlesSizeMin, 64);
 					static int s_Qm3DParticleSpeedInputId;
-					RenderIntOption(&s_Qm3DParticleSpeedInputId, Localize("Particle speed"), &g_Config.m_Qm3DParticlesSpeed, 1, 500);
+					RenderIntOption(&s_Qm3DParticleSpeedInputId, Localize("粒子速度"), &g_Config.m_Qm3DParticlesSpeed, 1, 500);
 					static int s_Qm3DParticleDepthInputId;
-					RenderIntOption(&s_Qm3DParticleDepthInputId, Localize("Particle depth"), &g_Config.m_Qm3DParticlesDepth, 10, 1000);
+					RenderIntOption(&s_Qm3DParticleDepthInputId, Localize("粒子深度"), &g_Config.m_Qm3DParticlesDepth, 10, 1000);
 					static int s_Qm3DParticleViewMarginInputId;
-					RenderIntOption(&s_Qm3DParticleViewMarginInputId, Localize("View margin"), &g_Config.m_Qm3DParticlesViewMargin, 0, 1000);
+					RenderIntOption(&s_Qm3DParticleViewMarginInputId, Localize("视野边距"), &g_Config.m_Qm3DParticlesViewMargin, 0, 1000);
 					static int s_Qm3DParticleFadeInInputId;
-					RenderIntOption(&s_Qm3DParticleFadeInInputId, Localize("Fade in"), &g_Config.m_Qm3DParticlesFadeInMs, 1, 5000, "ms");
+					RenderIntOption(&s_Qm3DParticleFadeInInputId, Localize("淡入时间"), &g_Config.m_Qm3DParticlesFadeInMs, 1, 5000, "ms");
 					static int s_Qm3DParticleFadeOutInputId;
-					RenderIntOption(&s_Qm3DParticleFadeOutInputId, Localize("Fade out"), &g_Config.m_Qm3DParticlesFadeOutMs, 1, 5000, "ms");
+					RenderIntOption(&s_Qm3DParticleFadeOutInputId, Localize("淡出时间"), &g_Config.m_Qm3DParticlesFadeOutMs, 1, 5000, "ms");
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
 					DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_Qm3DParticlesCollide, Localize("粒子碰撞"), &g_Config.m_Qm3DParticlesCollide, &Row, LgLineHeight);
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
 					static int s_Qm3DParticlePushRadiusInputId;
-					RenderIntOption(&s_Qm3DParticlePushRadiusInputId, Localize("Push radius"), &g_Config.m_Qm3DParticlesPushRadius, 0, 1000);
+					RenderIntOption(&s_Qm3DParticlePushRadiusInputId, Localize("推开半径"), &g_Config.m_Qm3DParticlesPushRadius, 0, 1000);
 					static int s_Qm3DParticlePushStrengthInputId;
-					RenderIntOption(&s_Qm3DParticlePushStrengthInputId, Localize("Push strength"), &g_Config.m_Qm3DParticlesPushStrength, 0, 2000);
+					RenderIntOption(&s_Qm3DParticlePushStrengthInputId, Localize("推开强度"), &g_Config.m_Qm3DParticlesPushStrength, 0, 2000);
 
 					static std::vector<CButtonContainer> s_vQm3DParticleColorModeButtons = {{}, {}};
 					int ColorMode = g_Config.m_Qm3DParticlesColorMode;
-					if(DoLine_RadioMenu(CardContent, Localize("粒子颜色"), s_vQm3DParticleColorModeButtons, {Localize("Custom"), Localize("Random")}, {1, 2}, ColorMode))
+					if(DoLine_RadioMenu(CardContent, Localize("粒子颜色"), s_vQm3DParticleColorModeButtons, {Localize("自定义"), Localize("随机")}, {1, 2}, ColorMode))
 						g_Config.m_Qm3DParticlesColorMode = ColorMode;
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 
@@ -6535,9 +6535,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					if(g_Config.m_Qm3DParticlesGlow)
 					{
 						static int s_Qm3DParticleGlowAlphaInputId;
-						RenderIntOption(&s_Qm3DParticleGlowAlphaInputId, Localize("Glow alpha"), &g_Config.m_Qm3DParticlesGlowAlpha, 1, 100, "%");
+						RenderIntOption(&s_Qm3DParticleGlowAlphaInputId, Localize("辉光透明度"), &g_Config.m_Qm3DParticlesGlowAlpha, 1, 100, "%");
 						static int s_Qm3DParticleGlowOffsetInputId;
-						RenderIntOption(&s_Qm3DParticleGlowOffsetInputId, Localize("Glow offset"), &g_Config.m_Qm3DParticlesGlowOffset, 1, 20);
+						RenderIntOption(&s_Qm3DParticleGlowOffsetInputId, Localize("辉光偏移"), &g_Config.m_Qm3DParticlesGlowOffset, 1, 20);
 					}
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
@@ -6547,9 +6547,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					if(g_Config.m_Qm3DParticlesTrail)
 					{
 						static int s_Qm3DParticleTrailLengthInputId;
-						RenderIntOption(&s_Qm3DParticleTrailLengthInputId, Localize("Trail length"), &g_Config.m_Qm3DParticlesTrailLength, 2, 6);
+						RenderIntOption(&s_Qm3DParticleTrailLengthInputId, Localize("拖尾长度"), &g_Config.m_Qm3DParticlesTrailLength, 2, 6);
 						static int s_Qm3DParticleTrailAlphaInputId;
-						RenderIntOption(&s_Qm3DParticleTrailAlphaInputId, Localize("Trail alpha"), &g_Config.m_Qm3DParticlesTrailAlpha, 1, 100, "%");
+						RenderIntOption(&s_Qm3DParticleTrailAlphaInputId, Localize("拖尾透明度"), &g_Config.m_Qm3DParticlesTrailAlpha, 1, 100, "%");
 					}
 
 					CardContent.HSplitTop(LgLineHeight, &Row, &CardContent);
@@ -6559,7 +6559,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					if(g_Config.m_Qm3DParticlesPulse)
 					{
 						static int s_Qm3DParticlePulseStrengthInputId;
-						RenderIntOption(&s_Qm3DParticlePulseStrengthInputId, Localize("Pulse strength"), &g_Config.m_Qm3DParticlesPulseStrength, 0, 50, "%");
+						RenderIntOption(&s_Qm3DParticlePulseStrengthInputId, Localize("脉冲强度"), &g_Config.m_Qm3DParticlesPulseStrength, 0, 50, "%");
 						static int s_Qm3DParticlePulseSpeedInputId;
 						RenderIntOption(&s_Qm3DParticlePulseSpeedInputId, Localize("脉冲速度"), &g_Config.m_Qm3DParticlesPulseSpeed, 10, 300, "%");
 					}
@@ -6571,7 +6571,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					if(g_Config.m_Qm3DParticlesTwinkle)
 					{
 						static int s_Qm3DParticleTwinkleStrengthInputId;
-						RenderIntOption(&s_Qm3DParticleTwinkleStrengthInputId, Localize("Twinkle strength"), &g_Config.m_Qm3DParticlesTwinkleStrength, 0, 100, "%");
+						RenderIntOption(&s_Qm3DParticleTwinkleStrengthInputId, Localize("闪烁强度"), &g_Config.m_Qm3DParticlesTwinkleStrength, 0, 100, "%");
 					}
 				}
 
