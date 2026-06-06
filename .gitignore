@@ -180,9 +180,5 @@ tags
 
 !steam_api.dll
 
-# Keep only Steam runtime files under packaged QmClient releases.
-/QmClient_Release/*
-!/QmClient_Release/*/
-/QmClient_Release/*/**
-!/QmClient_Release/*/steam_api.dll
-!/QmClient_Release/*/steam_appid.txt
+# Ignore packaged QmClient release outputs.
+/QmClient_Release/
