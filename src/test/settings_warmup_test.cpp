@@ -1337,10 +1337,10 @@ TEST(SettingsResourceJobs, AssetListRejectsStaleJobGeneration)
 	EXPECT_FALSE(SettingsAssetListJobGenerationMatches(4, 5));
 }
 
-TEST(SettingsResourceJobs, SkinListPublishesProgressiveMergedList)
+TEST(SettingsResourceJobs, SkinListPublishesOnlyCompleteMergedList)
 {
 	EXPECT_FALSE(SettingsSkinListShouldPublishMergedList(0, 3));
-	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(2, 3));
+	EXPECT_FALSE(SettingsSkinListShouldPublishMergedList(2, 3));
 	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(3, 3));
 	EXPECT_TRUE(SettingsSkinListShouldPublishMergedList(0, 0));
 }
@@ -1348,16 +1348,16 @@ TEST(SettingsResourceJobs, SkinListPublishesProgressiveMergedList)
 TEST(SettingsResourceJobs, SkinListReplacesPublishedEntriesAfterStableDirectory)
 {
 	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 3, true, true));
-	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 3, false, false));
+	EXPECT_FALSE(SettingsSkinListShouldReplacePublishedEntries(0, 3, false, false));
 	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 3, false, true));
-	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(10, 20, false, false));
+	EXPECT_FALSE(SettingsSkinListShouldReplacePublishedEntries(10, 20, false, false));
 	EXPECT_FALSE(SettingsSkinListShouldReplacePublishedEntries(20, 10, false, false));
 }
 
-TEST(SettingsResourceJobs, SkinListPublishesPartialEntriesBeforeDirectoryScanSettles)
+TEST(SettingsResourceJobs, SkinListKeepsPublishedEntriesUntilDirectoryScanSettles)
 {
-	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 1, true, false));
-	EXPECT_TRUE(SettingsSkinListShouldReplacePublishedEntries(0, 3, true, false));
+	EXPECT_FALSE(SettingsSkinListShouldReplacePublishedEntries(0, 1, true, false));
+	EXPECT_FALSE(SettingsSkinListShouldReplacePublishedEntries(0, 3, true, false));
 	EXPECT_FALSE(SettingsSkinListShouldReplacePublishedEntries(3, 1, true, false));
 }
 

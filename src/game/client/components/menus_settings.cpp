@@ -1932,8 +1932,11 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		m_SettingsHighPrioritySettled = false;
 	}
 	std::vector<CSkins::CSkinListEntry> &vSkinList = SkinList.Skins();
-	std::vector<size_t> vVisibleSkinIndices;
-	vVisibleSkinIndices.reserve(vSkinList.size());
+	static std::vector<size_t> s_vVisibleSkinIndices;
+	s_vVisibleSkinIndices.clear();
+	if(s_vVisibleSkinIndices.capacity() < 32)
+		s_vVisibleSkinIndices.reserve(32);
+	std::vector<size_t> &vVisibleSkinIndices = s_vVisibleSkinIndices;
 	int VisibleReadyCount = 0;
 	int VisibleBackgroundRequestedCount = 0;
 	int VisibleNonTerminalWaitingCount = 0;
@@ -1967,10 +1970,13 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	{
 		CSkins::CSkinListEntry &SkinListEntry = vSkinList[i];
 		const CSkins::CSkinContainer *pSkinContainer = vSkinList[i].SkinContainer();
-		const auto &EntryColorKey = SkinListEntry.ColorKey();
-		const bool EntryUseCustomColor = EntryColorKey.has_value() ? EntryColorKey->m_UseCustomColor : *pUseCustomColor != 0;
-		const int EntryColorBody = EntryColorKey.has_value() ? EntryColorKey->m_ColorBody : (int)*pColorBody;
-		const int EntryColorFeet = EntryColorKey.has_value() ? EntryColorKey->m_ColorFeet : (int)*pColorFeet;
+		const auto State = pSkinContainer->State();
+		const bool EntryReady =
+			State == CSkins::CSkinContainer::EState::LOADED ||
+			State == CSkins::CSkinContainer::EState::ERROR ||
+			State == CSkins::CSkinContainer::EState::NOT_FOUND;
+		if(EntryReady)
+			++TotalReadyCount;
 
 		if(!m_Dummy ? SkinListEntry.IsSelectedMain() : SkinListEntry.IsSelectedDummy())
 		{
@@ -1989,25 +1995,21 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		}
 
 		vVisibleSkinIndices.push_back(i);
-		const auto State = pSkinContainer->State();
-		const bool EntryReady =
-			State == CSkins::CSkinContainer::EState::LOADED ||
-			State == CSkins::CSkinContainer::EState::ERROR ||
-			State == CSkins::CSkinContainer::EState::NOT_FOUND;
 		const bool EntryNonTerminalWaiting =
 			State == CSkins::CSkinContainer::EState::UNLOADED ||
 			State == CSkins::CSkinContainer::EState::BACKGROUND_REQUESTED ||
 			State == CSkins::CSkinContainer::EState::PENDING ||
 			State == CSkins::CSkinContainer::EState::LOADING;
 		if(EntryReady)
-		{
-			++TotalReadyCount;
 			++VisibleReadyCount;
-		}
 		if(State == CSkins::CSkinContainer::EState::BACKGROUND_REQUESTED)
 			++VisibleBackgroundRequestedCount;
 		if(EntryNonTerminalWaiting)
 			++VisibleNonTerminalWaitingCount;
+		const auto &EntryColorKey = SkinListEntry.ColorKey();
+		const bool EntryUseCustomColor = EntryColorKey.has_value() ? EntryColorKey->m_UseCustomColor : *pUseCustomColor != 0;
+		const int EntryColorBody = EntryColorKey.has_value() ? EntryColorKey->m_ColorBody : (int)*pColorBody;
+		const int EntryColorFeet = EntryColorKey.has_value() ? EntryColorKey->m_ColorFeet : (int)*pColorFeet;
 		const CSkin *pSkin = State == CSkins::CSkinContainer::EState::LOADED ? pSkinContainer->Skin().get() : pDefaultSkin;
 
 		Item.m_Rect.VSplitLeft(60.0f, &Button, &Label);
@@ -2108,16 +2110,6 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	{
 		vSkinList[*It].RequestLoad(ESettingsResourcePriority::VISIBLE);
 	}
-	for(size_t i = 0; i < vSkinList.size(); ++i)
-	{
-		if(std::find(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), i) != vVisibleSkinIndices.end())
-			continue;
-		const auto State = vSkinList[i].SkinContainer()->State();
-		if(State == CSkins::CSkinContainer::EState::LOADED ||
-			State == CSkins::CSkinContainer::EState::ERROR ||
-			State == CSkins::CSkinContainer::EState::NOT_FOUND)
-			++TotalReadyCount;
-	}
 	const bool SkinListScrollInteraction = m_SettingsScrollActive || s_ListBox.ScrollbarActive() || s_ListBox.ScrollbarAnimating() || s_SkinListScrollActiveLastFrame;
 	const int PreviousSkinListScrollCooldownFrames = s_SkinListScrollCooldownFrames;
 	s_SkinListScrollCooldownFrames = SettingsScrollInteractionCooldown(SkinListScrollInteraction, s_SkinListScrollCooldownFrames, 3);
@@ -2157,7 +2149,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		for(size_t Attempts = 0; Attempts < vSkinList.size() && BackgroundRequestsIssued < BackgroundRequestBudget; ++Attempts)
 		{
 			const size_t BackgroundIndex = (s_BackgroundRequestCursor + Attempts) % vSkinList.size();
-			if(std::find(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), BackgroundIndex) != vVisibleSkinIndices.end())
+			if(std::binary_search(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), BackgroundIndex))
 				continue;
 
 			const CSkins::CSkinContainer *pBackgroundContainer = vSkinList[BackgroundIndex].SkinContainer();

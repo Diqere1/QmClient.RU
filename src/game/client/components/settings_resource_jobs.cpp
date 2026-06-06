@@ -137,18 +137,16 @@ bool SettingsAssetListJobGenerationMatches(int JobGeneration, int CurrentGenerat
 
 bool SettingsSkinListShouldPublishMergedList(size_t Cursor, size_t Total)
 {
-	return Total == 0 || Cursor > 0;
+	return Total == 0 || Cursor >= Total;
 }
 
 bool SettingsSkinListShouldReplacePublishedEntries(int PublishedEntries, int PendingEntries, bool DirectoryScanPending, bool MergeComplete)
 {
+	if(!MergeComplete)
+		return false;
 	if(DirectoryScanPending && PendingEntries <= PublishedEntries)
 		return false;
-	if(MergeComplete)
-		return true;
-	if(PendingEntries <= 0)
-		return false;
-	return PendingEntries > PublishedEntries;
+	return true;
 }
 
 bool SettingsSkinListSkeletonReady(const SSkinListPlanState &State)

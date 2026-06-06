@@ -443,9 +443,13 @@ TEST(Skins, TeeSettingsListUsesIdleBackgroundRequestsAfterVisibleSettle)
 
 	EXPECT_NE(RenderTeeBody.find("RequestLoad(ESettingsResourcePriority::VISIBLE)"), std::string::npos);
 	EXPECT_EQ(RenderTeeBody.find("RequestLoad(ESettingsResourcePriority::PREFETCH)"), std::string::npos);
-	EXPECT_NE(RenderTeeBody.find("std::vector<size_t> vVisibleSkinIndices;"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("static std::vector<size_t> s_vVisibleSkinIndices;"), std::string::npos);
+	EXPECT_EQ(RenderTeeBody.find("vVisibleSkinIndices.reserve(vSkinList.size())"), std::string::npos);
 	EXPECT_NE(RenderTeeBody.find("vVisibleSkinIndices.push_back(i);"), std::string::npos);
 	EXPECT_NE(RenderTeeBody.find("for(auto It = vVisibleSkinIndices.rbegin(); It != vVisibleSkinIndices.rend(); ++It)"), std::string::npos);
+	EXPECT_NE(RenderTeeBody.find("std::binary_search(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), BackgroundIndex)"), std::string::npos);
+	EXPECT_EQ(RenderTeeBody.find("std::find(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), BackgroundIndex)"), std::string::npos);
+	EXPECT_EQ(RenderTeeBody.find("std::find(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), i)"), std::string::npos);
 	EXPECT_NE(RenderTeeBody.find("const bool RequestWindowScrollBlocked = SkinListScrollInteraction || s_SkinListScrollCooldownFrames > 0;"), std::string::npos);
 	EXPECT_NE(RenderTeeBody.find("const bool VisibleSettled = VisibleReadyCount == (int)vVisibleSkinIndices.size();"), std::string::npos);
 	EXPECT_NE(RenderTeeBody.find("const int DefaultBackgroundRequestBudget = Throughput.m_BackgroundRequestBudget;"), std::string::npos);
@@ -654,7 +658,7 @@ TEST(Skins, SkinListWaitsForCompletePlanInsteadOfSeedingPlaceholderEntry)
 	const std::string Source = Buffer.str();
 
 	EXPECT_EQ(Source.find("SeedVisibleSkinListIfEmpty"), std::string::npos);
-	EXPECT_NE(Source.find("m_SkinList.m_vSkins = m_vPendingSkinListEntries;"), std::string::npos);
+	EXPECT_NE(Source.find("m_SkinList.m_vSkins = std::move(m_vPendingSkinListEntries);"), std::string::npos);
 }
 
 TEST(Skins, AsyncSkinListKeepsQueuedColorVariantsSelectable)

@@ -2465,7 +2465,7 @@ void CSkins::ProcessSkinListPlanJob()
 		const bool DirectoryScanPending = m_pSkinDirectoryScanJob != nullptr || !m_vPendingSkinDirectoryEntries.empty();
 		if(SettingsSkinListShouldReplacePublishedEntries((int)m_SkinList.m_vSkins.size(), (int)m_vPendingSkinListEntries.size(), DirectoryScanPending, MergeComplete))
 		{
-			m_SkinList.m_vSkins = m_vPendingSkinListEntries;
+			m_SkinList.m_vSkins = std::move(m_vPendingSkinListEntries);
 			m_SkinList.m_UnfilteredCount = m_PendingSkinListUnfilteredCount;
 		}
 		if(MergeComplete)
