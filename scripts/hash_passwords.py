@@ -16,6 +16,8 @@ def hash_password(password):
     salt = os.urandom(8)
     digest_input = password.encode() + salt
     # auth_add_p consumes the DDNet legacy MD5(password || salt) format.
+    # This compatibility helper must emit that exact digest, not a modern password hash.
+
     # codeql[py/weak-sensitive-data-hashing]
     return hashlib.md5(digest_input).hexdigest(), binascii.hexlify(salt).decode("ascii")
 
