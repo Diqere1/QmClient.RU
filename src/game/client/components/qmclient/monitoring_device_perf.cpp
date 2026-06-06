@@ -138,7 +138,10 @@ public:
 
 		DXGI_QUERY_VIDEO_MEMORY_INFO LocalInfo = {};
 		if(SUCCEEDED(m_pAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &LocalInfo)))
+		{
 			Sample.m_GpuDedicatedVramMb = (float)LocalInfo.CurrentUsage / (1024.0f * 1024.0f);
+			Sample.m_GpuDedicatedVramBudgetMb = (float)LocalInfo.Budget / (1024.0f * 1024.0f);
+		}
 
 		DXGI_QUERY_VIDEO_MEMORY_INFO NonLocalInfo = {};
 		if(SUCCEEDED(m_pAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &NonLocalInfo)))
@@ -164,6 +167,7 @@ public:
 		Sample.m_Available =
 			Sample.m_GpuUtilPct >= 0.0f ||
 			Sample.m_GpuDedicatedVramMb >= 0.0f ||
+			Sample.m_GpuDedicatedVramBudgetMb >= 0.0f ||
 			Sample.m_GpuSharedVramMb >= 0.0f ||
 			Sample.m_DiskReadMbPerSec >= 0.0f;
 		return Sample;

@@ -1,4 +1,5 @@
 #include <game/client/components/settings_resource_jobs.h>
+#include <game/client/components/assets_preview_scale.h>
 #include <game/client/components/menus.h>
 
 #include <base/system.h>
@@ -296,12 +297,18 @@ bool SettingsRuntimeWarmupShouldRun(bool WarmupEnabled, bool SettingsPageVisible
 		!SettingsScrollActive;
 }
 
-SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, int PostScrollRecoveryFrames)
+SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, bool JumpScrollActive, int PostScrollRecoveryFrames)
 {
 	SSettingsResourceFrameContext Context;
 	Context.m_ScrollActive = PersistentScrollActive || ImmediateScrollInput;
+	Context.m_JumpScrollActive = JumpScrollActive;
 	Context.m_PostScrollRecoveryFrames = PostScrollRecoveryFrames;
 	return Context;
+}
+
+SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, int PostScrollRecoveryFrames)
+{
+	return SettingsBuildFrameContext(PersistentScrollActive, ImmediateScrollInput, false, PostScrollRecoveryFrames);
 }
 
 int SettingsSkinFinalizeMaxPerFrame(bool TeeSettingsActive)
@@ -916,6 +923,28 @@ bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double Elap
 	       (FinalizedThisFrame > 0 && ElapsedMs >= MaxFinalizeMsPerFrame);
 }
 
+bool SettingsAssetWorkAllowedWhileWindowInactive(bool WindowActive, bool HighPriority)
+{
+	(void)HighPriority;
+	return WindowActive;
+}
+
+bool SettingsAssetPreviewResidentTextureSatisfiesRequest(bool TextureValid, size_t ResidentBytes, int RequestedTextureSize)
+{
+	if(!TextureValid)
+		return false;
+	if(RequestedTextureSize <= 0)
+		return true;
+	return ResidentBytes >= PreviewTextureSizeBytesEstimate(RequestedTextureSize);
+}
+
+bool SettingsAssetPreviewDecodeStartNeeded(bool DecodeJobActive, bool TextureValid, size_t ResidentBytes, int RequestedTextureSize, bool HasReadyImage)
+{
+	if(DecodeJobActive || HasReadyImage)
+		return false;
+	return !SettingsAssetPreviewResidentTextureSatisfiesRequest(TextureValid, ResidentBytes, RequestedTextureSize);
+}
+
 bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex)
 {
 	return FirstVisibleIndex >= 0 && LastVisibleIndex >= FirstVisibleIndex && Index >= FirstVisibleIndex && Index <= LastVisibleIndex;
@@ -940,7 +969,7 @@ bool SettingsResourceCanUseHighPriorityBudget(int StartedThisFrame, int NormalBu
 
 int SettingsResourceFrameStageBudget(const SSettingsResourceFrameContext &Context, ESettingsResourcePriority Priority, int NormalBudget, int ScrollActiveVisibleBudget)
 {
-	if(!Context.m_ScrollActive)
+	if(!Context.m_ScrollActive && !Context.m_JumpScrollActive)
 		return std::max(0, NormalBudget);
 	if(Priority != ESettingsResourcePriority::VISIBLE)
 		return 0;
@@ -969,7 +998,7 @@ int SettingsScrollInteractionRecovery(bool ScrollActiveThisFrame, int PreviousCo
 
 int SettingsResourceSharedHeavyBudget(const SSettingsResourceFrameContext &Context, int NormalBudget, int RecoveryBudget)
 {
-	if(Context.m_ScrollActive)
+	if(Context.m_ScrollActive || Context.m_JumpScrollActive)
 		return 0;
 	if(Context.m_PostScrollRecoveryFrames > 0)
 		return std::max(0, RecoveryBudget);
@@ -1002,11 +1031,22 @@ bool SettingsResourceOversizedUploadAllowed(const SSettingsResourceFrameContext 
 {
 	if(ItemBytes <= MaxBytesPerFrame)
 		return false;
-	return !Context.m_ScrollActive &&
-	       Context.m_PostScrollRecoveryFrames == 0 &&
-	       !PageSwitchActive &&
-	       Priority == ESettingsResourcePriority::VISIBLE &&
-	       OversizedUploadsThisFrame == 0;
+	(void)Context;
+	(void)PageSwitchActive;
+	(void)Priority;
+	(void)OversizedUploadsThisFrame;
+	(void)MaxBytesPerFrame;
+	return false;
+}
+
+size_t SettingsAssetPreviewResidentBudgetBytes(size_t OverrideMb, int Percent, float GpuBudgetMb)
+{
+	return PreviewBudgetBytes(OverrideMb, Percent, GpuBudgetMb);
+}
+
+int SettingsAssetPreviewBudgetedTextureSize(int MaxTextureSize, int MinTextureSize, size_t TextureBudgetBytes, size_t CurrentTextureMemoryBytes, size_t ResidentPreviewBytes)
+{
+	return ComputePreviewBudgetedTextureSize(MaxTextureSize, MinTextureSize, TextureBudgetBytes, CurrentTextureMemoryBytes, ResidentPreviewBytes);
 }
 
 std::string SettingsAssetPreviewHandleKey(const SSettingsAssetPreviewHandle &Handle)

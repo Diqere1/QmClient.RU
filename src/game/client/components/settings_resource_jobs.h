@@ -49,6 +49,7 @@ struct SSettingsResourceMergeBudget
 struct SSettingsResourceFrameContext
 {
 	bool m_ScrollActive = false;
+	bool m_JumpScrollActive = false;
 	int m_PostScrollRecoveryFrames = 0;
 	bool m_HighPrioritySettled = false;
 };
@@ -276,6 +277,7 @@ bool SettingsSkinListScrollResetNeeded(int PreviousCount, int CurrentCount, bool
 bool SettingsSkinListShouldRequestImmediateLoad(bool Visible, bool Prefetched);
 bool SettingsSkinListShouldRequestImmediateLoad(bool Visible);
 bool SettingsRuntimeWarmupShouldRun(bool WarmupEnabled, bool SettingsPageVisible, bool HasActiveItem, bool HasHotItem, bool ScrollInputActive, bool SettingsPageSwitchActive, bool SettingsScrollActive);
+SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, bool JumpScrollActive, int PostScrollRecoveryFrames);
 SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, int PostScrollRecoveryFrames);
 int SettingsSkinFinalizeMaxPerFrame(bool TeeSettingsActive);
 int SettingsSkinGpuUploadUnits(bool TeeSettingsActive);
@@ -306,6 +308,9 @@ bool SettingsSkinFinalizeShouldDeferBackgroundSweep(bool ProcessedHighPrioritySk
 bool SettingsAssetListShouldShowBlockingLoading(bool Loading, int VisibleEntries);
 bool SettingsAssetListCanStartPreviewDecode(bool Loading, bool Merging, bool Loaded);
 bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double ElapsedMs, int MaxFinalizesPerFrame, double MaxFinalizeMsPerFrame);
+bool SettingsAssetWorkAllowedWhileWindowInactive(bool WindowActive, bool HighPriority);
+bool SettingsAssetPreviewResidentTextureSatisfiesRequest(bool TextureValid, size_t ResidentBytes, int RequestedTextureSize);
+bool SettingsAssetPreviewDecodeStartNeeded(bool DecodeJobActive, bool TextureValid, size_t ResidentBytes, int RequestedTextureSize, bool HasReadyImage);
 bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex);
 bool SettingsAssetPreviewShouldUploadHighPriorityFirst(bool CurrentHighPriority, bool CandidateHighPriority);
 bool SettingsWorkshopThumbShouldStartHighPriority(int VisibleDownloadableIndex, int FirstVisibleDownloadableIndex, int LastVisibleDownloadableIndex);
@@ -318,6 +323,8 @@ int SettingsResourceClampSharedHeavyBudget(int RemainingBudget, const SSettingsR
 bool SettingsResourceConsumeSharedHeavyBudget(int &RemainingBudget);
 bool SettingsResourceUploadWithinByteBudget(int UploadedThisFrame, size_t UploadedBytesThisFrame, size_t ItemBytes, size_t MaxBytesPerFrame);
 bool SettingsResourceOversizedUploadAllowed(const SSettingsResourceFrameContext &Context, bool PageSwitchActive, ESettingsResourcePriority Priority, int OversizedUploadsThisFrame, size_t ItemBytes, size_t MaxBytesPerFrame);
+size_t SettingsAssetPreviewResidentBudgetBytes(size_t OverrideMb, int Percent, float GpuBudgetMb);
+int SettingsAssetPreviewBudgetedTextureSize(int MaxTextureSize, int MinTextureSize, size_t TextureBudgetBytes, size_t CurrentTextureMemoryBytes, size_t ResidentPreviewBytes);
 std::string SettingsAssetPreviewHandleKey(const SSettingsAssetPreviewHandle &Handle);
 bool SettingsAssetPreviewHandleMatches(const SSettingsAssetPreviewHandle &Handle, int CurrentTab, unsigned CurrentEpoch, size_t CurrentIndex, const char *pName);
 bool SettingsPageCacheCanUseRecordedResources(bool CacheMatches, bool RenderTargetValid, bool ResourcesReadyAtRecord, bool DependenciesReadyAtRecord = true);

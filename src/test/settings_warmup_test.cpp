@@ -1,4 +1,5 @@
 #include <game/client/components/settings_warmup.h>
+#include <game/client/components/assets_preview_scale.h>
 #include <game/client/components/menus.h>
 #include <game/client/components/settings_resource_jobs.h>
 
@@ -797,6 +798,14 @@ TEST(SettingsResourceJobs, AssetPreviewFinalizeBudgetDefersAfterLimit)
 	EXPECT_TRUE(SettingsAssetPreviewShouldDeferFinalize(2, 0.0, 2, 4.0));
 }
 
+TEST(SettingsResourceJobs, InactiveWindowBlocksAllAssetStarts)
+{
+	EXPECT_TRUE(SettingsAssetWorkAllowedWhileWindowInactive(true, false));
+	EXPECT_TRUE(SettingsAssetWorkAllowedWhileWindowInactive(true, true));
+	EXPECT_FALSE(SettingsAssetWorkAllowedWhileWindowInactive(false, true));
+	EXPECT_FALSE(SettingsAssetWorkAllowedWhileWindowInactive(false, false));
+}
+
 TEST(SettingsResourceJobs, AssetPreviewPrioritizesCurrentVisibleRange)
 {
 	EXPECT_FALSE(SettingsAssetPreviewShouldPrioritizeVisibleRange(9, 10, 20));
@@ -830,7 +839,7 @@ TEST(SettingsResourceJobs, UploadByteBudgetRejectsOversizedFirstUpload)
 	EXPECT_FALSE(SettingsResourceUploadWithinByteBudget(1, 512 * 1024, 768 * 1024, 1 * 1024 * 1024));
 }
 
-TEST(SettingsResourceJobs, OversizedUploadOnlyAllowedWhenIdleAndPageStable)
+TEST(SettingsResourceJobs, OversizedUploadAlwaysDeferredToAvoidFocusBurst)
 {
 	SSettingsResourceFrameContext IdleVisible{};
 	IdleVisible.m_ScrollActive = false;
@@ -842,7 +851,7 @@ TEST(SettingsResourceJobs, OversizedUploadOnlyAllowedWhenIdleAndPageStable)
 	SSettingsResourceFrameContext Recovery = IdleVisible;
 	Recovery.m_PostScrollRecoveryFrames = 2;
 
-	EXPECT_TRUE(SettingsResourceOversizedUploadAllowed(IdleVisible, false, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(IdleVisible, false, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
 	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(IdleVisible, true, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
 	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(ScrollActive, false, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
 	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(Recovery, false, ESettingsResourcePriority::VISIBLE, 0, 4 * 1024 * 1024, 1 * 1024 * 1024));
@@ -850,13 +859,13 @@ TEST(SettingsResourceJobs, OversizedUploadOnlyAllowedWhenIdleAndPageStable)
 	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(IdleVisible, false, ESettingsResourcePriority::VISIBLE, 0, 512 * 1024, 1 * 1024 * 1024));
 }
 
-TEST(SettingsResourceJobs, OversizedUploadAllowsAtMostOnePerStableFrame)
+TEST(SettingsResourceJobs, OversizedUploadNeverGetsStableFrameException)
 {
 	SSettingsResourceFrameContext Stable{};
 	Stable.m_ScrollActive = false;
 	Stable.m_PostScrollRecoveryFrames = 0;
 
-	EXPECT_TRUE(SettingsResourceOversizedUploadAllowed(Stable, false, ESettingsResourcePriority::VISIBLE, 0, 2 * 1024 * 1024, 1 * 1024 * 1024));
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(Stable, false, ESettingsResourcePriority::VISIBLE, 0, 2 * 1024 * 1024, 1 * 1024 * 1024));
 	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(Stable, false, ESettingsResourcePriority::VISIBLE, 1, 2 * 1024 * 1024, 1 * 1024 * 1024));
 }
 
@@ -995,6 +1004,21 @@ TEST(SettingsResourceJobs, AssetsWorkshopListFinalizesPreviewAndThumbWorkOnlyAft
 	EXPECT_LT(ThumbFinalizePos, ThumbDrainPos);
 }
 
+TEST(SettingsResourceJobs, AssetsListsBuildFrameContextFromJumpScrollStateBeforeHeavyStages)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("const bool ListJumpScrollActive ="), std::string::npos);
+	EXPECT_NE(Source.find("const bool WorkshopListJumpScrollActive ="), std::string::npos);
+	EXPECT_NE(Source.find("s_AssetsScrollCooldownFrames > 0, ListScrollActive, ListJumpScrollActive, s_AssetsPostScrollRecoveryFrames"), std::string::npos);
+	EXPECT_NE(Source.find("s_AssetsScrollCooldownFrames > 0, WorkshopListScrollActive, WorkshopListJumpScrollActive, s_AssetsPostScrollRecoveryFrames"), std::string::npos);
+	EXPECT_NE(Source.find("frame_context=%s jump_scroll=%d"), std::string::npos);
+}
+
 TEST(SettingsResourceJobs, VisibleReadyPreviewKeepsUploadPriority)
 {
 	EXPECT_TRUE(SettingsAssetPreviewShouldPrioritizeVisibleRange(3, 3, 5));
@@ -1002,6 +1026,147 @@ TEST(SettingsResourceJobs, VisibleReadyPreviewKeepsUploadPriority)
 	EXPECT_TRUE(SettingsAssetPreviewShouldUploadHighPriorityFirst(false, true));
 	EXPECT_FALSE(SettingsAssetPreviewShouldUploadHighPriorityFirst(true, false));
 	EXPECT_FALSE(SettingsAssetPreviewShouldUploadHighPriorityFirst(false, false));
+}
+
+TEST(SettingsResourceJobs, AssetsFocusHandlingDoesNotUseWindowRecoveryFrames)
+{
+	std::ifstream MenusHeaderFile("src/game/client/components/menus.h");
+	ASSERT_TRUE(MenusHeaderFile.good());
+	std::stringstream MenusHeaderBuffer;
+	MenusHeaderBuffer << MenusHeaderFile.rdbuf();
+	const std::string MenusHeaderSource = MenusHeaderBuffer.str();
+
+	EXPECT_EQ(MenusHeaderSource.find("m_LastWindowActive"), std::string::npos);
+	EXPECT_EQ(MenusHeaderSource.find("m_WindowRecoveryFrames"), std::string::npos);
+
+	std::ifstream MenusSourceFile("src/game/client/components/menus.cpp");
+	ASSERT_TRUE(MenusSourceFile.good());
+	std::stringstream MenusBuffer;
+	MenusBuffer << MenusSourceFile.rdbuf();
+	const std::string MenusSource = MenusBuffer.str();
+
+	EXPECT_EQ(MenusSource.find("m_WindowRecoveryFrames = 10"), std::string::npos);
+	EXPECT_EQ(MenusSource.find("m_LastWindowActive = CurrentWindowActive"), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, AssetsInactiveWindowBehaviorSkipsRecoveryPurgeAndUsesDirectWindowGate)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_EQ(Source.find("Graphics()->UnloadTexture(&Entity.m_RenderTexture);"), std::string::npos);
+	EXPECT_EQ(Source.find("EffectiveMaxPreviewUploadsPerFrame = m_WindowRecoveryFrames > 0 ? 0 : MaxPreviewUploadsPerFrame"), std::string::npos);
+	EXPECT_EQ(Source.find("EffectiveMaxWorkshopThumbUploadsPerFrame = m_WindowRecoveryFrames > 0 ? 0 : MaxWorkshopThumbUploadsPerFrame"), std::string::npos);
+	EXPECT_NE(Source.find("const bool WindowActive = pEngineGraphics == nullptr || pEngineGraphics->WindowActive() != 0;"), std::string::npos);
+	EXPECT_NE(Source.find("if(!SettingsAssetWorkAllowedWhileWindowInactive(WindowActive, HighPriority))"), std::string::npos);
+	EXPECT_NE(Source.find("if(!SettingsAssetWorkAllowedWhileWindowInactive(WindowActive, Asset.m_ThumbHighPriority))"), std::string::npos);
+	EXPECT_NE(Source.find("if(!WindowActive)\n\t\t\treturn;"), std::string::npos);
+	EXPECT_NE(Source.find("LogAssetsPerfStage(\"assets_window_focus\""), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, InactiveWindowBlocksAllNewAssetWorkStarts)
+{
+	EXPECT_FALSE(SettingsAssetWorkAllowedWhileWindowInactive(false, false));
+	EXPECT_FALSE(SettingsAssetWorkAllowedWhileWindowInactive(false, true));
+	EXPECT_TRUE(SettingsAssetWorkAllowedWhileWindowInactive(true, false));
+	EXPECT_TRUE(SettingsAssetWorkAllowedWhileWindowInactive(true, true));
+}
+
+TEST(SettingsResourceJobs, AssetsFocusLogsIncludeTextureMemoryAndResidentPreviewBytes)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("TextureMemoryUsage()"), std::string::npos);
+	EXPECT_NE(Source.find("resident_preview_bytes"), std::string::npos);
+	EXPECT_NE(Source.find("workshop_resident_preview_bytes"), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, EntityBgCorruptInstallProbeReadsOnlyFileHeader)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("IOHANDLE File = pStorage->OpenFile(Asset.m_InstallPath.c_str(), IOFLAG_READ, IStorage::TYPE_SAVE);"), std::string::npos);
+	EXPECT_NE(Source.find("unsigned char aHeader[16] = {};"), std::string::npos);
+	EXPECT_NE(Source.find("const unsigned BytesRead = io_read(File, aHeader, sizeof(aHeader));"), std::string::npos);
+	EXPECT_EQ(Source.find("pStorage->ReadFile(Asset.m_InstallPath.c_str(), IStorage::TYPE_SAVE, &pFileData, &FileSize)"), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, AssetsFocusObservationUsesResumeFrameContextAndSwapTelemetry)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("focus_resume=%d"), std::string::npos);
+	EXPECT_NE(Source.find("graphics_swap"), std::string::npos);
+	EXPECT_NE(Source.find("LogAssetsPerfStageForClient(Client(), \"assets_focus_observation\""), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, WorkshopThumbStartAvoidsDuplicateQueuePushForMatchingState)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("Asset.m_ThumbQueuedTier"), std::string::npos);
+	EXPECT_NE(Source.find("Asset.m_ThumbQueuedEpoch"), std::string::npos);
+	EXPECT_NE(Source.find("Asset.m_ThumbQueuedTab"), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, PreviewTierUpgradeReplacesExistingTexturesInsteadOfLeakingOrDropping)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("static void ReplaceCustomItemPreviewTexture"), std::string::npos);
+	EXPECT_NE(Source.find("static void ReplaceWorkshopThumbTexture"), std::string::npos);
+	EXPECT_NE(Source.find("pGraphics->UnloadTexture(&Item.m_RenderTexture);"), std::string::npos);
+	EXPECT_NE(Source.find("pGraphics->UnloadTexture(&Asset.m_ThumbTexture);"), std::string::npos);
+	EXPECT_NE(Source.find("Item.m_PreviewResidentBytes = 0;"), std::string::npos);
+	EXPECT_NE(Source.find("SettingsAssetPreviewResidentTextureSatisfiesRequest(\n\t\t\t\t\t\ttrue,\n\t\t\t\t\t\tpAsset->m_ThumbResidentBytes,\n\t\t\t\t\t\tpAsset->m_ThumbRequestedTextureSize)"), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, WorkshopRefreshPreservesPreviewRuntimeMetadata)
+{
+	std::ifstream File("src/game/client/components/menus_settings_assets.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("NewAsset.m_ThumbRequestedTextureSize = ExistingAsset.m_ThumbRequestedTextureSize;"), std::string::npos);
+	EXPECT_NE(Source.find("NewAsset.m_ThumbResidentBytes = ExistingAsset.m_ThumbResidentBytes;"), std::string::npos);
+	EXPECT_NE(Source.find("NewAsset.m_ThumbQueuedTier = ExistingAsset.m_ThumbQueuedTier;"), std::string::npos);
+	EXPECT_NE(Source.find("NewAsset.m_ThumbQueuedEpoch = ExistingAsset.m_ThumbQueuedEpoch;"), std::string::npos);
+	EXPECT_NE(Source.find("NewAsset.m_ThumbQueuedTab = ExistingAsset.m_ThumbQueuedTab;"), std::string::npos);
+}
+
+TEST(SettingsResourceJobs, BudgetedPreviewCanUpgradeTierWhenHigherBudgetReturns)
+{
+	EXPECT_FALSE(SettingsAssetPreviewResidentTextureSatisfiesRequest(true, PreviewTextureSizeBytesEstimate(512), 1024));
+	EXPECT_TRUE(SettingsAssetPreviewResidentTextureSatisfiesRequest(true, PreviewTextureSizeBytesEstimate(1024), 1024));
+	EXPECT_TRUE(SettingsAssetPreviewDecodeStartNeeded(false, true, PreviewTextureSizeBytesEstimate(512), 1024, false));
+	EXPECT_FALSE(SettingsAssetPreviewDecodeStartNeeded(false, true, PreviewTextureSizeBytesEstimate(1024), 1024, false));
+	EXPECT_FALSE(SettingsAssetPreviewDecodeStartNeeded(true, false, 0, 1024, false));
+	EXPECT_FALSE(SettingsAssetPreviewDecodeStartNeeded(false, false, 0, 1024, true));
 }
 
 TEST(SettingsResourceJobs, PageCacheRejectsRecordedFrameWithoutReadyResources)
@@ -1324,9 +1489,9 @@ TEST(SettingsResourceJobs, VisibleSkinFinalizeAllowsBackgroundSweepOnNextFrame)
 
 TEST(SettingsResourceJobs, TeeSkinFinalizeBudgetDefersDuringScrollAndRecovery)
 {
-	const SSettingsResourceFrameContext Idle = {false, 0};
-	const SSettingsResourceFrameContext Scrolling = {true, 0};
-	const SSettingsResourceFrameContext Recovering = {false, 2};
+	const SSettingsResourceFrameContext Idle = {false, false, 0};
+	const SSettingsResourceFrameContext Scrolling = {true, false, 0};
+	const SSettingsResourceFrameContext Recovering = {false, false, 2};
 
 	EXPECT_EQ(SettingsSkinFinalizeMaxPerFrame(true), 64);
 	EXPECT_EQ(SettingsSkinGpuUploadUnits(true), 8);
@@ -1375,7 +1540,7 @@ TEST(SettingsResourceJobs, ThroughputControllerKeepsVisibleBacklogOutOfIdleDrain
 {
 	SSettingsSkinThroughputControllerState State;
 	const auto VisibleBacklog = SettingsSkinThroughputControllerStep({
-		{false, 0, true},
+		{false, false, 0, true},
 		true,
 		6.5f,
 		6.0f,
@@ -1405,7 +1570,7 @@ TEST(SettingsResourceJobs, ThroughputControllerKeepsVisibleBacklogOutOfIdleDrain
 	EXPECT_EQ(VisibleBacklog.m_BackgroundRequestBudget, 6);
 
 	const auto Settled = SettingsSkinThroughputControllerStep({
-		{false, 0, true},
+		{false, false, 0, true},
 		true,
 		6.5f,
 		6.0f,
@@ -1574,7 +1739,7 @@ TEST(SettingsResourceJobs, ThroughputControllerReducesOnlyFinalizeBudgetOnFinali
 
 TEST(SettingsResourceJobs, NonTeeSkinFinalizeBudgetKeepsLegacyLimits)
 {
-	const SSettingsResourceFrameContext Scrolling = {true, 2};
+	const SSettingsResourceFrameContext Scrolling = {true, false, 2};
 	EXPECT_EQ(SettingsSkinFinalizeFrameBudget(Scrolling, false), SettingsSkinFinalizeMaxPerFrame(false));
 	EXPECT_EQ(SettingsSkinGpuUploadFrameUnits(Scrolling, false), SettingsSkinGpuUploadUnits(false));
 }
@@ -1596,11 +1761,29 @@ TEST(SettingsResourceJobs, ImmediateScrollInputKeepsReducedTeeThroughputBeforePe
 	EXPECT_EQ(SettingsSkinGpuUploadFrameUnits(ImmediateScroll, true), SettingsSkinGpuUploadFrameUnits(PersistentScroll, true));
 }
 
+TEST(SettingsResourceJobs, JumpScrollUsesSameHeavyBudgetGateAsImmediateScroll)
+{
+	const SSettingsResourceFrameContext Idle = SettingsBuildFrameContext(false, false, false, 0);
+	const SSettingsResourceFrameContext JumpScroll = SettingsBuildFrameContext(false, false, true, 0);
+	const SSettingsResourceFrameContext ImmediateScroll = SettingsBuildFrameContext(false, true, false, 0);
+
+	EXPECT_FALSE(Idle.m_ScrollActive);
+	EXPECT_FALSE(Idle.m_JumpScrollActive);
+	EXPECT_TRUE(JumpScroll.m_JumpScrollActive);
+	EXPECT_FALSE(JumpScroll.m_ScrollActive);
+	EXPECT_TRUE(ImmediateScroll.m_ScrollActive);
+	EXPECT_FALSE(ImmediateScroll.m_JumpScrollActive);
+	EXPECT_EQ(SettingsResourceSharedHeavyBudget(JumpScroll, 4, 1), 0);
+	EXPECT_EQ(SettingsResourceFrameStageBudget(JumpScroll, ESettingsResourcePriority::BACKGROUND, 4, 1), 0);
+	EXPECT_EQ(SettingsResourceFrameStageBudget(JumpScroll, ESettingsResourcePriority::VISIBLE, 4, 1), 1);
+	EXPECT_FALSE(SettingsResourceOversizedUploadAllowed(JumpScroll, false, ESettingsResourcePriority::VISIBLE, 0, 2 * 1024 * 1024, 1 * 1024 * 1024));
+}
+
 TEST(SettingsResourceJobs, TeeSkinBackgroundRequestBudgetOnlyRunsOnIdleFrames)
 {
-	const SSettingsResourceFrameContext Idle = {false, 0};
-	const SSettingsResourceFrameContext Scrolling = {true, 0};
-	const SSettingsResourceFrameContext Recovering = {false, 2};
+	const SSettingsResourceFrameContext Idle = {false, false, 0};
+	const SSettingsResourceFrameContext Scrolling = {true, false, 0};
+	const SSettingsResourceFrameContext Recovering = {false, false, 2};
 
 	EXPECT_GT(SettingsSkinBackgroundRequestFrameBudget(Idle, true), 0);
 	EXPECT_EQ(SettingsSkinBackgroundRequestFrameBudget(Scrolling, true), 0);
@@ -1610,11 +1793,11 @@ TEST(SettingsResourceJobs, TeeSkinBackgroundRequestBudgetOnlyRunsOnIdleFrames)
 
 TEST(SettingsResourceJobs, TeeSkinBackgroundDrainRaisesIdleThroughputBudgets)
 {
-	SSettingsResourceFrameContext IdleSettled = {false, 0};
+	SSettingsResourceFrameContext IdleSettled = {false, false, 0};
 	IdleSettled.m_HighPrioritySettled = true;
-	SSettingsResourceFrameContext RecoveringSettled = {false, 2};
+	SSettingsResourceFrameContext RecoveringSettled = {false, false, 2};
 	RecoveringSettled.m_HighPrioritySettled = true;
-	SSettingsResourceFrameContext ScrollingSettled = {true, 0};
+	SSettingsResourceFrameContext ScrollingSettled = {true, false, 0};
 	ScrollingSettled.m_HighPrioritySettled = true;
 
 	EXPECT_TRUE(SettingsSkinBackgroundDrainActive(IdleSettled, true));

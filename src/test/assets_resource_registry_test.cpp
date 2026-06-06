@@ -7,6 +7,8 @@
 #include <game/client/components/menus.h>
 
 #include <algorithm>
+#include <fstream>
+#include <sstream>
 #include <unordered_map>
 
 namespace
@@ -346,6 +348,53 @@ TEST(AssetsResourceRegistry, EntityBgHierarchyViewKeepsManagedLocalAssetsVisible
 	EXPECT_STREQ(vFolderEntries[1].m_aDisplayName, "day");
 }
 
+TEST(AssetsResourceRegistry, EntityBgHierarchyViewKeepsInstalledWorkshopAssetsInsideWorkshopFolder)
+{
+	const std::vector<std::string> vAssetNames = {
+		"default",
+		"entity_bg/11",
+		"entity_bg/coverage",
+	};
+	const std::unordered_map<std::string, EEntityBgHierarchyEntrySource> vSources = {
+		{"default", EEntityBgHierarchyEntrySource::LOCAL},
+		{"entity_bg/11", EEntityBgHierarchyEntrySource::WORKSHOP},
+		{"entity_bg/coverage", EEntityBgHierarchyEntrySource::WORKSHOP},
+	};
+
+	const auto vRootEntries = BuildEntityBgHierarchyEntries(vAssetNames, "", true, &vSources);
+	ASSERT_EQ(vRootEntries.size(), 2u);
+	EXPECT_STREQ(vRootEntries[0].m_aName, "entity_bg");
+	EXPECT_EQ(vRootEntries[0].m_Source, EEntityBgHierarchyEntrySource::WORKSHOP);
+	EXPECT_TRUE(vRootEntries[0].m_IsDirectory);
+	EXPECT_STREQ(vRootEntries[1].m_aName, "default");
+
+	const auto vWorkshopEntries = BuildEntityBgHierarchyEntries(vAssetNames, "entity_bg", true, &vSources);
+	ASSERT_EQ(vWorkshopEntries.size(), 3u);
+	EXPECT_STREQ(vWorkshopEntries[0].m_aName, "..");
+	EXPECT_STREQ(vWorkshopEntries[1].m_aName, "entity_bg/11");
+	EXPECT_EQ(vWorkshopEntries[1].m_Source, EEntityBgHierarchyEntrySource::WORKSHOP);
+	EXPECT_STREQ(vWorkshopEntries[2].m_aName, "entity_bg/coverage");
+	EXPECT_EQ(vWorkshopEntries[2].m_Source, EEntityBgHierarchyEntrySource::WORKSHOP);
+}
+
+TEST(AssetsResourceRegistry, EntityBgHierarchyViewKeepsLocalSourceWhenWorkshopSharesSameName)
+{
+	const std::vector<std::string> vAssetNames = {
+		"default",
+		"entity_bg/shared",
+	};
+	const std::unordered_map<std::string, EEntityBgHierarchyEntrySource> vSources = {
+		{"default", EEntityBgHierarchyEntrySource::LOCAL},
+		{"entity_bg/shared", EEntityBgHierarchyEntrySource::LOCAL},
+	};
+
+	const auto vHiddenWorkshopEntries = BuildEntityBgHierarchyEntries(vAssetNames, "", false, &vSources);
+	ASSERT_EQ(vHiddenWorkshopEntries.size(), 2u);
+	EXPECT_STREQ(vHiddenWorkshopEntries[0].m_aName, "default");
+	EXPECT_STREQ(vHiddenWorkshopEntries[1].m_aName, "entity_bg/shared");
+	EXPECT_EQ(vHiddenWorkshopEntries[1].m_Source, EEntityBgHierarchyEntrySource::LOCAL);
+}
+
 TEST(AssetsResourceRegistry, RebuildEntityBgWorkshopLocalNameRestoresLocalNameFromInstallPath)
 {
 	EXPECT_EQ(RebuildEntityBgWorkshopLocalName("assets/entity_bg/castle-night.map"), "entity_bg/castle-night");
@@ -391,6 +440,41 @@ TEST(AssetsResourceRegistry, EntityBgHierarchyEntryLessKeepsParentBeforeFoldersA
 	EXPECT_TRUE(EntityBgHierarchyEntryLess(FolderEntry, DefaultEntry));
 	EXPECT_TRUE(EntityBgHierarchyEntryLess(DefaultEntry, FileEntry));
 	EXPECT_FALSE(EntityBgHierarchyEntryLess(FileEntry, DefaultEntry));
+}
+
+TEST(AssetsResourceRegistry, EntityBgHierarchyEntryLessPinsWorkshopFolderBeforeOtherRootFolders)
+{
+	SEntityBgHierarchyEntry WorkshopFolderEntry;
+	str_copy(WorkshopFolderEntry.m_aName, "entity_bg");
+	str_copy(WorkshopFolderEntry.m_aDisplayName, "entity_bg (Workshop)");
+	WorkshopFolderEntry.m_IsDirectory = true;
+	WorkshopFolderEntry.m_Source = EEntityBgHierarchyEntrySource::WORKSHOP;
+
+	SEntityBgHierarchyEntry LocalFolderEntry;
+	str_copy(LocalFolderEntry.m_aName, "alpha");
+	str_copy(LocalFolderEntry.m_aDisplayName, "alpha");
+	LocalFolderEntry.m_IsDirectory = true;
+	LocalFolderEntry.m_Source = EEntityBgHierarchyEntrySource::LOCAL;
+
+	EXPECT_TRUE(IsEntityBgWorkshopRootEntry(WorkshopFolderEntry));
+	EXPECT_FALSE(IsEntityBgWorkshopRootEntry(LocalFolderEntry));
+	EXPECT_TRUE(EntityBgHierarchyEntryLess(WorkshopFolderEntry, LocalFolderEntry));
+	EXPECT_FALSE(EntityBgHierarchyEntryLess(LocalFolderEntry, WorkshopFolderEntry));
+}
+
+TEST(AssetsResourceRegistry, MergeEntityBgHierarchyEntrySourcePrefersWorkshopOverLocal)
+{
+	EXPECT_EQ(MergeEntityBgHierarchyEntrySource(EEntityBgHierarchyEntrySource::LOCAL, EEntityBgHierarchyEntrySource::WORKSHOP), EEntityBgHierarchyEntrySource::WORKSHOP);
+	EXPECT_EQ(MergeEntityBgHierarchyEntrySource(EEntityBgHierarchyEntrySource::WORKSHOP, EEntityBgHierarchyEntrySource::LOCAL), EEntityBgHierarchyEntrySource::WORKSHOP);
+	EXPECT_EQ(MergeEntityBgHierarchyEntrySource(EEntityBgHierarchyEntrySource::WORKSHOP, EEntityBgHierarchyEntrySource::WORKSHOP), EEntityBgHierarchyEntrySource::WORKSHOP);
+	EXPECT_EQ(MergeEntityBgHierarchyEntrySource(EEntityBgHierarchyEntrySource::NAVIGATION, EEntityBgHierarchyEntrySource::LOCAL), EEntityBgHierarchyEntrySource::LOCAL);
+}
+
+TEST(AssetsResourceRegistry, MergeEntityBgHierarchyEntrySourcePreservesWorkshopAcrossRefreshRescan)
+{
+	EEntityBgHierarchyEntrySource Source = EEntityBgHierarchyEntrySource::WORKSHOP;
+	Source = MergeEntityBgHierarchyEntrySource(Source, EEntityBgHierarchyEntrySource::LOCAL);
+	EXPECT_EQ(Source, EEntityBgHierarchyEntrySource::WORKSHOP);
 }
 
 TEST(AssetsResourceRegistry, WorkshopAliasesCoverNewResourceTabs)

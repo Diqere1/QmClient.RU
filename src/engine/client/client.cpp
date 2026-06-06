@@ -5909,6 +5909,16 @@ int main(int argc, const char **argv)
 		pFuturePerfFileLogger->Set(log_logger_noop());
 	}
 
+#if defined(CONF_FAMILY_WINDOWS)
+	if(g_Config.m_QmProcessHighPriority)
+	{
+		if(SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS))
+			log_info("client", "applied Windows high priority class");
+		else
+			log_error("client", "failed to apply Windows high priority class (error=%lu)", GetLastError());
+	}
+#endif
+
 	// Register protocol and file extensions
 #if defined(CONF_FAMILY_WINDOWS)
 	pClient->ShellRegister();

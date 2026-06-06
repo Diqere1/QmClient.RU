@@ -60,6 +60,8 @@ bool AssetResourceNameLess(std::string_view LeftName, std::string_view RightName
 void EnsureDefaultAssetVisible(std::vector<std::string> &vAssetNames);
 bool IsEntityBgWorkshopFolderPath(const char *pPath);
 bool HasEntityBgWorkshopFolder(const std::vector<std::string> &vAssetNames, const std::unordered_map<std::string, EEntityBgHierarchyEntrySource> *pAssetSources = nullptr);
+bool IsEntityBgWorkshopRootEntry(const SEntityBgHierarchyEntry &Entry);
+EEntityBgHierarchyEntrySource MergeEntityBgHierarchyEntrySource(EEntityBgHierarchyEntrySource Existing, EEntityBgHierarchyEntrySource Incoming);
 std::string RebuildEntityBgWorkshopLocalName(std::string_view InstallPath);
 std::string NormalizeEntityBgWorkshopInstallPath(std::string_view InstallPath);
 bool EntityBgHierarchyEntryLess(const SEntityBgHierarchyEntry &Left, const SEntityBgHierarchyEntry &Right);

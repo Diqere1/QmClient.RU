@@ -198,12 +198,15 @@ public:
 
 		char m_aName[IO_MAX_PATH_LENGTH];
 		char m_aDisplayName[IO_MAX_PATH_LENGTH] = "";
+		char m_aAuthor[128] = "";
 		std::shared_ptr<IJob> m_pDecodeJob;
 		EPreviewState m_PreviewState = PREVIEW_STATE_UNLOADED;
 		CImageInfo m_PreviewImage;
 		unsigned m_PreviewEpoch = 0;
 		size_t m_PreviewListIndex = 0;
 		size_t m_PreviewBytes = 0;
+		int m_PreviewRequestedTextureSize = 0;
+		size_t m_PreviewResidentBytes = 0;
 		bool m_PreviewResized = false;
 		bool m_PreviewHighPriority = false;
 
@@ -216,11 +219,14 @@ public:
 			m_PreviewEpoch(Other.m_PreviewEpoch),
 			m_PreviewListIndex(Other.m_PreviewListIndex),
 			m_PreviewBytes(Other.m_PreviewBytes),
+			m_PreviewRequestedTextureSize(Other.m_PreviewRequestedTextureSize),
+			m_PreviewResidentBytes(Other.m_PreviewResidentBytes),
 			m_PreviewResized(Other.m_PreviewResized),
 			m_PreviewHighPriority(Other.m_PreviewHighPriority)
 		{
 			str_copy(m_aName, Other.m_aName);
 			str_copy(m_aDisplayName, Other.m_aDisplayName);
+			str_copy(m_aAuthor, Other.m_aAuthor);
 			if(Other.m_PreviewImage.m_pData != nullptr)
 				m_PreviewImage = Other.m_PreviewImage.DeepCopy();
 		}
@@ -233,6 +239,7 @@ public:
 			m_RenderTexture = Other.m_RenderTexture;
 			str_copy(m_aName, Other.m_aName);
 			str_copy(m_aDisplayName, Other.m_aDisplayName);
+			str_copy(m_aAuthor, Other.m_aAuthor);
 			m_pDecodeJob = Other.m_pDecodeJob;
 			m_PreviewState = Other.m_PreviewState;
 			m_PreviewImage.Free();
@@ -241,6 +248,8 @@ public:
 			m_PreviewEpoch = Other.m_PreviewEpoch;
 			m_PreviewListIndex = Other.m_PreviewListIndex;
 			m_PreviewBytes = Other.m_PreviewBytes;
+			m_PreviewRequestedTextureSize = Other.m_PreviewRequestedTextureSize;
+			m_PreviewResidentBytes = Other.m_PreviewResidentBytes;
 			m_PreviewResized = Other.m_PreviewResized;
 			m_PreviewHighPriority = Other.m_PreviewHighPriority;
 			return *this;
@@ -1587,7 +1596,7 @@ public:
 
 	bool IsActive() const { return m_MenuActive; }
 	bool IsSettingsPageActive() const;
-	SSettingsResourceFrameContext SettingsResourceFrameContext() const { return {m_SettingsScrollActive, m_SettingsPostScrollRecoveryFrames, m_SettingsHighPrioritySettled}; }
+	SSettingsResourceFrameContext SettingsResourceFrameContext() const { return {m_SettingsScrollActive, false, m_SettingsPostScrollRecoveryFrames, m_SettingsHighPrioritySettled}; }
 	void SetActive(bool Active);
 
 	void OnInterfacesInit(CGameClient *pClient) override;

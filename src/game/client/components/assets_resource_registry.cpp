@@ -108,6 +108,22 @@ bool HasEntityBgWorkshopFolder(const std::vector<std::string> &vAssetNames, cons
 	});
 }
 
+bool IsEntityBgWorkshopRootEntry(const SEntityBgHierarchyEntry &Entry)
+{
+	return Entry.m_IsDirectory &&
+		Entry.m_Source == EEntityBgHierarchyEntrySource::WORKSHOP &&
+		str_comp(Entry.m_aName, "entity_bg") == 0;
+}
+
+EEntityBgHierarchyEntrySource MergeEntityBgHierarchyEntrySource(EEntityBgHierarchyEntrySource Existing, EEntityBgHierarchyEntrySource Incoming)
+{
+	if(Existing == EEntityBgHierarchyEntrySource::WORKSHOP || Incoming == EEntityBgHierarchyEntrySource::WORKSHOP)
+		return EEntityBgHierarchyEntrySource::WORKSHOP;
+	if(Existing == EEntityBgHierarchyEntrySource::LOCAL || Incoming == EEntityBgHierarchyEntrySource::LOCAL)
+		return EEntityBgHierarchyEntrySource::LOCAL;
+	return Incoming;
+}
+
 bool IsProtectedDefaultAsset(std::string_view AssetName)
 {
 	return AssetName == "default";
@@ -289,6 +305,11 @@ bool EntityBgHierarchyEntryLess(const SEntityBgHierarchyEntry &Left, const SEnti
 	const bool RightIsParent = str_comp(Right.m_aName, "..") == 0;
 	if(LeftIsParent != RightIsParent)
 		return LeftIsParent;
+
+	const bool LeftIsWorkshopRoot = IsEntityBgWorkshopRootEntry(Left);
+	const bool RightIsWorkshopRoot = IsEntityBgWorkshopRootEntry(Right);
+	if(LeftIsWorkshopRoot != RightIsWorkshopRoot)
+		return LeftIsWorkshopRoot;
 
 	if(Left.m_IsDirectory != Right.m_IsDirectory)
 		return Left.m_IsDirectory;

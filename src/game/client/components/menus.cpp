@@ -4299,6 +4299,7 @@ void CMenus::OnWindowResize()
 void CMenus::OnRender()
 {
 	CPerfTimer FrameTimer;
+
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		SetActive(true);
 
