@@ -167,7 +167,7 @@ class CTClient : public CComponent
 		ColorRGBA m_Color = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
 	};
 	static constexpr int FREEZE_WAKEUP_POPUP_MAX = 8;
-	static constexpr int TEXT_POPUP_TEXTURE_MAX = 5;
+	static constexpr int TEXT_POPUP_TEXTURE_MAX = 1;
 	struct STextPopupCache
 	{
 		STextContainerIndex m_TextContainerIndex;
@@ -219,6 +219,7 @@ class CTClient : public CComponent
 	bool m_aGoresMapProgressValid[NUM_DUMMIES] = {false, false};
 	float m_aGoresMapProgress[NUM_DUMMIES] = {0.0f, 0.0f};
 	bool IsGoresGameMode() const;
+	bool IsGoresMapProgressMap() const;
 	bool IsGoresModuleEnabled() const;
 	bool HasBlockingGoresWeapon() const;
 	void UpdateGoresWeaponCycle();
