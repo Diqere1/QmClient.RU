@@ -109,7 +109,6 @@ namespace
 
 	struct SSettingsPreviewSkinKey
 	{
-<<<<<<< HEAD
 		char m_aSkinName[MAX_SKIN_LENGTH] = {};
 		int m_UseCustomColor = 0;
 		int m_ColorBody = 0;
