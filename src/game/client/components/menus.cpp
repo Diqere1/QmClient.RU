@@ -51,101 +51,104 @@
 
 extern bool gs_SettingsAssetsEntityGamePreview;
 
-namespace {
-class CUiRenderOnlyScope
+namespace
 {
-public:
-	explicit CUiRenderOnlyScope(CUi *pUi) :
-		m_pUi(pUi)
+	class CUiRenderOnlyScope
 	{
-		m_pUi->BeginRenderOnly();
+	public:
+		explicit CUiRenderOnlyScope(CUi *pUi) :
+			m_pUi(pUi)
+		{
+			m_pUi->BeginRenderOnly();
+		}
+
+		~CUiRenderOnlyScope()
+		{
+			m_pUi->EndRenderOnly();
+		}
+
+	private:
+		CUi *m_pUi;
+	};
+
+	uint64_t HashMenuCacheValue(uint64_t Hash, int Value)
+	{
+		const uint8_t *pBytes = reinterpret_cast<const uint8_t *>(&Value);
+		for(size_t i = 0; i < sizeof(Value); ++i)
+		{
+			Hash ^= pBytes[i];
+			Hash *= 1099511628211ull;
+		}
+		return Hash;
 	}
 
-	~CUiRenderOnlyScope()
+	uint64_t HashSettingsPageConfig()
 	{
-		m_pUi->EndRenderOnly();
-	}
-
-private:
-	CUi *m_pUi;
-};
-
-uint64_t HashMenuCacheValue(uint64_t Hash, int Value)
-{
-	const uint8_t *pBytes = reinterpret_cast<const uint8_t *>(&Value);
-	for(size_t i = 0; i < sizeof(Value); ++i)
-	{
-		Hash ^= pBytes[i];
-		Hash *= 1099511628211ull;
-	}
-	return Hash;
-}
-
-uint64_t HashSettingsPageConfig()
-{
-	uint64_t Hash = 1469598103934665603ull;
+		uint64_t Hash = 1469598103934665603ull;
 #define MACRO_CONFIG_INT(Name, ScriptName, Def, Min, Max, Save, Desc) Hash = HashMenuCacheValue(Hash, g_Config.m_##Name);
 #define MACRO_CONFIG_COL(Name, ScriptName, Def, Save, Desc) Hash = HashMenuCacheValue(Hash, g_Config.m_##Name);
-#define MACRO_CONFIG_STR(Name, ScriptName, Len, Def, Save, Desc) Hash ^= str_quickhash(g_Config.m_##Name); Hash *= 1099511628211ull;
+#define MACRO_CONFIG_STR(Name, ScriptName, Len, Def, Save, Desc) \
+	Hash ^= str_quickhash(g_Config.m_##Name); \
+	Hash *= 1099511628211ull;
 #define SET_CONFIG_DOMAIN(ConfigDomain) ;
 #include <engine/shared/config_includes.h>
 #undef MACRO_CONFIG_INT
 #undef MACRO_CONFIG_COL
 #undef MACRO_CONFIG_STR
 #undef SET_CONFIG_DOMAIN
-	return Hash;
-}
+		return Hash;
+	}
 
-uint64_t HashSettingsPageLayoutState(int Page, int Tab)
-{
-	uint64_t Hash = 1469598103934665603ull;
-	Hash = HashMenuCacheValue(Hash, Page);
-	Hash = HashMenuCacheValue(Hash, Tab);
-	if(Page == CMenus::SETTINGS_ASSETS)
-		Hash = HashMenuCacheValue(Hash, gs_SettingsAssetsEntityGamePreview ? 1 : 0);
-	return Hash;
-}
-
-int CanonicalizeTClientCacheTab(int Tab)
-{
-	static constexpr int TCLIENT_CACHE_SLOTS = 6;
-	auto IsTabHidden = [](int Candidate) {
-		return (g_Config.m_TcTClientSettingsTabs & (1 << Candidate)) != 0;
-	};
-	if(Tab < 0 || Tab >= TCLIENT_CACHE_SLOTS || IsTabHidden(Tab))
+	uint64_t HashSettingsPageLayoutState(int Page, int Tab)
 	{
-		for(int Candidate = 0; Candidate < TCLIENT_CACHE_SLOTS; ++Candidate)
+		uint64_t Hash = 1469598103934665603ull;
+		Hash = HashMenuCacheValue(Hash, Page);
+		Hash = HashMenuCacheValue(Hash, Tab);
+		if(Page == CMenus::SETTINGS_ASSETS)
+			Hash = HashMenuCacheValue(Hash, gs_SettingsAssetsEntityGamePreview ? 1 : 0);
+		return Hash;
+	}
+
+	int CanonicalizeTClientCacheTab(int Tab)
+	{
+		static constexpr int TCLIENT_CACHE_SLOTS = 6;
+		auto IsTabHidden = [](int Candidate) {
+			return (g_Config.m_TcTClientSettingsTabs & (1 << Candidate)) != 0;
+		};
+		if(Tab < 0 || Tab >= TCLIENT_CACHE_SLOTS || IsTabHidden(Tab))
 		{
-			if(!IsTabHidden(Candidate))
-				return Candidate;
+			for(int Candidate = 0; Candidate < TCLIENT_CACHE_SLOTS; ++Candidate)
+			{
+				if(!IsTabHidden(Candidate))
+					return Candidate;
+			}
+			return 0;
 		}
-		return 0;
+		return Tab;
 	}
-	return Tab;
-}
 
-SSettingsSectionCacheRuntimeKey MakeSettingsPageRuntimeKey(CUIRect View, IGraphics *pGraphics, int Page, int Tab, float ScrollY)
-{
-	SSettingsSectionCacheRuntimeKey RuntimeKey;
-	RuntimeKey.m_ViewportWidth = std::max(1, (int)View.w);
-	RuntimeKey.m_ViewportHeight = std::max(1, (int)View.h);
-	RuntimeKey.m_ConfigHash = HashSettingsPageConfig();
-	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, Page);
-	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, Tab);
-	RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, (int)std::round(ScrollY));
-	RuntimeKey.m_ConfigHash ^= HashSettingsPageLayoutState(Page, Tab);
-	RuntimeKey.m_ConfigHash *= 1099511628211ull;
-	RuntimeKey.m_LanguageHash = str_quickhash(g_Config.m_ClLanguagefile);
-	RuntimeKey.m_FontHash = str_quickhash(g_Config.m_TcCustomFont);
-	RuntimeKey.m_BackendHash = str_quickhash(g_Config.m_GfxBackend);
-	if(pGraphics)
+	SSettingsSectionCacheRuntimeKey MakeSettingsPageRuntimeKey(CUIRect View, IGraphics *pGraphics, int Page, int Tab, float ScrollY)
 	{
-		RuntimeKey.m_UiScale = std::max(1, (int)std::round(pGraphics->ScreenHiDPIScale() * 100.0f));
-		RuntimeKey.m_WindowHash = HashMenuCacheValue(1469598103934665603ull, pGraphics->WindowWidth());
-		RuntimeKey.m_WindowHash = HashMenuCacheValue(RuntimeKey.m_WindowHash, pGraphics->WindowHeight());
+		SSettingsSectionCacheRuntimeKey RuntimeKey;
+		RuntimeKey.m_ViewportWidth = SettingsRuntimeCacheDimensionKey(View.w);
+		RuntimeKey.m_ViewportHeight = SettingsRuntimeCacheDimensionKey(View.h);
+		RuntimeKey.m_ConfigHash = HashSettingsPageConfig();
+		RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, Page);
+		RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, Tab);
+		RuntimeKey.m_ConfigHash = HashMenuCacheValue(RuntimeKey.m_ConfigHash, SettingsRuntimeCacheRoundedKey(ScrollY));
+		RuntimeKey.m_ConfigHash ^= HashSettingsPageLayoutState(Page, Tab);
+		RuntimeKey.m_ConfigHash *= 1099511628211ull;
+		RuntimeKey.m_LanguageHash = str_quickhash(g_Config.m_ClLanguagefile);
+		RuntimeKey.m_FontHash = str_quickhash(g_Config.m_TcCustomFont);
+		RuntimeKey.m_BackendHash = str_quickhash(g_Config.m_GfxBackend);
+		if(pGraphics)
+		{
+			RuntimeKey.m_UiScale = SettingsRuntimeCachePositiveRoundedKey(pGraphics->ScreenHiDPIScale() * 100.0f);
+			RuntimeKey.m_WindowHash = HashMenuCacheValue(1469598103934665603ull, pGraphics->WindowWidth());
+			RuntimeKey.m_WindowHash = HashMenuCacheValue(RuntimeKey.m_WindowHash, pGraphics->WindowHeight());
+		}
+		return RuntimeKey;
 	}
-	return RuntimeKey;
-}
 
 }
 
@@ -1526,10 +1529,11 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			Box.VSplitRight(10.0f, &Box, nullptr);
 			Box.VSplitRight(33.0f, &Box, &Button);
 			static CButtonContainer s_DemoButton;
-			if(DoButton_MenuTab(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &Button, IGraphics::CORNER_T, &m_aAnimatorsSmallPage[SMALL_TAB_DEMOBUTTON]))
+			if(DoMenuTabV2(&s_DemoButton, FONT_ICON_CLAPPERBOARD, ActivePage == PAGE_DEMOS, &Button))
 			{
 				NewPage = PAGE_DEMOS;
 			}
+			MenubarTrackActive(PAGE_DEMOS, Button);
 			GameClient()->m_Tooltips.DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
 			Box.VSplitRight(10.0f, &Box, nullptr);
 
@@ -1805,6 +1809,23 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		const CUIRect IndicatorRect = ResolveUiAnimValueRect(AnimRt, IndicatorNode, IndicatorTarget, ui_curve::EMPHASIZED.m_DurationSec, ui_curve::EMPHASIZED.m_Easing);
 		const ColorRGBA IndicatorColor = g_Config.m_QmNewUi != 0 ? MenuUiColorAccent(1.0f) : ui_token::color::ACCENT_PRIMARY;
 		IndicatorRect.Draw(IndicatorColor, IGraphics::CORNER_ALL, 1.5f);
+	}
+
+	// Draw a 2px ui_color underline below the active tab. The X/W position
+	// eases between tabs via the v2 runtime so changing pages glides instead of
+	// snapping. Indicator is omitted when there is no determinable active tab.
+	if(MenubarHaveActive)
+	{
+		CUIRect IndicatorTarget;
+		IndicatorTarget.x = MenubarActiveRect.x + MenubarActiveRect.w * 0.15f;
+		IndicatorTarget.y = MenubarActiveRect.y + MenubarActiveRect.h - 2.0f;
+		IndicatorTarget.w = MenubarActiveRect.w * 0.70f;
+		IndicatorTarget.h = 2.0f;
+
+		const uint64_t IndicatorNode = BuildUiAnimNodeKey(MakeUiScopeHash("menubar_v2_indicator"), static_cast<uint64_t>(ClientState));
+		CUiV2AnimationRuntime &AnimRt = GameClient()->UiRuntimeV2()->AnimRuntime();
+		const CUIRect IndicatorRect = ResolveUiAnimValueRect(AnimRt, IndicatorNode, IndicatorTarget, ui_curve::EMPHASIZED.m_DurationSec, ui_curve::EMPHASIZED.m_Easing);
+		IndicatorRect.Draw(MenuUiColorAccent(1.0f), IGraphics::CORNER_NONE, 0.0f);
 	}
 
 	if(NewPage != -1)
@@ -2220,7 +2241,7 @@ void CMenus::PrewarmSettingsPages()
 	g_CommandBindCacheInitialized = true;
 
 	// Preload skin list to avoid lag when first entering settings
-	GameClient()->m_Skins.SkinList();
+	GameClient()->m_Skins.SkinList(0);
 }
 
 void CMenus::ConchainBackgroundEntities(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -2464,12 +2485,12 @@ void CMenus::Render()
 				Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) ||
 				Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
 			const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(
-				SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),
-				true,
+				SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi),
+				m_MenuPage == PAGE_SETTINGS,
 				Ui()->ActiveItem() != nullptr,
 				Ui()->HotItem() != nullptr,
 				ScrollInputActive,
-				m_SettingsPageSwitchActive,
+				m_SettingsPageSwitchActive || TransitionActive,
 				m_SettingsScrollActive);
 			if(CanPrewarmSettings)
 				(void)PrewarmSettingsRuntimeCaches(MainView);
@@ -2560,12 +2581,12 @@ void CMenus::Render()
 				Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) ||
 				Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
 			const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(
-				SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),
-				true,
+				SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi),
+				m_GamePage == PAGE_SETTINGS,
 				Ui()->ActiveItem() != nullptr,
 				Ui()->HotItem() != nullptr,
 				ScrollInputActive,
-				m_SettingsPageSwitchActive,
+				m_SettingsPageSwitchActive || TransitionActive,
 				m_SettingsScrollActive);
 			if(CanPrewarmSettings)
 				(void)PrewarmSettingsRuntimeCaches(MainView);
@@ -3908,7 +3929,7 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 {
 	Page = SettingsCanonicalPage(Page);
 	const int64_t PerfStartTime = PerfDebugStartTime();
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 	{
 		LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", ESettingsWarmupMissReason::PAGE_FBO_UNSUPPORTED, PerfDebugElapsedMs(PerfStartTime));
 		return false;
@@ -4023,7 +4044,7 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 		const int SavedTab = m_QmClientSettingsTab;
 		if(Tab >= 0)
 			m_QmClientSettingsTab = Tab;
-		RenderSettingsQmClient(CacheView);
+		RenderSettingsQmClient(CacheView, false, true);
 		m_QmClientSettingsTab = SavedTab;
 	}
 	Graphics()->MapScreen(ScreenTLX, ScreenTLY, ScreenBRX, ScreenBRY);
@@ -4084,7 +4105,7 @@ bool CMenus::PrewarmSettingsPageResources(int Page, int Tab, const CUIRect &Cont
 bool CMenus::DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY)
 {
 	const int64_t PerfStartTime = PerfDebugStartTime();
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 	{
 		LogSettingsWarmupPerf(Page, Tab, "miss", "n/a", ESettingsWarmupMissReason::PAGE_FBO_UNSUPPORTED, PerfDebugElapsedMs(PerfStartTime));
 		return false;
@@ -4167,7 +4188,7 @@ bool CMenus::PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, i
 		LogSettingsWarmupPerf(Page, Tab, "n/a", "miss", ESettingsWarmupMissReason::SECTION_FBO_NOT_READY, PerfDebugElapsedMs(PerfStartTime));
 		return false;
 	}
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache) || !Graphics()->IsRenderTargetSupported())
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi) || !Graphics()->IsRenderTargetSupported())
 	{
 		LogSettingsWarmupPerf(Page, Tab, "n/a", "miss", ESettingsWarmupMissReason::PAGE_FBO_UNSUPPORTED, PerfDebugElapsedMs(PerfStartTime));
 		return false;
@@ -4181,8 +4202,8 @@ bool CMenus::PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, i
 	CSectionLoader *pLoader = nullptr;
 	const char *pLoaderSectionName = nullptr;
 	const bool Prepared = Page == SETTINGS_TCLIENT && Tab == 0 ?
-		PrepareTClientSettingsRuntimeCacheSection(SectionView, pSectionId, pLoader, pLoaderSectionName) :
-		PrepareGenericSettingsRuntimeCacheSection(SectionView, Page, Tab, pSectionId, pLoader, pLoaderSectionName);
+				      PrepareTClientSettingsRuntimeCacheSection(SectionView, pSectionId, pLoader, pLoaderSectionName) :
+				      PrepareGenericSettingsRuntimeCacheSection(SectionView, Page, Tab, pSectionId, pLoader, pLoaderSectionName);
 	if(!Prepared || pLoader == nullptr || pLoaderSectionName == nullptr)
 	{
 		LogSettingsWarmupPerf(Page, Tab, "n/a", "miss", ESettingsWarmupMissReason::SECTION_FBO_NOT_READY, PerfDebugElapsedMs(PerfStartTime));
@@ -4196,7 +4217,7 @@ bool CMenus::PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, i
 bool CMenus::DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId)
 {
 	const int64_t PerfStartTime = PerfDebugStartTime();
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 	{
 		LogSettingsWarmupPerf(Page, Tab, "n/a", "miss", ESettingsWarmupMissReason::PAGE_FBO_UNSUPPORTED, PerfDebugElapsedMs(PerfStartTime));
 		return false;
@@ -4211,8 +4232,8 @@ bool CMenus::DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int 
 	CSectionLoader *pLoader = nullptr;
 	const char *pLoaderSectionName = nullptr;
 	const bool Prepared = Page == SETTINGS_TCLIENT && Tab == 0 ?
-		PrepareTClientSettingsRuntimeCacheSection(SectionView, pSectionId, pLoader, pLoaderSectionName) :
-		PrepareGenericSettingsRuntimeCacheSection(SectionView, Page, Tab, pSectionId, pLoader, pLoaderSectionName);
+				      PrepareTClientSettingsRuntimeCacheSection(SectionView, pSectionId, pLoader, pLoaderSectionName) :
+				      PrepareGenericSettingsRuntimeCacheSection(SectionView, Page, Tab, pSectionId, pLoader, pLoaderSectionName);
 	if(!Prepared || pLoader == nullptr || pLoaderSectionName == nullptr)
 	{
 		LogSettingsWarmupPerf(Page, Tab, "n/a", "miss", ESettingsWarmupMissReason::SECTION_FBO_NOT_READY, PerfDebugElapsedMs(PerfStartTime));
@@ -4230,8 +4251,8 @@ void CMenus::InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char
 	CSectionLoader *pLoader = nullptr;
 	const char *pLoaderSectionName = nullptr;
 	const bool Prepared = Page == SETTINGS_TCLIENT && Tab == 0 ?
-		PrepareTClientSettingsRuntimeCacheSection(CUIRect{}, pSectionId, pLoader, pLoaderSectionName, false) :
-		PrepareGenericSettingsRuntimeCacheSection(CUIRect{}, Page, Tab, pSectionId, pLoader, pLoaderSectionName, false);
+				      PrepareTClientSettingsRuntimeCacheSection(CUIRect{}, pSectionId, pLoader, pLoaderSectionName, false) :
+				      PrepareGenericSettingsRuntimeCacheSection(CUIRect{}, Page, Tab, pSectionId, pLoader, pLoaderSectionName, false);
 	if(!Prepared || pLoader == nullptr || pLoaderSectionName == nullptr)
 		return;
 	pLoader->InvalidateSectionByName(pLoaderSectionName);

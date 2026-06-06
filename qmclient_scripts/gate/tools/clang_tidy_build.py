@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 CLANG_VERSION = os.environ.get("CLANG_VERSION", "22")
 BUILD_DIR = REPO_ROOT / os.environ.get("CLANG_TIDY_BUILD_DIR", "build-clang-tidy")
 BUILD_TARGET = os.environ.get("CLANG_TIDY_TARGET", "game-client")

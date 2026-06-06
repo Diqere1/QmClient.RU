@@ -35,11 +35,10 @@
 #include <game/client/ui_scrollregion.h>
 #include <game/localization.h>
 
-#include <inttypes.h>
-
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cinttypes>
 #include <cstdint>
 #include <memory>
 #include <numeric>
@@ -306,6 +305,12 @@ namespace
 	void ResetTeeSettingsPageState()
 	{
 		gs_TeeSettingsPageState = {};
+	}
+
+	ColorRGBA SettingsUiColorSurface(float AlphaScale, float ColorScale)
+	{
+		const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
+		return ui_token::color::UiColorSurface(UiColor, AlphaScale, ColorScale);
 	}
 
 }
@@ -752,10 +757,17 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
 void CMenus::SetNeedSendInfo()
 {
+	bool &NeedSendInfo = m_Dummy ? m_NeedSendDummyinfo : m_NeedSendinfo;
+	NeedSendInfo = true;
+
+	if(Client()->State() != IClient::STATE_ONLINE)
+		return;
+
 	if(m_Dummy)
-		m_NeedSendDummyinfo = true;
+		GameClient()->SendDummyInfo(false);
 	else
-		m_NeedSendinfo = true;
+		GameClient()->SendInfo(false);
+	NeedSendInfo = false;
 }
 
 CUi::EPopupMenuFunctionResult CMenus::PopupSettingsCountrySelection(void *pContext, CUIRect View, bool Active)
@@ -925,15 +937,6 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 			DrawRow(Row);
 		}
 	};
-
-	if(Client()->State() == IClient::STATE_ONLINE &&
-		GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
-	{
-		char aChangeInfo[128], aTimeLeft[32];
-		str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[m_Dummy] - Client()->GameTick(m_Dummy) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
-		str_format(aChangeInfo, sizeof(aChangeInfo), "%s: %s", Localize("Player info change cooldown"), aTimeLeft);
-		Ui()->DoLabel(&ChangeInfo, aChangeInfo, 10.f, TEXTALIGN_ML);
-	}
 
 	static CLineInput s_NameInput;
 	static CLineInput s_ClanInput;
@@ -1118,15 +1121,6 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	float TransitionOffset = 0.0f;
 	bool TransitionActive = TransitionStrength > 0.0f && s_TeeTabTransitionDirection != 0.0f;
 
-	if(s_TeeSubTab != 2 && Client()->State() == IClient::STATE_ONLINE &&
-		GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
-	{
-		char aChangeInfo[128], aTimeLeft[32];
-		str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[m_Dummy] - Client()->GameTick(m_Dummy) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
-		str_format(aChangeInfo, sizeof(aChangeInfo), "%s: %s", Localize("Player info change cooldown"), aTimeLeft);
-		Ui()->DoLabel(&ChangeInfo, aChangeInfo, 10.f, TEXTALIGN_ML);
-	}
-
 	if(g_Config.m_Debug)
 	{
 		const CSkins::CSkinLoadingStats Stats = GameClient()->m_Skins.LoadingStats();
@@ -1281,8 +1275,8 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	str_format(aBuf, sizeof(aBuf), "%s:", Localize("Your skin"));
 	Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
 
-	CSkins::CSkinList &SkinList = GameClient()->m_Skins.SkinList();
 	const int QueueDummy = m_Dummy;
+	CSkins::CSkinList &SkinList = GameClient()->m_Skins.SkinList(QueueDummy);
 	int &QueueInterval = m_Dummy ? g_Config.m_QmDummySkinQueueInterval : g_Config.m_QmSkinQueueInterval;
 	int &QueueLength = m_Dummy ? g_Config.m_QmDummySkinQueueLength : g_Config.m_QmSkinQueueLength;
 	int &QueueIndex = m_Dummy ? g_Config.m_QmDummySkinQueueIndex : g_Config.m_QmSkinQueueIndex;
@@ -1916,6 +1910,10 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	{
 		CSkins::CSkinListEntry &SkinListEntry = vSkinList[i];
 		const CSkins::CSkinContainer *pSkinContainer = vSkinList[i].SkinContainer();
+		const auto &EntryColorKey = SkinListEntry.ColorKey();
+		const bool EntryUseCustomColor = EntryColorKey.has_value() ? EntryColorKey->m_UseCustomColor : *pUseCustomColor != 0;
+		const int EntryColorBody = EntryColorKey.has_value() ? EntryColorKey->m_ColorBody : (int)*pColorBody;
+		const int EntryColorFeet = EntryColorKey.has_value() ? EntryColorKey->m_ColorFeet : (int)*pColorFeet;
 
 		if(!m_Dummy ? SkinListEntry.IsSelectedMain() : SkinListEntry.IsSelectedDummy())
 		{
@@ -1976,22 +1974,36 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			Ui()->ClipDisable();
 		}
 		{
+			CUIRect LabelContent = Label;
+			if(EntryColorKey.has_value())
+			{
+				CUIRect Swatches, BodySwatch, FeetSwatch;
+				LabelContent.VSplitLeft(20.0f, &Swatches, &LabelContent);
+				Swatches.HMargin((Swatches.h - 16.0f) / 2.0f, &Swatches);
+				Swatches.VSplitLeft(8.0f, &BodySwatch, &Swatches);
+				Swatches.VSplitLeft(2.0f, nullptr, &Swatches);
+				Swatches.VSplitLeft(8.0f, &FeetSwatch, nullptr);
+				const ColorRGBA BodyColor = EntryUseCustomColor ? color_cast<ColorRGBA>(ColorHSLA(EntryColorBody).UnclampLighting(ColorHSLA::DARKEST_LGT)) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.45f);
+				const ColorRGBA FeetColor = EntryUseCustomColor ? color_cast<ColorRGBA>(ColorHSLA(EntryColorFeet).UnclampLighting(ColorHSLA::DARKEST_LGT)) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.45f);
+				BodySwatch.Draw(BodyColor, IGraphics::CORNER_ALL, 2.0f);
+				FeetSwatch.Draw(FeetColor, IGraphics::CORNER_ALL, 2.0f);
+			}
 			SLabelProperties Props;
-			Props.m_MaxWidth = Label.w - 5.0f;
+			Props.m_MaxWidth = LabelContent.w - 5.0f;
 			const auto &NameMatch = SkinListEntry.NameMatch();
 			if(NameMatch.has_value())
 			{
 				const auto [MatchStart, MatchLength] = NameMatch.value();
 				Props.m_vColorSplits.emplace_back(MatchStart, MatchLength, ColorRGBA(0.4f, 0.4f, 1.0f, 1.0f));
 			}
-			Ui()->DoLabel(&Label, pSkinContainer->Name(), 12.0f, TEXTALIGN_ML, Props);
+			Ui()->DoLabel(&LabelContent, pSkinContainer->Name(), 12.0f, TEXTALIGN_ML, Props);
 		}
 
 		if(g_Config.m_Debug)
 		{
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(*pUseCustomColor ? color_cast<ColorRGBA>(ColorHSLA(*pColorBody).UnclampLighting(ColorHSLA::DARKEST_LGT)) : pSkin->m_BloodColor);
+			Graphics()->SetColor(EntryUseCustomColor ? color_cast<ColorRGBA>(ColorHSLA(EntryColorBody).UnclampLighting(ColorHSLA::DARKEST_LGT)) : pSkin->m_BloodColor);
 			IGraphics::CQuadItem QuadItem(Label.x, Label.y, 12.0f, 12.0f);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
@@ -2004,17 +2016,17 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			IconRow.VSplitRight(20.0f, &IconRow, &FavIcon);
 			IconRow.VSplitRight(2.0f, &IconRow, nullptr);
 			IconRow.VSplitRight(20.0f, &IconRow, &QueueIcon);
-			const bool InQueue = GameClient()->m_Skins.IsInSkinQueue(pSkinContainer->Name(), *pUseCustomColor != 0, *pColorBody, *pColorFeet, QueueDummy);
+			const bool InQueue = GameClient()->m_Skins.IsInSkinQueue(pSkinContainer->Name(), EntryUseCustomColor, EntryColorBody, EntryColorFeet, QueueDummy);
 			const bool QueueFull = !InQueue && (int)SkinQueue.size() >= QueueLength;
 			if(DoButtonSkinQueue(&s_vQueueButtonIds[i], SkinListEntry.ListItemId(), InQueue, QueueFull, &QueueIcon))
 			{
 				if(InQueue)
 				{
-					GameClient()->m_Skins.RemoveSkinQueue(pSkinContainer->Name(), *pUseCustomColor != 0, *pColorBody, *pColorFeet, QueueDummy);
+					GameClient()->m_Skins.RemoveSkinQueue(pSkinContainer->Name(), EntryUseCustomColor, EntryColorBody, EntryColorFeet, QueueDummy);
 				}
 				else
 				{
-					GameClient()->m_Skins.AddSkinQueue(pSkinContainer->Name(), *pUseCustomColor != 0, *pColorBody, *pColorFeet, QueueDummy);
+					GameClient()->m_Skins.AddSkinQueue(pSkinContainer->Name(), EntryUseCustomColor, EntryColorBody, EntryColorFeet, QueueDummy);
 				}
 			}
 			const char *pQueueTooltip = QueueFull && !InQueue ? Localize("Queue is full") : (InQueue ? Localize("Remove from queue") : Localize("Add to queue"));
@@ -2115,9 +2127,9 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	const int FirstVisibleIndex = !vVisibleSkinIndices.empty() ? (int)vVisibleSkinIndices.front() : -1;
 	const int LastVisibleIndex = !vVisibleSkinIndices.empty() ? (int)vVisibleSkinIndices.back() : -1;
 	const bool FirstVisibleReady = !vVisibleSkinIndices.empty() &&
-		(vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::LOADED ||
-			vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::ERROR ||
-			vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::NOT_FOUND);
+				       (vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::LOADED ||
+					       vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::ERROR ||
+					       vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::NOT_FOUND);
 	const bool FullListReady = !vSkinList.empty() && TotalReadyCount == (int)vSkinList.size();
 	const int64_t NowNs = time_get_nanoseconds().count();
 	if(!gs_TeeSettingsPageState.m_TeePageActiveLastFrame)
@@ -2340,7 +2352,18 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	{
 		if(NewSelected >= 0 && NewSelected < (int)vSkinList.size())
 		{
-			str_copy(pSkinName, vSkinList[NewSelected].SkinContainer()->Name(), SkinNameSize);
+			const CSkins::CSkinListEntry &SelectedSkinEntry = vSkinList[NewSelected];
+			str_copy(pSkinName, SelectedSkinEntry.SkinContainer()->Name(), SkinNameSize);
+			if(SelectedSkinEntry.ColorKey().has_value())
+			{
+				const auto &SelectedColorKey = SelectedSkinEntry.ColorKey().value();
+				*pUseCustomColor = SelectedColorKey.m_UseCustomColor ? 1 : 0;
+				if(SelectedColorKey.m_UseCustomColor)
+				{
+					*pColorBody = SelectedColorKey.m_ColorBody;
+					*pColorFeet = SelectedColorKey.m_ColorFeet;
+				}
+			}
 			SkinList.ForceRefresh();
 			SetNeedSendInfo();
 		}
@@ -2420,7 +2443,9 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	CUIRect Button;
 	char aBuf[128];
 	bool CheckSettings = false;
-	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "") {
+	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "", unsigned Flags = 0u, int InputMax = -1) {
+		const bool Infinite = Flags & CUi::SCROLLBAR_OPTION_INFINITE;
+		const bool NoClampValue = Flags & CUi::SCROLLBAR_OPTION_NOCLAMPVALUE;
 		CUIRect Label, Controls, Slider, Input, SuffixRect;
 		const float InputWidth = 58.0f;
 		const float GapWidth = 6.0f;
@@ -2441,12 +2466,22 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		Slider.VMargin(1.0f, &Slider);
 		Input.VMargin(1.0f, &Input);
 		Ui()->DoLabel(&Label, pStr, Label.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_ML);
-		*pOption = pScale->ToAbsolute(Ui()->DoScrollbarH(pId, &Slider, pScale->ToRelative(*pOption, Min, Max)), Min, Max);
+		int SliderMax = Infinite ? Max + 1 : Max;
+		int SliderValue = *pOption;
+		if(Infinite && SliderValue == 0)
+			SliderValue = SliderMax;
+		SliderValue = std::clamp(SliderValue, Min, SliderMax);
+		SliderValue = pScale->ToAbsolute(Ui()->DoScrollbarH(pId, &Slider, pScale->ToRelative(SliderValue, Min, SliderMax)), Min, SliderMax);
+		if(Infinite && SliderValue == SliderMax)
+			SliderValue = 0;
+		*pOption = SliderValue;
 		SValueSelectorProperties Props;
 		Props.m_UseScroll = false;
 		Props.m_TextAlign = TEXTALIGN_MC;
 		Props.m_SelectAllOnActivate = false;
-		const auto Result = Ui()->DoValueSelectorWithState(reinterpret_cast<const void *>((uintptr_t)pId ^ 0x1), &Input, "", *pOption, Min, Max, Props);
+		const int SelectorMin = Infinite ? 0 : Min;
+		const int SelectorMax = InputMax >= 0 ? InputMax : (NoClampValue ? Max : SliderMax);
+		const auto Result = Ui()->DoValueSelectorWithState(reinterpret_cast<const void *>((uintptr_t)pId ^ 0x1), &Input, "", *pOption, SelectorMin, SelectorMax, Props);
 		*pOption = (int)Result.m_Value;
 		if(SuffixWidth > 0.0f)
 			Ui()->DoLabel(&SuffixRect, pSuffix, SuffixRect.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
@@ -2654,7 +2689,7 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	MainView.HSplitTop(20.0f, &Button, &MainView);
 	str_copy(aBuf, " ");
 	str_append(aBuf, Localize("Hz", "Hertz"));
-	DoSliderWithValueInput(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, aBuf);
+	DoSliderWithValueInput(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, aBuf, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, 10000);
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	static CButtonContainer s_UiColorResetId;
@@ -4206,8 +4241,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 				SettingsPageName(s_PrevSettingsPage), SettingsPageName(g_Config.m_UiSettingsPage));
 			QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings");
 		}
-		s_SettingsTransitionDirection = g_Config.m_UiSettingsPage > s_PrevSettingsPage ? 1.0f : -1.0f;
-		TriggerUiSwitchAnimation(SettingsPageSwitchNode, 0.18f);
+		s_SettingsTransitionDirection = UseNewSettingsUi ? (g_Config.m_UiSettingsPage > s_PrevSettingsPage ? 1.0f : -1.0f) : 0.0f;
+		if(UseNewSettingsUi)
+			TriggerUiSwitchAnimation(SettingsPageSwitchNode, 0.18f);
 		s_PrevSettingsPage = g_Config.m_UiSettingsPage;
 	}
 
@@ -4317,8 +4353,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 				RenderSettingsTClient(ContentView);
 			m_SettingsRuntimeMetadata.m_LastTClientTab = m_TClientSettingsTab;
 		}
-	else if(g_Config.m_UiSettingsPage == SETTINGS_QMCLIENT)
-	{
+		else if(g_Config.m_UiSettingsPage == SETTINGS_QMCLIENT)
+		{
 			GameClient()->m_MenuBackground.ChangePosition(15);
 			const char *pQmSection = m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONFIG ? "config" :
 													 (m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONTRIBUTORS ? "contributors" : "general");
@@ -5280,22 +5316,6 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		LeftView.HSplitTop(LineSize, &Button, &LeftView);
 		if(g_Config.m_ClShowDirection > 0)
 			Ui()->DoScrollbarOption(&g_Config.m_ClDirectionSize, &g_Config.m_ClDirectionSize, &Button, Localize("Size of key press icons"), -50, 100);
-
-		// ***** Name Plate Free Move ***** //
-		Ui()->DoLabel_AutoLineSize(Localize("Free move"), HeadlineFontSize, TEXTALIGN_ML, &RightView, HeadlineHeight);
-		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
-
-		RightView.HSplitTop(LineSize, &Button, &RightView);
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateFreeMoveX, Localize("X free move"), &g_Config.m_QmNameplateFreeMoveX, &Button, LineSize);
-		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
-
-		RightView.HSplitTop(LineSize, &Button, &RightView);
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmNameplateFreeMoveY, Localize("Y free move"), &g_Config.m_QmNameplateFreeMoveY, &Button, LineSize);
-		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
-
-		Ui()->DoLabel_AutoLineSize(Localize("Enable an axis, then drag visible nameplate rows in the preview."), 12.0f, TEXTALIGN_ML, &RightView, LineSize * 2.0f);
-
-		RightView.HSplitTop(MarginBetweenViews, nullptr, &RightView);
 
 		// ***** Name Plate Preview ***** //
 		Ui()->DoLabel_AutoLineSize(Localize("Preview"), HeadlineFontSize,

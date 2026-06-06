@@ -62,6 +62,7 @@ namespace
 	constexpr int MAX_BACKGROUND_VIDEO_DIMENSION = 4096;
 	constexpr int64_t MAX_BACKGROUND_VIDEO_PIXELS = (int64_t)MAX_BACKGROUND_VIDEO_DIMENSION * (int64_t)MAX_BACKGROUND_VIDEO_DIMENSION;
 	constexpr double MAX_BACKGROUND_VIDEO_FPS = 60.0;
+	constexpr int MAX_BACKGROUND_VIDEO_CATCH_UP_DECODE_STEPS_PER_UPDATE = 4;
 #if defined(CONF_FAMILY_WINDOWS) && defined(CONF_VIDEORECORDER)
 	constexpr size_t MAX_BACKGROUND_VIDEO_QUEUED_FRAMES = 3;
 #endif
@@ -1237,17 +1238,18 @@ void CBackground::MediaFoundationVideoThreadFunc()
 {
 	const size_t FrameBufferSize = (size_t)m_VideoWidth * (size_t)m_VideoHeight * 4;
 	double TargetFrameTime = 0.0;
+	int64_t LastProducedTime = 0;
 	while(!m_MfVideoThreadStop)
 	{
-		bool QueueFull = false;
+		const double FrameInterval = EffectiveBackgroundVideoFrameInterval(m_VideoFrameInterval);
+		if(LastProducedTime != 0)
 		{
-			const std::lock_guard<std::mutex> Lock(m_MfVideoFrameMutex);
-			QueueFull = m_vMfVideoQueuedFrames.size() >= MAX_BACKGROUND_VIDEO_QUEUED_FRAMES;
-		}
-		if(QueueFull)
-		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			continue;
+			const double TimeSinceProduced = (double)(time_get() - LastProducedTime) / (double)time_freq();
+			if(TimeSinceProduced + FrameInterval * 0.25 < FrameInterval)
+			{
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				continue;
+			}
 		}
 
 		std::vector<uint8_t> vThreadFrameBuffer;
@@ -1262,7 +1264,6 @@ void CBackground::MediaFoundationVideoThreadFunc()
 		if(vThreadFrameBuffer.size() != FrameBufferSize)
 			vThreadFrameBuffer.resize(FrameBufferSize);
 
-		const double FrameInterval = EffectiveBackgroundVideoFrameInterval(m_VideoFrameInterval);
 		if(!DecodeNextMediaFoundationVideoFrame(TargetFrameTime, vThreadFrameBuffer))
 		{
 			TargetFrameTime = 0.0;
@@ -1270,17 +1271,16 @@ void CBackground::MediaFoundationVideoThreadFunc()
 				break;
 		}
 		TargetFrameTime = m_VideoLastFrameTime + FrameInterval;
+		LastProducedTime = time_get();
 
 		{
 			const std::lock_guard<std::mutex> Lock(m_MfVideoFrameMutex);
-			if(m_vMfVideoQueuedFrames.size() >= MAX_BACKGROUND_VIDEO_QUEUED_FRAMES)
+			while(m_vMfVideoQueuedFrames.size() >= MAX_BACKGROUND_VIDEO_QUEUED_FRAMES)
 			{
-				m_vMfVideoFreeFrameBuffers.push_back(std::move(vThreadFrameBuffer));
+				m_vMfVideoFreeFrameBuffers.push_back(std::move(m_vMfVideoQueuedFrames.front().m_vData));
+				m_vMfVideoQueuedFrames.pop_front();
 			}
-			else
-			{
-				m_vMfVideoQueuedFrames.push_back({std::move(vThreadFrameBuffer)});
-			}
+			m_vMfVideoQueuedFrames.push_back({std::move(vThreadFrameBuffer)});
 		}
 
 		std::this_thread::yield();
@@ -1290,7 +1290,7 @@ void CBackground::MediaFoundationVideoThreadFunc()
 #endif
 
 #if defined(CONF_VIDEORECORDER)
-bool CBackground::DecodeNextVideoFrame()
+bool CBackground::DecodeNextVideoFrame(bool StoreRgbaFrame)
 {
 	if(m_pVideoFormatContext == nullptr || m_pVideoCodecContext == nullptr || m_pVideoPacket == nullptr || m_pVideoFrame == nullptr || m_pVideoRgbaFrame == nullptr || m_pVideoSwsContext == nullptr)
 	{
@@ -1374,6 +1374,12 @@ bool CBackground::DecodeNextVideoFrame()
 			return false;
 		}
 
+		if(!StoreRgbaFrame)
+		{
+			av_frame_unref(m_pVideoFrame);
+			return true;
+		}
+
 		const int ScaleResult = sws_scale(m_pVideoSwsContext, m_pVideoFrame->data, m_pVideoFrame->linesize, 0, m_VideoHeight, m_pVideoRgbaFrame->data, m_pVideoRgbaFrame->linesize);
 		if(ScaleResult <= 0)
 		{
@@ -1444,6 +1450,11 @@ bool CBackground::UpdateVideoBackground()
 		bool HasFrame = false;
 		{
 			const std::lock_guard<std::mutex> Lock(m_MfVideoFrameMutex);
+			while(m_vMfVideoQueuedFrames.size() > 1)
+			{
+				m_vMfVideoFreeFrameBuffers.push_back(std::move(m_vMfVideoQueuedFrames.front().m_vData));
+				m_vMfVideoQueuedFrames.pop_front();
+			}
 			if(!m_vMfVideoQueuedFrames.empty() && m_vMfVideoQueuedFrames.front().m_vData.size() == m_vVideoFrameBuffer.size())
 			{
 				m_vMfVideoFreeFrameBuffers.push_back(std::move(m_vVideoFrameBuffer));
@@ -1484,18 +1495,20 @@ bool CBackground::UpdateVideoBackground()
 	}
 
 	bool Updated = false;
-	int DecodedFrames = 0;
-	const int MaxDecodedFrames = std::clamp(static_cast<int>(std::ceil(FrameInterval / m_VideoFrameInterval)) + 1, 1, 16);
-	while(TargetFrameTime + m_VideoFrameInterval * 0.5 >= m_VideoLastFrameTime + m_VideoFrameInterval && DecodedFrames < MaxDecodedFrames)
+	const int ScheduledDecodeSteps = maximum(1, static_cast<int>(std::ceil(FrameInterval / m_VideoFrameInterval)) + 1);
+	const int MaxDecodedFrames = maximum(ScheduledDecodeSteps, MAX_BACKGROUND_VIDEO_CATCH_UP_DECODE_STEPS_PER_UPDATE);
+	const int PendingFrames = maximum(0, static_cast<int>(std::floor((TargetFrameTime + m_VideoFrameInterval * 0.5 - m_VideoLastFrameTime) / m_VideoFrameInterval)));
+	const int FramesToDecode = minimum(PendingFrames, MaxDecodedFrames);
+	for(int DecodedFrames = 0; DecodedFrames < FramesToDecode; ++DecodedFrames)
 	{
-		if(!DecodeNextVideoFrame())
+		const bool StoreRgbaFrame = DecodedFrames + 1 == FramesToDecode;
+		if(!DecodeNextVideoFrame(StoreRgbaFrame))
 		{
-			if(!RestartVideoBackground() || !DecodeNextVideoFrame())
+			if(!RestartVideoBackground() || !DecodeNextVideoFrame(StoreRgbaFrame))
 				return Updated;
 		}
 		m_VideoLastFrameTime += m_VideoFrameInterval;
-		Updated = true;
-		++DecodedFrames;
+		Updated = StoreRgbaFrame;
 	}
 
 	if(Updated)
@@ -1564,6 +1577,8 @@ void CBackground::LoadBackground()
 
 	char aBackgroundEntities[IO_MAX_PATH_LENGTH];
 	NormalizeBackgroundEntitiesValue(g_Config.m_ClBackgroundEntities, aBackgroundEntities, sizeof(aBackgroundEntities));
+	if(str_comp(g_Config.m_ClBackgroundEntities, aBackgroundEntities) != 0)
+		str_copy(g_Config.m_ClBackgroundEntities, aBackgroundEntities, sizeof(g_Config.m_ClBackgroundEntities));
 
 	str_copy(m_aMapName, aBackgroundEntities);
 	const char *pBackgroundEntities = aBackgroundEntities;

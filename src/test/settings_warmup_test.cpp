@@ -1,11 +1,13 @@
-#include <game/client/components/settings_warmup.h>
 #include <game/client/components/assets_preview_scale.h>
 #include <game/client/components/menus.h>
 #include <game/client/components/settings_resource_jobs.h>
+#include <game/client/components/settings_warmup.h>
+
+#include <gtest/gtest.h>
 
 #include <fstream>
+#include <limits>
 #include <sstream>
-#include <gtest/gtest.h>
 
 TEST(SettingsWarmup, StageReadinessUsesInclusiveThreshold)
 {
@@ -30,13 +32,13 @@ TEST(SettingsWarmup, PrioritizesLastSessionPage)
 	int WarmedTClient = 0;
 
 	Scheduler.RegisterSection({EClassicSettingsPage::CONTROLS, "Controls:Mouse", 0, [&]() {
-			++WarmedControls;
-			return 1.0;
-		}});
+					   ++WarmedControls;
+					   return 1.0;
+				   }});
 	Scheduler.RegisterSection({EClassicSettingsPage::TCLIENT, "TClient:Pet", 0, [&]() {
-			++WarmedTClient;
-			return 1.0;
-		}});
+					   ++WarmedTClient;
+					   return 1.0;
+				   }});
 	Scheduler.SetLastSessionPage(EClassicSettingsPage::TCLIENT);
 
 	EXPECT_FALSE(Scheduler.WarmupFrame(1.5));
@@ -50,13 +52,13 @@ TEST(SettingsWarmup, StopsAtFrameBudget)
 	int WarmedCount = 0;
 
 	Scheduler.RegisterSection({EClassicSettingsPage::CONTROLS, "Controls:Mouse", 0, [&]() {
-			++WarmedCount;
-			return 2.0;
-		}});
+					   ++WarmedCount;
+					   return 2.0;
+				   }});
 	Scheduler.RegisterSection({EClassicSettingsPage::CONTROLS, "Controls:Movement", 1, [&]() {
-			++WarmedCount;
-			return 2.0;
-		}});
+					   ++WarmedCount;
+					   return 2.0;
+				   }});
 
 	EXPECT_FALSE(Scheduler.WarmupFrame(2.5));
 	EXPECT_EQ(WarmedCount, 1);
@@ -70,9 +72,9 @@ TEST(SettingsWarmup, DisabledSchedulerDoesNotRunSections)
 	int WarmedCount = 0;
 
 	Scheduler.RegisterSection({EClassicSettingsPage::CONTROLS, "Controls:Mouse", 0, [&]() {
-			++WarmedCount;
-			return 1.0;
-		}});
+					   ++WarmedCount;
+					   return 1.0;
+				   }});
 	Scheduler.SetEnabled(false);
 
 	EXPECT_TRUE(Scheduler.WarmupFrame(10.0));
@@ -87,9 +89,9 @@ TEST(SettingsWarmup, ManySettingsSectionsRespectBudget)
 	for(int i = 0; i < 20; ++i)
 	{
 		Scheduler.RegisterSection({EClassicSettingsPage::CONTROLS, "Controls:Bulk", i, [&]() {
-			++WarmedCount;
-			return 1.0;
-		}});
+						   ++WarmedCount;
+						   return 1.0;
+					   }});
 	}
 	Scheduler.SetLastSessionPage(EClassicSettingsPage::CONTROLS);
 
@@ -173,19 +175,37 @@ TEST(SettingsWarmup, PageRuntimeCacheTracksWhetherResourcesWereReadyAtRecord)
 	EXPECT_FALSE(Cache.m_ResourcesReadyAtRecord);
 }
 
+TEST(SettingsWarmup, RuntimeCacheNumericKeysRejectNonFiniteValues)
+{
+	EXPECT_EQ(SettingsRuntimeCacheDimensionKey(-std::numeric_limits<float>::infinity()), 1);
+	EXPECT_EQ(SettingsRuntimeCachePositiveRoundedKey(-std::numeric_limits<float>::infinity()), 1);
+	EXPECT_EQ(SettingsRuntimeCacheRoundedKey(std::numeric_limits<float>::infinity(), 7), 7);
+}
+
+TEST(SettingsWarmup, RuntimeCacheNumericKeysClampBeforeIntConversion)
+{
+	EXPECT_EQ(SettingsRuntimeCacheDimensionKey(0.0f), 1);
+	EXPECT_EQ(SettingsRuntimeCacheDimensionKey(900.9f), 900);
+	EXPECT_EQ(SettingsRuntimeCachePositiveRoundedKey(125.4f), 125);
+	EXPECT_EQ(SettingsRuntimeCacheRoundedKey(12.6f), 13);
+	EXPECT_EQ(SettingsRuntimeCacheDimensionKey(std::numeric_limits<float>::max()), std::numeric_limits<int>::max());
+	EXPECT_EQ(SettingsRuntimeCacheRoundedKey(-std::numeric_limits<float>::max()), std::numeric_limits<int>::min());
+}
+
 TEST(SettingsWarmup, RuntimeFboWarmupRunsBeforeTextOnlyFallback)
 {
 	CSettingsWarmupScheduler Scheduler;
 	std::vector<const char *> vOrder;
 
 	Scheduler.RegisterSection({EClassicSettingsPage::TCLIENT, "TClient:Title", 1, [&]() {
-			vOrder.push_back("text");
-			return 0.1;
-		}});
+					   vOrder.push_back("text");
+					   return 0.1;
+				   }});
 	Scheduler.RegisterSection({EClassicSettingsPage::TCLIENT, "TClient:FboFirstScreen", 0, [&]() {
-			vOrder.push_back("fbo");
-			return 1.0;
-		}, false, ESettingsWarmupKind::RUNTIME_FBO});
+					   vOrder.push_back("fbo");
+					   return 1.0;
+				   },
+		false, ESettingsWarmupKind::RUNTIME_FBO});
 	Scheduler.SetLastSessionPage(EClassicSettingsPage::TCLIENT);
 
 	EXPECT_FALSE(Scheduler.WarmupFrame(1.1));
@@ -196,7 +216,7 @@ TEST(SettingsWarmup, RuntimeFboWarmupRunsBeforeTextOnlyFallback)
 TEST(SettingsWarmup, LoadingRuntimeCacheWarmupIncludesRegisteredPagesAndTClientTabs)
 {
 	EXPECT_EQ(CMenus::SettingsRuntimeCacheWarmupSteps(), (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() +
-		6 + (CMenus::NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1));
+								     6 + (CMenus::NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1));
 }
 
 TEST(SettingsRuntimeCache, RegistersAllSettingsPages)
@@ -308,7 +328,7 @@ TEST(SettingsWarmup, LoadingPrewarmDoesNotPumpResourceWork)
 	EXPECT_EQ(PrewarmBody.find("m_Skins.OnUpdate();"), std::string::npos);
 }
 
-TEST(SettingsWarmup, RuntimePrewarmCallsitesDoNotRequireVisibleSettingsPage)
+TEST(SettingsWarmup, RuntimePrewarmCallsitesRequireVisibleIdleSettingsPage)
 {
 	std::ifstream MenusFile("src/game/client/components/menus.cpp");
 	ASSERT_TRUE(MenusFile.good());
@@ -316,9 +336,30 @@ TEST(SettingsWarmup, RuntimePrewarmCallsitesDoNotRequireVisibleSettingsPage)
 	MenusBuffer << MenusFile.rdbuf();
 	const std::string MenusSource = MenusBuffer.str();
 
-	EXPECT_NE(MenusSource.find("const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\ttrue,"), std::string::npos);
-	EXPECT_EQ(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\tm_MenuPage == PAGE_SETTINGS,"), std::string::npos);
-	EXPECT_EQ(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\tm_GamePage == PAGE_SETTINGS,"), std::string::npos);
+	EXPECT_EQ(MenusSource.find("const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi),\n\t\t\t\ttrue,"), std::string::npos);
+	EXPECT_NE(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi),\n\t\t\t\tm_MenuPage == PAGE_SETTINGS,"), std::string::npos);
+	EXPECT_NE(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi),\n\t\t\t\tm_GamePage == PAGE_SETTINGS,"), std::string::npos);
+	EXPECT_NE(MenusSource.find("m_SettingsPageSwitchActive || TransitionActive"), std::string::npos);
+}
+
+TEST(SettingsWarmup, QmClientRuntimePrewarmDoesNotTriggerTabSwitchAnimation)
+{
+	std::ifstream MenusFile("src/game/client/components/menus.cpp");
+	ASSERT_TRUE(MenusFile.good());
+	std::stringstream MenusBuffer;
+	MenusBuffer << MenusFile.rdbuf();
+	const std::string MenusSource = MenusBuffer.str();
+
+	std::ifstream QmMenusFile("src/game/client/components/qmclient/menus_qmclient.cpp");
+	ASSERT_TRUE(QmMenusFile.good());
+	std::stringstream QmMenusBuffer;
+	QmMenusBuffer << QmMenusFile.rdbuf();
+	const std::string QmMenusSource = QmMenusBuffer.str();
+
+	EXPECT_NE(MenusSource.find("RenderSettingsQmClient(CacheView, false, true);"), std::string::npos);
+	EXPECT_NE(QmMenusSource.find("else if(!PrewarmOnly && m_QmClientSettingsTab != s_PrevQmTab)"), std::string::npos);
+	EXPECT_NE(QmMenusSource.find("const float TransitionStrength = PrewarmOnly ? 0.0f : ReadUiSwitchAnimation(QmClientTabSwitchNode);"), std::string::npos);
+	EXPECT_NE(QmMenusSource.find("if(!PrewarmOnly)\n\t\t\t\tRenderSettingsTClientConfigs(ContentView);"), std::string::npos);
 }
 
 TEST(SettingsRuntimeCache, CanonicalizesMergedSettingsPages)
@@ -661,6 +702,14 @@ TEST(SettingsRuntimeCache, DisabledConfigBypassesWarmupAndFbo)
 	EXPECT_FALSE(SettingsWarmupEnabled(1, 0));
 	EXPECT_FALSE(SettingsWarmupEnabled(0, 0));
 	EXPECT_TRUE(SettingsWarmupEnabled(1, 1));
+}
+
+TEST(SettingsRuntimeCache, LegacySettingsUiBypassesRuntimeFboCaching)
+{
+	EXPECT_FALSE(SettingsRuntimeCachingEnabled(1, 1, 0));
+	EXPECT_FALSE(SettingsRuntimeCachingEnabled(0, 1, 1));
+	EXPECT_FALSE(SettingsRuntimeCachingEnabled(1, 0, 1));
+	EXPECT_TRUE(SettingsRuntimeCachingEnabled(1, 1, 1));
 }
 
 TEST(SettingsResourceJobs, SkinPlanKeepsSelectedFavoritesThenSorted)
@@ -1224,6 +1273,7 @@ TEST(SettingsResourceJobs, AssetsPageRejectsWholePageFbo)
 	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_TEE, CMenus::SETTINGS_ASSETS));
 	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_PLAYER, CMenus::SETTINGS_ASSETS));
 	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_GRAPHICS, CMenus::SETTINGS_ASSETS));
+	EXPECT_FALSE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_QMCLIENT, CMenus::SETTINGS_ASSETS));
 	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_TCLIENT, CMenus::SETTINGS_ASSETS));
 	EXPECT_TRUE(SettingsPageCanUsePageFbo(CMenus::SETTINGS_LANGUAGE, CMenus::SETTINGS_ASSETS));
 }
@@ -1540,60 +1590,60 @@ TEST(SettingsResourceJobs, ThroughputControllerKeepsVisibleBacklogOutOfIdleDrain
 {
 	SSettingsSkinThroughputControllerState State;
 	const auto VisibleBacklog = SettingsSkinThroughputControllerStep({
-		{false, false, 0, true},
-		true,
-		6.5f,
-		6.0f,
-		512,
-		28,
-		19,
-		9,
-		0,
-		9,
-		0,
-		3,
-		21,
-		29,
-		24,
-		0,
-		0,
-		0,
-		0,
-		192,
-		false,
-		"none",
-		"drain_inactive",
-	},
+										 {false, false, 0, true},
+										 true,
+										 6.5f,
+										 6.0f,
+										 512,
+										 28,
+										 19,
+										 9,
+										 0,
+										 9,
+										 0,
+										 3,
+										 21,
+										 29,
+										 24,
+										 0,
+										 0,
+										 0,
+										 0,
+										 192,
+										 false,
+										 "none",
+										 "drain_inactive",
+									 },
 		State);
 	EXPECT_EQ(VisibleBacklog.m_Mode, ESettingsSkinThroughputControllerMode::IDLE_VISIBLE);
 	EXPECT_FALSE(VisibleBacklog.m_BackgroundDrainActive);
 	EXPECT_EQ(VisibleBacklog.m_BackgroundRequestBudget, 6);
 
 	const auto Settled = SettingsSkinThroughputControllerStep({
-		{false, false, 0, true},
-		true,
-		6.5f,
-		6.0f,
-		512,
-		28,
-		28,
-		0,
-		0,
-		0,
-		0,
-		0,
-		20,
-		40,
-		20,
-		12,
-		12,
-		0,
-		0,
-		288,
-		false,
-		"none",
-		"none",
-	},
+									  {false, false, 0, true},
+									  true,
+									  6.5f,
+									  6.0f,
+									  512,
+									  28,
+									  28,
+									  0,
+									  0,
+									  0,
+									  0,
+									  0,
+									  20,
+									  40,
+									  20,
+									  12,
+									  12,
+									  0,
+									  0,
+									  288,
+									  false,
+									  "none",
+									  "none",
+								  },
 		State);
 	EXPECT_EQ(Settled.m_Mode, ESettingsSkinThroughputControllerMode::IDLE_DRAIN);
 	EXPECT_TRUE(Settled.m_BackgroundDrainActive);
@@ -1613,30 +1663,30 @@ TEST(SettingsResourceJobs, ThroughputControllerRelaxesReserveAndExpandsWindowsWh
 	State.m_VisibleReserve = 2;
 
 	const auto Output = SettingsSkinThroughputControllerStep({
-		{false, 0, false},
-		true,
-		6.9f,
-		6.7f,
-		512,
-		28,
-		19,
-		9,
-		0,
-		9,
-		0,
-		3,
-		21,
-		29,
-		30,
-		0,
-		0,
-		0,
-		0,
-		192,
-		false,
-		"visible_reserve",
-		"drain_inactive",
-	},
+									 {false, 0, false},
+									 true,
+									 6.9f,
+									 6.7f,
+									 512,
+									 28,
+									 19,
+									 9,
+									 0,
+									 9,
+									 0,
+									 3,
+									 21,
+									 29,
+									 30,
+									 0,
+									 0,
+									 0,
+									 0,
+									 192,
+									 false,
+									 "visible_reserve",
+									 "drain_inactive",
+								 },
 		State);
 
 	EXPECT_EQ(Output.m_Reason, ESettingsSkinThroughputControllerReason::ADMISSION);
@@ -1660,30 +1710,30 @@ TEST(SettingsResourceJobs, ThroughputControllerReducesOnlyUploadBudgetOnGpuPress
 	State.m_VisibleReserve = 2;
 
 	const auto Output = SettingsSkinThroughputControllerStep({
-		{false, 0, false},
-		true,
-		7.0f,
-		6.8f,
-		512,
-		28,
-		20,
-		8,
-		0,
-		8,
-		0,
-		2,
-		18,
-		30,
-		20,
-		0,
-		0,
-		0,
-		0,
-		0,
-		false,
-		"gpu_upload_budget",
-		"none",
-	},
+									 {false, 0, false},
+									 true,
+									 7.0f,
+									 6.8f,
+									 512,
+									 28,
+									 20,
+									 8,
+									 0,
+									 8,
+									 0,
+									 2,
+									 18,
+									 30,
+									 20,
+									 0,
+									 0,
+									 0,
+									 0,
+									 0,
+									 false,
+									 "gpu_upload_budget",
+									 "none",
+								 },
 		State);
 
 	EXPECT_EQ(Output.m_Reason, ESettingsSkinThroughputControllerReason::GPU);
@@ -1705,30 +1755,30 @@ TEST(SettingsResourceJobs, ThroughputControllerReducesOnlyFinalizeBudgetOnFinali
 	State.m_VisibleReserve = 2;
 
 	const auto Output = SettingsSkinThroughputControllerStep({
-		{false, 0, false},
-		true,
-		7.0f,
-		6.8f,
-		512,
-		28,
-		20,
-		8,
-		0,
-		8,
-		0,
-		2,
-		18,
-		30,
-		20,
-		0,
-		0,
-		0,
-		0,
-		96,
-		false,
-		"max_per_frame",
-		"none",
-	},
+									 {false, 0, false},
+									 true,
+									 7.0f,
+									 6.8f,
+									 512,
+									 28,
+									 20,
+									 8,
+									 0,
+									 8,
+									 0,
+									 2,
+									 18,
+									 30,
+									 20,
+									 0,
+									 0,
+									 0,
+									 0,
+									 96,
+									 false,
+									 "max_per_frame",
+									 "none",
+								 },
 		State);
 
 	EXPECT_EQ(Output.m_Reason, ESettingsSkinThroughputControllerReason::FINALIZE);

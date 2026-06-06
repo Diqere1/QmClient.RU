@@ -145,7 +145,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake ninja-build pkg-config python3 python3-pip \
+            cmake ninja-build pkg-config python3 python3-pip python3-pil \
             libfreetype6-dev libnotify-dev libsdl2-dev libsqlite3-dev \
             libgl1-mesa-dev \
             libvulkan-dev glslang-tools spirv-tools \
@@ -168,8 +168,12 @@ jobs:
           python3 -m venv .venv-dmgbuild
           . .venv-dmgbuild/bin/activate
           python -m pip install --upgrade pip
-          python -m pip install dmgbuild
+          python -m pip install dmgbuild Pillow
           echo "${PWD}/.venv-dmgbuild/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python build dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: python -m pip install Pillow
 
       - name: Configure
         shell: bash
@@ -386,7 +390,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake ninja-build pkg-config curl python3 python3-pip \
+            cmake ninja-build pkg-config curl python3 python3-pip python3-pil \
             glslang-tools spirv-tools ccache
           if [ ! -f ~/.cargo/bin/cargo-ndk ]; then
             cargo install cargo-ndk

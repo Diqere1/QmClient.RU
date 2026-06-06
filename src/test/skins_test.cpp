@@ -549,7 +549,7 @@ TEST(Skins, PrewarmPlayerPreviewReadyRequiresSelectedAndVisibleSourcesLoaded)
 
 	const size_t PrewarmPos = Source.find("bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool ProgressiveListReady)");
 	ASSERT_NE(PrewarmPos, std::string::npos);
-	const size_t PrewarmEnd = Source.find("void CSkins::QueueSkinListPlanJob()", PrewarmPos);
+	const size_t PrewarmEnd = Source.find("void CSkins::QueueSkinListPlanJob(int Dummy)", PrewarmPos);
 	ASSERT_NE(PrewarmEnd, std::string::npos);
 	const std::string PrewarmBody = Source.substr(PrewarmPos, PrewarmEnd - PrewarmPos);
 
@@ -572,7 +572,7 @@ TEST(Skins, PrewarmPlayerPreviewReadyNoLongerBuildsPreviewCacheKeys)
 
 	const size_t PrewarmPos = Source.find("bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool ProgressiveListReady)");
 	ASSERT_NE(PrewarmPos, std::string::npos);
-	const size_t PrewarmEnd = Source.find("void CSkins::QueueSkinListPlanJob()", PrewarmPos);
+	const size_t PrewarmEnd = Source.find("void CSkins::QueueSkinListPlanJob(int Dummy)", PrewarmPos);
 	ASSERT_NE(PrewarmEnd, std::string::npos);
 	const std::string PrewarmBody = Source.substr(PrewarmPos, PrewarmEnd - PrewarmPos);
 
@@ -655,6 +655,41 @@ TEST(Skins, SkinListWaitsForCompletePlanInsteadOfSeedingPlaceholderEntry)
 
 	EXPECT_EQ(Source.find("SeedVisibleSkinListIfEmpty"), std::string::npos);
 	EXPECT_NE(Source.find("m_SkinList.m_vSkins = m_vPendingSkinListEntries;"), std::string::npos);
+}
+
+TEST(Skins, AsyncSkinListKeepsQueuedColorVariantsSelectable)
+{
+	std::ifstream HeaderFile("src/game/client/components/skins.h");
+	ASSERT_TRUE(HeaderFile.good());
+	std::stringstream HeaderBuffer;
+	HeaderBuffer << HeaderFile.rdbuf();
+	const std::string Header = HeaderBuffer.str();
+
+	std::ifstream SourceFile("src/game/client/components/skins.cpp");
+	ASSERT_TRUE(SourceFile.good());
+	std::stringstream SourceBuffer;
+	SourceBuffer << SourceFile.rdbuf();
+	const std::string Source = SourceBuffer.str();
+
+	std::ifstream MenuFile("src/game/client/components/menus_settings.cpp");
+	ASSERT_TRUE(MenuFile.good());
+	std::stringstream MenuBuffer;
+	MenuBuffer << MenuFile.rdbuf();
+	const std::string MenuSource = MenuBuffer.str();
+
+	EXPECT_NE(Header.find("class SColorKey"), std::string::npos);
+	EXPECT_NE(Header.find("const std::optional<SColorKey> &ColorKey() const"), std::string::npos);
+	EXPECT_NE(Header.find("CSkinList &SkinList(int Dummy);"), std::string::npos);
+
+	EXPECT_NE(Source.find("MakeSkinListColorKey(QueueEntry.m_UseCustomColor"), std::string::npos);
+	EXPECT_NE(Source.find("m_vPendingSkinListMergeEntries = std::move(Result.m_Plan.m_vEntries);"), std::string::npos);
+	EXPECT_NE(Source.find("Entry.m_ColorKey.has_value() ? std::make_optional(MakeSkinListColorKey(Entry.m_ColorKey.value())) : std::nullopt"), std::string::npos);
+	EXPECT_NE(Source.find("MakeSkinListEntry(SkinIt->second.get(), ColorKey)"), std::string::npos);
+
+	EXPECT_NE(MenuSource.find("SelectedSkinEntry.ColorKey().has_value()"), std::string::npos);
+	EXPECT_NE(MenuSource.find("*pUseCustomColor = SelectedColorKey.m_UseCustomColor ? 1 : 0;"), std::string::npos);
+	EXPECT_NE(MenuSource.find("*pColorBody = SelectedColorKey.m_ColorBody;"), std::string::npos);
+	EXPECT_NE(MenuSource.find("*pColorFeet = SelectedColorKey.m_ColorFeet;"), std::string::npos);
 }
 
 TEST(Skins, DirectoryScanPromotesDownloadContainersToLocal)

@@ -81,34 +81,34 @@
 #include <generated/client_data.h>
 #include <generated/client_data7.h>
 
-#include <inttypes.h>
+#include <cinttypes>
 
 namespace
 {
 
-void LogSettingsLoadingPrewarmEvent(const IClient *pClient, const char *pEvent, int CompletedSteps, int MaxAttempts, int TeeWarmupEntries, int ConsecutiveNoProgressSteps, uint64_t UploadsCompleted, uint64_t LoadsCompleted)
-{
-	if(g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0)
-		return;
-	char aPayload[256];
-	str_format(aPayload, sizeof(aPayload), "event=%s steps=%d max_attempts=%d tee_entries=%d stall_steps=%d uploads_completed=%" PRIu64 " loads_completed=%" PRIu64,
-		pEvent != nullptr ? pEvent : "startup_prewarm",
-		CompletedSteps,
-		MaxAttempts,
-		TeeWarmupEntries,
-		ConsecutiveNoProgressSteps,
-		UploadsCompleted,
-		LoadsCompleted);
-	QmPerfLogPayload("perf/settings-warmup", aPayload, pClient, "settings:tee");
-}
+	void LogSettingsLoadingPrewarmEvent(const IClient *pClient, const char *pEvent, int CompletedSteps, int MaxAttempts, int TeeWarmupEntries, int ConsecutiveNoProgressSteps, uint64_t UploadsCompleted, uint64_t LoadsCompleted)
+	{
+		if(g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0)
+			return;
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=%s steps=%d max_attempts=%d tee_entries=%d stall_steps=%d uploads_completed=%" PRIu64 " loads_completed=%" PRIu64,
+			pEvent != nullptr ? pEvent : "startup_prewarm",
+			CompletedSteps,
+			MaxAttempts,
+			TeeWarmupEntries,
+			ConsecutiveNoProgressSteps,
+			UploadsCompleted,
+			LoadsCompleted);
+		QmPerfLogPayload("perf/settings-warmup", aPayload, pClient, "settings:tee");
+	}
 
 } // namespace
 #include <generated/protocol.h>
 #include <generated/protocol7.h>
 #include <generated/protocolglue.h>
 
-#include <game/client/projectile_data.h>
 #include <game/client/components/qmclient/perf_logging.h>
+#include <game/client/projectile_data.h>
 #include <game/localization.h>
 #include <game/mapitems.h>
 #include <game/version.h>
@@ -145,8 +145,8 @@ namespace
 		QmPerfLogStage("perf/gameclient", pStage, DurationMs, Force, pGameClient != nullptr ? pGameClient->Client() : nullptr, nullptr, nullptr, pExtra);
 	}
 
-struct SConfigIntAliasSync
-{
+	struct SConfigIntAliasSync
+	{
 		int *m_pSource;
 		int *m_pTarget;
 	};
@@ -601,7 +601,6 @@ void CGameClient::ForceUpdateConsoleRemoteCompletionSuggestions()
 void CGameClient::OnInit()
 {
 	const int64_t OnInitStart = time_get();
-	MigrateChatBubbleConfig();
 	MigrateQmHudConfig();
 	SyncQmHudLegacyAliasesFromQm();
 
@@ -2114,7 +2113,7 @@ void CGameClient::OnRender()
 			TeamId = m_LiveObserverCurrentTeam;
 		else
 #endif
-		if(m_Snap.m_SpecInfo.m_SpectatorId >= 0)
+			if(m_Snap.m_SpecInfo.m_SpectatorId >= 0)
 			TeamId = m_Teams.Team(m_Snap.m_SpecInfo.m_SpectatorId);
 
 		if(TeamId > MAX_CLIENTS || TeamId < 0)
@@ -5322,6 +5321,7 @@ void CGameClient::CClientData::UpdateSkinInfo()
 		m_pSkinInfo->m_SkinDescriptor = SkinDescriptor;
 		m_pGameClient->RefreshSkin(m_pSkinInfo);
 		ApplySkinProperties();
+		m_pSkinInfo->m_RefreshCallback();
 	}
 	else
 	{

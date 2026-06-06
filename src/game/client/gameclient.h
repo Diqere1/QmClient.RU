@@ -3,10 +3,10 @@
 #ifndef GAME_CLIENT_GAMECLIENT_H
 #define GAME_CLIENT_GAMECLIENT_H
 
-#include "render.h"
 #include "qm_command_router.h"
 #include "qm_icon_manager.h"
 #include "qm_ime_manager.h"
+#include "render.h"
 
 #include <base/color.h>
 #include <base/vmath.h>
@@ -353,8 +353,6 @@ private:
 
 	int m_EditorMovementDelay = 5;
 	void UpdateEditorIngameMoved();
-	bool GetPredictedHammerHitbox(CCharacter *pChar, vec2 &HitPos, float &HitRadius);
-	int FindPredictedHammerHitTargets(CCharacter *pChar, vec2 HitPos, float HitRadius, int *pTargetIds, int MaxTargetIds);
 	void HandleHammerSkinSwap(CCharacter *pChar);
 	void HandleRandomEmoteOnHit(CCharacter *pLocalChar, int DummyIndex);
 #if defined(CONF_QM_LIVE_CLIENT)
@@ -958,6 +956,8 @@ public:
 	bool IsRenderingDummyMiniMap() const { return m_RenderingDummyMiniMap; }
 	void SetRenderingDummyMiniMap(bool Rendering) { m_RenderingDummyMiniMap = Rendering; }
 	const CTuningParams *GetTuning(int i) const { return &m_aTuningList[i]; }
+	bool GetPredictedHammerHitbox(CCharacter *pChar, vec2 &HitPos, float &HitRadius);
+	int FindPredictedHammerHitTargets(CCharacter *pChar, vec2 HitPos, float HitRadius, int *pTargetIds, int MaxTargetIds);
 	ColorRGBA GetDDTeamColor(int DDTeam, float Lightness = 0.5f) const;
 	void FormatClientId(int ClientId, char (&aClientId)[16], EClientIdFormat Format) const;
 	bool IsLocalClientId(int ClientId) const;

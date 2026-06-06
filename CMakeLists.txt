@@ -2554,6 +2554,15 @@ if(CLIENT)
     set(STEAMAPI_KIND STATIC)
   endif()
   set(TARGET_STEAMAPI steam_api)
+  set(STEAMAPI_RUNTIME_FILE)
+  set(STEAMAPI_RUNTIME_FILE_NAME)
+  if(TARGET_OS STREQUAL "windows" AND STEAM)
+    set(STEAMAPI_RUNTIME_FILE_NAME steam_api.dll)
+    set(STEAMAPI_RUNTIME_FILE "${PROJECT_SOURCE_DIR}/${STEAMAPI_RUNTIME_FILE_NAME}")
+    if(NOT EXISTS "${STEAMAPI_RUNTIME_FILE}")
+      message(FATAL_ERROR "STEAM=ON on Windows requires the official ${STEAMAPI_RUNTIME_FILE_NAME} in the project root. The generated ${TARGET_STEAMAPI} target is only a stub for linking.")
+    endif()
+  endif()
   add_library(${TARGET_STEAMAPI} ${STEAMAPI_KIND} ${STEAMAPI_SRC})
   list(APPEND TARGETS_OWN ${TARGET_STEAMAPI})
 
@@ -3194,9 +3203,10 @@ if(CLIENT)
   if(MSVC)
     target_compile_options(game-client PRIVATE /bigobj) # TClient, required for ChaiScript
     target_link_options(game-client PRIVATE /ENTRY:mainCRTStartup)
-    # Work around MSVC LTCG ICEs in ChaiScript-heavy translation units by excluding only
+    # Work around MSVC LTCG ICEs in heavy client translation units by excluding only
     # those files from whole-program optimization while keeping IPO enabled elsewhere.
     set_source_files_properties(
+      src/game/client/components/qmclient/jelly_tee.cpp
       src/game/client/components/qmclient/lyrics_component.cpp
       src/game/client/components/qmclient/scripting/impl.cpp
       PROPERTIES
@@ -4040,7 +4050,7 @@ if(TARGET game-server)
 endif()
 list(APPEND CPACK_TARGETS ${TARGET_TOOLS})
 
-if(STEAMAPI_KIND STREQUAL SHARED)
+if(STEAMAPI_KIND STREQUAL SHARED AND NOT STEAMAPI_RUNTIME_FILE_NAME)
   list(APPEND CPACK_TARGETS ${TARGET_STEAMAPI})
 endif()
 set(CPACK_DIRS
@@ -4053,6 +4063,9 @@ set(CPACK_FILES
   steam_appid.txt
   ${COPY_FILES}
 )
+if(STEAMAPI_RUNTIME_FILE_NAME)
+  list(APPEND CPACK_FILES ${STEAMAPI_RUNTIME_FILE_NAME})
+endif()
 
 set(CPACK_GEN_FILES
   ${VULKAN_SHADER_FILE_LIST}
@@ -4071,7 +4084,11 @@ if(NOT DEV)
     install(TARGETS game-client DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
   endif()
   if(STEAMAPI_KIND STREQUAL SHARED)
-    install(TARGETS ${TARGET_STEAMAPI} DESTINATION ${CMAKE_INSTALL_LIBDIR}/ddnet COMPONENT client)
+    if(STEAMAPI_RUNTIME_FILE)
+      install(FILES ${STEAMAPI_RUNTIME_FILE} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
+    else()
+      install(TARGETS ${TARGET_STEAMAPI} DESTINATION ${CMAKE_INSTALL_LIBDIR}/ddnet COMPONENT client)
+    endif()
   endif()
   if(TARGET game-server)
     install(TARGETS game-server DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT server)

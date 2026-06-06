@@ -178,15 +178,15 @@ namespace
 	SSettingsSectionCacheRuntimeKey MakeSettingsSectionRuntimeKey(CUIRect View, IGraphics *pGraphics)
 	{
 		SSettingsSectionCacheRuntimeKey RuntimeKey;
-		RuntimeKey.m_ViewportWidth = std::max(1, (int)View.w);
-		RuntimeKey.m_ViewportHeight = std::max(1, (int)View.h);
+		RuntimeKey.m_ViewportWidth = SettingsRuntimeCacheDimensionKey(View.w);
+		RuntimeKey.m_ViewportHeight = SettingsRuntimeCacheDimensionKey(View.h);
 		RuntimeKey.m_ConfigHash = HashTClientSettingsConfig();
 		RuntimeKey.m_LanguageHash = str_quickhash(g_Config.m_ClLanguagefile);
 		RuntimeKey.m_FontHash = HashStringFnv1a64(1469598103934665603ull, g_Config.m_TcCustomFont);
 		RuntimeKey.m_BackendHash = str_quickhash(g_Config.m_GfxBackend);
 		if(pGraphics)
 		{
-			RuntimeKey.m_UiScale = std::max(1, (int)std::round(pGraphics->ScreenHiDPIScale() * 100.0f));
+			RuntimeKey.m_UiScale = SettingsRuntimeCachePositiveRoundedKey(pGraphics->ScreenHiDPIScale() * 100.0f);
 			RuntimeKey.m_WindowHash = HashValueFnv1a64(1469598103934665603ull, pGraphics->WindowWidth());
 			RuntimeKey.m_WindowHash = HashValueFnv1a64(RuntimeKey.m_WindowHash, pGraphics->WindowHeight());
 		}
@@ -1388,9 +1388,7 @@ SSettingsSection CMenus::BuildTClientThemeCacheSection()
 		return RenderTClientCacheSectionFallback(Col, MarginBetweenSections, &CMenus::LayoutTClientThemeCacheSection);
 	};
 	S.m_RenderFullFn = S.m_RenderCompactFn;
-	ConfigureSplitCachedStaticLayer(S, "Visual: Font & Cursor",
-		[this](CUIRect &Col) -> float { return LayoutTClientThemeCacheSection(Col, false); },
-		[this](CUIRect &Col) -> float { return RenderTClientThemeInteractiveLayer(Col); }, MarginBetweenSections);
+	ConfigureSplitCachedStaticLayer(S, "Visual: Font & Cursor", [this](CUIRect &Col) -> float { return LayoutTClientThemeCacheSection(Col, false); }, [this](CUIRect &Col) -> float { return RenderTClientThemeInteractiveLayer(Col); }, MarginBetweenSections);
 	S.m_DependencyConfigInts = {&g_Config.m_TcCursorScale, &g_Config.m_TcAnimateWheelTime, &g_Config.m_TcHammerRotatesWithCursor};
 	return S;
 }
@@ -1404,9 +1402,7 @@ SSettingsSection CMenus::BuildTClientAutoReplyCacheSection()
 		return RenderTClientCacheSectionFallback(Col, MarginBetweenSections, &CMenus::LayoutTClientAutoReplyCacheSection);
 	};
 	S.m_RenderFullFn = S.m_RenderCompactFn;
-	ConfigureSplitCachedStaticLayer(S, "Auto reply",
-		[this](CUIRect &Col) -> float { return LayoutTClientAutoReplyCacheSection(Col, false); },
-		[this](CUIRect &Col) -> float { return RenderTClientAutoReplyInteractiveLayer(Col); }, MarginBetweenSections);
+	ConfigureSplitCachedStaticLayer(S, "Auto reply", [this](CUIRect &Col) -> float { return LayoutTClientAutoReplyCacheSection(Col, false); }, [this](CUIRect &Col) -> float { return RenderTClientAutoReplyInteractiveLayer(Col); }, MarginBetweenSections);
 	S.m_DependencyConfigInts = {&g_Config.m_TcAutoReplyMuted, &g_Config.m_TcAutoReplyMinimized};
 	return S;
 }
@@ -1420,9 +1416,7 @@ SSettingsSection CMenus::BuildTClientPetCacheSection()
 		return RenderTClientCacheSectionFallback(Col, MarginBetweenSections, &CMenus::LayoutTClientPetCacheSection);
 	};
 	S.m_RenderFullFn = S.m_RenderCompactFn;
-	ConfigureSplitCachedStaticLayer(S, "Pet",
-		[this](CUIRect &Col) -> float { return LayoutTClientPetCacheSection(Col, false); },
-		[this](CUIRect &Col) -> float { return RenderTClientPetInteractiveLayer(Col); }, MarginBetweenSections);
+	ConfigureSplitCachedStaticLayer(S, "Pet", [this](CUIRect &Col) -> float { return LayoutTClientPetCacheSection(Col, false); }, [this](CUIRect &Col) -> float { return RenderTClientPetInteractiveLayer(Col); }, MarginBetweenSections);
 	S.m_DependencyConfigInts = {&g_Config.m_TcPetShow, &g_Config.m_TcPetSize, &g_Config.m_TcPetAlpha};
 	return S;
 }
@@ -1436,9 +1430,7 @@ SSettingsSection CMenus::BuildTClientHudCacheSection()
 		return RenderTClientCacheSectionFallback(Col, Margin, &CMenus::LayoutTClientHudCacheSection);
 	};
 	S.m_RenderFullFn = S.m_RenderCompactFn;
-	ConfigureSplitCachedStaticLayer(S, "HUD",
-		[this](CUIRect &Col) -> float { return LayoutTClientHudCacheSection(Col, false); },
-		[this](CUIRect &Col) -> float { return RenderTClientHudInteractiveLayer(Col); }, Margin);
+	ConfigureSplitCachedStaticLayer(S, "HUD", [this](CUIRect &Col) -> float { return LayoutTClientHudCacheSection(Col, false); }, [this](CUIRect &Col) -> float { return RenderTClientHudInteractiveLayer(Col); }, Margin);
 	S.m_DependencyConfigInts = {
 		&g_Config.m_TcMiniVoteHud,
 		&g_Config.m_TcMiniDebug,
@@ -1477,8 +1469,9 @@ bool CMenus::PrepareTClientSettingsRuntimeCacheSection(CUIRect SectionView, cons
 	if(str_comp(pSectionId, "theme") == 0 || str_comp(pSectionId, "auto-reply") == 0 || str_comp(pSectionId, "pet") == 0)
 	{
 		pLoader = &s_VisualFontLoader;
-		pLoaderSectionName = str_comp(pSectionId, "theme") == 0 ? "Visual: Font & Cursor" :
-			str_comp(pSectionId, "auto-reply") == 0 ? "自动回复" : "宠物";
+		pLoaderSectionName = str_comp(pSectionId, "theme") == 0      ? "Visual: Font & Cursor" :
+				     str_comp(pSectionId, "auto-reply") == 0 ? "自动回复" :
+									       "宠物";
 		s_VisualFontLoader.Register(BuildTClientLeftCacheSections());
 		if(ConfigureRuntimeState)
 		{
@@ -1749,15 +1742,15 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 					FontDropDownRect.VSplitRight(MarginSmall, &FontDropDownRect, nullptr);
 
 					const int FontSelectedNew = Ui()->DoDropDown(&FontDropDownRect, FontSelectedOld, s_FontDropDownNames.data(), s_FontDropDownNames.size(), s_FontDropDownState);
-						if(FontSelectedOld != FontSelectedNew && FontSelectedNew >= 0 && (size_t)FontSelectedNew < s_FontDropDownNames.size())
-						{
-							str_copy(g_Config.m_TcCustomFont, s_FontDropDownNames[FontSelectedNew]);
-							s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
-							s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
-							TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
-							InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::FONT_CHANGED);
-							TextRender()->OnPreWindowResize();
-							GameClient()->OnWindowResize();
+					if(FontSelectedOld != FontSelectedNew && FontSelectedNew >= 0 && (size_t)FontSelectedNew < s_FontDropDownNames.size())
+					{
+						str_copy(g_Config.m_TcCustomFont, s_FontDropDownNames[FontSelectedNew]);
+						s_VisualFontLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
+						s_RightSectionLoader.InvalidateCache(ESettingsCacheDirtyReason::FONT);
+						TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
+						InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::FONT_CHANGED);
+						TextRender()->OnPreWindowResize();
+						GameClient()->OnWindowResize();
 						GameClient()->Editor()->OnWindowResize();
 						TextRender()->OnWindowResize();
 						GameClient()->m_MapImages.SetTextureScale(101);
@@ -3360,14 +3353,14 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 
 void CMenus::PrewarmSettingsTClient(CUIRect MainView)
 {
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 		return;
 	RenderSettingsTClientSettings(TClientSettingsContentView(MainView), true);
 }
 
 bool CMenus::PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView)
 {
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 		return true;
 	static int s_NextTClientRuntimeCachePrewarmTab = TCLIENT_TAB_SETTINGS;
 	for(int Attempt = 0; Attempt < NUMBER_OF_TCLIENT_TABS; ++Attempt)
@@ -3400,7 +3393,7 @@ bool CMenus::PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView)
 
 bool CMenus::PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView)
 {
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 		return true;
 	static int s_NextQmClientRuntimeCachePrewarmTab = QMCLIENT_SETTINGS_TAB_VISUAL;
 	for(int Attempt = 0; Attempt < NUMBER_OF_QMCLIENT_SETTINGS_TABS; ++Attempt)
@@ -3432,13 +3425,13 @@ void CMenus::PrepareSettingsRuntimeWarmupPlan()
 
 bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 {
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 		return true;
 	CUIRect ContentView = MainView;
-	const float TabBarWidth = std::clamp(ContentView.w * 0.14f, 108.0f, 120.0f);
+	const float TabBarWidth = std::clamp(ContentView.w * 0.16f, 132.0f, 168.0f);
 	ContentView.VSplitRight(TabBarWidth, &ContentView, nullptr);
-	const float ContentMargin = std::clamp(ContentView.w * 0.02f, 12.0f, 20.0f);
-	ContentView.Margin(ContentMargin, &ContentView);
+	ContentView.VSplitRight(10.0f, &ContentView, nullptr);
+	ContentView.Margin(10.0f, &ContentView);
 	if(m_NeedRestartGraphics || m_NeedRestartSound || m_NeedRestartUpdate)
 	{
 		ContentView.HSplitBottom(20.0f, &ContentView, nullptr);
@@ -3510,17 +3503,17 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 	const int TClientSlot = SettingsPageRuntimeCacheSlot(SETTINGS_TCLIENT, TClientTab);
 	const int QmClientSlot = SettingsPageRuntimeCacheSlot(SETTINGS_QMCLIENT, QmClientTab);
 	return m_aSettingsPagePrewarmed[GeneralSlot] &&
-		m_aSettingsPagePrewarmed[TeeSlot] &&
-		m_aSettingsPagePrewarmed[AppearanceSlot] &&
-		m_aSettingsPagePrewarmed[ControlsSlot] &&
-		m_aSettingsPagePrewarmed[GraphicsSlot] &&
-		m_aSettingsPagePrewarmed[SoundSlot] &&
-		m_aSettingsPagePrewarmed[DdnetSlot] &&
-		m_aSettingsPagePrewarmed[AssetsSlot] &&
-		m_aSettingsPagePrewarmed[TClientSlot] &&
-		m_aSettingsPagePrewarmed[QmClientSlot] &&
-		TClientSiblingsReady &&
-		QmClientSiblingsReady;
+	       m_aSettingsPagePrewarmed[TeeSlot] &&
+	       m_aSettingsPagePrewarmed[AppearanceSlot] &&
+	       m_aSettingsPagePrewarmed[ControlsSlot] &&
+	       m_aSettingsPagePrewarmed[GraphicsSlot] &&
+	       m_aSettingsPagePrewarmed[SoundSlot] &&
+	       m_aSettingsPagePrewarmed[DdnetSlot] &&
+	       m_aSettingsPagePrewarmed[AssetsSlot] &&
+	       m_aSettingsPagePrewarmed[TClientSlot] &&
+	       m_aSettingsPagePrewarmed[QmClientSlot] &&
+	       TClientSiblingsReady &&
+	       QmClientSiblingsReady;
 }
 
 void CMenus::LoadSettingsRuntimeCacheMetadata()
@@ -4297,7 +4290,7 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 			PlayerRect.w += TeeRect.w;
 			TextRender()->TextColor(GameClient()->m_WarList.GetWarData(i).m_NameColor);
 			ColorRGBA NameButtonColor = Ui()->CheckActiveItem(&s_vNameButtons[i]) ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.75f) :
-							(Ui()->HotItem() == &s_vNameButtons[i] ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.0f));
+												(Ui()->HotItem() == &s_vNameButtons[i] ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.0f));
 			PlayerRect.Draw(NameButtonColor, IGraphics::CORNER_L, 5.0f);
 			Ui()->DoLabel(&NameRect, Client.m_aName, StandardFontSize, TEXTALIGN_ML);
 			if(Ui()->DoButtonLogic(&s_vNameButtons[i], false, &PlayerRect, BUTTONFLAG_LEFT))
@@ -4309,7 +4302,7 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 
 			TextRender()->TextColor(GameClient()->m_WarList.GetWarData(i).m_ClanColor);
 			ColorRGBA ClanButtonColor = Ui()->CheckActiveItem(&s_vClanButtons[i]) ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.75f) :
-							(Ui()->HotItem() == &s_vClanButtons[i] ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.0f));
+												(Ui()->HotItem() == &s_vClanButtons[i] ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.0f));
 			ClanRect.Draw(ClanButtonColor, IGraphics::CORNER_R, 5.0f);
 			Ui()->DoLabel(&ClanRect, Client.m_aClan, StandardFontSize, TEXTALIGN_ML);
 			if(Ui()->DoButtonLogic(&s_vClanButtons[i], false, &ClanRect, BUTTONFLAG_LEFT))
@@ -4702,26 +4695,26 @@ void CMenus::RenderSettingsTClientInfo(CUIRect MainView)
 		LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
 		Button.VSplitMid(&TClientConfig, &ProfilesFile, MarginSmall);
 
-	if(DoButtonLineSize_Menu(&s_Config, Localize("QmClient Settings"), 0, &TClientConfig, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
-	{
-		Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::QMCLIENT].m_aConfigPath, aBuf, sizeof(aBuf));
-		Client()->ViewFile(aBuf);
-	}
-	if(DoButtonLineSize_Menu(&s_Profiles, Localize("Profiles"), 0, &ProfilesFile, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
-	{
-		Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::TCLIENTPROFILES].m_aConfigPath, aBuf, sizeof(aBuf));
-		Client()->ViewFile(aBuf);
-	}
-	LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
+		if(DoButtonLineSize_Menu(&s_Config, Localize("QmClient Settings"), 0, &TClientConfig, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
+		{
+			Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::QMCLIENT].m_aConfigPath, aBuf, sizeof(aBuf));
+			Client()->ViewFile(aBuf);
+		}
+		if(DoButtonLineSize_Menu(&s_Profiles, Localize("Profiles"), 0, &ProfilesFile, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
+		{
+			Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::TCLIENTPROFILES].m_aConfigPath, aBuf, sizeof(aBuf));
+			Client()->ViewFile(aBuf);
+		}
+		LeftView.HSplitTop(MarginSmall, nullptr, &LeftView);
 
-	LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
-	Button.VSplitMid(&WarlistFile, &ChatbindsFile, MarginSmall);
+		LeftView.HSplitTop(LineSize * 2.0f, &Button, &LeftView);
+		Button.VSplitMid(&WarlistFile, &ChatbindsFile, MarginSmall);
 
-	if(DoButtonLineSize_Menu(&s_Warlist, Localize("War List"), 0, &WarlistFile, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
-	{
-		Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::TCLIENTWARLIST].m_aConfigPath, aBuf, sizeof(aBuf));
-		Client()->ViewFile(aBuf);
-	}
+		if(DoButtonLineSize_Menu(&s_Warlist, Localize("War List"), 0, &WarlistFile, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
+		{
+			Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::TCLIENTWARLIST].m_aConfigPath, aBuf, sizeof(aBuf));
+			Client()->ViewFile(aBuf);
+		}
 		if(DoButtonLineSize_Menu(&s_Chatbinds, Localize("Chat Binds"), 0, &ChatbindsFile, LineSize, false, 0, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)))
 		{
 			Storage()->GetCompletePath(IStorage::TYPE_SAVE, s_aConfigDomains[ConfigDomain::TCLIENTCHATBINDS].m_aConfigPath, aBuf, sizeof(aBuf));
@@ -5582,8 +5575,8 @@ void CMenus::RenderSettingsTClientConfigs(CUIRect MainView)
 	}
 	const unsigned int MiscTagMask = 1u << static_cast<unsigned int>(EConfigTag::MISC);
 	const int DomainMask = (g_Config.m_TcUiShowDDNet != 0 ? 1 : 0) |
-		(g_Config.m_TcUiShowTClient != 0 ? 2 : 0) |
-		(g_Config.m_TcUiShowQm != 0 ? 4 : 0);
+			       (g_Config.m_TcUiShowTClient != 0 ? 2 : 0) |
+			       (g_Config.m_TcUiShowQm != 0 ? 4 : 0);
 	static std::vector<const SConfigVariable *> s_vFilteredConfigs;
 	static std::string s_CachedConfigSearch;
 	static int s_CachedConfigDomainMask = -1;

@@ -7,10 +7,12 @@
 
 #include <engine/shared/config.h>
 
+#include <generated/client_data.h>
+
 #include <game/client/animstate.h>
-#include <game/client/components/qmclient/modes.h>
 #include <game/client/components/binds.h>
 #include <game/client/components/particles.h>
+#include <game/client/components/qmclient/modes.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/entities/laser.h>
@@ -105,6 +107,7 @@ namespace
 		int m_StartTick = 0;
 		int m_Type = WEAPON_GUN;
 		int m_TuneZone = 0;
+		bool m_Explosive = false;
 		vec2 m_StartPos = vec2(0.0f, 0.0f);
 		vec2 m_StartVel = vec2(0.0f, 0.0f);
 	};
@@ -115,14 +118,40 @@ namespace
 		       A.m_StartTick == B.m_StartTick &&
 		       A.m_Type == B.m_Type &&
 		       A.m_TuneZone == B.m_TuneZone &&
+		       A.m_Explosive == B.m_Explosive &&
 		       distance(A.m_StartPos, B.m_StartPos) < 0.01f &&
 		       distance(A.m_StartVel, B.m_StartVel) < 0.01f;
 	}
 
-	bool IsTrackedExplosive(const CProjectileData &Data, int LocalClientId, int DummyClientId)
+	bool IsTrackedProjectile(const CProjectileData &Data, int LocalClientId, int DummyClientId)
 	{
 		const bool PracticeOwned = Data.m_Owner == LocalClientId || (DummyClientId >= 0 && Data.m_Owner == DummyClientId);
-		return PracticeOwned && (Data.m_Explosive || Data.m_Type == WEAPON_GRENADE);
+		return PracticeOwned && (Data.m_Explosive || Data.m_Type == WEAPON_GRENADE || Data.m_Type == WEAPON_GUN || Data.m_Type == WEAPON_SHOTGUN);
+	}
+
+	bool IsTrackedProjectileExplosive(const STrackedProjectile &Proj)
+	{
+		return Proj.m_Explosive || Proj.m_Type == WEAPON_GRENADE;
+	}
+
+	void AddProjectileHitEffect(CGameClient *pGameClient, vec2 Pos, vec2 Direction)
+	{
+		if(!pGameClient || pGameClient->m_SuppressEvents)
+			return;
+
+		CParticle Particle;
+		Particle.SetDefault();
+		Particle.m_Spr = SPRITE_PART_HIT01;
+		Particle.m_Pos = Pos;
+		Particle.m_LifeSpan = 0.18f;
+		Particle.m_StartSize = 56.0f;
+		Particle.m_EndSize = 0.0f;
+		Particle.m_Rot = length(Direction) > 0.001f ? angle(Direction) + pi : random_angle();
+		Particle.m_Color.a = 0.85f;
+		Particle.m_StartAlpha = 0.85f;
+		Particle.m_FlowAffected = 0.0f;
+		Particle.m_Collides = false;
+		pGameClient->m_Particles.Add(CParticles::GROUP_EXPLOSIONS, &Particle);
 	}
 
 	void CollectTrackedProjectiles(CGameWorld &World, int LocalClientId, int DummyClientId, std::vector<STrackedProjectile> &vOut)
@@ -131,7 +160,7 @@ namespace
 		for(auto *pProj = (CProjectile *)World.FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pProj; pProj = (CProjectile *)pProj->TypeNext())
 		{
 			const CProjectileData Data = pProj->GetData();
-			if(!IsTrackedExplosive(Data, LocalClientId, DummyClientId))
+			if(!IsTrackedProjectile(Data, LocalClientId, DummyClientId))
 				continue;
 
 			STrackedProjectile Proj;
@@ -139,6 +168,7 @@ namespace
 			Proj.m_StartTick = Data.m_StartTick;
 			Proj.m_Type = Data.m_Type;
 			Proj.m_TuneZone = Data.m_TuneZone;
+			Proj.m_Explosive = Data.m_Explosive;
 			Proj.m_StartPos = Data.m_StartPos;
 			Proj.m_StartVel = Data.m_StartVel;
 			vOut.push_back(Proj);
@@ -1412,8 +1442,8 @@ bool CFastPractice::OverridePredict()
 
 	for(int Tick = BaseGameTick + 1; Tick <= FinalTickSelf; Tick++)
 	{
-		std::vector<STrackedProjectile> vTrackedExplosiveBefore;
-		std::vector<STrackedProjectile> vTrackedExplosiveAfter;
+		std::vector<STrackedProjectile> vTrackedProjectilesBefore;
+		std::vector<STrackedProjectile> vTrackedProjectilesAfter;
 
 		pLocalChar = GameClient()->m_PredictedWorld.GetCharacterById(LocalClientId);
 		pDummyChar = m_RequireDummy ? GameClient()->m_PredictedWorld.GetCharacterById(DummyClientId) : nullptr;
@@ -1496,8 +1526,6 @@ bool CFastPractice::OverridePredict()
 		if(pDummyChar)
 			pDummyChar->m_CanMoveInFreeze = false;
 
-		CollectTrackedProjectiles(GameClient()->m_PredictedWorld, LocalClientId, DummyClientId, vTrackedExplosiveBefore);
-
 		if(DummyFirst)
 			pDummyChar->OnDirectInput(pDummyInputData);
 		if(pInputData)
@@ -1510,16 +1538,17 @@ bool CFastPractice::OverridePredict()
 			pLocalChar->OnPredictedInput(pInputData);
 		if(pDummyInputData)
 			pDummyChar->OnPredictedInput(pDummyInputData);
+		CollectTrackedProjectiles(GameClient()->m_PredictedWorld, LocalClientId, DummyClientId, vTrackedProjectilesBefore);
 		GameClient()->m_PredictedWorld.Tick();
 
 		TrackSafeRescuePosition(LocalClientId, pLocalChar);
 		if(pDummyChar)
 			TrackSafeRescuePosition(DummyClientId, pDummyChar);
 
-		CollectTrackedProjectiles(GameClient()->m_PredictedWorld, LocalClientId, DummyClientId, vTrackedExplosiveAfter);
-		for(const auto &TrackedProj : vTrackedExplosiveBefore)
+		CollectTrackedProjectiles(GameClient()->m_PredictedWorld, LocalClientId, DummyClientId, vTrackedProjectilesAfter);
+		for(const auto &TrackedProj : vTrackedProjectilesBefore)
 		{
-			const bool StillExists = std::any_of(vTrackedExplosiveAfter.begin(), vTrackedExplosiveAfter.end(), [&](const STrackedProjectile &Candidate) {
+			const bool StillExists = std::any_of(vTrackedProjectilesAfter.begin(), vTrackedProjectilesAfter.end(), [&](const STrackedProjectile &Candidate) {
 				return SameProjectile(TrackedProj, Candidate);
 			});
 			if(StillExists)
@@ -1533,10 +1562,17 @@ bool CFastPractice::OverridePredict()
 			vec2 ImpactPos = CurPos;
 			Collision()->IntersectLine(PrevPos, CurPos, &ImpactPos, nullptr);
 
-			if(!GameClient()->m_SuppressEvents)
-				GameClient()->m_Effects.Explosion(ImpactPos, 1.0f);
-			if(g_Config.m_SndGame && !GameClient()->m_SuppressEvents)
-				GameClient()->m_Sounds.PlayAndRecord(CSounds::CHN_WORLD, SOUND_GRENADE_EXPLODE, 1.0f, ImpactPos);
+			if(IsTrackedProjectileExplosive(TrackedProj))
+			{
+				if(!GameClient()->m_SuppressEvents)
+					GameClient()->m_Effects.Explosion(ImpactPos, 1.0f);
+				if(g_Config.m_SndGame && !GameClient()->m_SuppressEvents)
+					GameClient()->m_Sounds.PlayAndRecord(CSounds::CHN_WORLD, SOUND_GRENADE_EXPLODE, 1.0f, ImpactPos);
+			}
+			else
+			{
+				AddProjectileHitEffect(GameClient(), ImpactPos, CurPos - PrevPos);
+			}
 		}
 
 		TrackFireSound(LocalClientId, pLocalChar);

@@ -12,9 +12,9 @@
 #include <engine/friends.h>
 #include <engine/image.h>
 #include <engine/serverbrowser.h>
-#include <engine/storage.h>
 #include <engine/shared/config.h>
 #include <engine/shared/jobs.h>
+#include <engine/storage.h>
 #include <engine/textrender.h>
 
 #include <generated/client_data.h>
@@ -27,13 +27,13 @@
 #include <game/client/components/menus_settings_controls.h>
 #include <game/client/components/menus_start.h>
 #include <game/client/components/section_loader.h>
+#include <game/client/components/settings_resource_jobs.h>
 #include <game/client/components/skins7.h>
 #include <game/client/components/tclient/warlist.h>
 #include <game/client/lineinput.h>
 #include <game/client/ui.h>
 #include <game/voting.h>
 
-#include <game/client/components/settings_resource_jobs.h>
 #include <array>
 #include <chrono>
 #include <deque>
@@ -1812,14 +1812,14 @@ public:
 	void InvalidateSettingsTextPool();
 	void InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason Reason);
 	void FinalizeTeeListDrainPerfSession();
-		void ResetSettingsFrameBudgetForFrame(bool TeeSettingsActive, int TeeSkinGpuUploadsPerFrame = -1)
-		{
-			const SSettingsResourceFrameContext FrameContext = SettingsResourceFrameContext();
-			m_SettingsFrameBudget = SSettingsWarmupFrameBudget{};
-			SettingsApplyActiveTeeSkinFrameBudget(m_SettingsFrameBudget, TeeSettingsActive);
-			if(TeeSettingsActive)
-				m_SettingsFrameBudget.m_MaxGpuUploads = TeeSkinGpuUploadsPerFrame >= 0 ? TeeSkinGpuUploadsPerFrame : SettingsSkinGpuUploadFrameUnits(FrameContext, TeeSettingsActive);
-		}
+	void ResetSettingsFrameBudgetForFrame(bool TeeSettingsActive, int TeeSkinGpuUploadsPerFrame = -1)
+	{
+		const SSettingsResourceFrameContext FrameContext = SettingsResourceFrameContext();
+		m_SettingsFrameBudget = SSettingsWarmupFrameBudget{};
+		SettingsApplyActiveTeeSkinFrameBudget(m_SettingsFrameBudget, TeeSettingsActive);
+		if(TeeSettingsActive)
+			m_SettingsFrameBudget.m_MaxGpuUploads = TeeSkinGpuUploadsPerFrame >= 0 ? TeeSkinGpuUploadsPerFrame : SettingsSkinGpuUploadFrameUnits(FrameContext, TeeSettingsActive);
+	}
 	SSettingsWarmupFrameBudget *SettingsFrameBudget() { return &m_SettingsFrameBudget; }
 
 private:
@@ -1914,7 +1914,7 @@ private:
 	bool DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
 	void InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char *pSectionId);
 	void DestroySettingsPageRuntimeCaches();
-		bool PrewarmSettingsPageResources(int Page, int Tab, const CUIRect &ContentView);
+	bool PrewarmSettingsPageResources(int Page, int Tab, const CUIRect &ContentView);
 	bool PrewarmSettingsAssetResources();
 	SSettingsPageRuntimeCache *GetSettingsPageRuntimeCache(int Page, int Tab);
 	void RenderSettingsTClientBindWheel(CUIRect MainView);
@@ -1925,7 +1925,7 @@ private:
 	void RenderSettingsTClientProfiles(CUIRect MainView);
 	void RenderSettingsTClientConfigs(CUIRect MainView);
 	void RenderSettingsTClientSidebar(CUIRect MainView);
-	void RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage = false);
+	void RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage = false, bool PrewarmOnly = false);
 	void RenderSettingsQmClientOverview(CUIRect MainView);
 	void RenderTeeCute(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, bool CuteEyes, float Alpha = 1.0f);
 

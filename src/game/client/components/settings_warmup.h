@@ -3,8 +3,10 @@
 
 #include <game/client/components/settings_runtime_cache.h>
 
-#include <functional>
+#include <cmath>
 #include <cstdint>
+#include <functional>
+#include <limits>
 #include <vector>
 
 constexpr bool IsSettingsWarmupStageReady(int CurrentStage, int RequiredStage)
@@ -22,6 +24,31 @@ constexpr int AdvanceSettingsWarmupStage(int CurrentStage, int LastStage)
 constexpr int SettingsLoadingRuntimeCacheWarmupSteps(int TClientCacheSlots)
 {
 	return TClientCacheSlots + 6;
+}
+
+inline int SettingsRuntimeCacheRoundedKey(float Value, int NonFiniteFallback = 0)
+{
+	if(!std::isfinite(Value))
+		return NonFiniteFallback;
+	if(Value >= static_cast<float>(std::numeric_limits<int>::max()))
+		return std::numeric_limits<int>::max();
+	if(Value <= static_cast<float>(std::numeric_limits<int>::min()))
+		return std::numeric_limits<int>::min();
+	return static_cast<int>(std::round(Value));
+}
+
+inline int SettingsRuntimeCachePositiveRoundedKey(float Value)
+{
+	return std::max(1, SettingsRuntimeCacheRoundedKey(Value, 1));
+}
+
+inline int SettingsRuntimeCacheDimensionKey(float Value)
+{
+	if(!std::isfinite(Value))
+		return 1;
+	if(Value >= static_cast<float>(std::numeric_limits<int>::max()))
+		return std::numeric_limits<int>::max();
+	return std::max(1, static_cast<int>(Value));
 }
 
 enum class EClassicSettingsPage

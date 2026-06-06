@@ -1,4 +1,5 @@
 #include "monitoring.h"
+
 #include "perf_logging.h"
 
 #include <base/math.h>
@@ -1079,7 +1080,7 @@ void CQmMonitoring::RenderDebugDetails(CUIRect Rect) const
 	Rect.Margin(Margin, &Inner);
 	Inner.VSplitMid(&Left, &Right, Gap);
 
-	const struct SDetailRow
+	struct SDetailRow
 	{
 		const char *m_pLabel;
 		const char *m_pValue;

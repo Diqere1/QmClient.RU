@@ -3,19 +3,29 @@
 
 #include <game/client/components/settings_runtime_cache.h>
 
+#include <optional>
 #include <string>
 #include <vector>
+
+struct SSettingsSkinListColorKey
+{
+	bool m_UseCustomColor = false;
+	int m_ColorBody = 0;
+	int m_ColorFeet = 0;
+};
 
 struct SSettingsSkinListEntry
 {
 	std::string m_Name;
 	bool m_Selected = false;
 	bool m_Favorite = false;
+	std::optional<SSettingsSkinListColorKey> m_ColorKey;
 };
 
 struct SSettingsSkinListPlan
 {
 	std::vector<std::string> m_vNames;
+	std::vector<SSettingsSkinListEntry> m_vEntries;
 };
 
 struct SSettingsSkinListPlanResult

@@ -11,10 +11,8 @@ Strategy:
 
 Format: Same as DDNet — key on one line, == translation on next line.
 """
+
 import os
-import re
-import sys
-import unicodedata
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
@@ -26,51 +24,51 @@ OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "qmclient", "languages")
 # We add "english" which DDNet hardcodes but doesn't have a file for.
 # ---------------------------------------------------------------------------
 LANGUAGES = [
-    ("arabic",              "العربية",                  "682", "ar"),
-    ("azerbaijani",         "Azərbaycan dili",          "031", "az"),
-    ("belarusian",          "Беларуская",               "112", "be"),
-    ("bosnian",             "Bosanski",                 "070", "bs-Latn"),
-    ("brazilian_portuguese","Português brasileiro",     "076", "pt-BR"),
-    ("bulgarian",           "Български",                "100", "bg"),
-    ("catalan",             "Català",                   "906", "ca"),
-    ("chuvash",             "Чăвашла",                  "643", "cv"),
-    ("czech",               "Česky",                    "203", "cs"),
-    ("danish",              "Dansk",                    "208", "da"),
-    ("dutch",               "Nederlands",               "528", "nl"),
-    ("english",             "English",                  "826", "en"),
-    ("esperanto",           "Esperanto",                "999", "eo"),
-    ("estonian",            "Eesti",                    "233", "et"),
-    ("finnish",             "Suomi",                    "246", "fi"),
-    ("french",              "Français",                 "250", "fr"),
-    ("galician",            "Galego",                   "906", "gl"),
-    ("german",              "Deutsch",                  "276", "de"),
-    ("greek",               "Ελληνικά",                 "300", "el"),
-    ("hungarian",           "Magyar",                   "348", "hu"),
-    ("italian",             "Italiano",                 "380", "it"),
-    ("japanese",            "日本語",                    "392", "ja"),
-    ("korean",              "한국어",                    "410", "ko"),
-    ("kyrgyz",              "Кыргызча",                 "417", "ky"),
-    ("norwegian",           "Norsk",                    "578", "no"),
-    ("persian",             "فارسی",                    "364", "fa"),
-    ("polish",              "Polski",                   "616", "pl"),
-    ("portuguese",          "Português",                "620", "pt"),
-    ("romanian",            "Română",                   "642", "ro"),
-    ("russian",             "Русский",                  "643", "ru"),
-    ("serbian",             "Српски (Latinica)",        "688", "sr-Latn"),
-    ("serbian_cyrillic",    "Српски (Ћирилица)",        "688", "sr-Cyrl"),
-    ("slovak",              "Slovenčina",               "703", "sk"),
-    ("spanish",             "Español",                  "724", "es"),
-    ("swedish",             "Svenska",                  "752", "sv"),
-    ("traditional_chinese", "繁體中文",                  "158", "zh-Hant;zh-TW;zh-HK"),
-    ("turkish",             "Türkçe",                   "792", "tr"),
-    ("ukrainian",           "Українська",               "804", "uk"),
+    ("arabic", "العربية", "682", "ar"),
+    ("azerbaijani", "Azərbaycan dili", "031", "az"),
+    ("belarusian", "Беларуская", "112", "be"),
+    ("bosnian", "Bosanski", "070", "bs-Latn"),
+    ("brazilian_portuguese", "Português brasileiro", "076", "pt-BR"),
+    ("bulgarian", "Български", "100", "bg"),
+    ("catalan", "Català", "906", "ca"),
+    ("chuvash", "Чăвашла", "643", "cv"),
+    ("czech", "Česky", "203", "cs"),
+    ("danish", "Dansk", "208", "da"),
+    ("dutch", "Nederlands", "528", "nl"),
+    ("english", "English", "826", "en"),
+    ("esperanto", "Esperanto", "999", "eo"),
+    ("estonian", "Eesti", "233", "et"),
+    ("finnish", "Suomi", "246", "fi"),
+    ("french", "Français", "250", "fr"),
+    ("galician", "Galego", "906", "gl"),
+    ("german", "Deutsch", "276", "de"),
+    ("greek", "Ελληνικά", "300", "el"),
+    ("hungarian", "Magyar", "348", "hu"),
+    ("italian", "Italiano", "380", "it"),
+    ("japanese", "日本語", "392", "ja"),
+    ("korean", "한국어", "410", "ko"),
+    ("kyrgyz", "Кыргызча", "417", "ky"),
+    ("norwegian", "Norsk", "578", "no"),
+    ("persian", "فارسی", "364", "fa"),
+    ("polish", "Polski", "616", "pl"),
+    ("portuguese", "Português", "620", "pt"),
+    ("romanian", "Română", "642", "ro"),
+    ("russian", "Русский", "643", "ru"),
+    ("serbian", "Српски (Latinica)", "688", "sr-Latn"),
+    ("serbian_cyrillic", "Српски (Ћирилица)", "688", "sr-Cyrl"),
+    ("slovak", "Slovenčina", "703", "sk"),
+    ("spanish", "Español", "724", "es"),
+    ("swedish", "Svenska", "752", "sv"),
+    ("traditional_chinese", "繁體中文", "158", "zh-Hant;zh-TW;zh-HK"),
+    ("turkish", "Türkçe", "792", "tr"),
+    ("ukrainian", "Українська", "804", "uk"),
 ]
 
 
 def is_chinese(s):
     """Return True if s contains any CJK characters."""
     for ch in s:
-        if '\u4e00' <= ch <= '\u9fff' or '\u3400' <= ch <= '\u4dbf':
+        if "\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf":
             return True
     return False
 
@@ -107,7 +105,6 @@ EN_TRANSLATIONS = {
     "语音": "Voice",
     "麦克风": "Microphone",
     "扬声器": "Speaker",
-
     # ── Tab & Module names ──
     "消息气泡": "Chat Bubble",
     "Gores演员专用": "Gores Actor",
@@ -128,16 +125,12 @@ EN_TRANSLATIONS = {
     "实体层颜色": "Entity Layer Colors",
     "激光增强": "Laser Enhancement",
     "玩家统计": "Player Stats",
-    "碰撞箱模式": "Hitbox Mode",
-    "收藏的地图": "Favorite Maps",
     "HJ辅助": "HJ Assist",
     "速通计时器": "Speedrun Timer",
-    "按键显示": "Input Overlay",
     "灵动岛": "Dynamic Island",
     "SMTC": "SMTC",
     "3D背景": "3D Background",
     "功能搜索": "Feature Search",
-
     # ── Descriptions ──
     "在Tee上方显示对话气泡": "Show chat bubbles above Tees",
     "在玩家头顶显示聊天消息": "Show chat messages above players",
@@ -221,8 +214,6 @@ EN_TRANSLATIONS = {
     "自动登录 Axiom 服务器": "Auto login Axiom server",
     "自动刷新服务器列表": "Auto refresh server list",
     "自动问候进图的好友": "Auto greet friends entering map",
-    "自动翻译发送的消息": "Auto translate outgoing messages",
-    "自动翻译收到的消息": "Auto translate incoming messages",
     "自动检测说话时开麦": "Auto unmute when speaking",
     "自动平衡麦克风音量（AGC，实验性）": "Auto gain control for mic (AGC, experimental)",
     "当好友上线时提醒": "Notify when friends come online",
@@ -551,7 +542,6 @@ EN_TRANSLATIONS = {
     "Race": "Race",
     "Dummy": "Dummy",
     "Unknown": "Unknown",
-
     # ── Additional translations ──
     "45°瞄准": "45° Aim",
     "Axiom 主号密码": "Axiom main account password",
@@ -611,8 +601,8 @@ def translate_to_english(chinese_str):
 
 def read_strings():
     """Read extracted strings from file."""
-    with open(STRINGS_FILE, 'r', encoding='utf-8') as f:
-        strings = [line.rstrip('\n') for line in f if line.strip()]
+    with open(STRINGS_FILE, "r", encoding="utf-8") as f:
+        strings = [line.rstrip("\n") for line in f if line.strip()]
     return strings
 
 
@@ -620,7 +610,7 @@ def write_language_file(filename, entries):
     """Write a language file in the DDNet format: key then == translation."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     filepath = os.path.join(OUTPUT_DIR, filename)
-    with open(filepath, 'w', encoding='utf-8', newline='\n') as f:
+    with open(filepath, "w", encoding="utf-8", newline="\n") as f:
         for key, translation in entries:
             f.write(f"{key}\n")
             f.write(f"== {translation}\n\n")
@@ -666,7 +656,7 @@ def generate_other_language(strings, lang_code, lang_name):
 def create_readme():
     """Create a README explaining the translation structure."""
     readme_path = os.path.join(OUTPUT_DIR, "README.txt")
-    with open(readme_path, 'w', encoding='utf-8', newline='\n') as f:
+    with open(readme_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("""QmClient Translation Files
 =========================
 
@@ -709,7 +699,7 @@ Auto-generated by qmclient_scripts/languages_qmclient/generate_all.py
 def create_index():
     """Create data/qmclient/languages/index.txt (same format as DDNet's)."""
     index_path = os.path.join(OUTPUT_DIR, "index.txt")
-    with open(index_path, 'w', encoding='utf-8', newline='\n') as f:
+    with open(index_path, "w", encoding="utf-8", newline="\n") as f:
         for filename, native_name, country_code, lang_tags in LANGUAGES:
             f.write(f"{filename}\n")
             f.write(f"== {native_name}\n")
@@ -759,7 +749,7 @@ def main():
     # Print summary
     chinese_keys = sum(1 for s in strings if is_chinese(s))
     english_keys = len(strings) - chinese_keys
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  Chinese-origin keys: {chinese_keys}")
     print(f"  English-origin keys: {english_keys}")
     print(f"  Total unique strings: {len(strings)}")
@@ -767,5 +757,5 @@ def main():
     print(f"  English translations provided: {len(EN_TRANSLATIONS)}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

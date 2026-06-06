@@ -275,14 +275,25 @@ public:
 	class CSkinListEntry
 	{
 	public:
+		class SColorKey
+		{
+		public:
+			bool m_UseCustomColor = false;
+			int m_ColorBody = 0;
+			int m_ColorFeet = 0;
+		};
+
 		CSkinListEntry() :
 			m_pSkinContainer(nullptr),
-			m_Favorite(false) {}
-		CSkinListEntry(CSkinContainer *pSkinContainer, bool Favorite, bool SelectedMain, bool SelectedDummy, std::optional<std::pair<int, int>> NameMatch) :
+			m_Favorite(false),
+			m_SelectedMain(false),
+			m_SelectedDummy(false) {}
+		CSkinListEntry(CSkinContainer *pSkinContainer, bool Favorite, bool SelectedMain, bool SelectedDummy, std::optional<SColorKey> ColorKey, std::optional<std::pair<int, int>> NameMatch) :
 			m_pSkinContainer(pSkinContainer),
 			m_Favorite(Favorite),
 			m_SelectedMain(SelectedMain),
 			m_SelectedDummy(SelectedDummy),
+			m_ColorKey(ColorKey),
 			m_NameMatch(NameMatch) {}
 
 		bool operator<(const CSkinListEntry &Other) const;
@@ -291,6 +302,7 @@ public:
 		bool IsFavorite() const { return m_Favorite; }
 		bool IsSelectedMain() const { return m_SelectedMain; }
 		bool IsSelectedDummy() const { return m_SelectedDummy; }
+		const std::optional<SColorKey> &ColorKey() const { return m_ColorKey; }
 		const std::optional<std::pair<int, int>> &NameMatch() const { return m_NameMatch; }
 
 		const void *ListItemId() const { return &m_ListItemId; }
@@ -308,6 +320,7 @@ public:
 		bool m_Favorite;
 		bool m_SelectedMain;
 		bool m_SelectedDummy;
+		std::optional<SColorKey> m_ColorKey;
 		std::optional<std::pair<int, int>> m_NameMatch;
 		char m_ListItemId;
 		char m_FavoriteButtonId;
@@ -326,6 +339,9 @@ public:
 	private:
 		std::vector<CSkinListEntry> m_vSkins;
 		int m_UnfilteredCount = 0;
+		int m_Dummy = -1;
+		CSkinListEntry::SColorKey m_MainColorKey;
+		CSkinListEntry::SColorKey m_DummyColorKey;
 		bool m_NeedsUpdate = true;
 	};
 
@@ -439,7 +455,7 @@ public:
 	void RefreshEventSkins();
 	void Refresh(TSkinLoadedCallback &&SkinLoadedCallback);
 	CSkinLoadingStats LoadingStats() const;
-	CSkinList &SkinList();
+	CSkinList &SkinList(int Dummy);
 	bool SkinListSkeletonReady() const;
 	bool SkinListReady() const;
 	uint64_t SettingsSourceUploadsCompleted() const { return m_SettingsSourceUploadsCompleted; }
@@ -668,11 +684,13 @@ private:
 	struct SSkinListSnapshotEntry
 	{
 		std::string m_Name;
+		std::optional<CSkinListEntry::SColorKey> m_ColorKey;
 		bool m_SelectedMain = false;
 		bool m_SelectedDummy = false;
 		bool m_Favorite = false;
 		bool m_NotFound = false;
 		bool m_Special = false;
+		bool m_ForceShowNotFound = false;
 	};
 
 	class CSkinListPlanJob : public IJob
@@ -734,9 +752,9 @@ private:
 	size_t LoadedSkinLimit() const;
 	void QueueSkinDirectoryScanJob();
 	void ProcessSkinDirectoryScanJob();
-	void QueueSkinListPlanJob();
+	void QueueSkinListPlanJob(int Dummy);
 	void ProcessSkinListPlanJob();
-	CSkinListEntry MakeSkinListEntry(const CSkinContainer *pSkinContainer) const;
+	CSkinListEntry MakeSkinListEntry(const CSkinContainer *pSkinContainer, std::optional<CSkinListEntry::SColorKey> ColorKey) const;
 
 	static void ConAddFavoriteSkin(IConsole::IResult *pResult, void *pUserData);
 	static void ConRemFavoriteSkin(IConsole::IResult *pResult, void *pUserData);
@@ -779,7 +797,7 @@ private:
 	CSkinList m_SkinList;
 	std::shared_ptr<CSkinDirectoryScanJob> m_pSkinDirectoryScanJob;
 	std::shared_ptr<CSkinListPlanJob> m_pSkinListPlanJob;
-	std::vector<std::string> m_vPendingSkinListMergeNames;
+	std::vector<SSettingsSkinListEntry> m_vPendingSkinListMergeEntries;
 	std::vector<CSkinListEntry> m_vPendingSkinListEntries;
 	size_t m_SkinListMergeCursor = 0;
 	int m_PendingSkinListUnfilteredCount = 0;

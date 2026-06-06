@@ -1,12 +1,14 @@
 #include "settings_runtime_cache.h"
 
 #include <base/system.h>
+
+#include <engine/shared/config.h>
+
 #include <game/client/components/menus.h>
 #include <game/client/components/qmclient/perf_logging.h>
 
 #include <algorithm>
 #include <cstdio>
-#include <engine/shared/config.h>
 #include <utility>
 
 static void AddUnique(std::vector<int> &vValues, int Value)
@@ -171,8 +173,8 @@ bool SettingsSectionCanRecordStaticFbo(const SSettingsSectionRegistry &Registry,
 {
 	const auto It = std::find_if(Registry.m_vSections.begin(), Registry.m_vSections.end(), [Page, Tab, pSection](const SSettingsSectionEntry &Entry) {
 		return Entry.m_Page == Page &&
-			(Entry.m_Tab < 0 || Tab < 0 || Entry.m_Tab == Tab) &&
-			Entry.m_Id == pSection;
+		       (Entry.m_Tab < 0 || Tab < 0 || Entry.m_Tab == Tab) &&
+		       Entry.m_Id == pSection;
 	});
 	if(It == Registry.m_vSections.end())
 		return false;
@@ -218,12 +220,12 @@ int SettingsPageRuntimeCacheSlot(int Page, int Tab)
 bool SettingsRuntimeCacheKeyMatches(const SSettingsRuntimeCacheKey &A, const SSettingsRuntimeCacheKey &B)
 {
 	return A.m_LanguageHash == B.m_LanguageHash &&
-		A.m_FontGeneration == B.m_FontGeneration &&
-		A.m_BackendGeneration == B.m_BackendGeneration &&
-		A.m_WindowWidth == B.m_WindowWidth &&
-		A.m_WindowHeight == B.m_WindowHeight &&
-		A.m_UiScale == B.m_UiScale &&
-		A.m_ConfigHash == B.m_ConfigHash;
+	       A.m_FontGeneration == B.m_FontGeneration &&
+	       A.m_BackendGeneration == B.m_BackendGeneration &&
+	       A.m_WindowWidth == B.m_WindowWidth &&
+	       A.m_WindowHeight == B.m_WindowHeight &&
+	       A.m_UiScale == B.m_UiScale &&
+	       A.m_ConfigHash == B.m_ConfigHash;
 }
 
 bool SettingsPageUsesRuntimeScroll(int Page)
@@ -418,6 +420,11 @@ bool SettingsInvalidationClearsResourcePlan(ESettingsInvalidationReason Reason)
 bool SettingsWarmupEnabled(int PrewarmConfig, int FboConfig)
 {
 	return PrewarmConfig != 0 && FboConfig != 0;
+}
+
+bool SettingsRuntimeCachingEnabled(int PrewarmConfig, int FboConfig, int NewUiConfig)
+{
+	return SettingsWarmupEnabled(PrewarmConfig, FboConfig) && NewUiConfig != 0;
 }
 
 static std::string SettingsRuntimePageName(int Page)

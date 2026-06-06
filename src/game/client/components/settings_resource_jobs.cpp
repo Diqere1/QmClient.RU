@@ -1,8 +1,8 @@
-#include <game/client/components/settings_resource_jobs.h>
+#include <base/system.h>
+
 #include <game/client/components/assets_preview_scale.h>
 #include <game/client/components/menus.h>
-
-#include <base/system.h>
+#include <game/client/components/settings_resource_jobs.h>
 
 #include <algorithm>
 #include <cmath>
@@ -39,8 +39,12 @@ SSettingsSkinListPlan BuildSettingsSkinListPlan(std::vector<SSettingsSkinListEnt
 
 	SSettingsSkinListPlan Plan;
 	Plan.m_vNames.reserve(vEntries.size());
+	Plan.m_vEntries.reserve(vEntries.size());
 	for(const SSettingsSkinListEntry &Entry : vEntries)
+	{
 		Plan.m_vNames.push_back(Entry.m_Name);
+		Plan.m_vEntries.push_back(Entry);
+	}
 	return Plan;
 }
 
@@ -159,9 +163,9 @@ bool SettingsSkinListSkeletonReady(const SSkinListPlanState &State)
 bool SettingsSkinListResourcesSettled(const SSkinListPlanState &State)
 {
 	return SettingsSkinListSkeletonReady(State) &&
-		State.m_MergeComplete &&
-		State.m_VisibleBacklog == 0 &&
-		State.m_BackgroundBacklog == 0;
+	       State.m_MergeComplete &&
+	       State.m_VisibleBacklog == 0 &&
+	       State.m_BackgroundBacklog == 0;
 }
 
 bool SettingsSkinListShouldLogAllVisibleReady(bool VisibleSettled, bool AlreadyLogged, int VisibleRows)
@@ -275,7 +279,6 @@ bool SettingsSkinListScrollResetNeeded(int PreviousCount, int CurrentCount, bool
 	return !ListActive;
 }
 
-
 bool SettingsSkinListShouldRequestImmediateLoad(bool Visible, bool Prefetched)
 {
 	return Visible || Prefetched;
@@ -289,12 +292,12 @@ bool SettingsSkinListShouldRequestImmediateLoad(bool Visible)
 bool SettingsRuntimeWarmupShouldRun(bool WarmupEnabled, bool SettingsPageVisible, bool HasActiveItem, bool HasHotItem, bool ScrollInputActive, bool SettingsPageSwitchActive, bool SettingsScrollActive)
 {
 	return WarmupEnabled &&
-		SettingsPageVisible &&
-		!HasActiveItem &&
-		!HasHotItem &&
-		!ScrollInputActive &&
-		!SettingsPageSwitchActive &&
-		!SettingsScrollActive;
+	       SettingsPageVisible &&
+	       !HasActiveItem &&
+	       !HasHotItem &&
+	       !ScrollInputActive &&
+	       !SettingsPageSwitchActive &&
+	       !SettingsScrollActive;
 }
 
 SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, bool JumpScrollActive, int PostScrollRecoveryFrames)
@@ -361,9 +364,9 @@ int SettingsSkinGpuUploadLimiterUnits(const SSettingsResourceFrameContext &Conte
 bool SettingsSkinBackgroundDrainActive(const SSettingsResourceFrameContext &Context, bool TeeSettingsActive)
 {
 	return TeeSettingsActive &&
-		!Context.m_ScrollActive &&
-		Context.m_PostScrollRecoveryFrames == 0 &&
-		Context.m_HighPrioritySettled;
+	       !Context.m_ScrollActive &&
+	       Context.m_PostScrollRecoveryFrames == 0 &&
+	       Context.m_HighPrioritySettled;
 }
 
 int SettingsSkinBackgroundRequestFrameBudget(const SSettingsResourceFrameContext &Context, bool TeeSettingsActive)
@@ -432,8 +435,8 @@ SSettingsSkinSourceAdmissionOutput SettingsSkinSourceAdmissionDecision(const SSe
 	{
 		Output.m_PromoteAllowed = false;
 		Output.m_BlockReason = HighPriority ?
-			ESettingsSkinSourceAdmissionBlockReason::VISIBLE_RESERVE :
-			ESettingsSkinSourceAdmissionBlockReason::LOADING_WINDOW;
+					       ESettingsSkinSourceAdmissionBlockReason::VISIBLE_RESERVE :
+					       ESettingsSkinSourceAdmissionBlockReason::LOADING_WINDOW;
 	}
 
 	return Output;
@@ -482,115 +485,115 @@ int SettingsSkinSourceCountFuseLimit(const SSettingsResourceFrameContext &Contex
 
 namespace
 {
-struct SSettingsSkinThroughputProfile
-{
-	int m_GpuUploadLimitMin = 0;
-	int m_GpuUploadLimitMax = 0;
-	int m_GpuUploadLimitStep = 24;
-	int m_FinalizeBudgetMin = 0;
-	int m_FinalizeBudgetMax = 0;
-	int m_FinalizeBudgetStep = 16;
-	int m_NormalWindowMin = 0;
-	int m_NormalWindowMax = 0;
-	int m_NormalWindowStep = 32;
-	int m_VisibleWindowMin = 0;
-	int m_VisibleWindowMax = 0;
-	int m_VisibleWindowStep = 32;
-	int m_VisibleReserveMin = 0;
-	int m_VisibleReserveMax = 0;
-	int m_BackgroundRequestBudget = 0;
-};
-
-static int ClampSettingsSkinLoadWindow(int BaseWindow, int LoadedMax)
-{
-	if(LoadedMax > 0)
-		return minimum(BaseWindow, LoadedMax);
-	return BaseWindow;
-}
-
-static SSettingsSkinThroughputProfile SettingsSkinThroughputProfileForMode(ESettingsSkinThroughputControllerMode Mode, int LoadedMax)
-{
-	SSettingsSkinThroughputProfile Profile;
-	switch(Mode)
+	struct SSettingsSkinThroughputProfile
 	{
-	case ESettingsSkinThroughputControllerMode::SCROLL_ACTIVE:
-		Profile.m_GpuUploadLimitMin = 96;
-		Profile.m_GpuUploadLimitMax = 144;
-		Profile.m_FinalizeBudgetMin = 16;
-		Profile.m_FinalizeBudgetMax = 24;
-		Profile.m_FinalizeBudgetStep = 8;
-		Profile.m_NormalWindowMin = ClampSettingsSkinLoadWindow(48, LoadedMax);
-		Profile.m_NormalWindowMax = ClampSettingsSkinLoadWindow(64, LoadedMax);
-		Profile.m_NormalWindowStep = 16;
-		Profile.m_VisibleWindowMin = ClampSettingsSkinLoadWindow(128, LoadedMax);
-		Profile.m_VisibleWindowMax = ClampSettingsSkinLoadWindow(160, LoadedMax);
-		Profile.m_VisibleWindowStep = 16;
-		Profile.m_VisibleReserveMin = 8;
-		Profile.m_VisibleReserveMax = 8;
-		Profile.m_BackgroundRequestBudget = 0;
-		break;
-	case ESettingsSkinThroughputControllerMode::POST_SCROLL_RECOVERY:
-		Profile.m_GpuUploadLimitMin = 144;
-		Profile.m_GpuUploadLimitMax = 240;
-		Profile.m_FinalizeBudgetMin = 32;
-		Profile.m_FinalizeBudgetMax = 64;
-		Profile.m_NormalWindowMin = ClampSettingsSkinLoadWindow(96, LoadedMax);
-		Profile.m_NormalWindowMax = ClampSettingsSkinLoadWindow(160, LoadedMax);
-		Profile.m_VisibleWindowMin = ClampSettingsSkinLoadWindow(160, LoadedMax);
-		Profile.m_VisibleWindowMax = ClampSettingsSkinLoadWindow(224, LoadedMax);
-		Profile.m_VisibleReserveMin = 0;
-		Profile.m_VisibleReserveMax = 4;
-		Profile.m_BackgroundRequestBudget = 0;
-		break;
-	case ESettingsSkinThroughputControllerMode::IDLE_DRAIN:
-		Profile.m_GpuUploadLimitMin = 192;
-		Profile.m_GpuUploadLimitMax = 384;
-		Profile.m_FinalizeBudgetMin = 64;
-		Profile.m_FinalizeBudgetMax = 96;
-		Profile.m_NormalWindowMin = ClampSettingsSkinLoadWindow(192, LoadedMax);
-		Profile.m_NormalWindowMax = ClampSettingsSkinLoadWindow(320, LoadedMax);
-		Profile.m_VisibleWindowMin = ClampSettingsSkinLoadWindow(192, LoadedMax);
-		Profile.m_VisibleWindowMax = ClampSettingsSkinLoadWindow(192, LoadedMax);
-		Profile.m_VisibleReserveMin = 0;
-		Profile.m_VisibleReserveMax = 0;
-		Profile.m_BackgroundRequestBudget = 24;
-		break;
-	case ESettingsSkinThroughputControllerMode::IDLE_VISIBLE:
-	default:
-		Profile.m_GpuUploadLimitMin = 192;
-		Profile.m_GpuUploadLimitMax = 288;
-		Profile.m_FinalizeBudgetMin = 48;
-		Profile.m_FinalizeBudgetMax = 80;
-		Profile.m_NormalWindowMin = ClampSettingsSkinLoadWindow(128, LoadedMax);
-		Profile.m_NormalWindowMax = ClampSettingsSkinLoadWindow(256, LoadedMax);
-		Profile.m_VisibleWindowMin = ClampSettingsSkinLoadWindow(192, LoadedMax);
-		Profile.m_VisibleWindowMax = ClampSettingsSkinLoadWindow(256, LoadedMax);
-		Profile.m_VisibleReserveMin = 0;
-		Profile.m_VisibleReserveMax = 2;
-		Profile.m_BackgroundRequestBudget = 6;
-		break;
+		int m_GpuUploadLimitMin = 0;
+		int m_GpuUploadLimitMax = 0;
+		int m_GpuUploadLimitStep = 24;
+		int m_FinalizeBudgetMin = 0;
+		int m_FinalizeBudgetMax = 0;
+		int m_FinalizeBudgetStep = 16;
+		int m_NormalWindowMin = 0;
+		int m_NormalWindowMax = 0;
+		int m_NormalWindowStep = 32;
+		int m_VisibleWindowMin = 0;
+		int m_VisibleWindowMax = 0;
+		int m_VisibleWindowStep = 32;
+		int m_VisibleReserveMin = 0;
+		int m_VisibleReserveMax = 0;
+		int m_BackgroundRequestBudget = 0;
+	};
+
+	static int ClampSettingsSkinLoadWindow(int BaseWindow, int LoadedMax)
+	{
+		if(LoadedMax > 0)
+			return minimum(BaseWindow, LoadedMax);
+		return BaseWindow;
 	}
-	return Profile;
-}
 
-static int StepTowardLimit(int Value, int Target, int Step)
-{
-	if(Value < Target)
-		return minimum(Target, Value + maximum(1, Step));
-	if(Value > Target)
-		return maximum(Target, Value - maximum(1, Step));
-	return Value;
-}
+	static SSettingsSkinThroughputProfile SettingsSkinThroughputProfileForMode(ESettingsSkinThroughputControllerMode Mode, int LoadedMax)
+	{
+		SSettingsSkinThroughputProfile Profile;
+		switch(Mode)
+		{
+		case ESettingsSkinThroughputControllerMode::SCROLL_ACTIVE:
+			Profile.m_GpuUploadLimitMin = 96;
+			Profile.m_GpuUploadLimitMax = 144;
+			Profile.m_FinalizeBudgetMin = 16;
+			Profile.m_FinalizeBudgetMax = 24;
+			Profile.m_FinalizeBudgetStep = 8;
+			Profile.m_NormalWindowMin = ClampSettingsSkinLoadWindow(48, LoadedMax);
+			Profile.m_NormalWindowMax = ClampSettingsSkinLoadWindow(64, LoadedMax);
+			Profile.m_NormalWindowStep = 16;
+			Profile.m_VisibleWindowMin = ClampSettingsSkinLoadWindow(128, LoadedMax);
+			Profile.m_VisibleWindowMax = ClampSettingsSkinLoadWindow(160, LoadedMax);
+			Profile.m_VisibleWindowStep = 16;
+			Profile.m_VisibleReserveMin = 8;
+			Profile.m_VisibleReserveMax = 8;
+			Profile.m_BackgroundRequestBudget = 0;
+			break;
+		case ESettingsSkinThroughputControllerMode::POST_SCROLL_RECOVERY:
+			Profile.m_GpuUploadLimitMin = 144;
+			Profile.m_GpuUploadLimitMax = 240;
+			Profile.m_FinalizeBudgetMin = 32;
+			Profile.m_FinalizeBudgetMax = 64;
+			Profile.m_NormalWindowMin = ClampSettingsSkinLoadWindow(96, LoadedMax);
+			Profile.m_NormalWindowMax = ClampSettingsSkinLoadWindow(160, LoadedMax);
+			Profile.m_VisibleWindowMin = ClampSettingsSkinLoadWindow(160, LoadedMax);
+			Profile.m_VisibleWindowMax = ClampSettingsSkinLoadWindow(224, LoadedMax);
+			Profile.m_VisibleReserveMin = 0;
+			Profile.m_VisibleReserveMax = 4;
+			Profile.m_BackgroundRequestBudget = 0;
+			break;
+		case ESettingsSkinThroughputControllerMode::IDLE_DRAIN:
+			Profile.m_GpuUploadLimitMin = 192;
+			Profile.m_GpuUploadLimitMax = 384;
+			Profile.m_FinalizeBudgetMin = 64;
+			Profile.m_FinalizeBudgetMax = 96;
+			Profile.m_NormalWindowMin = ClampSettingsSkinLoadWindow(192, LoadedMax);
+			Profile.m_NormalWindowMax = ClampSettingsSkinLoadWindow(320, LoadedMax);
+			Profile.m_VisibleWindowMin = ClampSettingsSkinLoadWindow(192, LoadedMax);
+			Profile.m_VisibleWindowMax = ClampSettingsSkinLoadWindow(192, LoadedMax);
+			Profile.m_VisibleReserveMin = 0;
+			Profile.m_VisibleReserveMax = 0;
+			Profile.m_BackgroundRequestBudget = 24;
+			break;
+		case ESettingsSkinThroughputControllerMode::IDLE_VISIBLE:
+		default:
+			Profile.m_GpuUploadLimitMin = 192;
+			Profile.m_GpuUploadLimitMax = 288;
+			Profile.m_FinalizeBudgetMin = 48;
+			Profile.m_FinalizeBudgetMax = 80;
+			Profile.m_NormalWindowMin = ClampSettingsSkinLoadWindow(128, LoadedMax);
+			Profile.m_NormalWindowMax = ClampSettingsSkinLoadWindow(256, LoadedMax);
+			Profile.m_VisibleWindowMin = ClampSettingsSkinLoadWindow(192, LoadedMax);
+			Profile.m_VisibleWindowMax = ClampSettingsSkinLoadWindow(256, LoadedMax);
+			Profile.m_VisibleReserveMin = 0;
+			Profile.m_VisibleReserveMax = 2;
+			Profile.m_BackgroundRequestBudget = 6;
+			break;
+		}
+		return Profile;
+	}
 
-static int StepUpClamped(int Value, int Step, int MaxValue)
-{
-	return minimum(MaxValue, Value + maximum(1, Step));
-}
+	static int StepTowardLimit(int Value, int Target, int Step)
+	{
+		if(Value < Target)
+			return minimum(Target, Value + maximum(1, Step));
+		if(Value > Target)
+			return maximum(Target, Value - maximum(1, Step));
+		return Value;
+	}
 
-static int StepDownClamped(int Value, int Step, int MinValue)
-{
-	return maximum(MinValue, Value - maximum(1, Step));
-}
+	static int StepUpClamped(int Value, int Step, int MaxValue)
+	{
+		return minimum(MaxValue, Value + maximum(1, Step));
+	}
+
+	static int StepDownClamped(int Value, int Step, int MinValue)
+	{
+		return maximum(MinValue, Value - maximum(1, Step));
+	}
 }
 
 SSettingsSkinThroughputControllerOutput SettingsSkinThroughputControllerStep(const SSettingsSkinThroughputControllerInput &Input, SSettingsSkinThroughputControllerState &State)
@@ -610,10 +613,10 @@ SSettingsSkinThroughputControllerOutput SettingsSkinThroughputControllerStep(con
 		Input.m_Context.m_HighPrioritySettled &&
 		Input.m_VisibleWaiting <= 0;
 	const ESettingsSkinThroughputControllerMode Mode =
-		Input.m_Context.m_ScrollActive ? ESettingsSkinThroughputControllerMode::SCROLL_ACTIVE :
+		Input.m_Context.m_ScrollActive                 ? ESettingsSkinThroughputControllerMode::SCROLL_ACTIVE :
 		Input.m_Context.m_PostScrollRecoveryFrames > 0 ? ESettingsSkinThroughputControllerMode::POST_SCROLL_RECOVERY :
-		IdleDrainAllowed ? ESettingsSkinThroughputControllerMode::IDLE_DRAIN :
-		ESettingsSkinThroughputControllerMode::IDLE_VISIBLE;
+		IdleDrainAllowed                               ? ESettingsSkinThroughputControllerMode::IDLE_DRAIN :
+								 ESettingsSkinThroughputControllerMode::IDLE_VISIBLE;
 	const SSettingsSkinThroughputProfile Profile = SettingsSkinThroughputProfileForMode(Mode, maximum(0, Input.m_LoadedMax));
 
 	if(!State.m_Initialized)
@@ -745,11 +748,11 @@ SSettingsSkinBackgroundWindowOutput SettingsSkinBackgroundWindowUpdate(const SSe
 		return Output;
 
 	const bool ShouldDecrease = Input.m_VisibleWaiting ||
-		Input.m_GpuBudgetExhausted ||
-		Input.m_FinalizeBudgetExhausted ||
-		Input.m_DecodeJobsSaturated ||
-		Input.m_ConsumerStalled ||
-		!Input.m_FrameStable;
+				    Input.m_GpuBudgetExhausted ||
+				    Input.m_FinalizeBudgetExhausted ||
+				    Input.m_DecodeJobsSaturated ||
+				    Input.m_ConsumerStalled ||
+				    !Input.m_FrameStable;
 	if(ShouldDecrease)
 	{
 		Output.m_NextLimit = maximum(Input.m_MinLimit, maximum(Input.m_CurrentLimit, Input.m_MinLimit) / 2);
@@ -759,11 +762,11 @@ SSettingsSkinBackgroundWindowOutput SettingsSkinBackgroundWindowUpdate(const SSe
 	}
 
 	const bool Healthy = Input.m_LoadedProgress &&
-		!Input.m_VisibleWaiting &&
-		!Input.m_GpuBudgetExhausted &&
-		!Input.m_FinalizeBudgetExhausted &&
-		!Input.m_DecodeJobsSaturated &&
-		Input.m_FrameStable;
+			     !Input.m_VisibleWaiting &&
+			     !Input.m_GpuBudgetExhausted &&
+			     !Input.m_FinalizeBudgetExhausted &&
+			     !Input.m_DecodeJobsSaturated &&
+			     Input.m_FrameStable;
 	if(!Healthy)
 	{
 		Output.m_NextHealthyFrames = 0;
@@ -1087,7 +1090,8 @@ bool SettingsPageCanUsePageFbo(int Page, int AssetsPage, int DynamicPreviewPage,
 	const bool IsTClientSettingsPage = Page == CMenus::SETTINGS_TCLIENT && Tab == 0;
 	const bool IsTeeSettingsPage = Page == CMenus::SETTINGS_TEE || Page == CMenus::SETTINGS_PLAYER;
 	const bool IsSystemSettingsPage = Page == CMenus::SETTINGS_GRAPHICS;
-	return Page >= 0 && Page != AssetsPage && Page != DynamicPreviewPage && !IsTClientSettingsPage && !IsTeeSettingsPage && !IsSystemSettingsPage;
+	const bool IsQmClientSettingsPage = Page == CMenus::SETTINGS_QMCLIENT;
+	return Page >= 0 && Page != AssetsPage && Page != DynamicPreviewPage && !IsTClientSettingsPage && !IsTeeSettingsPage && !IsSystemSettingsPage && !IsQmClientSettingsPage;
 }
 
 const char *SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason StopReason)

@@ -84,14 +84,9 @@ static void LogQmClientDistributionFailureEvent(const char *pStage, const char *
 	log_warn("qmclient", "distribution %s: %s", pStage, pDetail ? pDetail : "");
 }
 
-static void LogQmClientVoicePresenceEvent(const char *pStage, const char *pServerAddress, int Players)
-{
-	log_info("qmclient", "voice_presence %s: server='%s' players=%d", pStage, pServerAddress ? pServerAddress : "", Players);
-}
-
 static void LogQmClientVoicePresenceResultEvent(const char *pStage, const char *pServerAddress, int Players, int StatusCode, EHttpState State)
 {
-	log_info("qmclient", "voice_presence %s: server='%s' players=%d status=%d state=%d",
+	log_warn("qmclient", "voice_presence %s: server='%s' players=%d status=%d state=%d",
 		pStage,
 		pServerAddress ? pServerAddress : "",
 		Players,
@@ -131,14 +126,12 @@ static constexpr const char *QMCLIENT_FREEZE_WAKEUP_TEXT = "快醒醒!";
 	return false;
 }
 static constexpr float QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION = 2.0f;
-static constexpr float QMCLIENT_COMBO_POPUP_DURATION = 1.25f;
 [[maybe_unused]] static constexpr float QMCLIENT_TEXT_POPUP_FONT_SIZE = 30.0f;
 [[maybe_unused]] static constexpr vec2 QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET = vec2(34.0f, -78.0f);
 [[maybe_unused]] static constexpr vec2 QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT = vec2(18.0f, -16.0f);
 [[maybe_unused]] static constexpr int QMCLIENT_COMBO_POPUP_WINDOW_SECONDS = 2;
 [[maybe_unused]] static constexpr ColorRGBA QMCLIENT_POPUP_ROLL_COLOR_FROM = ColorRGBA(0.0f, 1.0f, 1.0f, 1.0f);
 [[maybe_unused]] static constexpr ColorRGBA QMCLIENT_POPUP_ROLL_COLOR_TO = ColorRGBA(1.0f, 0.0f, 1.0f, 1.0f);
-[[maybe_unused]] static constexpr ColorRGBA QMCLIENT_COMBO_POPUP_COLOR = ColorRGBA(1.0f, 0.96f, 0.45f, 1.0f);
 [[maybe_unused]] static constexpr const char *s_apKeywordNegationWords[] = {
 	"不",
 	"没",
@@ -171,10 +164,6 @@ namespace
 	enum class ETextPopupType
 	{
 		FREEZE_WAKEUP = 0,
-		COMBO_AMAZING,
-		COMBO_FANTASTIC,
-		COMBO_UNBELIEVABLE,
-		COMBO_UNSTOPPABLE,
 		NUM_TYPES,
 	};
 
@@ -185,10 +174,6 @@ namespace
 
 	[[maybe_unused]] static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
 		{QMCLIENT_FREEZE_WAKEUP_TEXT},
-		{"Amazing!"},
-		{"Fantastic!"},
-		{"Unbelievable!"},
-		{"Unstoppable!"},
 	}};
 
 	class CQmClientUsersParseJob : public IJob
@@ -414,26 +399,10 @@ namespace
 		EXTERNAL_HAMMER,
 	};
 
-	[[maybe_unused]] int ComboPopupTextTypeFromCount(int ComboCount)
-	{
-		switch(ComboCount)
-		{
-		case 2: return (int)ETextPopupType::COMBO_AMAZING;
-		case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
-		case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
-		default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
-		}
-	}
-
-	bool IsComboPopupTextType(int TextType)
-	{
-		return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
-		       TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
-	}
-
 	[[maybe_unused]] float TextPopupDuration(int TextType)
 	{
-		return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
+		(void)TextType;
+		return QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
 	}
 
 	[[maybe_unused]] EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
@@ -1644,7 +1613,6 @@ void CQmClient::SendQmClientPlayerData()
 	Http()->Run(m_pQmClientUsersSendTask);
 	str_copy(m_aQmClientPendingVoicePresenceServerAddress, aServerAddress, sizeof(m_aQmClientPendingVoicePresenceServerAddress));
 	m_QmClientPendingVoicePresencePlayers = PlayerCount;
-	LogQmClientVoicePresenceEvent("report_request", aServerAddress, PlayerCount);
 }
 
 void CQmClient::FetchQmClientUsers()
@@ -1752,9 +1720,10 @@ void CQmClient::FinishQmClientUsers()
 		GameClient()->ClearQ1menGSyncMarks();
 		GameClient()->ClearQmVoiceSyncMarks();
 		ClearQmClientServerDistribution();
-		const int StatusCode = 0;
+		const EHttpState State = m_pQmClientUsersTask->State();
+		const int StatusCode = State == EHttpState::DONE ? m_pQmClientUsersTask->StatusCode() : -1;
 		char aFailure[128];
-		str_format(aFailure, sizeof(aFailure), "state=%d status=%d", (int)m_pQmClientUsersTask->State(), StatusCode);
+		str_format(aFailure, sizeof(aFailure), "state=%d status=%d", (int)State, StatusCode);
 		m_pQmClientUsersTask = nullptr;
 		m_QmClientDistributionSuccessLatched = false;
 		LogQmClientDistributionFailureEvent("request_failed", aFailure);
@@ -1831,10 +1800,6 @@ void CQmClient::UpdateQmClientRecognition()
 			if(StatusCode == 401)
 				m_aQmClientAuthToken[0] = '\0';
 		}
-		else
-		{
-			LogQmClientVoicePresenceResultEvent("report_ok", m_aQmClientPendingVoicePresenceServerAddress, m_QmClientPendingVoicePresencePlayers, StatusCode, State);
-		}
 		m_aQmClientPendingVoicePresenceServerAddress[0] = '\0';
 		m_QmClientPendingVoicePresencePlayers = 0;
 		m_pQmClientUsersSendTask = nullptr;
@@ -1849,11 +1814,6 @@ void CQmClient::UpdateQmClientRecognition()
 		GameClient()->ClearQmVoiceSyncMarks();
 		return;
 	}
-
-	// Center sync endpoint is intentionally plain HTTP.
-	// Ensure libcurl allows HTTP protocol while this feature is enabled.
-	if(!g_Config.m_HttpAllowInsecure)
-		g_Config.m_HttpAllowInsecure = 1;
 
 	const bool FastSync = g_Config.m_QmVoiceEnable || g_Config.m_QmClientShowBadge;
 	const int SyncInterval = FastSync ? QMCLIENT_VOICE_SYNC_INTERVAL_SECONDS : QMCLIENT_SYNC_INTERVAL_SECONDS;

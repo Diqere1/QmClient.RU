@@ -2,8 +2,10 @@
 
 #include <base/perf_timer.h>
 #include <base/system.h>
+
 #include <engine/shared/config.h>
 #include <engine/storage.h>
+
 #include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/components/settings_runtime_cache.h>
 
@@ -31,9 +33,9 @@ CSectionLoader::~CSectionLoader()
 bool CSectionLoader::IsVisibleSummarySectionName(const char *pName)
 {
 	return pName != nullptr &&
-		str_find(pName, "DeferredSummary") == nullptr &&
-		str_find(pName, "CompactSummary") == nullptr &&
-		str_find(pName, "SummaryBlock") == nullptr;
+	       str_find(pName, "DeferredSummary") == nullptr &&
+	       str_find(pName, "CompactSummary") == nullptr &&
+	       str_find(pName, "SummaryBlock") == nullptr;
 }
 
 CUIRect CSectionLoader::MakeRenderTargetCacheRectForTests(float Width, float Height)
@@ -808,7 +810,7 @@ bool CSectionLoader::TryRenderCachedSection(SSettingsSection &Section)
 			m_RunningColumn.y += Section.m_CachedHeight;
 		return true;
 	}
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 		return false;
 	if(!m_pGraphics->IsRenderTargetSupported())
 		return false;
@@ -912,7 +914,7 @@ bool CSectionLoader::RecordStaticRenderTarget(SSettingsSection &Section, int Wid
 		Section.m_CacheRuntimeKey = m_RuntimeKey;
 		return true;
 	}
-	if(!SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache))
+	if(!SettingsRuntimeCachingEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache, g_Config.m_QmNewUi))
 		return false;
 	if(!m_pGraphics->IsRenderTargetSupported())
 		return false;

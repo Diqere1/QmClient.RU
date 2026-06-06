@@ -154,6 +154,7 @@ bool SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason Reason);
 bool SettingsInvalidationClearsPageFbo(ESettingsInvalidationReason Reason, int Page, int AssetsPage);
 bool SettingsInvalidationClearsResourcePlan(ESettingsInvalidationReason Reason);
 bool SettingsWarmupEnabled(int PrewarmConfig, int FboConfig);
+bool SettingsRuntimeCachingEnabled(int PrewarmConfig, int FboConfig, int NewUiConfig);
 std::string SettingsPageCacheKey(int Page, int Tab);
 std::string SettingsSectionCacheKey(int Page, int Tab, const char *pSection);
 std::string SettingsTextCacheKey(int Page, int Tab, const char *pTextId);

@@ -63,7 +63,9 @@ def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _draw_round_line(draw, points: list[tuple[float, float]], width: int, fill: tuple[int, int, int, int]) -> None:
+def _draw_round_line(
+    draw, points: list[tuple[float, float]], width: int, fill: tuple[int, int, int, int]
+) -> None:
     if len(points) < 2:
         return
     draw.line(points, fill=fill, width=width, joint="curve")
@@ -110,30 +112,44 @@ def _render_svg_fallback(source: Path, output: Path, size: int) -> None:
             ]
             _draw_round_line(draw, points, stroke_width, fill)
         elif tag == "polyline":
-            points = [(sx(x), sy(y)) for x, y in _parse_points(node.attrib.get("points", ""))]
+            points = [
+                (sx(x), sy(y)) for x, y in _parse_points(node.attrib.get("points", ""))
+            ]
             _draw_round_line(draw, points, stroke_width, fill)
         elif tag == "polygon":
-            points = [(sx(x), sy(y)) for x, y in _parse_points(node.attrib.get("points", ""))]
+            points = [
+                (sx(x), sy(y)) for x, y in _parse_points(node.attrib.get("points", ""))
+            ]
             if len(points) >= 2:
                 _draw_round_line(draw, points + [points[0]], stroke_width, fill)
         elif tag == "circle":
             cx = sx(_float_attr(node, "cx"))
             cy = sy(_float_attr(node, "cy"))
             radius = _float_attr(node, "r") * scale
-            draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), outline=fill, width=stroke_width)
+            draw.ellipse(
+                (cx - radius, cy - radius, cx + radius, cy + radius),
+                outline=fill,
+                width=stroke_width,
+            )
         elif tag == "rect":
             x = sx(_float_attr(node, "x"))
             y = sy(_float_attr(node, "y"))
             w = _float_attr(node, "width") * scale
             h = _float_attr(node, "height") * scale
             radius = _float_attr(node, "rx") * scale
-            draw.rounded_rectangle((x, y, x + w, y + h), radius=radius, outline=fill, width=stroke_width)
+            draw.rounded_rectangle(
+                (x, y, x + w, y + h), radius=radius, outline=fill, width=stroke_width
+            )
         elif tag == "path" and not node.attrib.get("d"):
             continue
         elif tag == "path":
-            raise SystemExit(f"Fallback SVG renderer does not support path data in {source}")
+            raise SystemExit(
+                f"Fallback SVG renderer does not support path data in {source}"
+            )
         else:
-            raise SystemExit(f"Fallback SVG renderer does not support <{tag}> in {source}")
+            raise SystemExit(
+                f"Fallback SVG renderer does not support <{tag}> in {source}"
+            )
 
     image = image.resize((size, size), Image.Resampling.LANCZOS)
     image.save(output)
@@ -146,7 +162,15 @@ def render_svg(renderer, source: Path, output: Path, size: int) -> None:
 
     exe = Path(renderer).name.lower()
     if exe == "resvg":
-        cmd = [renderer, "--width", str(size), "--height", str(size), str(source), str(output)]
+        cmd = [
+            renderer,
+            "--width",
+            str(size),
+            "--height",
+            str(size),
+            str(source),
+            str(output),
+        ]
     elif exe == "inkscape":
         cmd = [
             renderer,
@@ -159,7 +183,15 @@ def render_svg(renderer, source: Path, output: Path, size: int) -> None:
             str(size),
         ]
     else:
-        cmd = [renderer, "-background", "none", str(source), "-resize", f"{size}x{size}", str(output)]
+        cmd = [
+            renderer,
+            "-background",
+            "none",
+            str(source),
+            "-resize",
+            f"{size}x{size}",
+            str(output),
+        ]
     subprocess.run(cmd, check=True)
 
 
@@ -170,7 +202,9 @@ def icon_id(path: Path) -> str:
     return ICON_ALIASES.get(stem, stem)
 
 
-def build_scale(source_dir: Path, output_dir: Path, scale: int, base_size: int, padding: int) -> None:
+def build_scale(
+    source_dir: Path, output_dir: Path, scale: int, base_size: int, padding: int
+) -> None:
     try:
         from PIL import Image
     except ImportError as exc:
@@ -225,7 +259,9 @@ def build_scale(source_dir: Path, output_dir: Path, scale: int, base_size: int, 
         },
         "icons": icons,
     }
-    (output_dir / manifest_name).write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    (output_dir / manifest_name).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
 
 def main() -> int:

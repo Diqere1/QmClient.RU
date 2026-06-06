@@ -2,8 +2,6 @@
 
 #include <base/str.h>
 
-#include <algorithm>
-#include <cmath>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 #include <engine/shared/protocol7.h>
@@ -11,12 +9,14 @@
 
 #include <generated/client_data.h>
 
+#include <game/client/QmUi/QmAnim.h>
 #include <game/client/animstate.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
-#include <game/client/QmUi/QmAnim.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -145,9 +145,9 @@ static bool NameplateFreeMoveEnabled()
 static bool NameplatePointInFrame(vec2 Position, vec2 FrameMin, vec2 FrameMax)
 {
 	return Position.x >= FrameMin.x &&
-		Position.x <= FrameMax.x &&
-		Position.y >= FrameMin.y &&
-		Position.y <= FrameMax.y;
+	       Position.x <= FrameMax.x &&
+	       Position.y >= FrameMin.y &&
+	       Position.y <= FrameMax.y;
 }
 
 static int NameplateSnapCoreRowOffsetX(int OffsetX, int LimitMinX, int LimitMaxX, vec2 RowCenter, vec2 RowSize, vec2 FrameMin, vec2 FrameMax)
@@ -840,9 +840,9 @@ public:
 		m_Radius = Data.m_FontSize / 3.0f;
 		m_Size = vec2(m_Radius, m_Radius) * 1.5f;
 		m_Visible = Data.m_InGame ? (
-					    (g_Config.m_TcNameplatePingCircle > 0 ||
-						    (This.m_Scoreboard.IsActive() && pInfo && !pInfo->m_Local))) :
-				    (g_Config.m_TcNameplatePingCircle > 0);
+						    (g_Config.m_TcNameplatePingCircle > 0 ||
+							    (This.m_Scoreboard.IsActive() && pInfo && !pInfo->m_Local))) :
+					    (g_Config.m_TcNameplatePingCircle > 0);
 		if(!m_Visible)
 			return;
 		int Ping = Data.m_InGame && pInfo ? pInfo->m_Latency : (1 + Data.m_ClientId) * 25;
@@ -1004,34 +1004,6 @@ public:
 		CNamePlatePartText(This) {}
 };
 
-// NOLINTNEXTLINE(misc-use-internal-linkage)
-class CNamePlatePartQmClientMark : public CNamePlatePartText
-{
-private:
-	float m_FontSize = -INFINITY;
-
-protected:
-	bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
-	{
-		m_Visible = g_Config.m_QmClientShowBadge && Data.m_InGame && Data.m_ShowName && This.GetQ1menGClientQid(Data.m_ClientId)[0] != '\0';
-		if(!m_Visible)
-			return false;
-		m_Color = ColorRGBA(0.38f, 0.89f, 1.0f, Data.m_Color.a);
-		return m_FontSize != Data.m_FontSize;
-	}
-	void UpdateText(CGameClient &This, const CNamePlateData &Data) override
-	{
-		m_FontSize = Data.m_FontSize;
-		CTextCursor Cursor;
-		Cursor.m_FontSize = m_FontSize;
-		This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, "Qm");
-	}
-
-public:
-	CNamePlatePartQmClientMark(CGameClient &This) :
-		CNamePlatePartText(This) {}
-};
-
 // ***** Name Plates *****
 
 class CNamePlate
@@ -1150,6 +1122,7 @@ private:
 		}
 		RenderLine(This, Position, LineSize, Start, m_vpParts.begin() + EndIndex);
 	}
+
 public:
 	// Compute the baseline rect of the row TargetRow (offset = 0), and its
 	// center. Also returns the nameplate's baseline frame (Min/Max), which is
@@ -1201,6 +1174,7 @@ public:
 		ComputeBaselineLayout(PositionBottomMiddle, ENameplateCoreRow::NUM_ROWS,
 			HasFrame, FrameMin, FrameMax, DummyHasRow, DummyCenter, DummySize);
 	}
+
 private:
 	template<typename PartType, typename... ArgsType>
 	void AddPart(CGameClient &This, ArgsType &&...Args)
@@ -1212,7 +1186,6 @@ private:
 	{
 		AddPart<CNamePlatePartCountry>(This); // TClient
 		AddPart<CNamePlatePartPing>(This); // TClient
-		AddPart<CNamePlatePartQmClientMark>(This);
 		AddPart<CNamePlatePartIgnoreMark>(This); // TClient
 		AddPart<CNamePlatePartFriendMark>(This);
 		AddPart<CNamePlatePartClientId>(This, false);
@@ -1421,10 +1394,10 @@ public:
 static bool NameplateCoreRowRectContains(const SNameplateCoreRowRect &Rect, vec2 Position)
 {
 	return Rect.m_Visible &&
-		Position.x >= Rect.m_Min.x &&
-		Position.x <= Rect.m_Max.x &&
-		Position.y >= Rect.m_Min.y &&
-		Position.y <= Rect.m_Max.y;
+	       Position.x >= Rect.m_Min.x &&
+	       Position.x <= Rect.m_Max.x &&
+	       Position.y >= Rect.m_Min.y &&
+	       Position.y <= Rect.m_Max.y;
 }
 
 static int RoundCoordToCentitiles(float Value)
@@ -2217,9 +2190,9 @@ void CNamePlates::RenderChatBubble(vec2 Position, int ClientId, float Alpha)
 
 	const bool UseTextContainer = !IsTyping && std::abs(AnimScale - 1.0f) <= 0.001f;
 	const bool LayoutDirty = !AnimState.m_TextContainerIndex.Valid() ||
-		str_comp(AnimState.m_aLayoutText, pDisplayText) != 0 ||
-		AnimState.m_CachedFontSize != FontSize ||
-		AnimState.m_CachedLineWidth != MaxWidth;
+				 str_comp(AnimState.m_aLayoutText, pDisplayText) != 0 ||
+				 AnimState.m_CachedFontSize != FontSize ||
+				 AnimState.m_CachedLineWidth != MaxWidth;
 
 	if(!IsTyping && LayoutDirty)
 	{
