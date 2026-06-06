@@ -74,11 +74,7 @@ namespace
 	ColorRGBA SettingsUiColorSurface(float AlphaScale, float ColorScale)
 	{
 		const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
-		return ColorRGBA(
-			std::clamp(UiColor.r * ColorScale, 0.0f, 1.0f),
-			std::clamp(UiColor.g * ColorScale, 0.0f, 1.0f),
-			std::clamp(UiColor.b * ColorScale, 0.0f, 1.0f),
-			std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f));
+		return ui_token::color::UiColorSurface(UiColor, AlphaScale, ColorScale);
 	}
 
 }

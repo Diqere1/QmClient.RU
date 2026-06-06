@@ -7,6 +7,8 @@
 
 #include "QmAnimCurves.h"
 
+#include <algorithm>
+
 // Centralized QmUi design tokens. Values are unscaled; callers apply
 // responsive UiScale on top, matching existing LG_* convention in
 // menus_qmclient.cpp.
@@ -39,6 +41,20 @@ inline constexpr ColorRGBA TEXT_ON_ACCENT{0.06f, 0.08f, 0.11f, 1.0f};
 inline constexpr ColorRGBA SUCCESS{0.42f, 0.85f, 0.52f, 1.0f};
 inline constexpr ColorRGBA WARNING{0.98f, 0.78f, 0.30f, 1.0f};
 inline constexpr ColorRGBA DANGER{0.95f, 0.41f, 0.38f, 1.0f};
+
+inline ColorRGBA UiColorSurface(ColorRGBA UiColor, float AlphaScale, float ColorScale)
+{
+	return ColorRGBA(
+		std::clamp(UiColor.r * ColorScale, 0.0f, 1.0f),
+		std::clamp(UiColor.g * ColorScale, 0.0f, 1.0f),
+		std::clamp(UiColor.b * ColorScale, 0.0f, 1.0f),
+		std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f));
+}
+
+inline ColorRGBA UiColorAccent(ColorRGBA UiColor, float AlphaScale)
+{
+	return UiColor.WithAlpha(std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f));
+}
 } // namespace ui_token::color
 
 namespace ui_token::spacing

@@ -75,17 +75,13 @@ namespace
 	ColorRGBA MenuUiColorSurface(float AlphaScale, float ColorScale)
 	{
 		const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
-		return ColorRGBA(
-			std::clamp(UiColor.r * ColorScale, 0.0f, 1.0f),
-			std::clamp(UiColor.g * ColorScale, 0.0f, 1.0f),
-			std::clamp(UiColor.b * ColorScale, 0.0f, 1.0f),
-			std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f));
+		return ui_token::color::UiColorSurface(UiColor, AlphaScale, ColorScale);
 	}
 
 	ColorRGBA MenuUiColorAccent(float AlphaScale)
 	{
 		const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
-		return UiColor.WithAlpha(std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f));
+		return ui_token::color::UiColorAccent(UiColor, AlphaScale);
 	}
 
 	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
@@ -3243,13 +3239,13 @@ void CMenus::UpdateColors()
 {
 	ms_GuiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
 
-	ms_ColorTabbarInactiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f);
-	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f);
-	ms_ColorTabbarHoverOutgame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f);
+	ms_ColorTabbarInactiveOutgame = MenuUiColorSurface(0.45f, 0.16f);
+	ms_ColorTabbarActiveOutgame = MenuUiColorSurface(0.70f, 0.16f);
+	ms_ColorTabbarHoverOutgame = MenuUiColorSurface(0.62f, 0.20f);
 
-	ms_ColorTabbarInactiveIngame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f);
-	ms_ColorTabbarActiveIngame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f);
-	ms_ColorTabbarHoverIngame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f);
+	ms_ColorTabbarInactiveIngame = MenuUiColorSurface(0.45f, 0.16f);
+	ms_ColorTabbarActiveIngame = MenuUiColorSurface(0.70f, 0.16f);
+	ms_ColorTabbarHoverIngame = MenuUiColorSurface(0.62f, 0.20f);
 }
 
 void CMenus::RenderBackground()
