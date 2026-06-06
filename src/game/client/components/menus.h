@@ -1578,6 +1578,7 @@ protected:
 	static CUi::EPopupMenuFunctionResult PopupMapPicker(void *pContext, CUIRect View, bool Active);
 
 	void SetNeedSendInfo();
+	void SetNeedSendInfo(bool Dummy);
 	void UpdateColors();
 
 	IGraphics::CTextureHandle m_TextureBlob;

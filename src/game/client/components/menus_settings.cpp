@@ -757,13 +757,18 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
 void CMenus::SetNeedSendInfo()
 {
-	bool &NeedSendInfo = m_Dummy ? m_NeedSendDummyinfo : m_NeedSendinfo;
+	SetNeedSendInfo(m_Dummy);
+}
+
+void CMenus::SetNeedSendInfo(bool Dummy)
+{
+	bool &NeedSendInfo = Dummy ? m_NeedSendDummyinfo : m_NeedSendinfo;
 	NeedSendInfo = true;
 
 	if(Client()->State() != IClient::STATE_ONLINE)
 		return;
 
-	if(m_Dummy)
+	if(Dummy)
 		GameClient()->SendDummyInfo(false);
 	else
 		GameClient()->SendInfo(false);
@@ -885,6 +890,54 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	static bool s_PrevDummy = false;
 	static float s_PlayerTabTransitionDirection = 0.0f;
 	const uint64_t PlayerTabSwitchNode = UiAnimNodeKey("settings_player_tab_switch");
+	static CLineInput s_aNameInputs[2];
+	static char s_aaNameBuffers[2][MAX_NAME_LENGTH] = {};
+	static char s_aaNameSync[2][MAX_NAME_LENGTH] = {};
+	static bool s_aNameDirty[2] = {};
+
+	auto NameInputIndex = [](bool Dummy) {
+		return Dummy ? 1 : 0;
+	};
+	auto NameConfig = [](bool Dummy) -> char * {
+		return Dummy ? g_Config.m_ClDummyName : g_Config.m_PlayerName;
+	};
+	auto NameConfigSize = [](bool Dummy) {
+		return Dummy ? sizeof(g_Config.m_ClDummyName) : sizeof(g_Config.m_PlayerName);
+	};
+	auto SyncNameInput = [&](bool Dummy) {
+		const int Index = NameInputIndex(Dummy);
+		CLineInput &NameInput = s_aNameInputs[Index];
+		NameInput.SetBuffer(s_aaNameBuffers[Index], sizeof(s_aaNameBuffers[Index]));
+		const char *pConfigName = NameConfig(Dummy);
+		if(!NameInput.IsActive() && str_comp(s_aaNameSync[Index], pConfigName) != 0)
+		{
+			NameInput.Set(pConfigName);
+			str_copy(s_aaNameSync[Index], pConfigName, sizeof(s_aaNameSync[Index]));
+			s_aNameDirty[Index] = false;
+		}
+	};
+	auto CommitNameInput = [&](bool Dummy) {
+		const int Index = NameInputIndex(Dummy);
+		if(!s_aNameDirty[Index])
+			return;
+
+		CLineInput &NameInput = s_aNameInputs[Index];
+		char *pConfigName = NameConfig(Dummy);
+		if(str_comp(pConfigName, NameInput.GetString()) != 0)
+		{
+			str_copy(pConfigName, NameInput.GetString(), NameConfigSize(Dummy));
+			SetNeedSendInfo(Dummy);
+		}
+		str_copy(s_aaNameSync[Index], pConfigName, sizeof(s_aaNameSync[Index]));
+		s_aNameDirty[Index] = false;
+	};
+
+	SyncNameInput(false);
+	SyncNameInput(true);
+	if(s_aNameDirty[0] && !s_aNameInputs[0].IsActive())
+		CommitNameInput(false);
+	if(s_aNameDirty[1] && !s_aNameInputs[1].IsActive())
+		CommitNameInput(true);
 	MainView.HSplitTop(20.0f, &TabBar, &MainView);
 	TabBar.VSplitMid(&TabBar, &ChangeInfo, 20.f);
 	TabBar.VSplitMid(&PlayerTab, &DummyTab);
@@ -893,12 +946,14 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	static CButtonContainer s_PlayerTabButton;
 	if(DoButton_MenuTab(&s_PlayerTabButton, Localize("Player"), !m_Dummy, &PlayerTab, IGraphics::CORNER_L, nullptr, nullptr, nullptr, nullptr, 4.0f))
 	{
+		CommitNameInput(m_Dummy);
 		m_Dummy = false;
 	}
 
 	static CButtonContainer s_DummyTabButton;
 	if(DoButton_MenuTab(&s_DummyTabButton, Localize("分身"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
 	{
+		CommitNameInput(m_Dummy);
 		m_Dummy = true;
 	}
 
@@ -938,22 +993,21 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 		}
 	};
 
-	static CLineInput s_NameInput;
 	static CLineInput s_ClanInput;
+	const int CurrentNameInputIndex = NameInputIndex(m_Dummy);
+	CLineInput &NameInput = s_aNameInputs[CurrentNameInputIndex];
 
 	int *pCountry;
 	if(!m_Dummy)
 	{
 		pCountry = &g_Config.m_PlayerCountry;
-		s_NameInput.SetBuffer(g_Config.m_PlayerName, sizeof(g_Config.m_PlayerName));
-		s_NameInput.SetEmptyText(Client()->PlayerName());
+		NameInput.SetEmptyText(Client()->PlayerName());
 		s_ClanInput.SetBuffer(g_Config.m_PlayerClan, sizeof(g_Config.m_PlayerClan));
 	}
 	else
 	{
 		pCountry = &g_Config.m_ClDummyCountry;
-		s_NameInput.SetBuffer(g_Config.m_ClDummyName, sizeof(g_Config.m_ClDummyName));
-		s_NameInput.SetEmptyText(Client()->DummyName());
+		NameInput.SetEmptyText(Client()->DummyName());
 		s_ClanInput.SetBuffer(g_Config.m_ClDummyClan, sizeof(g_Config.m_ClDummyClan));
 	}
 
@@ -967,10 +1021,13 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 		Row.VSplitLeft(150.0f, &Row, nullptr);
 		str_format(aBuf, sizeof(aBuf), "%s:", Localize("Name"));
 		Ui()->DoLabel(&Label, aBuf, 14.0f, TEXTALIGN_ML);
-		if(Ui()->DoEditBox(&s_NameInput, &Row, 14.0f))
+		const bool WasNameInputActive = NameInput.IsActive();
+		if(Ui()->DoEditBox(&NameInput, &Row, 14.0f))
 		{
-			SetNeedSendInfo();
+			s_aNameDirty[CurrentNameInputIndex] = true;
 		}
+		if(s_aNameDirty[CurrentNameInputIndex] && WasNameInputActive && !NameInput.IsActive())
+			CommitNameInput(m_Dummy);
 	});
 
 	// player clan

@@ -51,7 +51,7 @@ struct SImeCandidateMetrics
 
 bool HasPopupContent(const SQmImePopupState &State)
 {
-	return State.m_Visible && !State.m_Disabled && !State.m_vCandidates.empty();
+	return State.m_Visible && !State.m_Disabled && !State.m_Composition.empty() && !State.m_vCandidates.empty();
 }
 
 ColorRGBA WithAlpha(ColorRGBA Color, float Alpha)

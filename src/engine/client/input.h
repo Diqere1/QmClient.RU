@@ -93,6 +93,8 @@ private:
 	std::vector<CEvent> m_vInputEvents;
 	int64_t m_LastUpdate;
 	float m_UpdateTime;
+	void ClearImeCandidates();
+	void ClearImeState();
 	void AddKeyEvent(int Key, int Flags);
 	void AddTextEvent(const char *pText);
 
