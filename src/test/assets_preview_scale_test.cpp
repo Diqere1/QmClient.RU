@@ -90,6 +90,13 @@ TEST(AssetsPreviewScale, WorkshopPreviewBudgetNeverDropsBelow512Floor)
 	EXPECT_EQ(ComputePreviewBudgetedTextureSize(WORKSHOP_ASSET_PREVIEW_MAX_TEXTURE_SIZE, ASSET_PREVIEW_MIN_TEXTURE_SIZE, BudgetBytes, 0, 0), 512);
 }
 
+TEST(AssetsPreviewScale, UploadBudgetCapsPreviewTextureSize)
+{
+	const int TextureSize = PreviewUploadBudgetTextureSize(LOCAL_ASSET_PREVIEW_MAX_TEXTURE_SIZE, ASSET_PREVIEW_MIN_TEXTURE_SIZE, ASSET_PREVIEW_UPLOAD_MAX_BYTES_PER_FRAME);
+	EXPECT_EQ(TextureSize, ASSET_PREVIEW_MIN_TEXTURE_SIZE);
+	EXPECT_LE(PreviewTextureSizeBytesEstimate(TextureSize), ASSET_PREVIEW_UPLOAD_MAX_BYTES_PER_FRAME);
+}
+
 TEST(AssetsPreviewScale, EntityBgWorkshopRequiresSeparateDownloadUrl)
 {
 	EXPECT_FALSE(WorkshopEntityBgAllowsImageUrlFallback("entity_bg"));

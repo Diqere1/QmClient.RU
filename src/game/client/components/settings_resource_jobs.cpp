@@ -1049,7 +1049,8 @@ size_t SettingsAssetPreviewResidentBudgetBytes(size_t OverrideMb, int Percent, f
 
 int SettingsAssetPreviewBudgetedTextureSize(int MaxTextureSize, int MinTextureSize, size_t TextureBudgetBytes, size_t CurrentTextureMemoryBytes, size_t ResidentPreviewBytes)
 {
-	return ComputePreviewBudgetedTextureSize(MaxTextureSize, MinTextureSize, TextureBudgetBytes, CurrentTextureMemoryBytes, ResidentPreviewBytes);
+	const int BudgetedTextureSize = ComputePreviewBudgetedTextureSize(MaxTextureSize, MinTextureSize, TextureBudgetBytes, CurrentTextureMemoryBytes, ResidentPreviewBytes);
+	return PreviewUploadBudgetTextureSize(BudgetedTextureSize, MinTextureSize, ASSET_PREVIEW_UPLOAD_MAX_BYTES_PER_FRAME);
 }
 
 std::string SettingsAssetPreviewHandleKey(const SSettingsAssetPreviewHandle &Handle)

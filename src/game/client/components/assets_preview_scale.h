@@ -58,6 +58,26 @@ inline int PreviewBudgetNextTier(int TextureSize, int MinTextureSize)
 	return std::max(MinTextureSize, TextureSize / 2);
 }
 
+inline int PreviewUploadBudgetTextureSize(int MaxTextureSize, int MinTextureSize, size_t MaxUploadBytes)
+{
+	if(MaxTextureSize <= 0)
+		return std::max(MinTextureSize, 0);
+	if(MinTextureSize <= 0)
+		MinTextureSize = MaxTextureSize;
+	if(MaxUploadBytes == 0)
+		return std::clamp(MaxTextureSize, MinTextureSize, MaxTextureSize);
+
+	int TextureSize = std::clamp(MaxTextureSize, MinTextureSize, MaxTextureSize);
+	while(TextureSize > MinTextureSize && PreviewTextureSizeBytesEstimate(TextureSize) > MaxUploadBytes)
+	{
+		const int NextTextureSize = PreviewBudgetNextTier(TextureSize, MinTextureSize);
+		if(NextTextureSize == TextureSize)
+			break;
+		TextureSize = NextTextureSize;
+	}
+	return std::clamp(TextureSize, MinTextureSize, MaxTextureSize);
+}
+
 inline size_t PreviewBudgetBytes(size_t OverrideMb, int Percent, float GpuBudgetMb)
 {
 	if(OverrideMb > 0)
