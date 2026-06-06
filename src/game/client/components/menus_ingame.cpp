@@ -2319,6 +2319,7 @@ void CMenus::RenderInGameNetwork(CUIRect MainView)
 		SetMenuPage(NewPage);
 	}
 
+	MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
 	RenderServerbrowser(MainView, false);
 }
 

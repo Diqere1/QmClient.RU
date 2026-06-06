@@ -4364,26 +4364,13 @@ void CMenus::UpdateColors()
 {
 	ms_GuiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
 
-	ms_ColorTabbarInactiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f);
-	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f);
-	ms_ColorTabbarHoverOutgame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f);
+	ms_ColorTabbarInactiveOutgame = MenuUiColorSurface(0.45f, 0.16f);
+	ms_ColorTabbarActiveOutgame = MenuUiColorSurface(0.70f, 0.16f);
+	ms_ColorTabbarHoverOutgame = MenuUiColorSurface(0.62f, 0.20f);
 
-	const float ColorIngameScaleI = 0.5f;
-	const float ColorIngameScaleA = 0.2f;
-
-	ms_ColorTabbarInactiveIngame = ColorRGBA(
-		ms_GuiColor.r * ColorIngameScaleI,
-		ms_GuiColor.g * ColorIngameScaleI,
-		ms_GuiColor.b * ColorIngameScaleI,
-		ms_GuiColor.a * 0.8f);
-
-	ms_ColorTabbarActiveIngame = ColorRGBA(
-		ms_GuiColor.r * ColorIngameScaleA,
-		ms_GuiColor.g * ColorIngameScaleA,
-		ms_GuiColor.b * ColorIngameScaleA,
-		ms_GuiColor.a);
-
-	ms_ColorTabbarHoverIngame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.75f);
+	ms_ColorTabbarInactiveIngame = MenuUiColorSurface(0.45f, 0.16f);
+	ms_ColorTabbarActiveIngame = MenuUiColorSurface(0.70f, 0.16f);
+	ms_ColorTabbarHoverIngame = MenuUiColorSurface(0.62f, 0.20f);
 }
 
 void CMenus::RenderBackground()
