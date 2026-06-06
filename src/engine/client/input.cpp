@@ -373,6 +373,22 @@ void CInput::SetClipboardText(const char *pText)
 	SDL_SetClipboardText(pText);
 }
 
+void CInput::ClearImeCandidates()
+{
+	m_vCandidates.clear();
+	m_CandidateSelectedIndex = -1;
+	m_CandidatePageStart = 0;
+	m_CandidatePageSize = 0;
+	m_CandidateTotalCount = 0;
+}
+
+void CInput::ClearImeState()
+{
+	m_CompositionString = "";
+	m_CompositionCursor = 0;
+	ClearImeCandidates();
+}
+
 void CInput::StartTextInput()
 {
 	// enable system messages for IME
@@ -385,13 +401,7 @@ void CInput::StopTextInput()
 	SDL_StopTextInput();
 	// disable system messages for performance
 	SDL_EventState(SDL_SYSWMEVENT, SDL_DISABLE);
-	m_CompositionString = "";
-	m_CompositionCursor = 0;
-	m_vCandidates.clear();
-	m_CandidateSelectedIndex = -1;
-	m_CandidatePageStart = 0;
-	m_CandidatePageSize = 0;
-	m_CandidateTotalCount = 0;
+	ClearImeState();
 }
 
 void CInput::EnsureScreenKeyboardShown()
@@ -626,8 +636,7 @@ void CInput::HandleTextEditingEvent(const char *pText, int Start, int Length)
 	}
 	else
 	{
-		m_CompositionString = "";
-		m_CompositionCursor = 0;
+		ClearImeState();
 	}
 }
 
@@ -772,13 +781,7 @@ int CInput::Update()
 #endif
 
 		case SDL_TEXTINPUT:
-			m_CompositionString = "";
-			m_CompositionCursor = 0;
-			m_vCandidates.clear();
-			m_CandidateSelectedIndex = -1;
-			m_CandidatePageStart = 0;
-			m_CandidatePageSize = 0;
-			m_CandidateTotalCount = 0;
+			ClearImeState();
 			AddTextEvent(Event.text.text);
 			break;
 
@@ -978,11 +981,7 @@ void CInput::ProcessSystemMessage(SDL_SysWMmsg *pMsg)
 			break;
 		}
 		case IMN_CLOSECANDIDATE:
-			m_vCandidates.clear();
-			m_CandidateSelectedIndex = -1;
-			m_CandidatePageStart = 0;
-			m_CandidatePageSize = 0;
-			m_CandidateTotalCount = 0;
+			ClearImeCandidates();
 			break;
 		}
 	}
