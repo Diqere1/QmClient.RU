@@ -2465,11 +2465,11 @@ void CMenus::Render()
 				Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
 			const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(
 				SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),
-				true,
+				m_MenuPage == PAGE_SETTINGS,
 				Ui()->ActiveItem() != nullptr,
 				Ui()->HotItem() != nullptr,
 				ScrollInputActive,
-				m_SettingsPageSwitchActive,
+				m_SettingsPageSwitchActive || TransitionActive,
 				m_SettingsScrollActive);
 			if(CanPrewarmSettings)
 				(void)PrewarmSettingsRuntimeCaches(MainView);
@@ -2561,11 +2561,11 @@ void CMenus::Render()
 				Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
 			const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(
 				SettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),
-				true,
+				m_GamePage == PAGE_SETTINGS,
 				Ui()->ActiveItem() != nullptr,
 				Ui()->HotItem() != nullptr,
 				ScrollInputActive,
-				m_SettingsPageSwitchActive,
+				m_SettingsPageSwitchActive || TransitionActive,
 				m_SettingsScrollActive);
 			if(CanPrewarmSettings)
 				(void)PrewarmSettingsRuntimeCaches(MainView);
@@ -4023,7 +4023,7 @@ bool CMenus::PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int 
 		const int SavedTab = m_QmClientSettingsTab;
 		if(Tab >= 0)
 			m_QmClientSettingsTab = Tab;
-		RenderSettingsQmClient(CacheView);
+		RenderSettingsQmClient(CacheView, false, true);
 		m_QmClientSettingsTab = SavedTab;
 	}
 	Graphics()->MapScreen(ScreenTLX, ScreenTLY, ScreenBRX, ScreenBRY);

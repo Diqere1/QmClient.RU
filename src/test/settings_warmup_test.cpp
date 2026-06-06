@@ -308,7 +308,7 @@ TEST(SettingsWarmup, LoadingPrewarmDoesNotPumpResourceWork)
 	EXPECT_EQ(PrewarmBody.find("m_Skins.OnUpdate();"), std::string::npos);
 }
 
-TEST(SettingsWarmup, RuntimePrewarmCallsitesDoNotRequireVisibleSettingsPage)
+TEST(SettingsWarmup, RuntimePrewarmCallsitesRequireVisibleIdleSettingsPage)
 {
 	std::ifstream MenusFile("src/game/client/components/menus.cpp");
 	ASSERT_TRUE(MenusFile.good());
@@ -316,9 +316,11 @@ TEST(SettingsWarmup, RuntimePrewarmCallsitesDoNotRequireVisibleSettingsPage)
 	MenusBuffer << MenusFile.rdbuf();
 	const std::string MenusSource = MenusBuffer.str();
 
-	EXPECT_NE(MenusSource.find("const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\ttrue,"), std::string::npos);
-	EXPECT_EQ(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\tm_MenuPage == PAGE_SETTINGS,"), std::string::npos);
-	EXPECT_EQ(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\tm_GamePage == PAGE_SETTINGS,"), std::string::npos);
+	EXPECT_EQ(MenusSource.find("const bool CanPrewarmSettings = SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\ttrue,"), std::string::npos);
+	EXPECT_NE(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\tm_MenuPage == PAGE_SETTINGS,"), std::string::npos);
+	EXPECT_NE(MenusSource.find("SettingsRuntimeWarmupShouldRun(\n\t\t\t\tSettingsWarmupEnabled(g_Config.m_QmSettingsPrewarm, g_Config.m_QmSettingsFboCache),\n\t\t\t\tm_GamePage == PAGE_SETTINGS,"), std::string::npos);
+	EXPECT_NE(MenusSource.find("m_SettingsPageSwitchActive || TransitionActive"), std::string::npos);
+	EXPECT_NE(MenusSource.find("RenderSettingsQmClient(CacheView, false, true);"), std::string::npos);
 }
 
 TEST(SettingsRuntimeCache, CanonicalizesMergedSettingsPages)

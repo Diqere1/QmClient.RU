@@ -576,7 +576,7 @@ void CMenus::RenderSettingsQmClientOverview(CUIRect MainView)
 	s_ScrollRegion.End();
 }
 
-void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
+void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage, bool PrewarmOnly)
 {
 	const bool UseNewUi = g_Config.m_QmNewUi != 0;
 
@@ -590,7 +590,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		Ctx.m_pMenus = this;
 		Ctx.m_pTextRender = TextRender();
 		Ctx.m_pTooltips = &GameClient()->m_Tooltips;
-		Ctx.m_pAnim = &GameClient()->UiRuntimeV2()->AnimRuntime();
+		Ctx.m_pAnim = PrewarmOnly ? nullptr : &GameClient()->UiRuntimeV2()->AnimRuntime();
 		Ctx.m_pIconManager = GameClient()->QmIconManager();
 		Ctx.m_ScopeHash = MakeUiScopeHash("qm_ui_dogfood");
 		RenderQmUiDogfood(Ctx, MainView);
@@ -601,7 +601,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	bool TabTransitionActive = false;
 	float TabTransitionAlpha = 0.0f;
 	CUIRect TabContentClip = MainView;
-	if(ContributorsPage)
+	if(ContributorsPage && !PrewarmOnly)
 		m_QmClientSettingsTab = QMCLIENT_SETTINGS_TAB_CONTRIBUTORS;
 
 	auto IsQmNewFeatureMarkRead = [](const char *pId) {
@@ -625,7 +625,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	};
 
 	auto MarkQmNewFeatureHovered = [&](const char *pId, const CUIRect &Rect) {
-		if(!IsQmNewFeatureMarkRead(pId) && Ui()->MouseHovered(&Rect))
+		if(!PrewarmOnly && !IsQmNewFeatureMarkRead(pId) && Ui()->MouseHovered(&Rect))
 			MarkQmNewFeatureRead(pId);
 	};
 
@@ -702,7 +702,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 				const int Corners = Tab == 0                                    ? IGraphics::CORNER_L :
 						    Tab == NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1 ? IGraphics::CORNER_R :
 												  IGraphics::CORNER_NONE;
-				const bool ClickedSearchBlurredTab = Ui()->MouseButtonClicked(0) && Ui()->MouseHovered(&Button) && ReleaseActiveQmClientSearchInput();
+				const bool ClickedSearchBlurredTab = !PrewarmOnly && Ui()->MouseButtonClicked(0) && Ui()->MouseHovered(&Button) && ReleaseActiveQmClientSearchInput();
 				const char *pTabName = s_apQmTabNames[Tab];
 				char aVisualTabName[64];
 				if(Tab == QMCLIENT_SETTINGS_TAB_VISUAL)
@@ -726,9 +726,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						DrawQmNewFeatureDot(Button);
 				}
 				const bool ClickedTab = DoButton_MenuTab(&s_aPageTabs[Tab], pTabName, m_QmClientSettingsTab == Tab, &Button, Corners, nullptr, nullptr, nullptr, nullptr, 4.0f);
-				if(ClickedTab || ClickedSearchBlurredTab)
+				if(!PrewarmOnly && (ClickedTab || ClickedSearchBlurredTab))
 					m_QmClientSettingsTab = Tab;
-				if(Tab == QMCLIENT_SETTINGS_TAB_VISUAL && (m_QmClientSettingsTab == Tab || Ui()->MouseHovered(&Button)))
+				if(!PrewarmOnly && Tab == QMCLIENT_SETTINGS_TAB_VISUAL && (m_QmClientSettingsTab == Tab || Ui()->MouseHovered(&Button)))
 					MarkQmNewFeatureRead("qm_2_62_8_visual_tab");
 			}
 
@@ -740,7 +740,12 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		if(UseNewUi)
 			MainView.HSplitTop(Margin, nullptr, &MainView);
 
-		if(!s_QmTabTransitionInitialized)
+		if(PrewarmOnly)
+		{
+			if(!s_QmTabTransitionInitialized)
+				s_PrevQmTab = m_QmClientSettingsTab;
+		}
+		else if(!s_QmTabTransitionInitialized)
 		{
 			s_PrevQmTab = m_QmClientSettingsTab;
 			s_QmTabTransitionInitialized = true;
@@ -759,9 +764,10 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		}
 
 		CUIRect ContentView = MainView;
-		const float TransitionStrength = ReadUiSwitchAnimation(QmClientTabSwitchNode);
+		const float TransitionStrength = PrewarmOnly ? 0.0f : ReadUiSwitchAnimation(QmClientTabSwitchNode);
 		TabTransitionActive = TransitionStrength > 0.0f && s_QmTabTransitionDirection != 0.0f;
-		m_SettingsPageSwitchActive = m_SettingsPageSwitchActive || TabTransitionActive;
+		if(!PrewarmOnly)
+			m_SettingsPageSwitchActive = m_SettingsPageSwitchActive || TabTransitionActive;
 		TabContentClip = MainView;
 		TabTransitionAlpha = UiSwitchAnimationAlpha(TransitionStrength);
 		if(TabTransitionActive)
@@ -833,19 +839,22 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	static CScrollRegion s_ScrollRegion;
 	vec2 ScrollOffset(0.0f, 0.0f);
 	static float s_PrevQmScrollY = 0.0f;
-	CScrollRegionParams ScrollParams;
-	ScrollParams.m_ScrollUnit = 60.0f * UiScale;
-	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
-	ScrollParams.m_ScrollbarMargin = std::clamp(8.0f * UiScale, 6.0f, 8.0f);
-	s_ScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
-	GameClient()->m_Menus.m_SettingsScrollActive = GameClient()->m_Menus.m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevQmScrollY) > 0.01f;
-	s_PrevQmScrollY = ScrollOffset.y;
+	if(!PrewarmOnly)
+	{
+		CScrollRegionParams ScrollParams;
+		ScrollParams.m_ScrollUnit = 60.0f * UiScale;
+		ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
+		ScrollParams.m_ScrollbarMargin = std::clamp(8.0f * UiScale, 6.0f, 8.0f);
+		s_ScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
+		GameClient()->m_Menus.m_SettingsScrollActive = GameClient()->m_Menus.m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevQmScrollY) > 0.01f;
+		s_PrevQmScrollY = ScrollOffset.y;
+	}
 
 	static std::vector<CUIRect> s_GlassCards;
 	static vec2 s_PrevScrollOffset(0.0f, 0.0f);
 
 	MainView.y += ScrollOffset.y;
-	const CUIRect *pModuleScrollClipRect = s_ScrollRegion.ClipRect();
+	const CUIRect *pModuleScrollClipRect = PrewarmOnly ? nullptr : s_ScrollRegion.ClipRect();
 	const SSectionCullContext ModuleCullContext{
 		pModuleScrollClipRect != nullptr ? pModuleScrollClipRect->y : MainView.y,
 		pModuleScrollClipRect != nullptr ? pModuleScrollClipRect->y + pModuleScrollClipRect->h : MainView.y + MainView.h,
@@ -886,7 +895,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		str_format(aGlassExtra, sizeof(aGlassExtra), "tab=%s cards=%d", QmSettingsTabName(m_QmClientSettingsTab), (int)s_GlassCards.size());
 		LogQmPerfStage("glass_cards_draw", StageTimer.ElapsedMs(), false, aGlassExtra);
 	}
-	s_PrevScrollOffset = ScrollOffset;
+	if(!PrewarmOnly)
+		s_PrevScrollOffset = ScrollOffset;
 	s_GlassCards.clear();
 
 	// === 动态彩色标题 ===
@@ -1995,6 +2005,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 	};
 
 	auto HandleModuleDragState = [&](const SQmModuleEntry *pModule, const CUIRect &CardRect, bool BlockDrag = false) {
+		if(PrewarmOnly)
+			return;
 		CUIRect CollapseButtonRect;
 		const bool HasCollapseButton = GetModuleCollapseButtonRect(pModule, CardRect, &CollapseButtonRect);
 		const bool OverCollapseButton = HasCollapseButton && Ui()->MouseHovered(&CollapseButtonRect);
@@ -2256,7 +2268,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			{
 				static int s_QQGroupButtonId;
 				static constexpr const char *pQmClientQqGroupLink = "https://qm.qq.com/cgi-bin/qm/qr?k=ntqdhb9_nB5GeWBo8IVMZoypYmbMwCQ1&jump_from=webapi&authKey=e4HiooMF/hxk8UZhTv8qDu7/8bZ9e3xc7rZYaLlyeifWglGT9KDchsQ7zjpinDr7";
-				if(Ui()->MouseInside(&Row))
+				if(!PrewarmOnly && Ui()->MouseInside(&Row))
 				{
 					Ui()->SetHotItem(&s_QQGroupButtonId);
 					if(Ui()->MouseButtonClicked(0))
@@ -3005,7 +3017,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		SearchCard.y = SearchCardStartY;
 		SearchCard.h = SearchCardHeight;
 		s_GlassCards.push_back(SearchCard);
-		if(Ui()->MouseButtonClicked(0) && !Ui()->MouseHovered(&SearchCard) &&
+		if(!PrewarmOnly && Ui()->MouseButtonClicked(0) && !Ui()->MouseHovered(&SearchCard) &&
 			(Ui()->ActiveItem() == &ModuleSearchInput || ModuleSearchInput.IsActive()))
 		{
 			Ui()->ReleaseActiveTextInput(&ModuleSearchInput);
@@ -3976,7 +3988,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					CardContent.HSplitTop(LgLineSpacing, nullptr, &CardContent);
 				}
 
-				auto RenderLanguageDropDownWithCustomInput = [this, LgBodySize](const CUIRect &ControlColumn, const char **apNames, const char **apCodes, int Count, CUi::SDropDownState &DropDownState, char *pConfigValue, size_t ConfigValueSize, CLineInput &LineInput, const char *pEmptyText) {
+				auto RenderLanguageDropDownWithCustomInput = [this, LgBodySize, PrewarmOnly](const CUIRect &ControlColumn, const char **apNames, const char **apCodes, int Count, CUi::SDropDownState &DropDownState, char *pConfigValue, size_t ConfigValueSize, CLineInput &LineInput, const char *pEmptyText) {
 					CUIRect DropRect, EditRect;
 					ControlColumn.VSplitMid(&DropRect, &EditRect);
 					DropRect.VMargin(1.0f, &DropRect);
@@ -4001,8 +4013,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						LineInput.Set(pConfigValue);
 					LineInput.SetEmptyText(pEmptyText);
 					const bool WasActive = LineInput.IsActive();
-					const bool SubmitPressed = Input()->KeyPress(KEY_RETURN) || Input()->KeyPress(KEY_KP_ENTER) || Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER);
-					const bool ClickedOutside = (Ui()->MouseButtonClicked(0) || Ui()->MouseButtonClicked(1)) && !Ui()->MouseHovered(&EditRect);
+					const bool SubmitPressed = !PrewarmOnly && (Input()->KeyPress(KEY_RETURN) || Input()->KeyPress(KEY_KP_ENTER) || Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER));
+					const bool ClickedOutside = !PrewarmOnly && (Ui()->MouseButtonClicked(0) || Ui()->MouseButtonClicked(1)) && !Ui()->MouseHovered(&EditRect);
 					Ui()->DoEditBox(&LineInput, &EditRect, LgBodySize, IGraphics::CORNER_ALL, {}, TEXTALIGN_MC);
 					if(WasActive && (SubmitPressed || ClickedOutside))
 					{
@@ -4692,9 +4704,9 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 					}
 
 					static bool s_PieMenuColorPreviewPressed = false;
-					if(Ui()->MouseButtonClicked(0) && Ui()->MouseHovered(&PreviewFrame))
+					if(!PrewarmOnly && Ui()->MouseButtonClicked(0) && Ui()->MouseHovered(&PreviewFrame))
 						s_PieMenuColorPreviewPressed = true;
-					if(!Ui()->MouseButton(0))
+					if(!PrewarmOnly && !Ui()->MouseButton(0))
 						s_PieMenuColorPreviewPressed = false;
 					BlockPieMenuCardDrag = BlockPieMenuCardDrag || s_PieMenuColorPreviewPressed || Ui()->MouseHovered(&PreviewFrame);
 
@@ -5609,7 +5621,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 						}
 
 						// 检测点击复制（排除删除按钮）
-						if(Ui()->MouseInside(&RowLabel))
+						if(!PrewarmOnly && Ui()->MouseInside(&RowLabel))
 						{
 							Ui()->SetHotItem(&s_aMapButtonIds[MapIndex]);
 							if(Ui()->MouseButtonClicked(0))
@@ -7086,7 +7098,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		s_DropPreview.m_pPrevVisible = nullptr;
 		s_DropPreview.m_pNextVisible = nullptr;
 	}
-	else
+	else if(!PrewarmOnly)
 	{
 		UpdateDropPreview();
 		RenderDragGhost();
@@ -7114,13 +7126,16 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 		EnsureColumns();
 
 	// === 滚动区域 Manba OUT! ===
-	CUIRect ScrollRegion;
-	ScrollRegion.x = MainView.x;
-	ScrollRegion.y = maximum(LeftView.y, RightView.y) + LgCardSpacing;
-	ScrollRegion.w = MainView.w;
-	ScrollRegion.h = 0.0f;
-	s_ScrollRegion.AddRect(ScrollRegion);
-	s_ScrollRegion.End();
+	if(!PrewarmOnly)
+	{
+		CUIRect ScrollRegion;
+		ScrollRegion.x = MainView.x;
+		ScrollRegion.y = maximum(LeftView.y, RightView.y) + LgCardSpacing;
+		ScrollRegion.w = MainView.w;
+		ScrollRegion.h = 0.0f;
+		s_ScrollRegion.AddRect(ScrollRegion);
+		s_ScrollRegion.End();
+	}
 	if(TabTransitionActive && TabTransitionAlpha > 0.0f)
 		TabContentClip.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, TabTransitionAlpha), IGraphics::CORNER_NONE, 0.0f);
 	if(TabTransitionActive)
