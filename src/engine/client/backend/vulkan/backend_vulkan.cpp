@@ -2528,7 +2528,8 @@ protected:
 		VkClearValue ClearColorVal = {{{m_aClearColor[0], m_aClearColor[1], m_aClearColor[2], m_aClearColor[3]}}};
 		RenderPassInfo.clearValueCount = 1;
 		RenderPassInfo.pClearValues = &ClearColorVal;
-		vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, m_ThreadCount > 1 ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
+		const VkSubpassContents SubpassContents = (m_ThreadCount > 1 && !m_ForceSingleThreadedRender) ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE;
+		vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, SubpassContents);
 		m_SwapRenderPassActive = true;
 		for(auto &LastPipe : m_vLastPipeline)
 			LastPipe = VK_NULL_HANDLE;
@@ -2581,8 +2582,37 @@ protected:
 			SubmitInfo.pWaitDstStageMask = aWaitStages.data();
 			m_AcquireSemaphoreConsumed = true;
 		}
-		vkQueueSubmit(m_VKGraphicsQueue, 1, &SubmitInfo, VK_NULL_HANDLE);
-		vkQueueWaitIdle(m_VKGraphicsQueue);
+		VkFence SubmitFence = m_vQueueSubmitFences[m_CurImageIndex];
+		VkResult ResetSubmitFenceResult = vkResetFences(m_VKDevice, 1, &SubmitFence);
+		if(ResetSubmitFenceResult != VK_SUCCESS)
+		{
+			const char *pCritErrorMsg = CheckVulkanCriticalError(ResetSubmitFenceResult);
+			if(pCritErrorMsg != nullptr)
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_SUBMIT_FAILED, "Resetting intermediate graphics queue submit fence failed.", pCritErrorMsg);
+			else
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_SUBMIT_FAILED, "Resetting intermediate graphics queue submit fence failed.");
+			return false;
+		}
+		VkResult QueueSubmitRes = QueueSubmit(m_VKGraphicsQueue, 1, &SubmitInfo, SubmitFence);
+		if(QueueSubmitRes != VK_SUCCESS)
+		{
+			const char *pCritErrorMsg = CheckVulkanCriticalError(QueueSubmitRes);
+			if(pCritErrorMsg != nullptr)
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_SUBMIT_FAILED, "Submitting intermediate graphics queue command buffer failed.", pCritErrorMsg);
+			else
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_SUBMIT_FAILED, "Submitting intermediate graphics queue command buffer failed.");
+			return false;
+		}
+		VkResult WaitSubmitFenceResult = WaitForFences(1, &SubmitFence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+		if(WaitSubmitFenceResult != VK_SUCCESS)
+		{
+			const char *pCritErrorMsg = CheckVulkanCriticalError(WaitSubmitFenceResult);
+			if(pCritErrorMsg != nullptr)
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_SUBMIT_FAILED, "Waiting for intermediate graphics queue submit fence failed.", pCritErrorMsg);
+			else
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_SUBMIT_FAILED, "Waiting for intermediate graphics queue submit fence failed.");
+			return false;
+		}
 
 		vkResetCommandBuffer(CommandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
 		VkCommandBufferBeginInfo BeginInfo{};
@@ -8074,15 +8104,52 @@ public:
 		SubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		SubmitInfo.commandBufferCount = 1;
 		SubmitInfo.pCommandBuffers = &CommandBuffer;
-		vkQueueSubmit(m_VKGraphicsQueue, 1, &SubmitInfo, VK_NULL_HANDLE);
-		vkQueueWaitIdle(m_VKGraphicsQueue);
+		VkResult ResetFenceResult = vkResetFences(m_VKDevice, 1, &m_GetPresentedImgDataHelperFence);
+		if(ResetFenceResult != VK_SUCCESS)
+		{
+			const char *pErr = CheckVulkanCriticalError(ResetFenceResult);
+			if(pErr != nullptr)
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_CMD_FAILED, "Resetting render target readback fence failed: %s.", pErr);
+			else
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_CMD_FAILED, "Resetting render target readback fence failed.");
+			return false;
+		}
+		VkResult QueueSubmitResult = QueueSubmit(m_VKGraphicsQueue, 1, &SubmitInfo, m_GetPresentedImgDataHelperFence);
+		if(QueueSubmitResult != VK_SUCCESS)
+		{
+			const char *pErr = CheckVulkanCriticalError(QueueSubmitResult);
+			if(pErr != nullptr)
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_SUBMIT_FAILED, "Submitting render target readback command buffer failed: %s.", pErr);
+			else
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_SUBMIT_FAILED, "Submitting render target readback command buffer failed.");
+			return false;
+		}
+		VkResult WaitForFencesResult = WaitForFences(1, &m_GetPresentedImgDataHelperFence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+		if(WaitForFencesResult != VK_SUCCESS)
+		{
+			const char *pErr = CheckVulkanCriticalError(WaitForFencesResult);
+			if(pErr != nullptr)
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_CMD_FAILED, "Waiting for render target readback fence failed: %s.", pErr);
+			else
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_CMD_FAILED, "Waiting for render target readback fence failed.");
+			return false;
+		}
 
 		VkMappedMemoryRange MemRange{};
 		MemRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
 		MemRange.memory = m_GetPresentedImgDataHelperMem.m_Mem;
 		MemRange.offset = m_GetPresentedImgDataHelperMappedLayoutOffset;
 		MemRange.size = VK_WHOLE_SIZE;
-		vkInvalidateMappedMemoryRanges(m_VKDevice, 1, &MemRange);
+		VkResult InvalidateResult = InvalidateMappedMemoryRanges(1, &MemRange);
+		if(InvalidateResult != VK_SUCCESS)
+		{
+			const char *pErr = CheckVulkanCriticalError(InvalidateResult);
+			if(pErr != nullptr)
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_CMD_FAILED, "Invalidating render target readback memory failed: %s.", pErr);
+			else
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_RENDER_CMD_FAILED, "Invalidating render target readback memory failed.");
+			return false;
+		}
 
 		const size_t PixelSize = 4;
 		const size_t ImageSize = (size_t)Target.m_Width * Target.m_Height * PixelSize;

@@ -181,6 +181,52 @@ TEST(GraphicsRenderTarget, VulkanBackendDeclaresRenderTargetSupport)
 	EXPECT_NE(Source.find("m_OptimalSwapChainImageBlitting && m_OptimalRGBAImageBlitting && m_LinearRGBAImageBlitting"), std::string::npos);
 }
 
+TEST(GraphicsRenderTarget, VulkanSwapRenderPassUsesInlineAfterForcedSingleThreadedRecording)
+{
+	const std::string Source = ReadFile("src/engine/client/backend/vulkan/backend_vulkan.cpp");
+	const std::string Body = ExtractFunctionBody(Source, "void BeginSwapRenderPass");
+	ASSERT_FALSE(Body.empty());
+
+	const size_t SubpassContents = Body.find("SubpassContents");
+	const size_t ForceSingleThreaded = Body.find("m_ForceSingleThreadedRender");
+	const size_t BeginRenderPass = Body.find("vkCmdBeginRenderPass");
+	ASSERT_NE(SubpassContents, std::string::npos);
+	ASSERT_NE(ForceSingleThreaded, std::string::npos);
+	ASSERT_NE(BeginRenderPass, std::string::npos);
+	EXPECT_LT(SubpassContents, BeginRenderPass);
+	EXPECT_LT(ForceSingleThreaded, BeginRenderPass);
+	EXPECT_NE(Body.find("VK_SUBPASS_CONTENTS_INLINE"), std::string::npos);
+	EXPECT_NE(Body.find("VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS"), std::string::npos);
+}
+
+TEST(GraphicsRenderTarget, VulkanIntermediateSwapPassSubmitUsesFenceInsteadOfQueueIdle)
+{
+	const std::string Source = ReadFile("src/engine/client/backend/vulkan/backend_vulkan.cpp");
+	const std::string Body = ExtractFunctionBody(Source, "[[nodiscard]] bool SubmitCurrentCommandsAndRestartSwapPass()");
+	ASSERT_FALSE(Body.empty());
+
+	EXPECT_NE(Body.find("vkResetFences"), std::string::npos);
+	EXPECT_NE(Body.find("QueueSubmit("), std::string::npos);
+	EXPECT_NE(Body.find("WaitForFences("), std::string::npos);
+	EXPECT_EQ(Body.find("vkQueueSubmit("), std::string::npos);
+	EXPECT_EQ(Body.find("vkQueueWaitIdle("), std::string::npos);
+}
+
+TEST(GraphicsRenderTarget, VulkanRenderTargetReadbackUsesFenceInsteadOfQueueIdle)
+{
+	const std::string Source = ReadFile("src/engine/client/backend/vulkan/backend_vulkan.cpp");
+	const std::string Body = ExtractFunctionBody(Source, "[[nodiscard]] bool Cmd_RenderTarget_Readback");
+	ASSERT_FALSE(Body.empty());
+
+	EXPECT_NE(Body.find("vkResetFences"), std::string::npos);
+	EXPECT_NE(Body.find("QueueSubmit("), std::string::npos);
+	EXPECT_NE(Body.find("WaitForFences("), std::string::npos);
+	EXPECT_NE(Body.find("InvalidateMappedMemoryRanges("), std::string::npos);
+	EXPECT_EQ(Body.find("vkQueueSubmit("), std::string::npos);
+	EXPECT_EQ(Body.find("vkQueueWaitIdle("), std::string::npos);
+	EXPECT_EQ(Body.find("vkInvalidateMappedMemoryRanges("), std::string::npos);
+}
+
 TEST(GraphicsRenderTarget, VulkanPreviewReadbackDoesNotDependOnSwapchainMsaa)
 {
 	const std::string Source = ReadFile("src/engine/client/backend/vulkan/backend_vulkan.cpp");
