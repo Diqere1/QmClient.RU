@@ -14,6 +14,7 @@
 #include <game/client/components/key_binder.h>
 #include <game/client/components/menus.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/client/ui.h>
 #include <game/client/ui_scrollregion.h>
 #include <game/localization.h>
@@ -95,17 +96,18 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 		{EBindOptionGroup::CHAT, Localizable("Show chat"), "+show_chat"},
 		{EBindOptionGroup::CHAT, Localizable("Repeat message"), "+qm_repeat"},
 		{EBindOptionGroup::CHAT, Localizable("Voice chat"), "+qm_voice_ptt"},
-		{EBindOptionGroup::DUMMY, Localizable("Toggle dummy"), "toggle cl_dummy 0 1"},
-		{EBindOptionGroup::DUMMY, Localizable("Dummy jump"), "+toggle_restore cl_dummy_jump 1"},
-		{EBindOptionGroup::DUMMY, Localizable("Dummy fire"), "+toggle_restore cl_dummy_fire 1"},
-		{EBindOptionGroup::DUMMY, Localizable("Dummy hook"), "+toggle_restore cl_dummy_hook 1"},
-		{EBindOptionGroup::DUMMY, Localizable("Dummy copy"), "toggle cl_dummy_copy_moves 0 1"},
-		{EBindOptionGroup::DUMMY, Localizable("Hammerfly dummy"), "toggle cl_dummy_hammer 0 1"},
-		{EBindOptionGroup::DUMMY, Localizable("Dummy control"), "toggle cl_dummy_control 1 0"},
+		{EBindOptionGroup::DUMMY, Localizable("切换分身"), "toggle cl_dummy 0 1"},
+		{EBindOptionGroup::DUMMY, Localizable("分身跳跃"), "+toggle_restore cl_dummy_jump 1"},
+		{EBindOptionGroup::DUMMY, Localizable("分身开火"), "+toggle_restore cl_dummy_fire 1"},
+		{EBindOptionGroup::DUMMY, Localizable("分身钩子"), "+toggle_restore cl_dummy_hook 1"},
+		{EBindOptionGroup::DUMMY, Localizable("分身复制移动"), "toggle cl_dummy_copy_moves 0 1"},
+		{EBindOptionGroup::DUMMY, Localizable("分身锤子飞"), "toggle cl_dummy_hammer 0 1"},
+		{EBindOptionGroup::DUMMY, Localizable("控制分身"), "toggle cl_dummy_control 1 0"},
 		{EBindOptionGroup::MISCELLANEOUS, Localizable("Emoticon"), "+emote"},
-		{EBindOptionGroup::MISCELLANEOUS, Localizable("Spectator mode"), "+spectate"},
-		{EBindOptionGroup::MISCELLANEOUS, Localizable("Spectate next"), "spectate_next"},
-		{EBindOptionGroup::MISCELLANEOUS, Localizable("Spectate previous"), "spectate_previous"},
+		{EBindOptionGroup::MISCELLANEOUS, Localizable("旁观模式"), "+spectate"},
+		{EBindOptionGroup::MISCELLANEOUS, Localizable("旁观传送"), "qm_spec_teleport"},
+		{EBindOptionGroup::MISCELLANEOUS, Localizable("旁观下一个玩家"), "spectate_next"},
+		{EBindOptionGroup::MISCELLANEOUS, Localizable("旁观上一个玩家"), "spectate_previous"},
 		{EBindOptionGroup::MISCELLANEOUS, Localizable("Console"), "toggle_local_console"},
 		{EBindOptionGroup::MISCELLANEOUS, Localizable("Remote console"), "toggle_remote_console"},
 		{EBindOptionGroup::MISCELLANEOUS, Localizable("Screenshot"), "screenshot"},
@@ -128,8 +130,7 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 
 void CMenusSettingsControls::Render(CUIRect MainView)
 {
-	const bool DeferHeavyContent = ShouldDeferHeavyContent();
-	if(!DeferHeavyContent && (m_BindOptionsDirty || GameClient()->m_KeyBinder.IsActive()))
+	if(m_BindOptionsDirty || GameClient()->m_KeyBinder.IsActive())
 	{
 		UpdateBindOptions();
 		m_BindOptionsDirty = false;
@@ -187,92 +188,37 @@ void CMenusSettingsControls::Render(CUIRect MainView)
 	}
 
 	vec2 ScrollOffset(0.0f, 0.0f);
+	static float s_PrevSettingsScrollY = 0.0f;
 	CScrollRegionParams ScrollParams;
 	ScrollParams.m_ScrollUnit = 6.0f * BUTTON_HEIGHT;
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
 	m_SettingsScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
+	GameClient()->m_Menus.m_SettingsScrollActive = GameClient()->m_Menus.m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevSettingsScrollY) > 0.01f;
+	s_PrevSettingsScrollY = ScrollOffset.y;
 	MainView.y += ScrollOffset.y;
 
 	CUIRect LeftColumn, RightColumn;
 	MainView.VSplitMid(&LeftColumn, &RightColumn, MARGIN);
 
-	if(DeferHeavyContent)
-	{
-		RenderDeferredSummaryBlock(&LeftColumn, Localize("Mouse"), EBindOptionGroup::MOVEMENT, 2);
-		RenderDeferredSummaryBlock(&LeftColumn, Localize("Controller"), EBindOptionGroup::MOVEMENT, 2);
-		RenderDeferredSummaryBlock(&LeftColumn, Localize("Movement"), EBindOptionGroup::MOVEMENT, 3);
-		RenderDeferredSummaryBlock(&RightColumn, Localize("Voting"), EBindOptionGroup::VOTING, 2);
-		if(m_DeferredHeavyFrames <= 3)
-		{
-			RenderDeferredSummaryBlock(&LeftColumn, Localize("Weapon"), EBindOptionGroup::WEAPON, 3);
-			RenderDeferredSummaryBlock(&RightColumn, Localize("Chat"), EBindOptionGroup::CHAT, 3);
-		}
-		if(m_DeferredHeavyFrames <= 2)
-		{
-			RenderDeferredSummaryBlock(&RightColumn, Localize("Dummy"), EBindOptionGroup::DUMMY, 3);
-			RenderDeferredSummaryBlock(&RightColumn, Localize("Miscellaneous"), EBindOptionGroup::MISCELLANEOUS, 4);
-		}
-	}
-	else
-	{
-		// Left column
-		RenderSettingsBlock(MeasureSettingsMouseHeight(), &LeftColumn,
-			Localize("Mouse"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsMouse, this));
-		RenderSettingsBlock(MeasureSettingsJoystickHeight(), &LeftColumn,
-			Localize("Controller"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsJoystick, this));
-		RenderSettingsBindsBlock(EBindOptionGroup::MOVEMENT, &LeftColumn, Localize("Movement"));
-		RenderSettingsBindsBlock(EBindOptionGroup::WEAPON, &LeftColumn, Localize("Weapon"));
+	// Left column
+	RenderSettingsBlock(MeasureSettingsMouseHeight(), &LeftColumn,
+		Localize("Mouse"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsMouse, this));
+	RenderSettingsBlock(MeasureSettingsJoystickHeight(), &LeftColumn,
+		Localize("Controller"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsJoystick, this));
+	RenderSettingsBindsBlock(EBindOptionGroup::MOVEMENT, &LeftColumn, Localize("Movement"));
+	RenderSettingsBindsBlock(EBindOptionGroup::WEAPON, &LeftColumn, Localize("Weapon"));
 
-		// Right column
-		RenderSettingsBindsBlock(EBindOptionGroup::VOTING, &RightColumn, Localize("Voting"));
-		RenderSettingsBindsBlock(EBindOptionGroup::CHAT, &RightColumn, Localize("Chat"));
-		RenderSettingsBindsBlock(EBindOptionGroup::DUMMY, &RightColumn, Localize("Dummy"));
-		RenderSettingsBindsBlock(EBindOptionGroup::MISCELLANEOUS, &RightColumn, Localize("Miscellaneous"));
-		if(std::any_of(m_vBindOptions.begin(), m_vBindOptions.end(), [](const CBindOption &Option) { return Option.m_Group == EBindOptionGroup::CUSTOM; }))
-		{
-			RenderSettingsBindsBlock(EBindOptionGroup::CUSTOM, &RightColumn, Localize("Custom"));
-		}
+	// Right column
+	RenderSettingsBindsBlock(EBindOptionGroup::VOTING, &RightColumn, Localize("Voting"));
+	RenderSettingsBindsBlock(EBindOptionGroup::CHAT, &RightColumn, Localize("Chat"));
+	RenderSettingsBindsBlock(EBindOptionGroup::DUMMY, &RightColumn, Localize("分身"));
+	RenderSettingsBindsBlock(EBindOptionGroup::MISCELLANEOUS, &RightColumn, Localize("Miscellaneous"));
+	if(std::any_of(m_vBindOptions.begin(), m_vBindOptions.end(), [](const CBindOption &Option) { return Option.m_Group == EBindOptionGroup::CUSTOM; }))
+	{
+		RenderSettingsBindsBlock(EBindOptionGroup::CUSTOM, &RightColumn, Localize("Custom"));
 	}
 
 	m_SettingsScrollRegion.End();
-	FinishDeferredFrame();
-}
-
-void CMenusSettingsControls::SetDeferredFrames(int Frames)
-{
-	m_DeferredHeavyFrames = maximum(Frames, 0);
-	m_BindOptionsDirty = true;
-}
-
-bool CMenusSettingsControls::ShouldDeferHeavyContent() const
-{
-	return m_DeferredHeavyFrames > 0 && m_FilterInput.IsEmpty() && !GameClient()->m_KeyBinder.IsActive();
-}
-
-void CMenusSettingsControls::FinishDeferredFrame()
-{
-	if(m_DeferredHeavyFrames > 0)
-		--m_DeferredHeavyFrames;
-}
-
-void CMenusSettingsControls::RenderDeferredSummaryBlock(CUIRect *pParentRect, const char *pTitle, EBindOptionGroup Group, int ApproxRows)
-{
-	int MatchingOptions = 0;
-	for(const CBindOption &Option : m_vBindOptions)
-	{
-		if(Option.m_Group == Group)
-			++MatchingOptions;
-	}
-
-	const int DisplayCount = maximum(MatchingOptions, ApproxRows);
-	RenderSettingsBlock(maximum(ApproxRows, 2) * BUTTON_HEIGHT + (maximum(ApproxRows, 2) - 1) * BUTTON_SPACING,
-		pParentRect, pTitle, nullptr, nullptr,
-		[&](CUIRect Rect) {
-			char aBuf[128];
-			Rect.HSplitTop(BUTTON_HEIGHT, &Rect, nullptr);
-			str_format(aBuf, sizeof(aBuf), Localize("Preparing %d actions..."), DisplayCount);
-			Ui()->DoLabel(&Rect, aBuf, FONT_SIZE, TEXTALIGN_ML);
-		});
 }
 
 void CMenusSettingsControls::UpdateBindOptions()
@@ -457,7 +403,12 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 	pParentRect->HSplitTop(MARGIN, nullptr, pParentRect);
 	if(m_SettingsScrollRegion.AddRect(SettingsBlock) || m_SearchMatchReveal)
 	{
-		SettingsBlock.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, pExpandButton == nullptr || Ui()->HotItem() != pExpandButton ? 0.25f : 0.3f), IGraphics::CORNER_ALL, 10.0f);
+		SettingsBlock.Draw(pExpandButton == nullptr || Ui()->HotItem() != pExpandButton ? ui_token::color::SURFACE_GLASS : ui_token::color::SURFACE_ELEVATED, IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		CUIRect TopHighlight = SettingsBlock;
+		TopHighlight.h = 1.0f;
+		TopHighlight.x += ui_token::radius::BASE;
+		TopHighlight.w -= 2.0f * ui_token::radius::BASE;
+		TopHighlight.Draw(ui_token::color::SURFACE_HIGHLIGHT, IGraphics::CORNER_T, 0.0f);
 		SettingsBlock.Margin(MARGIN, &SettingsBlock);
 
 		if(pTitle != nullptr)
@@ -484,7 +435,7 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 				if(m_SettingsScrollRegion.AddRect(ExpandButton))
 				{
 					SLabelProperties Props;
-					Props.SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, 0.65f * Ui()->ButtonColorMul(pExpandButton)));
+					Props.SetColor(ui_token::color::TEXT_SECONDARY.WithMultipliedAlpha(Ui()->ButtonColorMul(pExpandButton)));
 					Props.m_EnableWidthCheck = false;
 					TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 					TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
@@ -496,7 +447,9 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 
 			if(m_SettingsScrollRegion.AddRect(Label))
 			{
-				Ui()->DoLabel(&Label, pTitle, HEADER_FONT_SIZE, TEXTALIGN_ML);
+				SLabelProperties Props;
+				Props.SetColor(ui_token::color::TEXT_PRIMARY);
+				Ui()->DoLabel(&Label, pTitle, HEADER_FONT_SIZE, TEXTALIGN_ML, Props);
 			}
 		}
 

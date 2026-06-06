@@ -1,7 +1,5 @@
 #include "warlist.h"
 
-#include <algorithm>
-
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 
@@ -9,20 +7,22 @@
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
 
+#include <algorithm>
+
 namespace
 {
-void ResetWarPlayerData(CWarDataCache &WarData, int WarTypeCount)
-{
-	WarData.m_WarName = false;
-	WarData.m_WarClan = false;
-	WarData.m_aReason[0] = '\0';
-	WarData.m_NameColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
-	WarData.m_ClanColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
-	if(static_cast<int>(WarData.m_WarGroupMatches.size()) != WarTypeCount)
-		WarData.m_WarGroupMatches.assign(WarTypeCount, false);
-	else
-		std::fill(WarData.m_WarGroupMatches.begin(), WarData.m_WarGroupMatches.end(), false);
-}
+	void ResetWarPlayerData(CWarDataCache &WarData, int WarTypeCount)
+	{
+		WarData.m_WarName = false;
+		WarData.m_WarClan = false;
+		WarData.m_aReason[0] = '\0';
+		WarData.m_NameColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+		WarData.m_ClanColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+		if(static_cast<int>(WarData.m_WarGroupMatches.size()) != WarTypeCount)
+			WarData.m_WarGroupMatches.assign(WarTypeCount, false);
+		else
+			std::fill(WarData.m_WarGroupMatches.begin(), WarData.m_WarGroupMatches.end(), false);
+	}
 }
 
 void CWarList::OnNewSnapshot()
@@ -163,7 +163,9 @@ void CWarList::AddWarEntryInGame(int WarType, const char *pName, const char *pRe
 			if(str_comp(Client.m_aName, pName) == 0)
 			{
 				if(str_comp(Client.m_aClan, "") != 0)
+				{
 					str_copy(Entry.m_aClan, Client.m_aClan);
+				}
 				else
 				{
 					char aBuf[128];
@@ -285,19 +287,21 @@ void CWarList::RemoveWarEntryDuplicates(const char *pName, const char *pClan)
 		return;
 
 	bool RemovedAny = false;
-	for(auto it = m_vWarEntries.begin(); it != m_vWarEntries.end();)
+	for(auto Iter = m_vWarEntries.begin(); Iter != m_vWarEntries.end();)
 	{
 		bool IsDuplicate =
-			(str_comp(it->m_aName, pName) == 0) &&
-			(str_comp(it->m_aClan, pClan) == 0);
+			(str_comp(Iter->m_aName, pName) == 0) &&
+			(str_comp(Iter->m_aClan, pClan) == 0);
 
 		if(IsDuplicate)
 		{
-			it = m_vWarEntries.erase(it);
+			Iter = m_vWarEntries.erase(Iter);
 			RemovedAny = true;
 		}
 		else
-			++it;
+		{
+			++Iter;
+		}
 	}
 
 	if(RemovedAny)
@@ -326,21 +330,21 @@ void CWarList::RemoveWarEntry(const char *pName, const char *pClan, const char *
 {
 	CWarType *pWarType = FindWarType(pType);
 	CWarEntry Entry(pWarType, pName, pClan, "");
-	auto it = std::find(m_vWarEntries.begin(), m_vWarEntries.end(), Entry);
-	if(it != m_vWarEntries.end())
+	auto Iter = std::find(m_vWarEntries.begin(), m_vWarEntries.end(), Entry);
+	if(Iter != m_vWarEntries.end())
 	{
-		m_vWarEntries.erase(it);
+		m_vWarEntries.erase(Iter);
 		MarkWarEntriesDirty();
 	}
 }
 
 void CWarList::RemoveWarEntry(CWarEntry *Entry)
 {
-	auto it = std::find_if(m_vWarEntries.begin(), m_vWarEntries.end(),
+	auto Iter = std::find_if(m_vWarEntries.begin(), m_vWarEntries.end(),
 		[Entry](const CWarEntry &WarEntry) { return &WarEntry == Entry; });
-	if(it != m_vWarEntries.end())
+	if(Iter != m_vWarEntries.end())
 	{
-		m_vWarEntries.erase(it);
+		m_vWarEntries.erase(Iter);
 		MarkWarEntriesDirty();
 	}
 }
@@ -349,24 +353,24 @@ void CWarList::RemoveWarType(const char *pType)
 {
 	CWarType Type(pType);
 
-	auto it = std::find_if(m_WarTypes.begin(), m_WarTypes.end(),
+	auto Iter = std::find_if(m_WarTypes.begin(), m_WarTypes.end(),
 		[&Type](CWarType *pWarTypePtr) { return *pWarTypePtr == Type; });
-	if(it != m_WarTypes.end())
+	if(Iter != m_WarTypes.end())
 	{
 		// Don't remove default war types
-		if(!(*it)->m_Removable)
+		if(!(*Iter)->m_Removable)
 			return;
 
 		// Find all war entries and set them to None if they are using this type
 		for(CWarEntry &Entry : m_vWarEntries)
 		{
-			if(*Entry.m_pWarType == **it)
+			if(*Entry.m_pWarType == **Iter)
 			{
 				Entry.m_pWarType = m_pWarTypeNone;
 			}
 		}
-		delete *it;
-		m_WarTypes.erase(it);
+		delete *Iter;
+		m_WarTypes.erase(Iter);
 		MarkWarTypesDirty();
 	}
 }
@@ -374,10 +378,10 @@ void CWarList::RemoveWarType(const char *pType)
 CWarType *CWarList::FindWarType(const char *pType)
 {
 	CWarType Type(pType);
-	auto it = std::find_if(m_WarTypes.begin(), m_WarTypes.end(),
+	auto Iter = std::find_if(m_WarTypes.begin(), m_WarTypes.end(),
 		[&Type](CWarType *pWarTypePtr) { return *pWarTypePtr == Type; });
-	if(it != m_WarTypes.end())
-		return *it;
+	if(Iter != m_WarTypes.end())
+		return *Iter;
 	else
 		return m_pWarTypeNone;
 }
@@ -386,10 +390,10 @@ CWarEntry *CWarList::FindWarEntry(const char *pName, const char *pClan, const ch
 {
 	CWarType *pWarType = FindWarType(pType);
 	CWarEntry Entry(pWarType, pName, pClan, "");
-	auto it = std::find(m_vWarEntries.begin(), m_vWarEntries.end(), Entry);
+	auto Iter = std::find(m_vWarEntries.begin(), m_vWarEntries.end(), Entry);
 
-	if(it != m_vWarEntries.end())
-		return &(*it);
+	if(Iter != m_vWarEntries.end())
+		return &(*Iter);
 	else
 		return nullptr;
 }

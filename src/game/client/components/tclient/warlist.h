@@ -141,7 +141,7 @@ class CWarList : public CComponent
 
 public:
 	CWarList();
-	~CWarList();
+	~CWarList() override;
 	CWarList(const CWarList &) = delete;
 	CWarList &operator=(const CWarList &) = delete;
 

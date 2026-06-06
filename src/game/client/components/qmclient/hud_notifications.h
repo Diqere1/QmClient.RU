@@ -1,0 +1,233 @@
+#ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_HUD_NOTIFICATIONS_H
+#define GAME_CLIENT_COMPONENTS_QMCLIENT_HUD_NOTIFICATIONS_H
+
+#include "hud_notification_rules.h"
+#include "colored_parts.h"
+
+#include <base/color.h>
+#include <base/system.h>
+
+#include <engine/shared/config.h>
+
+#include <game/client/component.h>
+#include <game/client/ui_rect.h>
+#include <game/localization.h>
+
+#include <algorithm>
+#include <deque>
+
+namespace QmHudNotifications
+{
+	enum class ETextSource
+	{
+		System,
+		Echo,
+	};
+
+	struct STextColorConfig
+	{
+		unsigned m_Color = 0;
+		bool m_HasAlpha = false;
+	};
+
+	struct SEchoNotificationPayload
+	{
+		char m_aText[256] = {};
+		unsigned m_Color = 0;
+	};
+
+	// Echo 的颜色要在入队时固化，否则后续 bind 恢复颜色后会把旧通知一起改掉。
+	inline SEchoNotificationPayload BuildEchoNotificationPayload(const char *pMessage, unsigned FallbackColor)
+	{
+		SEchoNotificationPayload Payload;
+		Payload.m_Color = FallbackColor;
+		if(pMessage == nullptr || pMessage[0] == '\0')
+			return Payload;
+
+		CColoredParts ColoredParts(pMessage, true);
+		if(!ColoredParts.Colors().empty() && ColoredParts.Colors()[0].m_Index == 0)
+			Payload.m_Color = color_cast<ColorHSLA>(ColoredParts.Colors()[0].m_Color).Pack(false);
+		str_copy(Payload.m_aText, ColoredParts.Text(), sizeof(Payload.m_aText));
+		return Payload;
+	}
+
+	inline int ClampVisibleCount(int Value)
+	{
+		return std::clamp(Value, 1, 8);
+	}
+
+	inline int ClampHoldMs(int Value)
+	{
+		return std::clamp(Value, 500, 10000);
+	}
+
+	inline int ClampAnimationMs(int Value)
+	{
+		return std::clamp(Value, 0, 2000);
+	}
+
+	inline int ClampTextSize(int Value)
+	{
+		return std::clamp(Value, 1, 24);
+	}
+
+	inline float SmallTextScale(float FontSize)
+	{
+		return std::clamp(FontSize / 8.0f, 0.33f, 1.0f);
+	}
+
+	inline float PaddingX(float FontSize)
+	{
+		return 6.0f * SmallTextScale(FontSize);
+	}
+
+	inline float PaddingY(float FontSize)
+	{
+		return 4.0f * SmallTextScale(FontSize);
+	}
+
+	inline float MinBoxWidth(float FontSize)
+	{
+		return 82.0f * SmallTextScale(FontSize);
+	}
+
+	inline STextColorConfig TextColorConfig(ETextSource Source, int EchoInheritChatColor, unsigned SystemColor, unsigned EchoOverrideColor, unsigned ChatEchoColor)
+	{
+		if(Source == ETextSource::Echo && EchoInheritChatColor)
+			return {ChatEchoColor, false};
+		if(Source == ETextSource::Echo)
+			return {EchoOverrideColor, true};
+		return {SystemColor, true};
+	}
+} // namespace QmHudNotifications
+
+class CQmHudNotifications : public CComponent
+{
+public:
+	int Sizeof() const override { return sizeof(*this); }
+	void OnReset() override;
+	void OnRelease() override;
+	void OnNewSnapshot() override;
+	void OnRender() override;
+
+	static bool HandleServerChatCoreForTests(QmHudNotifications::ESoloPrompt &PendingCompatPrompt, int64_t &PendingCompatUntil, bool CompatSoloEnabled, const char *pMessage, bool RouteSystemMessages, bool HideBasicInfo, bool HidePrompt, QmHudNotifications::SServerMessageAnalysis *pAnalysisResult = nullptr, QmHudNotifications::SServerMessageEntryDecision *pDecisionResult = nullptr)
+	{
+		if(CompatSoloEnabled && PendingCompatPrompt != QmHudNotifications::ESoloPrompt::None && time_get() > PendingCompatUntil)
+			PendingCompatPrompt = QmHudNotifications::ESoloPrompt::None;
+
+		const QmHudNotifications::SServerMessageAnalysis Analysis = QmHudNotifications::AnalyzeServerMessage(pMessage, PendingCompatPrompt);
+		const QmHudNotifications::SServerMessageEntryDecision Decision = QmHudNotifications::DecideServerMessageEntry(Analysis, RouteSystemMessages, HideBasicInfo, HidePrompt);
+		if(Decision.m_ClearPendingCompatPrompt)
+			PendingCompatPrompt = QmHudNotifications::ESoloPrompt::None;
+		if(pAnalysisResult != nullptr)
+			*pAnalysisResult = Analysis;
+		if(pDecisionResult != nullptr)
+			*pDecisionResult = Decision;
+		return Decision.m_ConsumeHiddenMessage || Decision.m_QueueNotification;
+	}
+
+	bool QueueEcho(const char *pMessage, unsigned EchoColor);
+	bool HandleServerChat(const char *pMessage, bool RouteSystemMessages, bool HideBasicInfo, bool HidePrompt, QmHudNotifications::SServerMessageAnalysis *pAnalysisResult = nullptr)
+	{
+		QmHudNotifications::SServerMessageAnalysis Analysis;
+		QmHudNotifications::SServerMessageEntryDecision Decision;
+		if(!HandleServerChatCoreForTests(m_PendingCompatPrompt, m_PendingCompatUntil, g_Config.m_QmHudNotificationsCompatSolo != 0, pMessage, RouteSystemMessages, HideBasicInfo, HidePrompt, &Analysis, &Decision))
+		{
+			if(pAnalysisResult != nullptr)
+				*pAnalysisResult = Analysis;
+			return false;
+		}
+		if(pAnalysisResult != nullptr)
+			*pAnalysisResult = Analysis;
+		if(Decision.m_ConsumeHiddenMessage)
+			return true;
+		if(Analysis.m_Route == QmHudNotifications::EServerMessageRoute::Solo)
+		{
+			QueueSolo(Analysis.m_SoloPrompt);
+			return true;
+		}
+		if(Decision.m_UseFallbackNotification)
+		{
+			Queue(EKind::System, Localize(pMessage));
+			return true;
+		}
+		if(Analysis.m_aLocalizedText[0] != '\0')
+		{
+			Queue(EKind::System, Analysis.m_aLocalizedText);
+			return true;
+		}
+		return false;
+	}
+	// 这些测试接口只暴露入口级副作用，避免测试重新退回 helper 层，确保能直接验证 HandleServerChat 的真实行为。
+	int NotificationCountForTests() const
+	{
+		return (int)m_vNotifications.size();
+	}
+	const char *LastNotificationTextForTests() const
+	{
+		return m_vNotifications.empty() ? "" : m_vNotifications.back().m_aText;
+	}
+	QmHudNotifications::ESoloPrompt PendingCompatPromptForTests() const
+	{
+		return m_PendingCompatPrompt;
+	}
+	void SetPendingCompatPromptForTests(QmHudNotifications::ESoloPrompt Prompt, int64_t PendingUntil)
+	{
+		m_PendingCompatPrompt = Prompt;
+		m_PendingCompatUntil = PendingUntil;
+	}
+	bool ShouldSuppressServerChat(const char *pMessage);
+	bool ShouldConsumeHiddenServerChat(const char *pMessage, bool HideBasicInfo, bool HidePrompt);
+
+private:
+	enum class EKind
+	{
+		SoloEnter,
+		SoloLeave,
+		System,
+		Echo,
+	};
+
+	struct SNotification
+	{
+		EKind m_Kind = EKind::Echo;
+		char m_aText[256] = {};
+		int64_t m_StartTime = 0;
+		unsigned m_EchoColor = 0;
+		bool m_HasEchoColor = false;
+	};
+
+	std::deque<SNotification> m_vNotifications;
+	bool m_HasLastSolo = false;
+	bool m_LastSolo = false;
+	QmHudNotifications::ESoloPrompt m_PendingCompatPrompt = QmHudNotifications::ESoloPrompt::None;
+	int64_t m_PendingCompatUntil = 0;
+
+	void Queue(EKind Kind, const char *pText, unsigned EchoColor = 0, bool HasEchoColor = false)
+	{
+		if(pText == nullptr || pText[0] == '\0')
+			return;
+
+		SNotification Notification;
+		Notification.m_Kind = Kind;
+		str_copy(Notification.m_aText, pText);
+		Notification.m_StartTime = time_get();
+		Notification.m_EchoColor = EchoColor;
+		Notification.m_HasEchoColor = HasEchoColor;
+		m_vNotifications.push_back(Notification);
+		while((int)m_vNotifications.size() > QmHudNotifications::ClampVisibleCount(g_Config.m_QmHudNotificationsMaxVisible))
+			m_vNotifications.pop_front();
+	}
+
+	void QueueSolo(QmHudNotifications::ESoloPrompt Prompt)
+	{
+		if(Prompt == QmHudNotifications::ESoloPrompt::Enter)
+			Queue(EKind::SoloEnter, Localize("你现在处于单人区域"));
+		else if(Prompt == QmHudNotifications::ESoloPrompt::Leave)
+			Queue(EKind::SoloLeave, Localize("你现在已离开单人区域"));
+	}
+	bool LocalSoloState(bool &Solo) const;
+	void RenderNotifications(const CUIRect &BaseRect, bool Preview);
+};
+
+#endif

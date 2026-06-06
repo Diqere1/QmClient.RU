@@ -27,26 +27,26 @@ using namespace FontIcons;
 
 namespace
 {
-using SQuadPointArray = std::array<CPoint, 5>;
+	using SQuadPointArray = std::array<CPoint, 5>;
 
-SQuadPointArray QuadPoints(const CQuad *pQuad)
-{
-	SQuadPointArray aPoints;
-	std::copy(std::begin(pQuad->m_aPoints), std::end(pQuad->m_aPoints), aPoints.begin());
-	return aPoints;
-}
-
-void ScaleQuadAroundPivot(CQuad *pQuad, const SQuadPointArray &aOriginalPoints, int ScalePercent)
-{
-	const float Scale = ScalePercent / 100.0f;
-	const CPoint Pivot = aOriginalPoints[4];
-	for(int PointIndex = 0; PointIndex < 4; ++PointIndex)
+	SQuadPointArray QuadPoints(const CQuad *pQuad)
 	{
-		pQuad->m_aPoints[PointIndex].x = Pivot.x + f2fx(fx2f(aOriginalPoints[PointIndex].x - Pivot.x) * Scale);
-		pQuad->m_aPoints[PointIndex].y = Pivot.y + f2fx(fx2f(aOriginalPoints[PointIndex].y - Pivot.y) * Scale);
+		SQuadPointArray aPoints;
+		std::copy(std::begin(pQuad->m_aPoints), std::end(pQuad->m_aPoints), aPoints.begin());
+		return aPoints;
 	}
-	pQuad->m_aPoints[4] = Pivot;
-}
+
+	void ScaleQuadAroundPivot(CQuad *pQuad, const SQuadPointArray &aOriginalPoints, int ScalePercent)
+	{
+		const float Scale = ScalePercent / 100.0f;
+		const CPoint Pivot = aOriginalPoints[4];
+		for(int PointIndex = 0; PointIndex < 4; ++PointIndex)
+		{
+			pQuad->m_aPoints[PointIndex].x = Pivot.x + f2fx(fx2f(aOriginalPoints[PointIndex].x - Pivot.x) * Scale);
+			pQuad->m_aPoints[PointIndex].y = Pivot.y + f2fx(fx2f(aOriginalPoints[PointIndex].y - Pivot.y) * Scale);
+		}
+		pQuad->m_aPoints[4] = Pivot;
+	}
 }
 
 CUi::EPopupMenuFunctionResult CEditor::PopupMenuFile(void *pContext, CUIRect View, bool Active)
@@ -90,7 +90,9 @@ CUi::EPopupMenuFunctionResult CEditor::PopupMenuFile(void *pContext, CUIRect Vie
 			pEditor->m_PopupEventActivated = true;
 		}
 		else
+		{
 			pEditor->m_FileBrowser.ShowFileDialog(IStorage::TYPE_ALL, CFileBrowser::EFileType::MAP, "加载地图", "加载", "maps", "", CallbackOpenMap, pEditor);
+		}
 		return CUi::POPUP_CLOSE_CURRENT;
 	}
 
@@ -231,7 +233,7 @@ CUi::EPopupMenuFunctionResult CEditor::PopupMenuTools(void *pContext, CUIRect Vi
 	static int s_TileartButton = 0;
 	View.HSplitTop(2.0f, nullptr, &View);
 	View.HSplitTop(12.0f, &Slot, &View);
-if(pEditor->DoButton_MenuItem(&s_TileartButton, "添加图块画", 0, &Slot, BUTTONFLAG_LEFT, "从图像生成图块画。"))
+	if(pEditor->DoButton_MenuItem(&s_TileartButton, "添加图块画", 0, &Slot, BUTTONFLAG_LEFT, "从图像生成图块画。"))
 	{
 		pEditor->m_FileBrowser.ShowFileDialog(IStorage::TYPE_ALL, CFileBrowser::EFileType::IMAGE, "添加图块画", "打开", "mapres", "", CallbackAddTileart, pEditor);
 		return CUi::POPUP_CLOSE_CURRENT;
@@ -240,7 +242,7 @@ if(pEditor->DoButton_MenuItem(&s_TileartButton, "添加图块画", 0, &Slot, BUT
 	static int s_QuadArtButton = 0;
 	View.HSplitTop(2.0f, nullptr, &View);
 	View.HSplitTop(12.0f, &Slot, &View);
-if(pEditor->DoButton_MenuItem(&s_QuadArtButton, "添加四边形画", 0, &Slot, BUTTONFLAG_LEFT, "从图像生成四边形画。"))
+	if(pEditor->DoButton_MenuItem(&s_QuadArtButton, "添加四边形画", 0, &Slot, BUTTONFLAG_LEFT, "从图像生成四边形画。"))
 	{
 		pEditor->m_FileBrowser.ShowFileDialog(IStorage::TYPE_ALL, CFileBrowser::EFileType::IMAGE, "添加四边形画", "打开", "mapres", "", CallbackAddQuadArt, pEditor);
 		return CUi::POPUP_CLOSE_CURRENT;
@@ -1708,7 +1710,9 @@ CUi::EPopupMenuFunctionResult CEditor::PopupEnvPointCurveType(void *pContext, CU
 
 			if(FirstSelectedIndex < (int)pEnvelope->m_vPoints.size() && LastSelectedIndex >= 0 && FirstSelectedIndex != LastSelectedIndex)
 			{
+				// NOLINTNEXTLINE(cppcoreguidelines-slicing)
 				CEnvPoint FirstPoint = pEnvelope->m_vPoints[FirstSelectedIndex];
+				// NOLINTNEXTLINE(cppcoreguidelines-slicing)
 				CEnvPoint LastPoint = pEnvelope->m_vPoints[LastSelectedIndex];
 
 				CEnvelope HelperEnvelope(1);
@@ -2720,7 +2724,9 @@ CUi::EPopupMenuFunctionResult CEditor::PopupTele(void *pContext, CUIRect View, b
 			pEditor->AdjustBrushSpecialTiles(false);
 		}
 		else if(Prop == PROP_TELE_VIEW)
+		{
 			pEditor->m_ViewTeleNumber = (NewVal - 1 + 255) % 255 + 1;
+		}
 
 		if(s_PreviousTeleNumber == 1 || s_PreviousTeleNumber != pEditor->m_TeleNumber)
 			s_vColors[PROP_TELE] = pEditor->m_Map.m_pTeleLayer->ContainsElementWithId(pEditor->m_TeleNumber, false) ? ColorRGBA(1, 0.5f, 0.5f, 0.5f) : ColorRGBA(0.5f, 1, 0.5f, 0.5f);

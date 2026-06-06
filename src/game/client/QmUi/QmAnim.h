@@ -1,7 +1,7 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
-#ifndef GAME_CLIENT_QM_UI_QM_ANIM_H
-#define GAME_CLIENT_QM_UI_QM_ANIM_H
+#ifndef GAME_CLIENT_QMUI_QMANIM_H
+#define GAME_CLIENT_QMUI_QMANIM_H
 
 #include <cstdint>
 #include <deque>
@@ -35,6 +35,33 @@ enum class EEasing
 	EASE_IN,
 	EASE_OUT,
 	EASE_IN_OUT,
+	EASE_OUT_QUART,
+	EASE_OUT_BACK,
+	EASE_IN_OUT_CUBIC,
+	CUBIC_BEZIER,
+};
+
+enum class EUiAnimDriver
+{
+	TWEEN,
+	SPRING,
+};
+
+struct SUiSpringConfig
+{
+	float m_Mass = 1.0f;
+	float m_Stiffness = 170.0f;
+	float m_Damping = 26.0f;
+	float m_RestEpsilon = 0.01f;
+	float m_RestVelocity = 0.05f;
+};
+
+struct SUiBezier
+{
+	float m_X1 = 0.42f;
+	float m_Y1 = 0.0f;
+	float m_X2 = 0.58f;
+	float m_Y2 = 1.0f;
 };
 
 struct SUiAnimTransition
@@ -44,6 +71,9 @@ struct SUiAnimTransition
 	int m_Priority = 0;
 	EUiAnimInterruptPolicy m_Interrupt = EUiAnimInterruptPolicy::REPLACE;
 	EEasing m_Easing = EEasing::EASE_OUT;
+	EUiAnimDriver m_Driver = EUiAnimDriver::TWEEN;
+	SUiSpringConfig m_Spring;
+	SUiBezier m_Bezier;
 };
 
 struct SUiAnimCompleteEvent
@@ -105,12 +135,15 @@ private:
 		float m_Target = 0.0f;
 		float m_Current = 0.0f;
 		float m_ElapsedSec = 0.0f;
+		float m_Velocity = 0.0f;
+		float m_RestTimerSec = 0.0f;
 		SUiAnimTransition m_Transition;
 		uint32_t m_TrackId = 0;
 	};
 
-	float ApplyEasing(float t, EEasing Easing) const;
+	float ApplyEasing(float t, const SUiAnimTransition &Transition) const;
 	float TrackProgress(const SActiveTrack &Track) const;
+	void AdvanceSpring(SActiveTrack &Track, float Dt) const;
 	bool StartTrack(const STrackKey &Key, const SUiAnimRequest &Request, float StartValue);
 	void StartQueuedTracks(const STrackKey &Key, float StartValue);
 	void CompleteTrack(const STrackKey &Key, const SActiveTrack &Track);

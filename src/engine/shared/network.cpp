@@ -172,13 +172,11 @@ void CNetBase::SendPacketConnlessWithToken7(NETSOCKET Socket, NETADDR *pAddr, co
 	net_udp_send(Socket, pAddr, aBuffer, DataSize + DATA_OFFSET);
 }
 
-void CNetBase::SendPacket(NETSOCKET Socket, NETADDR *pAddr, CNetPacketConstruct *pPacket, SECURITY_TOKEN SecurityToken, bool Sixup)
+int CNetBase::PackPacket(unsigned char *pBuffer, int BufferSize, CNetPacketConstruct *pPacket, SECURITY_TOKEN SecurityToken, bool Sixup)
 {
 	dbg_assert(IsValidConnectionOrientedPacket(pPacket), "Invalid packet to send. Flags=%d Ack=%d NumChunks=%d Size=%d",
 		pPacket->m_Flags, pPacket->m_Ack, pPacket->m_NumChunks, pPacket->m_DataSize);
 	dbg_assert((pPacket->m_Flags & NET_PACKETFLAG_COMPRESSION) == 0, "Do not set NET_PACKETFLAG_COMPRESSION, it will be set automatically when appropriate");
-
-	unsigned char aBuffer[NET_MAX_PACKETSIZE];
 
 	// log the data
 	if(ms_DataLogSent)
@@ -191,10 +189,14 @@ void CNetBase::SendPacket(NETSOCKET Socket, NETADDR *pAddr, CNetPacketConstruct 
 	}
 
 	int HeaderSize = NET_PACKETHEADERSIZE;
+	if(BufferSize < HeaderSize)
+		return -1;
 	if(Sixup)
 	{
 		HeaderSize += sizeof(SecurityToken);
-		WriteSecurityToken(aBuffer + 3, SecurityToken);
+		if(BufferSize < HeaderSize)
+			return -1;
+		WriteSecurityToken(pBuffer + 3, SecurityToken);
 	}
 	else if(SecurityToken != NET_SECURITY_TOKEN_UNSUPPORTED)
 	{
@@ -208,7 +210,7 @@ void CNetBase::SendPacket(NETSOCKET Socket, NETADDR *pAddr, CNetPacketConstruct 
 	int CompressedSize = -1;
 	if((pPacket->m_Flags & NET_PACKETFLAG_CONTROL) == 0)
 	{
-		CompressedSize = ms_Huffman.Compress(pPacket->m_aChunkData, pPacket->m_DataSize, &aBuffer[HeaderSize], NET_MAX_PACKETSIZE - HeaderSize);
+		CompressedSize = ms_Huffman.Compress(pPacket->m_aChunkData, pPacket->m_DataSize, &pBuffer[HeaderSize], BufferSize - HeaderSize);
 	}
 
 	// check if the compression was enabled, successful and good enough
@@ -222,7 +224,9 @@ void CNetBase::SendPacket(NETSOCKET Socket, NETADDR *pAddr, CNetPacketConstruct 
 	{
 		// use uncompressed data
 		FinalSize = pPacket->m_DataSize;
-		mem_copy(&aBuffer[HeaderSize], pPacket->m_aChunkData, pPacket->m_DataSize);
+		if(FinalSize > BufferSize - HeaderSize)
+			return -1;
+		mem_copy(&pBuffer[HeaderSize], pPacket->m_aChunkData, pPacket->m_DataSize);
 	}
 
 	if(Sixup)
@@ -234,10 +238,9 @@ void CNetBase::SendPacket(NETSOCKET Socket, NETADDR *pAddr, CNetPacketConstruct 
 	if(FinalSize >= 0)
 	{
 		FinalSize += HeaderSize;
-		aBuffer[0] = ((pPacket->m_Flags << 2) & 0xfc) | ((pPacket->m_Ack >> 8) & 0x3);
-		aBuffer[1] = pPacket->m_Ack & 0xff;
-		aBuffer[2] = pPacket->m_NumChunks;
-		net_udp_send(Socket, pAddr, aBuffer, FinalSize);
+		pBuffer[0] = ((pPacket->m_Flags << 2) & 0xfc) | ((pPacket->m_Ack >> 8) & 0x3);
+		pBuffer[1] = pPacket->m_Ack & 0xff;
+		pBuffer[2] = pPacket->m_NumChunks;
 
 		// log raw socket data
 		if(ms_DataLogSent)
@@ -245,9 +248,20 @@ void CNetBase::SendPacket(NETSOCKET Socket, NETADDR *pAddr, CNetPacketConstruct 
 			int Type = 0;
 			io_write(ms_DataLogSent, &Type, sizeof(Type));
 			io_write(ms_DataLogSent, &FinalSize, sizeof(FinalSize));
-			io_write(ms_DataLogSent, aBuffer, FinalSize);
+			io_write(ms_DataLogSent, pBuffer, FinalSize);
 			io_flush(ms_DataLogSent);
 		}
+	}
+	return FinalSize;
+}
+
+void CNetBase::SendPacket(NETSOCKET Socket, NETADDR *pAddr, CNetPacketConstruct *pPacket, SECURITY_TOKEN SecurityToken, bool Sixup)
+{
+	unsigned char aBuffer[NET_MAX_PACKETSIZE];
+	const int FinalSize = PackPacket(aBuffer, sizeof(aBuffer), pPacket, SecurityToken, Sixup);
+	if(FinalSize >= 0)
+	{
+		net_udp_send(Socket, pAddr, aBuffer, FinalSize);
 	}
 }
 
@@ -459,7 +473,9 @@ void CNetBase::OpenLog(IOHANDLE DataLogSent, IOHANDLE DataLogRecv)
 		dbg_msg("network", "logging sent packages");
 	}
 	else
+	{
 		dbg_msg("network", "failed to start logging sent packages");
+	}
 
 	if(DataLogRecv)
 	{
@@ -467,7 +483,9 @@ void CNetBase::OpenLog(IOHANDLE DataLogSent, IOHANDLE DataLogRecv)
 		dbg_msg("network", "logging recv packages");
 	}
 	else
+	{
 		dbg_msg("network", "failed to start logging recv packages");
+	}
 }
 
 void CNetBase::CloseLog()

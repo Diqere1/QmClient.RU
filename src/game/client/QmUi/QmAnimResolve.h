@@ -1,0 +1,31 @@
+/* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
+/* If you are missing that file, acquire a complete release at teeworlds.com.                */
+#ifndef GAME_CLIENT_QMUI_QMANIMRESOLVE_H
+#define GAME_CLIENT_QMUI_QMANIMRESOLVE_H
+
+#include <base/color.h>
+
+#include <cstdint>
+
+#include "QmAnim.h"
+
+class CUIRect;
+
+// Stable hash combiner for animation NodeKeys. Builds a 64-bit identity from a
+// caller-chosen scope (typically str_quickhash("page_name")) and a per-element
+// pointer.
+uint64_t BuildUiAnimNodeKey(uint64_t ScopeHash, uint64_t Id);
+
+// Drives a single float property toward Target through the v2 animation
+// runtime using MERGE_TARGET interrupt policy. Caches per-node last-target so
+// new requests are only issued when Target changes or the value is out of
+// sync. Returns the current frame value (already advanced).
+float ResolveUiAnimValue(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, EUiAnimProperty Property, float Target, float DurationSec, EEasing Easing);
+
+// Convenience wrappers: drive four channels of a Rect or Color in lockstep.
+// Each component is an independent track keyed by (NodeKey, EUiAnimProperty),
+// so MERGE_TARGET continuity behaviour holds per-component.
+CUIRect ResolveUiAnimValueRect(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, const CUIRect &Target, float DurationSec, EEasing Easing);
+ColorRGBA ResolveUiAnimValueColor(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, const ColorRGBA &Target, float DurationSec, EEasing Easing);
+
+#endif

@@ -1,4 +1,5 @@
 #include "translate.h"
+
 #include "translate_parse.h"
 
 #include <base/hash.h>
@@ -23,57 +24,57 @@
 
 namespace
 {
-constexpr size_t TC3_HMAC_BLOCK_SIZE = 64;
-constexpr const char *TENCENTCLOUD_TMT_ACTION = "TextTranslate";
-constexpr const char *TENCENTCLOUD_TMT_VERSION = "2018-03-21";
-constexpr const char *TENCENTCLOUD_TMT_SERVICE = "tmt";
-constexpr const char *TENCENTCLOUD_TMT_DEFAULT_ENDPOINT = "https://tmt.tencentcloudapi.com/";
-constexpr const char *TENCENTCLOUD_SECRET_ID_FALLBACK = "";
-constexpr const char *TENCENTCLOUD_SECRET_KEY_FALLBACK = "";
+	constexpr size_t TC3_HMAC_BLOCK_SIZE = 64;
+	constexpr const char *TENCENTCLOUD_TMT_ACTION = "TextTranslate";
+	constexpr const char *TENCENTCLOUD_TMT_VERSION = "2018-03-21";
+	constexpr const char *TENCENTCLOUD_TMT_SERVICE = "tmt";
+	constexpr const char *TENCENTCLOUD_TMT_DEFAULT_ENDPOINT = "https://tmt.tencentcloudapi.com/";
+	constexpr const char *TENCENTCLOUD_SECRET_ID_FALLBACK = "";
+	constexpr const char *TENCENTCLOUD_SECRET_KEY_FALLBACK = "";
 
-constexpr const char *DEFAULT_TRANSLATE_PROMPT =
-    "You are a translation assistant. Your task is straightforward:\n\n"
-    "1. Translate the user's message into %s\n"
-    "2. Keep game terminology consistent (see glossary below)\n"
-    "3. Output ONLY the translated text, nothing else\n\n"
-    "Game terminology glossary (DDNet/DDraceNetwork):\n"
-    "- hook = 钩子\n"
-    "- freeze = 冻结\n"
-    "- team = 队伍/组队\n"
-    "- race = 竞速/比赛\n"
-    "- checkpoint = 检查点/CP\n"
-    "- unfreeze = 解冻\n"
-    "- deep freeze = 深冻\n"
-    "- tele = 传送\n"
-    "- swap = 交换\n"
-    "- dummy = 分身\n"
-    "- hammer = 锤子\n"
-    "- shotgun = 霰弹枪\n"
-    "- grenade = 榴弹/手雷\n"
-    "- laser = 激光枪\n"
-    "- ninja = 忍者\n"
-    "- kill = 自杀/击杀\n"
-    "- spec/spectate = 旁观\n"
-    "- tee = 角色/玩家\n\n"
-    "Rules:\n"
-    "- Do NOT add any explanation, notes, or commentary\n"
-    "- Do NOT say 'I don't know' or 'I haven't learned this'\n"
-    "- If unsure, provide the best possible translation based on context\n"
-    "- Preserve the original meaning and tone\n"
-    "- Keep it concise and natural";
+	constexpr const char *DEFAULT_TRANSLATE_PROMPT =
+		"You are a translation assistant. Your task is straightforward:\n\n"
+		"1. Translate the user's message into %s\n"
+		"2. Keep game terminology consistent (see glossary below)\n"
+		"3. Output ONLY the translated text, nothing else\n\n"
+		"Game terminology glossary (DDNet/DDraceNetwork):\n"
+		"- hook = 钩子\n"
+		"- freeze = 冻结\n"
+		"- team = 队伍/组队\n"
+		"- race = 竞速/比赛\n"
+		"- checkpoint = 检查点/CP\n"
+		"- unfreeze = 解冻\n"
+		"- deep freeze = 深冻\n"
+		"- tele = 传送\n"
+		"- swap = 交换\n"
+		"- dummy = 分身\n"
+		"- hammer = 锤子\n"
+		"- shotgun = 霰弹枪\n"
+		"- grenade = 榴弹/手雷\n"
+		"- laser = 激光枪\n"
+		"- ninja = 忍者\n"
+		"- kill = 自杀/击杀\n"
+		"- spec/spectate = 旁观\n"
+		"- tee = 角色/玩家\n\n"
+		"Rules:\n"
+		"- Do NOT add any explanation, notes, or commentary\n"
+		"- Do NOT say 'I don't know' or 'I haven't learned this'\n"
+		"- If unsure, provide the best possible translation based on context\n"
+		"- Preserve the original meaning and tone\n"
+		"- Keep it concise and natural";
 
-enum class ELlmProvider
-{
-	ZHIPU_AI = 0,
-	DEEPSEEK = 1,
-	OPENAI = 2,
-	CUSTOM = 3,
-};
-
-const char *GetDefaultLlmEndpoint(ELlmProvider Provider)
-{
-	switch(Provider)
+	enum class ELlmProvider
 	{
+		ZHIPU_AI = 0,
+		DEEPSEEK = 1,
+		OPENAI = 2,
+		CUSTOM = 3,
+	};
+
+	const char *GetDefaultLlmEndpoint(ELlmProvider Provider)
+	{
+		switch(Provider)
+		{
 		case ELlmProvider::ZHIPU_AI:
 			return "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 		case ELlmProvider::DEEPSEEK:
@@ -82,13 +83,13 @@ const char *GetDefaultLlmEndpoint(ELlmProvider Provider)
 			return "https://api.openai.com/v1/chat/completions";
 		default:
 			return "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+		}
 	}
-}
 
-const char *GetLlmEndpoint(ELlmProvider Provider)
-{
-	switch(Provider)
+	const char *GetLlmEndpoint(ELlmProvider Provider)
 	{
+		switch(Provider)
+		{
 		case ELlmProvider::ZHIPU_AI:
 			return g_Config.m_QmTranslateLlmEndpointZhipu[0] != '\0' ? g_Config.m_QmTranslateLlmEndpointZhipu : GetDefaultLlmEndpoint(Provider);
 		case ELlmProvider::DEEPSEEK:
@@ -98,13 +99,13 @@ const char *GetLlmEndpoint(ELlmProvider Provider)
 		case ELlmProvider::CUSTOM:
 		default:
 			return g_Config.m_QmTranslateLlmEndpointCustom;
+		}
 	}
-}
 
-const char *GetLlmModel(ELlmProvider Provider)
-{
-	switch(Provider)
+	const char *GetLlmModel(ELlmProvider Provider)
 	{
+		switch(Provider)
+		{
 		case ELlmProvider::ZHIPU_AI:
 			return g_Config.m_QmTranslateLlmModelZhipu;
 		case ELlmProvider::DEEPSEEK:
@@ -114,13 +115,13 @@ const char *GetLlmModel(ELlmProvider Provider)
 		case ELlmProvider::CUSTOM:
 		default:
 			return g_Config.m_QmTranslateLlmModelCustom;
+		}
 	}
-}
 
-const char *GetLlmApiKey(ELlmProvider Provider)
-{
-	switch(Provider)
+	const char *GetLlmApiKey(ELlmProvider Provider)
 	{
+		switch(Provider)
+		{
 		case ELlmProvider::ZHIPU_AI:
 			if(g_Config.m_QmTranslateLlmKeyZhipu[0] != '\0')
 				return g_Config.m_QmTranslateLlmKeyZhipu;
@@ -146,444 +147,444 @@ const char *GetLlmApiKey(ELlmProvider Provider)
 			if(const char *pEnvKey = std::getenv("QMTRANSLATE_LLM_KEY_CUSTOM"))
 				return pEnvKey;
 			return "";
+		}
 	}
-}
 
-SHA256_DIGEST HmacSha256(const unsigned char *pKey, size_t KeyLength, const unsigned char *pData, size_t DataLength)
-{
-	std::array<unsigned char, TC3_HMAC_BLOCK_SIZE> aKeyBlock{};
-	if(KeyLength > TC3_HMAC_BLOCK_SIZE)
+	SHA256_DIGEST HmacSha256(const unsigned char *pKey, size_t KeyLength, const unsigned char *pData, size_t DataLength)
 	{
-		const SHA256_DIGEST KeyDigest = sha256(pKey, KeyLength);
-		mem_copy(aKeyBlock.data(), KeyDigest.data, sizeof(KeyDigest.data));
+		std::array<unsigned char, TC3_HMAC_BLOCK_SIZE> aKeyBlock{};
+		if(KeyLength > TC3_HMAC_BLOCK_SIZE)
+		{
+			const SHA256_DIGEST KeyDigest = sha256(pKey, KeyLength);
+			mem_copy(aKeyBlock.data(), KeyDigest.data, sizeof(KeyDigest.data));
+		}
+		else if(KeyLength > 0)
+		{
+			mem_copy(aKeyBlock.data(), pKey, KeyLength);
+		}
+
+		std::array<unsigned char, TC3_HMAC_BLOCK_SIZE> aInnerPad{};
+		std::array<unsigned char, TC3_HMAC_BLOCK_SIZE> aOuterPad{};
+		for(size_t i = 0; i < TC3_HMAC_BLOCK_SIZE; ++i)
+		{
+			aInnerPad[i] = aKeyBlock[i] ^ 0x36;
+			aOuterPad[i] = aKeyBlock[i] ^ 0x5c;
+		}
+
+		SHA256_CTX InnerCtx;
+		sha256_init(&InnerCtx);
+		sha256_update(&InnerCtx, aInnerPad.data(), aInnerPad.size());
+		if(DataLength > 0)
+			sha256_update(&InnerCtx, pData, DataLength);
+		const SHA256_DIGEST InnerDigest = sha256_finish(&InnerCtx);
+
+		SHA256_CTX OuterCtx;
+		sha256_init(&OuterCtx);
+		sha256_update(&OuterCtx, aOuterPad.data(), aOuterPad.size());
+		sha256_update(&OuterCtx, InnerDigest.data, sizeof(InnerDigest.data));
+		return sha256_finish(&OuterCtx);
 	}
-	else if(KeyLength > 0)
+
+	std::string Sha256Hex(const unsigned char *pData, size_t DataLength)
 	{
-		mem_copy(aKeyBlock.data(), pKey, KeyLength);
+		char aDigest[SHA256_MAXSTRSIZE];
+		sha256_str(sha256(pData, DataLength), aDigest, sizeof(aDigest));
+		return aDigest;
 	}
 
-	std::array<unsigned char, TC3_HMAC_BLOCK_SIZE> aInnerPad{};
-	std::array<unsigned char, TC3_HMAC_BLOCK_SIZE> aOuterPad{};
-	for(size_t i = 0; i < TC3_HMAC_BLOCK_SIZE; ++i)
+	std::string Sha256Hex(const std::string &Value)
 	{
-		aInnerPad[i] = aKeyBlock[i] ^ 0x36;
-		aOuterPad[i] = aKeyBlock[i] ^ 0x5c;
+		return Sha256Hex(reinterpret_cast<const unsigned char *>(Value.data()), Value.size());
 	}
 
-	SHA256_CTX InnerCtx;
-	sha256_init(&InnerCtx);
-	sha256_update(&InnerCtx, aInnerPad.data(), aInnerPad.size());
-	if(DataLength > 0)
-		sha256_update(&InnerCtx, pData, DataLength);
-	const SHA256_DIGEST InnerDigest = sha256_finish(&InnerCtx);
+	std::string HmacSha256Hex(const unsigned char *pKey, size_t KeyLength, const std::string &Value)
+	{
+		char aDigest[SHA256_MAXSTRSIZE];
+		const SHA256_DIGEST Digest = HmacSha256(pKey, KeyLength,
+			reinterpret_cast<const unsigned char *>(Value.data()), Value.size());
+		sha256_str(Digest, aDigest, sizeof(aDigest));
+		return aDigest;
+	}
 
-	SHA256_CTX OuterCtx;
-	sha256_init(&OuterCtx);
-	sha256_update(&OuterCtx, aOuterPad.data(), aOuterPad.size());
-	sha256_update(&OuterCtx, InnerDigest.data, sizeof(InnerDigest.data));
-	return sha256_finish(&OuterCtx);
-}
+	std::string HmacSha256Raw(const unsigned char *pKey, size_t KeyLength, const std::string &Value)
+	{
+		const SHA256_DIGEST Digest = HmacSha256(pKey, KeyLength,
+			reinterpret_cast<const unsigned char *>(Value.data()), Value.size());
+		return std::string(reinterpret_cast<const char *>(Digest.data), sizeof(Digest.data));
+	}
 
-std::string Sha256Hex(const unsigned char *pData, size_t DataLength)
-{
-	char aDigest[SHA256_MAXSTRSIZE];
-	sha256_str(sha256(pData, DataLength), aDigest, sizeof(aDigest));
-	return aDigest;
-}
-
-std::string Sha256Hex(const std::string &Value)
-{
-	return Sha256Hex(reinterpret_cast<const unsigned char *>(Value.data()), Value.size());
-}
-
-std::string HmacSha256Hex(const unsigned char *pKey, size_t KeyLength, const std::string &Value)
-{
-	char aDigest[SHA256_MAXSTRSIZE];
-	const SHA256_DIGEST Digest = HmacSha256(pKey, KeyLength,
-		reinterpret_cast<const unsigned char *>(Value.data()), Value.size());
-	sha256_str(Digest, aDigest, sizeof(aDigest));
-	return aDigest;
-}
-
-std::string HmacSha256Raw(const unsigned char *pKey, size_t KeyLength, const std::string &Value)
-{
-	const SHA256_DIGEST Digest = HmacSha256(pKey, KeyLength,
-		reinterpret_cast<const unsigned char *>(Value.data()), Value.size());
-	return std::string(reinterpret_cast<const char *>(Digest.data), sizeof(Digest.data));
-}
-
-bool FormatUtcDate(int64_t Timestamp, char *pOutDate, size_t OutDateSize)
-{
-	time_t TimeValue = static_cast<time_t>(Timestamp);
-	std::tm UtcTime{};
+	bool FormatUtcDate(int64_t Timestamp, char *pOutDate, size_t OutDateSize)
+	{
+		time_t TimeValue = static_cast<time_t>(Timestamp);
+		std::tm UtcTime{};
 #if defined(CONF_FAMILY_WINDOWS)
-	if(gmtime_s(&UtcTime, &TimeValue) != 0)
-		return false;
+		if(gmtime_s(&UtcTime, &TimeValue) != 0)
+			return false;
 #else
-	if(gmtime_r(&TimeValue, &UtcTime) == nullptr)
-		return false;
+		if(gmtime_r(&TimeValue, &UtcTime) == nullptr)
+			return false;
 #endif
-	return strftime(pOutDate, OutDateSize, "%Y-%m-%d", &UtcTime) > 0;
-}
-
-bool ParseHttpsUrl(const char *pUrl, std::string &Host, std::string &Path, char *pError, size_t ErrorSize)
-{
-	if(!pUrl || pUrl[0] == '\0')
-	{
-		str_copy(pError, "TencentCloud endpoint is empty", ErrorSize);
-		return false;
+		return strftime(pOutDate, OutDateSize, "%Y-%m-%d", &UtcTime) > 0;
 	}
 
-	std::string Url = pUrl;
-	const size_t FirstNonWhitespace = Url.find_first_not_of(" \t\r\n");
-	if(FirstNonWhitespace == std::string::npos)
+	bool ParseHttpsUrl(const char *pUrl, std::string &Host, std::string &Path, char *pError, size_t ErrorSize)
 	{
-		str_copy(pError, "TencentCloud endpoint is empty", ErrorSize);
-		return false;
-	}
-	const size_t LastNonWhitespace = Url.find_last_not_of(" \t\r\n");
-	Url = Url.substr(FirstNonWhitespace, LastNonWhitespace - FirstNonWhitespace + 1);
-
-	const char *pWithoutScheme = str_startswith_nocase(Url.c_str(), "https://");
-	if(!pWithoutScheme)
-	{
-		if(str_startswith_nocase(Url.c_str(), "http://"))
+		if(!pUrl || pUrl[0] == '\0')
 		{
-			str_copy(pError, "TencentCloud endpoint must use https", ErrorSize);
+			str_copy(pError, "TencentCloud endpoint is empty", ErrorSize);
 			return false;
 		}
 
-		if(str_find(Url.c_str(), "://") != nullptr)
+		std::string Url = pUrl;
+		const size_t FirstNonWhitespace = Url.find_first_not_of(" \t\r\n");
+		if(FirstNonWhitespace == std::string::npos)
 		{
-			str_copy(pError, "TencentCloud endpoint has unsupported scheme", ErrorSize);
+			str_copy(pError, "TencentCloud endpoint is empty", ErrorSize);
 			return false;
 		}
+		const size_t LastNonWhitespace = Url.find_last_not_of(" \t\r\n");
+		Url = Url.substr(FirstNonWhitespace, LastNonWhitespace - FirstNonWhitespace + 1);
 
-		// Allow SDK-style endpoints like `tmt.tencentcloudapi.com`.
-		pWithoutScheme = Url.c_str();
-	}
-
-	const char *pPath = str_find(pWithoutScheme, "/");
-	if(pPath)
-	{
-		Host.assign(pWithoutScheme, pPath - pWithoutScheme);
-		Path.assign(pPath);
-	}
-	else
-	{
-		Host.assign(pWithoutScheme);
-		Path = "/";
-	}
-
-	if(Host.empty())
-	{
-		str_copy(pError, "TencentCloud endpoint host is empty", ErrorSize);
-		return false;
-	}
-	if(Path.empty())
-		Path = "/";
-	if(Path.find('?') != std::string::npos)
-	{
-		str_copy(pError, "TencentCloud endpoint must not contain query parameters", ErrorSize);
-		return false;
-	}
-	return true;
-}
-
-bool IsChineseLanguage(const char *pLanguage)
-{
-	if(!pLanguage || pLanguage[0] == '\0')
-		return false;
-	return str_comp_nocase(pLanguage, "zh") == 0 ||
-		str_comp_nocase(pLanguage, "zh-cn") == 0 ||
-		str_comp_nocase(pLanguage, "zh-tw") == 0;
-}
-
-bool IsChineseVariantLanguage(const char *pLanguage)
-{
-	if(!pLanguage || pLanguage[0] == '\0')
-		return false;
-	return str_comp_nocase(pLanguage, "zh-cn") == 0 ||
-		str_comp_nocase(pLanguage, "zh-tw") == 0;
-}
-
-const char *NormalizeTranslateSource(const char *pSource)
-{
-	if(!pSource || pSource[0] == '\0')
-		return "auto";
-	if(str_comp_nocase(pSource, "auto") == 0)
-		return "auto";
-	return pSource;
-}
-
-bool HasExplicitTranslateSource(const char *pSource)
-{
-	return str_comp_nocase(NormalizeTranslateSource(pSource), "auto") != 0;
-}
-
-struct SLocalLanguageStats
-{
-	int m_Han = 0;
-	int m_Kana = 0;
-	int m_Hangul = 0;
-	int m_Cyrillic = 0;
-	int m_Latin = 0;
-	int m_Digits = 0;
-	int m_Meaningful = 0;
-	int m_ScriptTotal = 0;
-};
-
-SLocalLanguageStats AnalyzeLocalLanguageStats(const char *pText)
-{
-	SLocalLanguageStats Stats;
-	if(!pText)
-		return Stats;
-
-	const char *p = pText;
-	while(*p)
-	{
-		const int Codepoint = str_utf8_decode(&p);
-		if(Codepoint <= 0)
-			continue;
-
-		const bool IsHan = (Codepoint >= 0x4E00 && Codepoint <= 0x9FFF) ||
-			(Codepoint >= 0x3400 && Codepoint <= 0x4DBF);
-		if(IsHan)
+		const char *pWithoutScheme = str_startswith_nocase(Url.c_str(), "https://");
+		if(!pWithoutScheme)
 		{
-			++Stats.m_Han;
-			++Stats.m_Meaningful;
-			++Stats.m_ScriptTotal;
-		}
-		else if(Codepoint >= 0x3040 && Codepoint <= 0x30FF)
-		{
-			++Stats.m_Kana;
-			++Stats.m_Meaningful;
-			++Stats.m_ScriptTotal;
-		}
-		else if(Codepoint >= 0xAC00 && Codepoint <= 0xD7AF)
-		{
-			++Stats.m_Hangul;
-			++Stats.m_Meaningful;
-			++Stats.m_ScriptTotal;
-		}
-		else if(Codepoint >= 0x0400 && Codepoint <= 0x04FF)
-		{
-			++Stats.m_Cyrillic;
-			++Stats.m_Meaningful;
-			++Stats.m_ScriptTotal;
-		}
-		else if((Codepoint >= 'A' && Codepoint <= 'Z') || (Codepoint >= 'a' && Codepoint <= 'z') ||
-			(Codepoint >= 0x00C0 && Codepoint <= 0x024F))
-		{
-			++Stats.m_Latin;
-			++Stats.m_Meaningful;
-			++Stats.m_ScriptTotal;
-		}
-		else if(Codepoint >= '0' && Codepoint <= '9')
-		{
-			++Stats.m_Digits;
-			++Stats.m_Meaningful;
-		}
-	}
-
-	return Stats;
-}
-
-bool PassLocalDetectThreshold(int Count, int Total)
-{
-	if(Count <= 0 || Total <= 0)
-		return false;
-	const int Threshold = std::clamp(g_Config.m_QmTranslateLocalDetectRatio, 50, 100);
-	return Count * 100 >= Total * Threshold;
-}
-
-bool IsPredominantlyNumeric(const SLocalLanguageStats &Stats)
-{
-	const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
-	return Stats.m_Digits >= MinChars && PassLocalDetectThreshold(Stats.m_Digits, Stats.m_Meaningful);
-}
-
-bool MatchesTargetLanguageHeuristically(const SLocalLanguageStats &Stats, const char *pTarget)
-{
-	if(!pTarget || pTarget[0] == '\0' || Stats.m_ScriptTotal <= 0)
-		return false;
-
-	if(IsChineseLanguage(pTarget))
-	{
-		if(IsChineseVariantLanguage(pTarget))
-			return false;
-		const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
-		return Stats.m_Han >= MinChars && Stats.m_Kana == 0 && Stats.m_Hangul == 0 &&
-			PassLocalDetectThreshold(Stats.m_Han, Stats.m_ScriptTotal);
-	}
-	if(str_comp_nocase(pTarget, "ja") == 0)
-	{
-		const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
-		return Stats.m_Kana + Stats.m_Han >= MinChars &&
-			PassLocalDetectThreshold(Stats.m_Kana + Stats.m_Han, Stats.m_ScriptTotal);
-	}
-	if(str_comp_nocase(pTarget, "ko") == 0)
-	{
-		const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
-		return Stats.m_Hangul >= MinChars &&
-			PassLocalDetectThreshold(Stats.m_Hangul, Stats.m_ScriptTotal);
-	}
-	if(str_comp_nocase(pTarget, "ru") == 0)
-	{
-		const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
-		return Stats.m_Cyrillic >= MinChars &&
-			PassLocalDetectThreshold(Stats.m_Cyrillic, Stats.m_ScriptTotal);
-	}
-
-	return false;
-}
-
-const char *GetTencentCloudSecretId()
-{
-	if(g_Config.m_QmTranslateTcSecretId[0] != '\0')
-		return g_Config.m_QmTranslateTcSecretId;
-	if(const char *pEnvSecretId = std::getenv("TENCENTCLOUD_SECRET_ID"))
-		return pEnvSecretId;
-	return TENCENTCLOUD_SECRET_ID_FALLBACK;
-}
-
-const char *GetTencentCloudSecretKey()
-{
-	if(g_Config.m_QmTranslateTcSecretKey[0] != '\0')
-		return g_Config.m_QmTranslateTcSecretKey;
-	if(const char *pEnvSecretKey = std::getenv("TENCENTCLOUD_SECRET_KEY"))
-		return pEnvSecretKey;
-	return TENCENTCLOUD_SECRET_KEY_FALLBACK;
-}
-
-const char *GetEffectiveTranslateTarget(const char *pTarget)
-{
-	return (pTarget && pTarget[0] != '\0') ? pTarget : CConfig::ms_pQmTranslateTarget;
-}
-
-// 验证语言代码格式
-// 有效格式：2-3 个字母（如 zh, en, ja）或 xx-XX 格式（如 zh-CN, zh-TW）
-static bool IsValidLanguageCode(const char *pCode)
-{
-	if(!pCode || pCode[0] == '\0')
-		return false;
-
-	size_t Len = str_length(pCode);
-	if(Len < 2 || Len > 5) // 最短 "en"，最长 "zh-CN"
-		return false;
-
-	// 检查格式：纯字母或 xx-XX 格式
-	for(size_t i = 0; i < Len; i++)
-	{
-		char c = pCode[i];
-		if(i == 2 && c == '-')
-			continue; // 允许 xx-XX 格式中的连字符
-		if(c < 'a' || c > 'z')
-		{
-			// 允许大写字母（在 - 后面）
-			if(i > 2 && c >= 'A' && c <= 'Z')
-				continue;
-			return false;
-		}
-	}
-	return true;
-}
-
-bool IsOutgoingTranslateTargetChar(char Character)
-{
-	const unsigned char Value = static_cast<unsigned char>(Character);
-	return std::isalnum(Value) != 0 || Character == '-' || Character == '_';
-}
-
-bool ParseOutgoingTranslateTarget(const char *pLine, std::string &Text, std::string &Target)
-{
-	if(!pLine)
-		return false;
-
-	const char *pTrimmedLine = str_utf8_skip_whitespaces(pLine);
-	if(*pTrimmedLine == '\0' || *pTrimmedLine == '/')
-		return false;
-
-	std::string Line = pLine;
-	const size_t LastNonWhitespace = Line.find_last_not_of(" \t\r\n");
-	if(LastNonWhitespace == std::string::npos || Line[LastNonWhitespace] != ']')
-		return false;
-
-	const size_t OpenBracket = Line.rfind('[', LastNonWhitespace);
-	if(OpenBracket == std::string::npos || OpenBracket + 1 >= LastNonWhitespace)
-		return false;
-
-	Target = Line.substr(OpenBracket + 1, LastNonWhitespace - OpenBracket - 1);
-	if(Target.size() < 2 || Target.size() >= 16)
-		return false;
-	if(std::any_of(Target.begin(), Target.end(), [](char Character) { return !IsOutgoingTranslateTargetChar(Character); }))
-		return false;
-
-	size_t TextEnd = OpenBracket;
-	while(TextEnd > 0 && std::isspace(static_cast<unsigned char>(Line[TextEnd - 1])) != 0)
-		--TextEnd;
-	if(TextEnd == 0)
-		return false;
-
-	Text = Line.substr(0, TextEnd);
-	return true;
-}
-
-// JSON 字符串转义
-// 只转义 JSON 特殊字符（" \）和 ASCII 控制字符（0x00-0x1F）
-// UTF-8 多字节字符（>= 0x80）不需要转义，可以直接嵌入 JSON 字符串
-// 因为 JSON 规范允许字符串中包含任意 UTF-8 编码的 Unicode 字符
-static void EscapeJsonString(const char *pStr, char *pOut, size_t OutSize)
-{
-	if(OutSize == 0)
-		return;
-
-	pOut[0] = '\0';
-	if(OutSize < 3)
-		return;
-
-	size_t OutPos = 0;
-	pOut[OutPos++] = '"';
-	for(const char *p = pStr; *p; ++p)
-	{
-		const unsigned char c = (unsigned char)*p;
-		const auto CanAppend = [&](size_t Count) {
-			return OutPos + Count + 2 <= OutSize;
-		};
-
-		if(c == '"' || c == '\\' || c == '\b' || c == '\n' || c == '\r' || c == '\t')
-		{
-			if(!CanAppend(2))
-				break;
-			pOut[OutPos++] = '\\';
-			switch(c)
+			if(str_startswith_nocase(Url.c_str(), "http://"))
 			{
-			case '"': pOut[OutPos++] = '"'; break;
-			case '\\': pOut[OutPos++] = '\\'; break;
-			case '\b': pOut[OutPos++] = 'b'; break;
-			case '\n': pOut[OutPos++] = 'n'; break;
-			case '\r': pOut[OutPos++] = 'r'; break;
-			case '\t': pOut[OutPos++] = 't'; break;
+				str_copy(pError, "TencentCloud endpoint must use https", ErrorSize);
+				return false;
 			}
+
+			if(str_find(Url.c_str(), "://") != nullptr)
+			{
+				str_copy(pError, "TencentCloud endpoint has unsupported scheme", ErrorSize);
+				return false;
+			}
+
+			// Allow SDK-style endpoints like `tmt.tencentcloudapi.com`.
+			pWithoutScheme = Url.c_str();
 		}
-		else if(c < 0x20)
+
+		const char *pPath = str_find(pWithoutScheme, "/");
+		if(pPath)
 		{
-			if(!CanAppend(6))
-				break;
-			str_format(pOut + OutPos, OutSize - OutPos, "\\u%04x", c);
-			OutPos += 6;
+			Host.assign(pWithoutScheme, pPath - pWithoutScheme);
+			Path.assign(pPath);
 		}
 		else
 		{
-			if(!CanAppend(1))
-				break;
-			pOut[OutPos++] = (char)c;
+			Host.assign(pWithoutScheme);
+			Path = "/";
 		}
+
+		if(Host.empty())
+		{
+			str_copy(pError, "TencentCloud endpoint host is empty", ErrorSize);
+			return false;
+		}
+		if(Path.empty())
+			Path = "/";
+		if(Path.find('?') != std::string::npos)
+		{
+			str_copy(pError, "TencentCloud endpoint must not contain query parameters", ErrorSize);
+			return false;
+		}
+		return true;
 	}
 
-	pOut[OutPos++] = '"';
-	pOut[OutPos] = '\0';
-}
+	bool IsChineseLanguage(const char *pLanguage)
+	{
+		if(!pLanguage || pLanguage[0] == '\0')
+			return false;
+		return str_comp_nocase(pLanguage, "zh") == 0 ||
+		       str_comp_nocase(pLanguage, "zh-cn") == 0 ||
+		       str_comp_nocase(pLanguage, "zh-tw") == 0;
+	}
+
+	bool IsChineseVariantLanguage(const char *pLanguage)
+	{
+		if(!pLanguage || pLanguage[0] == '\0')
+			return false;
+		return str_comp_nocase(pLanguage, "zh-cn") == 0 ||
+		       str_comp_nocase(pLanguage, "zh-tw") == 0;
+	}
+
+	const char *NormalizeTranslateSource(const char *pSource)
+	{
+		if(!pSource || pSource[0] == '\0')
+			return "auto";
+		if(str_comp_nocase(pSource, "auto") == 0)
+			return "auto";
+		return pSource;
+	}
+
+	bool HasExplicitTranslateSource(const char *pSource)
+	{
+		return str_comp_nocase(NormalizeTranslateSource(pSource), "auto") != 0;
+	}
+
+	struct SLocalLanguageStats
+	{
+		int m_Han = 0;
+		int m_Kana = 0;
+		int m_Hangul = 0;
+		int m_Cyrillic = 0;
+		int m_Latin = 0;
+		int m_Digits = 0;
+		int m_Meaningful = 0;
+		int m_ScriptTotal = 0;
+	};
+
+	SLocalLanguageStats AnalyzeLocalLanguageStats(const char *pText)
+	{
+		SLocalLanguageStats Stats;
+		if(!pText)
+			return Stats;
+
+		const char *p = pText;
+		while(*p)
+		{
+			const int Codepoint = str_utf8_decode(&p);
+			if(Codepoint <= 0)
+				continue;
+
+			const bool IsHan = (Codepoint >= 0x4E00 && Codepoint <= 0x9FFF) ||
+					   (Codepoint >= 0x3400 && Codepoint <= 0x4DBF);
+			if(IsHan)
+			{
+				++Stats.m_Han;
+				++Stats.m_Meaningful;
+				++Stats.m_ScriptTotal;
+			}
+			else if(Codepoint >= 0x3040 && Codepoint <= 0x30FF)
+			{
+				++Stats.m_Kana;
+				++Stats.m_Meaningful;
+				++Stats.m_ScriptTotal;
+			}
+			else if(Codepoint >= 0xAC00 && Codepoint <= 0xD7AF)
+			{
+				++Stats.m_Hangul;
+				++Stats.m_Meaningful;
+				++Stats.m_ScriptTotal;
+			}
+			else if(Codepoint >= 0x0400 && Codepoint <= 0x04FF)
+			{
+				++Stats.m_Cyrillic;
+				++Stats.m_Meaningful;
+				++Stats.m_ScriptTotal;
+			}
+			else if((Codepoint >= 'A' && Codepoint <= 'Z') || (Codepoint >= 'a' && Codepoint <= 'z') ||
+				(Codepoint >= 0x00C0 && Codepoint <= 0x024F))
+			{
+				++Stats.m_Latin;
+				++Stats.m_Meaningful;
+				++Stats.m_ScriptTotal;
+			}
+			else if(Codepoint >= '0' && Codepoint <= '9')
+			{
+				++Stats.m_Digits;
+				++Stats.m_Meaningful;
+			}
+		}
+
+		return Stats;
+	}
+
+	bool PassLocalDetectThreshold(int Count, int Total)
+	{
+		if(Count <= 0 || Total <= 0)
+			return false;
+		const int Threshold = std::clamp(g_Config.m_QmTranslateLocalDetectRatio, 50, 100);
+		return Count * 100 >= Total * Threshold;
+	}
+
+	bool IsPredominantlyNumeric(const SLocalLanguageStats &Stats)
+	{
+		const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
+		return Stats.m_Digits >= MinChars && PassLocalDetectThreshold(Stats.m_Digits, Stats.m_Meaningful);
+	}
+
+	bool MatchesTargetLanguageHeuristically(const SLocalLanguageStats &Stats, const char *pTarget)
+	{
+		if(!pTarget || pTarget[0] == '\0' || Stats.m_ScriptTotal <= 0)
+			return false;
+
+		if(IsChineseLanguage(pTarget))
+		{
+			if(IsChineseVariantLanguage(pTarget))
+				return false;
+			const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
+			return Stats.m_Han >= MinChars && Stats.m_Kana == 0 && Stats.m_Hangul == 0 &&
+			       PassLocalDetectThreshold(Stats.m_Han, Stats.m_ScriptTotal);
+		}
+		if(str_comp_nocase(pTarget, "ja") == 0)
+		{
+			const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
+			return Stats.m_Kana + Stats.m_Han >= MinChars &&
+			       PassLocalDetectThreshold(Stats.m_Kana + Stats.m_Han, Stats.m_ScriptTotal);
+		}
+		if(str_comp_nocase(pTarget, "ko") == 0)
+		{
+			const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
+			return Stats.m_Hangul >= MinChars &&
+			       PassLocalDetectThreshold(Stats.m_Hangul, Stats.m_ScriptTotal);
+		}
+		if(str_comp_nocase(pTarget, "ru") == 0)
+		{
+			const int MinChars = std::clamp(g_Config.m_QmTranslateLocalDetectMinChars, 1, 12);
+			return Stats.m_Cyrillic >= MinChars &&
+			       PassLocalDetectThreshold(Stats.m_Cyrillic, Stats.m_ScriptTotal);
+		}
+
+		return false;
+	}
+
+	const char *GetTencentCloudSecretId()
+	{
+		if(g_Config.m_QmTranslateTcSecretId[0] != '\0')
+			return g_Config.m_QmTranslateTcSecretId;
+		if(const char *pEnvSecretId = std::getenv("TENCENTCLOUD_SECRET_ID"))
+			return pEnvSecretId;
+		return TENCENTCLOUD_SECRET_ID_FALLBACK;
+	}
+
+	const char *GetTencentCloudSecretKey()
+	{
+		if(g_Config.m_QmTranslateTcSecretKey[0] != '\0')
+			return g_Config.m_QmTranslateTcSecretKey;
+		if(const char *pEnvSecretKey = std::getenv("TENCENTCLOUD_SECRET_KEY"))
+			return pEnvSecretKey;
+		return TENCENTCLOUD_SECRET_KEY_FALLBACK;
+	}
+
+	const char *GetEffectiveTranslateTarget(const char *pTarget)
+	{
+		return (pTarget && pTarget[0] != '\0') ? pTarget : CConfig::ms_pQmTranslateTarget;
+	}
+
+	// 验证语言代码格式
+	// 有效格式：2-3 个字母（如 zh, en, ja）或 xx-XX 格式（如 zh-CN, zh-TW）
+	static bool IsValidLanguageCode(const char *pCode)
+	{
+		if(!pCode || pCode[0] == '\0')
+			return false;
+
+		size_t Len = str_length(pCode);
+		if(Len < 2 || Len > 5) // 最短 "en"，最长 "zh-CN"
+			return false;
+
+		// 检查格式：纯字母或 xx-XX 格式
+		for(size_t i = 0; i < Len; i++)
+		{
+			char c = pCode[i];
+			if(i == 2 && c == '-')
+				continue; // 允许 xx-XX 格式中的连字符
+			if(c < 'a' || c > 'z')
+			{
+				// 允许大写字母（在 - 后面）
+				if(i > 2 && c >= 'A' && c <= 'Z')
+					continue;
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool IsOutgoingTranslateTargetChar(char Character)
+	{
+		const unsigned char Value = static_cast<unsigned char>(Character);
+		return std::isalnum(Value) != 0 || Character == '-' || Character == '_';
+	}
+
+	bool ParseOutgoingTranslateTarget(const char *pLine, std::string &Text, std::string &Target)
+	{
+		if(!pLine)
+			return false;
+
+		const char *pTrimmedLine = str_utf8_skip_whitespaces(pLine);
+		if(*pTrimmedLine == '\0' || *pTrimmedLine == '/')
+			return false;
+
+		std::string Line = pLine;
+		const size_t LastNonWhitespace = Line.find_last_not_of(" \t\r\n");
+		if(LastNonWhitespace == std::string::npos || Line[LastNonWhitespace] != ']')
+			return false;
+
+		const size_t OpenBracket = Line.rfind('[', LastNonWhitespace);
+		if(OpenBracket == std::string::npos || OpenBracket + 1 >= LastNonWhitespace)
+			return false;
+
+		Target = Line.substr(OpenBracket + 1, LastNonWhitespace - OpenBracket - 1);
+		if(Target.size() < 2 || Target.size() >= 16)
+			return false;
+		if(std::any_of(Target.begin(), Target.end(), [](char Character) { return !IsOutgoingTranslateTargetChar(Character); }))
+			return false;
+
+		size_t TextEnd = OpenBracket;
+		while(TextEnd > 0 && std::isspace(static_cast<unsigned char>(Line[TextEnd - 1])) != 0)
+			--TextEnd;
+		if(TextEnd == 0)
+			return false;
+
+		Text = Line.substr(0, TextEnd);
+		return true;
+	}
+
+	// JSON 字符串转义
+	// 只转义 JSON 特殊字符（" \）和 ASCII 控制字符（0x00-0x1F）
+	// UTF-8 多字节字符（>= 0x80）不需要转义，可以直接嵌入 JSON 字符串
+	// 因为 JSON 规范允许字符串中包含任意 UTF-8 编码的 Unicode 字符
+	static void EscapeJsonString(const char *pStr, char *pOut, size_t OutSize)
+	{
+		if(OutSize == 0)
+			return;
+
+		pOut[0] = '\0';
+		if(OutSize < 3)
+			return;
+
+		size_t OutPos = 0;
+		pOut[OutPos++] = '"';
+		for(const char *p = pStr; *p; ++p)
+		{
+			const unsigned char c = (unsigned char)*p;
+			const auto CanAppend = [&](size_t Count) {
+				return OutPos + Count + 2 <= OutSize;
+			};
+
+			if(c == '"' || c == '\\' || c == '\b' || c == '\n' || c == '\r' || c == '\t')
+			{
+				if(!CanAppend(2))
+					break;
+				pOut[OutPos++] = '\\';
+				switch(c)
+				{
+				case '"': pOut[OutPos++] = '"'; break;
+				case '\\': pOut[OutPos++] = '\\'; break;
+				case '\b': pOut[OutPos++] = 'b'; break;
+				case '\n': pOut[OutPos++] = 'n'; break;
+				case '\r': pOut[OutPos++] = 'r'; break;
+				case '\t': pOut[OutPos++] = 't'; break;
+				}
+			}
+			else if(c < 0x20)
+			{
+				if(!CanAppend(6))
+					break;
+				str_format(pOut + OutPos, OutSize - OutPos, "\\u%04x", c);
+				OutPos += 6;
+			}
+			else
+			{
+				if(!CanAppend(1))
+					break;
+				pOut[OutPos++] = (char)c;
+			}
+		}
+
+		pOut[OutPos++] = '"';
+		pOut[OutPos] = '\0';
+	}
 } // namespace
 
 static void UrlEncode(const char *pText, char *pOut, size_t Length)
@@ -629,6 +630,7 @@ bool ITranslateBackend::CompareTargets(const char *pA, const char *pB) const
 	return false;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class ITranslateBackendHttp : public ITranslateBackend
 {
 protected:
@@ -687,6 +689,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CTranslateBackendLibretranslate : public ITranslateBackendHttp
 {
 private:
@@ -816,6 +819,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CTranslateBackendTencentCloud : public ITranslateBackendHttp
 {
 private:
@@ -945,7 +949,8 @@ public:
 
 		const std::string CanonicalHeaders =
 			std::string("content-type:") + CONTENT_TYPE + "\n"
-			"host:" + Host + "\n";
+								      "host:" +
+			Host + "\n";
 		const std::string SignedHeaders = "content-type;host";
 		const std::string CanonicalRequest =
 			"POST\n" + Path + "\n\n" + CanonicalHeaders + "\n" + SignedHeaders + "\n" + Sha256Hex(Payload);
@@ -985,6 +990,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CTranslateBackendFtapi : public ITranslateBackendHttp
 {
 private:
@@ -1066,6 +1072,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CTranslateBackendLlm : public ITranslateBackendHttp
 {
 private:
@@ -1263,24 +1270,24 @@ public:
 	{
 		switch(m_Provider)
 		{
-			case ELlmProvider::ZHIPU_AI:
-				return "ZhipuAI";
-			case ELlmProvider::DEEPSEEK:
-				return "DeepSeek";
-			case ELlmProvider::OPENAI:
-				return "OpenAI";
-			case ELlmProvider::CUSTOM:
-			default:
-				return "LLM";
+		case ELlmProvider::ZHIPU_AI:
+			return "ZhipuAI";
+		case ELlmProvider::DEEPSEEK:
+			return "DeepSeek";
+		case ELlmProvider::OPENAI:
+			return "OpenAI";
+		case ELlmProvider::CUSTOM:
+		default:
+			return "LLM";
 		}
 	}
 
 	CTranslateBackendLlm(IHttp &Http, const char *pText, const char *pTarget, const char *pSource)
 	{
 		// 获取当前选择的 Provider（确保值在有效范围内）
-		constexpr int PROVIDER_MIN = static_cast<int>(ELlmProvider::ZHIPU_AI);
-		constexpr int PROVIDER_MAX = static_cast<int>(ELlmProvider::CUSTOM);
-		int ProviderValue = std::clamp(g_Config.m_QmTranslateLlmProvider, PROVIDER_MIN, PROVIDER_MAX);
+		constexpr int ProviderMin = static_cast<int>(ELlmProvider::ZHIPU_AI);
+		constexpr int ProviderMax = static_cast<int>(ELlmProvider::CUSTOM);
+		int ProviderValue = std::clamp(g_Config.m_QmTranslateLlmProvider, ProviderMin, ProviderMax);
 		m_Provider = static_cast<ELlmProvider>(ProviderValue);
 
 		// 获取对应 Provider 的 API Key
@@ -1516,13 +1523,13 @@ void CTranslate::Translate(int Id, bool ShowProgress)
 {
 	if(Id < 0 || Id >= (int)std::size(GameClient()->m_aClients))
 	{
-		GameClient()->m_Chat.Echo(Localize("Not a valid ID"));
+		GameClient()->m_Chat.Echo(Localize("无效的 ID"));
 		return;
 	}
 	const auto &Player = GameClient()->m_aClients[Id];
 	if(!Player.m_Active)
 	{
-		GameClient()->m_Chat.Echo(Localize("ID not connected"));
+		GameClient()->m_Chat.Echo(Localize("该 ID 未连接"));
 		return;
 	}
 	Translate(Player.m_aName, ShowProgress);
@@ -1565,7 +1572,7 @@ void CTranslate::Translate(const char *pName, bool ShowProgress)
 	}
 	if(!pLineBest || pLineBest->m_aText[0] == '\0')
 	{
-		GameClient()->m_Chat.Echo(Localize("No message to translate"));
+		GameClient()->m_Chat.Echo(Localize("没有可翻译的消息"));
 		return;
 	}
 
@@ -1581,7 +1588,7 @@ void CTranslate::Translate(CChat::CLine &Line, bool ShowProgress, bool AutoTrigg
 	if(Line.m_ClientId == CChat::SERVER_MSG)
 	{
 		if(ShowProgress)
-			GameClient()->m_Chat.Echo(Localize("Server messages are not translated"));
+			GameClient()->m_Chat.Echo(Localize("不翻译服务器消息"));
 		return;
 	}
 
@@ -1604,13 +1611,13 @@ void CTranslate::Translate(CChat::CLine &Line, bool ShowProgress, bool AutoTrigg
 	Job.m_pBackend = CreateTranslateBackend(*Http(), Line.m_aText, Job.m_aTarget, pSource);
 	if(!Job.m_pBackend)
 	{
-		GameClient()->m_Chat.Echo(Localize("Invalid translate backend"));
+		GameClient()->m_Chat.Echo(Localize("无效的翻译后端"));
 		return;
 	}
 
 	if(ShowProgress)
 	{
-		str_format(Job.m_pTranslateResponse->m_Text, sizeof(Job.m_pTranslateResponse->m_Text), Localize("%s translating to %s"), Job.m_pBackend->Name(), Job.m_aTarget);
+		str_format(Job.m_pTranslateResponse->m_Text, sizeof(Job.m_pTranslateResponse->m_Text), Localize("%s 正在翻译为 %s"), Job.m_pBackend->Name(), Job.m_aTarget);
 		Line.m_Time = time();
 	}
 	else
@@ -1633,7 +1640,7 @@ bool CTranslate::TryTranslateOutgoingChat(int Team, const char *pText)
 
 	if(m_vJobs.size() + m_vOutgoingJobs.size() >= static_cast<size_t>(GetMaxConcurrency()))
 	{
-		GameClient()->m_Chat.Echo(Localize("Too many translation jobs"));
+		GameClient()->m_Chat.Echo(Localize("翻译任务过多"));
 		return true;
 	}
 
@@ -1646,12 +1653,12 @@ bool CTranslate::TryTranslateOutgoingChat(int Team, const char *pText)
 	Job.m_pBackend = CreateTranslateBackend(*Http(), Text.c_str(), Job.m_aTarget, pSource);
 	if(!Job.m_pBackend)
 	{
-		GameClient()->m_Chat.Echo(Localize("Invalid translate backend"));
+		GameClient()->m_Chat.Echo(Localize("无效的翻译后端"));
 		return true;
 	}
 
 	char aBuf[128];
-	str_format(aBuf, sizeof(aBuf), Localize("%s translating to %s before send"), Job.m_pBackend->Name(), Job.m_aTarget);
+	str_format(aBuf, sizeof(aBuf), Localize("%s 正在发送前翻译为 %s"), Job.m_pBackend->Name(), Job.m_aTarget);
 	GameClient()->m_Chat.Echo(aBuf);
 	m_vOutgoingJobs.emplace_back(std::move(Job));
 	return true;
@@ -1691,7 +1698,7 @@ void CTranslate::OnRender()
 		else
 		{
 			char aBuf[sizeof(Job.m_pTranslateResponse->m_Text)];
-			str_format(aBuf, sizeof(aBuf), Localize("%s to %s failed: %s"), Job.m_pBackend->Name(), Job.m_aTarget, Job.m_pTranslateResponse->m_Text);
+			str_format(aBuf, sizeof(aBuf), Localize("%s 翻译为 %s 失败: %s"), Job.m_pBackend->Name(), Job.m_aTarget, Job.m_pTranslateResponse->m_Text);
 			Job.m_pTranslateResponse->m_Error = true;
 			str_copy(Job.m_pTranslateResponse->m_Text, aBuf);
 		}
@@ -1750,7 +1757,7 @@ void CTranslate::AutoTranslate(CChat::CLine &Line)
 			static bool s_Warned = false;
 			if(!s_Warned)
 			{
-				GameClient()->m_Chat.Echo(Localize("FTAPI auto-translate is disabled to prevent overload. Enable in settings if needed."));
+				GameClient()->m_Chat.Echo(Localize("FTAPI 自动翻译已禁用以避免服务过载。需要时可在设置中启用。"));
 				s_Warned = true;
 			}
 			return;
@@ -1773,11 +1780,11 @@ bool CTranslate::ContainsChinese(const char *pText)
 	const char *p = pText;
 	while(*p)
 	{
-		const int codepoint = str_utf8_decode(&p);
+		const int Codepoint = str_utf8_decode(&p);
 		// CJK Unified Ideographs: 0x4E00-0x9FFF
 		// CJK Unified Ideographs Extension A: 0x3400-0x4DBF
-		if((codepoint >= 0x4E00 && codepoint <= 0x9FFF) ||
-		   (codepoint >= 0x3400 && codepoint <= 0x4DBF))
+		if((Codepoint >= 0x4E00 && Codepoint <= 0x9FFF) ||
+			(Codepoint >= 0x3400 && Codepoint <= 0x4DBF))
 			return true;
 	}
 	return false;
@@ -1792,16 +1799,16 @@ static bool ShouldAutoTranslateOutgoingInPreferredMode(const SLocalLanguageStats
 	if(IsChineseLanguage(pTarget))
 	{
 		return Stats.m_Latin >= MinChars &&
-			Stats.m_Han == 0 &&
-			Stats.m_Kana == 0 &&
-			Stats.m_Hangul == 0 &&
-			PassLocalDetectThreshold(Stats.m_Latin, Stats.m_ScriptTotal);
+		       Stats.m_Han == 0 &&
+		       Stats.m_Kana == 0 &&
+		       Stats.m_Hangul == 0 &&
+		       PassLocalDetectThreshold(Stats.m_Latin, Stats.m_ScriptTotal);
 	}
 
 	return Stats.m_Han >= MinChars &&
-		Stats.m_Kana == 0 &&
-		Stats.m_Hangul == 0 &&
-		PassLocalDetectThreshold(Stats.m_Han, Stats.m_ScriptTotal);
+	       Stats.m_Kana == 0 &&
+	       Stats.m_Hangul == 0 &&
+	       PassLocalDetectThreshold(Stats.m_Han, Stats.m_ScriptTotal);
 }
 
 bool CTranslate::ShouldAutoTranslateOutgoing(const char *pText) const
@@ -1831,7 +1838,7 @@ void CTranslate::StartAutoOutgoingTranslate(int Team, const char *pText)
 {
 	if(m_vJobs.size() + m_vOutgoingJobs.size() >= static_cast<size_t>(GetMaxConcurrency()))
 	{
-		GameClient()->m_Chat.Echo(Localize("Translation queue full, sending original text"));
+		GameClient()->m_Chat.Echo(Localize("翻译队列已满，发送原文"));
 		GameClient()->m_Chat.SendChatQueued(Team, pText, false);
 		return;
 	}
@@ -1851,30 +1858,30 @@ void CTranslate::StartAutoOutgoingTranslate(int Team, const char *pText)
 
 	if(!Job.m_pBackend)
 	{
-		GameClient()->m_Chat.Echo(Localize("Invalid translate backend, sending original text"));
+		GameClient()->m_Chat.Echo(Localize("翻译后端无效，发送原文"));
 		GameClient()->m_Chat.SendChatQueued(Team, pText, false);
 		return;
 	}
 
 	char aBuf[128];
-	str_format(aBuf, sizeof(aBuf), Localize("Translating to %s..."), Job.m_aTarget);
+	str_format(aBuf, sizeof(aBuf), Localize("正在翻译为 %s..."), Job.m_aTarget);
 	GameClient()->m_Chat.Echo(aBuf);
 	m_vOutgoingJobs.emplace_back(std::move(Job));
 }
 
 int CTranslate::GetEffectiveConcurrency() const
 {
-	// 如果用户手动设置（不等于默认值 1），使用用户值
-	if(g_Config.m_QmTranslateLlmConcurrency != 1)
+	// 如果用户手动设置（非 0），使用用户值；0 表示自动模式
+	if(g_Config.m_QmTranslateLlmConcurrency != 0)
 		return g_Config.m_QmTranslateLlmConcurrency;
 
 	// 根据后端类型提供智能默认值
 	if(str_comp_nocase(g_Config.m_QmTranslateBackend, "llm") == 0)
 	{
 		// LLM 后端：根据 Provider 类型提供不同默认值
-		constexpr int PROVIDER_MIN = static_cast<int>(ELlmProvider::ZHIPU_AI);
-		constexpr int PROVIDER_MAX = static_cast<int>(ELlmProvider::CUSTOM);
-		int ProviderValue = std::clamp(g_Config.m_QmTranslateLlmProvider, PROVIDER_MIN, PROVIDER_MAX);
+		constexpr int ProviderMin = static_cast<int>(ELlmProvider::ZHIPU_AI);
+		constexpr int ProviderMax = static_cast<int>(ELlmProvider::CUSTOM);
+		int ProviderValue = std::clamp(g_Config.m_QmTranslateLlmProvider, ProviderMin, ProviderMax);
 		ELlmProvider Provider = static_cast<ELlmProvider>(ProviderValue);
 
 		switch(Provider)

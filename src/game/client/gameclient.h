@@ -3,6 +3,9 @@
 #ifndef GAME_CLIENT_GAMECLIENT_H
 #define GAME_CLIENT_GAMECLIENT_H
 
+#include "qm_command_router.h"
+#include "qm_icon_manager.h"
+#include "qm_ime_manager.h"
 #include "render.h"
 
 #include <base/color.h>
@@ -12,7 +15,9 @@
 #include <engine/client/enums.h>
 #include <engine/client/gpu_upload_limiter.h>
 #include <engine/console.h>
+#include <engine/input.h>
 #include <engine/keys.h>
+#include <engine/shared/client_brand.h>
 #include <engine/shared/config.h>
 #include <engine/shared/snapshot.h>
 
@@ -29,6 +34,7 @@
 #include <game/teamscore.h>
 
 // components
+#include "QmUi/QmRt.h"
 #include "components/background.h"
 #include "components/binds.h"
 #include "components/broadcast.h"
@@ -45,8 +51,8 @@
 #include "components/flow.h"
 #include "components/freezebars.h"
 #include "components/ghost.h"
-#include "components/hud_editor.h"
 #include "components/hud.h"
+#include "components/hud_editor.h"
 #include "components/important_alert.h"
 #include "components/infomessages.h"
 #include "components/items.h"
@@ -57,53 +63,65 @@
 #include "components/mapsounds.h"
 #include "components/menu_background.h"
 #include "components/menus.h"
-#include "components/ui_effects.h"
 #include "components/motd.h"
 #include "components/nameplates.h"
 #include "components/particles.h"
-#include "components/players.h"
+#include "components/pie_menu.h"
 #include "components/player_points.h"
+#include "components/players.h"
+#include "components/qmclient/collision_hitbox.h"
+#include "components/qmclient/data_version.h"
+#include "components/qmclient/hud_notifications.h"
+#include "components/qmclient/input_overlay.h"
+#include "components/qmclient/lyrics_component.h"
+#include "components/qmclient/monitoring.h"
+#include "components/qmclient/qmclient.h"
+#include "components/qmclient/scripting.h"
+#include "components/qmclient/translate.h"
+#include "components/qmclient/voice_component.h"
+#include "components/qmclient/weapon_trajectory.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
+#include "components/section_loader.h"
 #include "components/skins.h"
 #include "components/skins7.h"
 #include "components/sounds.h"
 #include "components/spectator.h"
 #include "components/statboard.h"
 #include "components/system_media_controls.h"
+#include "components/tclient/background_particles.h"
 #include "components/tclient/bg_draw.h"
 #include "components/tclient/bindchat.h"
 #include "components/tclient/bindwheel.h"
-#include "components/qmclient/collision_hitbox.h"
 #include "components/tclient/custom_communities.h"
-#include "components/qmclient/data_version.h"
 #include "components/tclient/fast_practice.h"
-#include "components/qmclient/input_overlay.h"
-#include "components/qmclient/lyrics_component.h"
-#include "components/qmclient/qmclient.h"
 #include "components/tclient/mod.h"
 #include "components/tclient/moving_tiles.h"
 #include "components/tclient/outlines.h"
 #include "components/tclient/pet.h"
 #include "components/tclient/player_indicator.h"
 #include "components/tclient/rainbow.h"
-#include "components/qmclient/scripting.h"
 #include "components/tclient/skinprofiles.h"
 #include "components/tclient/statusbar.h"
 #include "components/tclient/tclient.h"
 #include "components/tclient/trails.h"
-#include "components/qmclient/translate.h"
-#include "components/qmclient/voice_component.h"
 #include "components/tclient/warlist.h"
 #include "components/tooltips.h"
 #include "components/touch_controls.h"
+#include "components/ui_effects.h"
 #include "components/voting.h"
-#include "components/pie_menu.h"
-#include "QmUi/QmRt.h"
+#if defined(CONF_QM_LIVE_CLIENT)
+#include "live/live_director.h"
+#include "live/live_replay_buffer.h"
+#endif
 
+#include <chrono>
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 class CQmJelly;
+class CCollisionHitbox;
 
 class CGameInfo
 {
@@ -152,6 +170,8 @@ public:
 
 	bool m_DDRaceTeam;
 
+	bool m_PredictEvents;
+
 	char m_aGameType[16];
 };
 
@@ -193,6 +213,7 @@ public:
 
 	friend class CTClient;
 	friend class CFastPractice;
+	friend class CCollisionHitbox;
 
 	// all components
 	CInfoMessages m_InfoMessages;
@@ -236,6 +257,7 @@ public:
 	CMapLayers m_MapLayersBackground = CMapLayers{ERenderType::RENDERTYPE_BACKGROUND};
 	CMapLayers m_MapLayersForeground = CMapLayers{ERenderType::RENDERTYPE_FOREGROUND};
 	CBackground m_Background;
+	CBackgroundParticles m_BackgroundParticles;
 	CMenuBackground m_MenuBackground;
 	CUiEffects m_UiEffects;
 
@@ -256,6 +278,9 @@ public:
 	CBindWheel m_BindWheel;
 	CBgDraw m_BgDraw;
 	CQmClient m_QmClient;
+	CQmMonitoring m_QmMonitoring;
+	CQmHudNotifications m_QmHudNotifications;
+	CQmWeaponTrajectory m_QmWeaponTrajectory;
 	CTClient m_TClient;
 	CFastPractice m_FastPractice;
 	CVoiceComponent m_Voice;
@@ -280,6 +305,7 @@ private:
 	std::vector<class CComponent *> m_vpAll;
 	std::vector<class CComponent *> m_vpInput;
 	std::unique_ptr<CQmJelly> m_pJellyTee;
+
 	CNetObjHandler m_NetObjHandler;
 	protocol7::CNetObjHandler m_NetObjHandler7;
 
@@ -312,22 +338,51 @@ private:
 	CCollision m_Collision;
 	CUi m_UI;
 	CUiRuntimeV2 m_UiRuntimeV2;
+	CQmCommandRouter m_QmCommandRouter;
+	CQmIconManager m_QmIconManager;
+	CQmImeManager m_QmImeManager;
 	CRaceHelper m_RaceHelper;
 
 	void ProcessEvents();
 	void UpdatePositions();
 	void RecordDemoHudState(bool Force);
 	void RecordDemoInputState(bool Force);
-	void RecordDemoInputWheelEvent();
+	void RecordDemoInputWheelEvent() const;
 	static int PackDemoHudState(int DummyResetOnSwitch, int DeepflyMode, bool DummyControl, bool DummyCopyMoves);
 	void UnpackDemoHudState(int PackedState);
 
 	int m_EditorMovementDelay = 5;
 	void UpdateEditorIngameMoved();
-	bool GetPredictedHammerHitbox(CCharacter *pChar, vec2 &HitPos, float &HitRadius);
-	int FindPredictedHammerHitTargets(CCharacter *pChar, vec2 HitPos, float HitRadius, int *pTargetIds, int MaxTargetIds);
 	void HandleHammerSkinSwap(CCharacter *pChar);
 	void HandleRandomEmoteOnHit(CCharacter *pLocalChar, int DummyIndex);
+#if defined(CONF_QM_LIVE_CLIENT)
+	void UpdateLiveObserverSnapshot();
+	void PushLiveReplaySnapshot();
+	void RenderLiveObserverOverlay();
+	bool HandleLiveObserverInput(const IInput::CEvent &Event);
+	bool LiveObserverOverlayContains(vec2 MousePos) const;
+	bool LiveObserverTeamPanelContains(vec2 MousePos) const;
+	vec2 LiveObserverMousePos() const;
+	vec2 LiveObserverMouseWorldPos() const;
+	void UpdateLiveObserverMouseMode();
+	bool LiveObserverGlobalPlayerActive(int ClientId) const;
+	bool LiveObserverActivePlayerInTeam(int ClientId, int Team) const;
+	bool LiveObserverTeamActive(int Team) const;
+	int LiveObserverTeamMemberCount(int Team) const;
+	float LiveObserverPanelContentHeight() const;
+	float LiveObserverPanelMaxScroll() const;
+	void ClampLiveObserverPanelScroll();
+	int LiveObserverFallbackPlayerForTeam(int Team) const;
+	int FindLiveObserverClosestTeam(vec2 WorldPos) const;
+	int RandomLiveObserverPlayerForTeam(int Team, unsigned Seed) const;
+	void RequestLiveCompatSpectator();
+	void SanitizeLiveCompatInput(int *pData, int Size);
+	void FinishLiveObserverHoldFreeview();
+	void SetLiveObserverTeam(int Team);
+	void SetLiveObserverTeamPlayer(int Team, int ClientId);
+	void SetLiveObserverPlayer(int ClientId);
+	void SetLiveObserverFreeview();
+#endif
 
 	int m_PredictedTick;
 	int m_aLastNewPredictedTick[NUM_DUMMIES];
@@ -376,7 +431,11 @@ private:
 	int m_LastDemoInputRecordTick = -1;
 	int m_LastDemoPlaybackStateTick = -1;
 
+	void PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption, const char *pLoadingMessage);
+
 public:
+	// 将 IInterface 的 protected Kernel() 暴露给客户端组件的既有访问模式。
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	IKernel *Kernel() { return IInterface::Kernel(); }
 	IEngine *Engine() const { return m_pEngine; }
 	class IGraphics *Graphics() const { return m_pGraphics; }
@@ -384,6 +443,10 @@ public:
 	class CUi *Ui() { return &m_UI; }
 	class CUiRuntimeV2 *UiRuntimeV2() { return &m_UiRuntimeV2; }
 	const class CUiRuntimeV2 *UiRuntimeV2() const { return &m_UiRuntimeV2; }
+	class CQmCommandRouter *QmCommandRouter() { return &m_QmCommandRouter; }
+	const class CQmCommandRouter *QmCommandRouter() const { return &m_QmCommandRouter; }
+	class CQmIconManager *QmIconManager() { return &m_QmIconManager; }
+	const class CQmIconManager *QmIconManager() const { return &m_QmIconManager; }
 	class ISound *Sound() const { return m_pSound; }
 	class IInput *Input() const { return m_pInput; }
 	class IStorage *Storage() const { return m_pStorage; }
@@ -561,6 +624,8 @@ public:
 		friend class CGameClient;
 		CGameClient *m_pGameClient;
 		int m_ClientId;
+		int LocalDummyIndex() const;
+		void BuildLocalSkinDescriptor(CSkinDescriptor &SkinDescriptor, int Dummy) const;
 
 	public:
 		int m_UseCustomColor;
@@ -612,7 +677,7 @@ public:
 		float m_Uncertainty = 0.0f;
 		float m_VolleyBallAngle = 0.0f;
 		bool m_IsVolleyBall = false;
-	
+
 		// Chat bubble above player's head
 		char m_aChatBubbleText[256] = "";
 		int64_t m_ChatBubbleStartTick = 0;
@@ -620,6 +685,45 @@ public:
 
 		std::shared_ptr<CManagedTeeRenderInfo> m_pSkinInfo = nullptr; // this is what the server reports
 		CTeeRenderInfo m_RenderInfo; // this is what we use
+		CTeeRenderInfo m_SkinTransitionPreviousRenderInfo;
+
+		class CSkinTransitionKey
+		{
+		public:
+			CSkinDescriptor m_SkinDescriptor;
+			int m_UseCustomColor = 0;
+			int m_ColorBody = 0;
+			int m_ColorFeet = 0;
+			int m_aaSixupUseCustomColors[NUM_DUMMIES][protocol7::NUM_SKINPARTS] = {};
+			int m_aaSixupSkinPartColors[NUM_DUMMIES][protocol7::NUM_SKINPARTS] = {};
+
+			bool operator==(const CSkinTransitionKey &Other) const
+			{
+				if(!(m_SkinDescriptor == Other.m_SkinDescriptor) ||
+					m_UseCustomColor != Other.m_UseCustomColor ||
+					m_ColorBody != Other.m_ColorBody ||
+					m_ColorFeet != Other.m_ColorFeet)
+				{
+					return false;
+				}
+
+				for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+				{
+					for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+					{
+						if(m_aaSixupUseCustomColors[Dummy][Part] != Other.m_aaSixupUseCustomColors[Dummy][Part] ||
+							m_aaSixupSkinPartColors[Dummy][Part] != Other.m_aaSixupSkinPartColors[Dummy][Part])
+						{
+							return false;
+						}
+					}
+				}
+
+				return true;
+			}
+		} m_LastSkinTransitionKey;
+		bool m_HasSkinTransitionKey = false;
+		std::optional<std::chrono::nanoseconds> m_SkinTransitionStart;
 
 		float m_Angle;
 		bool m_Active;
@@ -658,6 +762,9 @@ public:
 		void UpdateSkin7HatSprite(int Dummy);
 		void UpdateSkin7BotDecoration(int Dummy);
 		void UpdateRenderInfo();
+		void UpdateSkinChangeTransition(const CTeeRenderInfo &NewRenderInfo, const CSkinDescriptor &SkinDescriptor);
+		float SkinChangeTransitionProgress(std::chrono::nanoseconds Now) const;
+		const CTeeRenderInfo *SkinChangePreviousRenderInfo(std::chrono::nanoseconds Now) const;
 		void Reset();
 		CSkinDescriptor ToSkinDescriptor() const;
 
@@ -742,6 +849,7 @@ public:
 	void *TranslateGameMsg(int *pMsgId, CUnpacker *pUnpacker, int Conn);
 	int TranslateSnap(CSnapshot *pSnapDstSix, CSnapshot *pSnapSrcSeven, int Conn, bool Dummy) override;
 	void OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dummy) override;
+	void OnClientBrandsMessage(CUnpacker *pUnpacker) override;
 	bool OnDemoPlaybackMessage(int MsgId, CUnpacker *pUnpacker) override;
 	void ResetDemoPlaybackState() override;
 	void InvalidateSnapshot() override;
@@ -767,6 +875,7 @@ public:
 	void HandleLanguageChanged();
 
 	void ForceUpdateConsoleRemoteCompletionSuggestions() override;
+	void RenderQmMonitoringHud(float GraphX, float GraphSpacing) override;
 
 	void RefreshSkin(const std::shared_ptr<CManagedTeeRenderInfo> &pManagedTeeRenderInfo);
 	void RefreshSkins(int SkinDescriptorFlags);
@@ -792,16 +901,20 @@ public:
 
 	// actions
 	// TODO: move these
-	void SendSwitchTeam(int Team) const;
+	void SendSwitchTeam(int Team);
 	void SendStartInfo7(bool Dummy);
 	void SendSkinChange7(bool Dummy);
 	// Returns true if the requested skin change got applied by the server
 	bool GotWantedSkin7(bool Dummy);
 	void SendInfo(bool Start);
 	void SendDummyInfo(bool Start) override;
+	void UpdateLocalSkinInfo(int Dummy);
 	void SendKill();
 	void SendKill() const;
 	void SendReadyChange7();
+#if defined(CONF_QM_LIVE_CLIENT)
+	void SetLiveObserverSpectatorId(int SpectatorId);
+#endif
 
 	void ApplyPreInputs(int Tick, bool Direct, CGameWorld &GameWorld);
 	bool GetDummyFastInput(CNetObj_PlayerInput &DummyFastInput, const CNetObj_PlayerInput *pDummyInputData, const class CCharacter *pDummyChar, int LocalTee, int DummyTee) const;
@@ -814,6 +927,7 @@ public:
 	CNetObj_PlayerInput m_DummyInput;
 	CNetObj_PlayerInput m_HammerInput;
 	unsigned int m_DummyFire;
+	bool m_QmDummyInputForceSend = false;
 	bool m_ReceivedDDNetPlayer;
 
 	class CTeamsCore m_Teams;
@@ -842,6 +956,8 @@ public:
 	bool IsRenderingDummyMiniMap() const { return m_RenderingDummyMiniMap; }
 	void SetRenderingDummyMiniMap(bool Rendering) { m_RenderingDummyMiniMap = Rendering; }
 	const CTuningParams *GetTuning(int i) const { return &m_aTuningList[i]; }
+	bool GetPredictedHammerHitbox(CCharacter *pChar, vec2 &HitPos, float &HitRadius);
+	int FindPredictedHammerHitTargets(CCharacter *pChar, vec2 HitPos, float HitRadius, int *pTargetIds, int MaxTargetIds);
 	ColorRGBA GetDDTeamColor(int DDTeam, float Lightness = 0.5f) const;
 	void FormatClientId(int ClientId, char (&aClientId)[16], EClientIdFormat Format) const;
 	bool IsLocalClientId(int ClientId) const;
@@ -870,6 +986,21 @@ public:
 	void Echo(const char *pString) override;
 	void Echo(const char *pString, bool ForceVisible);
 	bool IsOtherTeam(int ClientId) const;
+#if defined(CONF_QM_LIVE_CLIENT)
+	bool LiveObserverDimClient(int ClientId) const;
+	float LiveObserverClientAlpha(int ClientId) const;
+#else
+	bool LiveObserverDimClient(int ClientId) const
+	{
+		(void)ClientId;
+		return false;
+	}
+	float LiveObserverClientAlpha(int ClientId) const
+	{
+		(void)ClientId;
+		return 1.0f;
+	}
+#endif
 	int SwitchStateTeam() const;
 	bool IsLocalCharSuper() const;
 	bool CanDisplayWarning() const override;
@@ -1063,16 +1194,33 @@ public:
 
 	// Q1menG Client Recognition
 	void ClearQ1menGSyncMarks();
-	void MarkQ1menGSyncClient(int ClientId, int64_t ExpireTick, bool FootParticlesEnabled, bool RemoteParticlesEnabled, const char *pQid = nullptr);
+	void MarkQ1menGSyncClient(int ClientId, int64_t ExpireTick, bool FootParticlesEnabled, bool RemoteParticlesEnabled, const char *pQid = nullptr, EClientBrand ClientBrand = EClientBrand::QM);
 	bool IsQ1menGClientRecognized(int ClientId) const;
 	const char *GetQ1menGClientQid(int ClientId) const;
 	bool ShouldRenderQ1menGRemoteFootParticles(int ClientId) const;
 	void ClearQmVoiceSyncMarks();
 	void MarkQmVoiceSupportedClient(int ClientId, int64_t ExpireTick);
 	bool IsQmVoiceSupportedClient(int ClientId) const;
+	void ClearClientBrands();
+	EClientBrand ClientBrand(const char *pName) const;
 
 private:
 	std::vector<CSnapEntities> m_vSnapEntities;
+#if defined(CONF_QM_LIVE_CLIENT)
+	CLiveDirector m_LiveDirector;
+	CLiveReplayBuffer m_LiveReplayBuffer;
+	std::vector<uint8_t> m_vLiveReplayScratch;
+	int m_LiveObserverCurrentTeam = -1;
+	int m_LiveObserverReturnTeam = -1;
+	int m_LiveObserverFollowClientId = SPEC_FREEVIEW;
+	int m_LiveObserverExpandedTeam = -1;
+	vec2 m_LiveObserverLastMousePos = vec2(0.0f, 0.0f);
+	int64_t m_LiveCompatLastSpectatorRequestTime = 0;
+	float m_LiveObserverPanelScroll = 0.0f;
+	bool m_LiveObserverMouseAbsolute = false;
+	bool m_LiveObserverFreeview = true;
+	bool m_LiveObserverHoldFreeview = false;
+#endif
 	void SnapCollectEntities();
 	int GetFastInputPredictionAmountMs();
 	int GetFastInputPredictionTicks();
@@ -1090,12 +1238,15 @@ private:
 	void UpdatePrediction();
 	void UpdateSpectatorCursor();
 	void UpdateRenderedCharacters();
+	void RefreshPredictionAfterConfigChange();
+	void RequestPredictionRefreshAfterConfigChange();
 
 	int m_aLastUpdateTick[MAX_CLIENTS] = {0};
 	void DetectStrongHook();
 
 	int m_PredictedDummyId;
 	int m_IsDummySwapping;
+	bool m_RequestPredictionRefreshAfterConfigChange = false;
 	CCharOrder m_CharOrder;
 	int m_aSwitchStateTeam[NUM_DUMMIES];
 	int m_aAutoTeamLockLastTeam[NUM_DUMMIES] = {TEAM_FLOCK, TEAM_FLOCK};
@@ -1104,8 +1255,11 @@ private:
 	int64_t m_aQ1menGSyncMarkUntil[MAX_CLIENTS] = {0};
 	bool m_aQ1menGSyncFootParticlesEnabled[MAX_CLIENTS] = {false};
 	bool m_aQ1menGSyncRemoteParticlesEnabled[MAX_CLIENTS] = {false};
+	EClientBrand m_aQ1menGSyncClientBrands[MAX_CLIENTS] = {};
 	char m_aaQ1menGSyncQid[MAX_CLIENTS][33] = {{0}};
 	int64_t m_aQmVoiceSyncMarkUntil[MAX_CLIENTS] = {0};
+	char m_aaClientBrandNames[MAX_CLIENTS][MAX_NAME_LENGTH] = {};
+	EClientBrand m_aClientBrands[MAX_CLIENTS] = {};
 
 	void LoadMapSettings();
 	CMapBugs m_MapBugs;
@@ -1152,6 +1306,8 @@ public:
 	int m_SmoothTick = 0;
 	float m_SmoothIntraTick = 0;
 	bool CheckNewInput() override;
+	bool IsFastInputActive() const override;
+	void RequestPredictionRefresh() { RequestPredictionRefreshAfterConfigChange(); }
 	std::optional<CServerInfo> m_ConnectServerInfo = std::nullopt;
 	void SetConnectInfo(const NETADDR *pAddress) override;
 };

@@ -39,9 +39,12 @@ static constexpr float FONT_SIZE = 10.0f;
 static constexpr float LINE_SPACING = 1.0f;
 static constexpr float LINK_CLICK_DRAG_THRESHOLD = 3.0f;
 static constexpr float LINK_UNDERLINE_HEIGHT = 0.12f;
+static constexpr float CONSOLE_SCROLLBAR_WIDTH = 18.0f;
+static constexpr float CONSOLE_SCROLLBAR_MARGIN = 5.0f;
 static constexpr ColorRGBA LINK_TEXT_COLOR = ColorRGBA(0.2f, 0.65f, 1.0f, 1.0f);
 static constexpr ColorRGBA LINK_UNDERLINE_COLOR = ColorRGBA(0.2f, 0.65f, 1.0f, 0.9f);
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SLinkRange
 {
 	int m_StartChar;
@@ -181,6 +184,7 @@ static void BuildLinkColorSplits(const std::vector<SLinkRange> &vRanges, std::ve
 	vSplits.emplace_back(Cursor, 9999, ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f));
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SChatExportLine
 {
 	std::string m_Raw;
@@ -190,6 +194,7 @@ struct SChatExportLine
 	bool m_Local;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SChatExportLayout
 {
 	SChatExportLine m_Line;
@@ -199,6 +204,7 @@ struct SChatExportLayout
 	int m_RecordHeight;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SChatExportPage
 {
 	int m_Start;
@@ -638,13 +644,19 @@ static bool AllocateImage(CImageInfo &Image, int Width, int Height, ColorRGBA Fi
 	Image.m_Width = Width;
 	Image.m_Height = Height;
 	Image.m_Format = CImageInfo::FORMAT_RGBA;
-	Image.m_pData = static_cast<uint8_t *>(malloc(Image.DataSize()));
+	size_t ImageDataSize = 0;
+	if(Width <= 0 || Height <= 0 || !Image.DataSize(ImageDataSize))
+	{
+		Image.Free();
+		return false;
+	}
+	Image.m_pData = static_cast<uint8_t *>(malloc(ImageDataSize));
 	if(!Image.m_pData)
 	{
 		Image.Free();
 		return false;
 	}
-	mem_zero(Image.m_pData, Image.DataSize());
+	mem_zero(Image.m_pData, ImageDataSize);
 	FillRect(Image, 0, 0, Width, Height, FillColor);
 	return true;
 }
@@ -654,7 +666,13 @@ static bool AllocateClearImage(CImageInfo &Image, int Width, int Height)
 	Image.m_Width = Width;
 	Image.m_Height = Height;
 	Image.m_Format = CImageInfo::FORMAT_RGBA;
-	Image.m_pData = static_cast<uint8_t *>(calloc(Image.DataSize(), sizeof(uint8_t)));
+	size_t ImageDataSize = 0;
+	if(Width <= 0 || Height <= 0 || !Image.DataSize(ImageDataSize))
+	{
+		Image.Free();
+		return false;
+	}
+	Image.m_pData = static_cast<uint8_t *>(calloc(ImageDataSize, sizeof(uint8_t)));
 	if(!Image.m_pData)
 	{
 		Image.Free();
@@ -786,6 +804,7 @@ void CConsoleLogger::OnConsoleDeletion()
 	m_pConsole = nullptr;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class EArgumentCompletionType
 {
 	NONE,
@@ -795,6 +814,7 @@ enum class EArgumentCompletionType
 	KEY,
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CArgumentCompletionEntry
 {
 public:
@@ -955,6 +975,7 @@ CGameConsole::CInstance::CInstance(int Type)
 		if(pEntry->m_LineCount != -1 && MatchesLogFilter(pEntry))
 		{
 			m_NewLineCounter -= pEntry->m_LineCount;
+			InvalidateTotalBacklogLines();
 			for(auto &SearchMatch : m_vSearchMatches)
 			{
 				SearchMatch.m_StartLine += pEntry->m_LineCount;
@@ -989,6 +1010,10 @@ void CGameConsole::CInstance::ClearBacklog()
 
 	m_Backlog.Init();
 	m_BacklogCurLine = 0;
+	m_BacklogLastActiveLine = -1;
+	m_ScrollbarDragging = false;
+	m_ScrollbarDragOffset = 0.0f;
+	InvalidateTotalBacklogLines();
 	m_ChatExportAnchorId = -1;
 	m_ChatExportMode = false;
 	ClearSearch();
@@ -1001,6 +1026,7 @@ void CGameConsole::CInstance::UpdateBacklogTextAttributes()
 	{
 		UpdateEntryTextAttributes(pEntry);
 	}
+	InvalidateTotalBacklogLines();
 }
 
 void CGameConsole::CInstance::PumpBacklogPending()
@@ -1027,7 +1053,10 @@ void CGameConsole::CInstance::PumpBacklogPending()
 		{
 			UpdateEntryTextAttributes(pEntry);
 			if(MatchesLogFilter(pEntry))
+			{
 				m_NewLineCounter += pEntry->m_LineCount;
+				InvalidateTotalBacklogLines();
+			}
 		}
 	}
 }
@@ -1047,6 +1076,8 @@ void CGameConsole::CInstance::Reset()
 	m_pCommandParams = "";
 	m_CompletionArgumentPosition = 0;
 	m_CompletionDirty = true;
+	m_ScrollbarDragging = false;
+	m_ScrollbarDragOffset = 0.0f;
 }
 
 void CGameConsole::ForceUpdateRemoteCompletionSuggestions()
@@ -1287,7 +1318,9 @@ bool CGameConsole::CInstance::OnInput(const IInput::CEvent &Event)
 						m_pHistoryEntry = pTest;
 				}
 				else
+				{
 					m_pHistoryEntry = m_History.Last();
+				}
 
 				if(m_pHistoryEntry)
 					m_Input.Set(m_pHistoryEntry);
@@ -1476,7 +1509,9 @@ bool CGameConsole::CInstance::OnInput(const IInput::CEvent &Event)
 				m_pCommandParams = pCommand->Params();
 			}
 			else
+			{
 				m_IsCommand = false;
+			}
 		}
 	}
 
@@ -1542,12 +1577,37 @@ void CGameConsole::CInstance::SetLogFilter(ELogFilter Filter)
 	m_BacklogCurLine = 0;
 	m_BacklogLastActiveLine = -1;
 	m_NewLineCounter = 0;
+	InvalidateTotalBacklogLines();
 	m_HasSelection = false;
 	m_CurSelStart = 0;
 	m_CurSelEnd = 0;
 	m_MouseIsPress = false;
+	m_ScrollbarDragging = false;
+	m_ScrollbarDragOffset = 0.0f;
 	if(m_Searching)
 		UpdateSearch();
+}
+
+int CGameConsole::CInstance::TotalBacklogLines()
+{
+	if(m_TotalBacklogLinesValid)
+		return m_TotalBacklogLines;
+
+	int TotalLines = 0;
+	for(CBacklogEntry *pEntry = m_Backlog.First(); pEntry; pEntry = m_Backlog.Next(pEntry))
+	{
+		if(pEntry->m_LineCount > 0 && MatchesLogFilter(pEntry))
+			TotalLines += pEntry->m_LineCount;
+	}
+	m_TotalBacklogLines = TotalLines;
+	m_TotalBacklogLinesValid = true;
+	return m_TotalBacklogLines;
+}
+
+void CGameConsole::CInstance::InvalidateTotalBacklogLines()
+{
+	m_TotalBacklogLines = 0;
+	m_TotalBacklogLinesValid = false;
 }
 
 bool CGameConsole::CInstance::IsChatExportableEntry(const CBacklogEntry *pEntry) const
@@ -1896,12 +1956,12 @@ bool CGameConsole::CInstance::ExportSelectedChat()
 		return false;
 	}
 
-	if(!m_pGameConsole->Storage()->CreateFolder("dumps", IStorage::TYPE_SAVE) && !m_pGameConsole->Storage()->FolderExists("dumps", IStorage::TYPE_SAVE))
+	if(!m_pGameConsole->Storage()->CreateFolder("qmclient", IStorage::TYPE_SAVE) && !m_pGameConsole->Storage()->FolderExists("qmclient", IStorage::TYPE_SAVE))
 	{
 		m_pGameConsole->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "console", Localize("聊天记录导出失败"));
 		return false;
 	}
-	if(!m_pGameConsole->Storage()->CreateFolder("dumps/local_chat_export", IStorage::TYPE_SAVE) && !m_pGameConsole->Storage()->FolderExists("dumps/local_chat_export", IStorage::TYPE_SAVE))
+	if(!m_pGameConsole->Storage()->CreateFolder("qmclient/chat_log", IStorage::TYPE_SAVE) && !m_pGameConsole->Storage()->FolderExists("qmclient/chat_log", IStorage::TYPE_SAVE))
 	{
 		m_pGameConsole->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "console", Localize("聊天记录导出失败"));
 		return false;
@@ -1910,7 +1970,7 @@ bool CGameConsole::CInstance::ExportSelectedChat()
 	char aTimestamp[20];
 	str_timestamp(aTimestamp, sizeof(aTimestamp));
 	char aBaseFilename[IO_MAX_PATH_LENGTH];
-	str_format(aBaseFilename, sizeof(aBaseFilename), "dumps/local_chat_export/local_chat_export_%s", aTimestamp);
+	str_format(aBaseFilename, sizeof(aBaseFilename), "qmclient/chat_log/local_chat_export_%s", aTimestamp);
 
 	char aTxtFilename[IO_MAX_PATH_LENGTH];
 	char aHtmlFilename[IO_MAX_PATH_LENGTH];
@@ -1990,6 +2050,7 @@ static float ConsoleScaleFunc(float t)
 	return std::sin(std::acos(1.0f - t));
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CCompletionOptionRenderInfo
 {
 	CGameConsole *m_pSelf;
@@ -2070,7 +2131,9 @@ void CGameConsole::Prompt(char (&aPrompt)[32])
 				str_format(aPrompt, sizeof(aPrompt), "%s> ", Localize("Enter Password"));
 		}
 		else
+		{
 			str_format(aPrompt, sizeof(aPrompt), "%s> ", Localize("NOT CONNECTED"));
+		}
 	}
 	else
 	{
@@ -2414,6 +2477,74 @@ void CGameConsole::OnRender()
 				pConsole->m_NewLineCounter = 0;
 		}
 
+		const float LogTop = RowHeight;
+		const float LogBottom = y;
+		const float LogHeight = maximum(0.0f, LogBottom - LogTop);
+		const int VisibleBacklogLines = maximum(1, (int)std::floor(LogHeight / LineHeight));
+		const int TotalBacklogLines = pConsole->TotalBacklogLines();
+		const int MaxScroll = maximum(0, TotalBacklogLines - VisibleBacklogLines);
+		pConsole->m_BacklogCurLine = std::clamp(pConsole->m_BacklogCurLine, 0, MaxScroll);
+		if(pConsole->m_BacklogLastActiveLine >= 0)
+			pConsole->m_BacklogLastActiveLine = std::clamp(pConsole->m_BacklogLastActiveLine, 0, MaxScroll);
+		const bool ShowConsoleScrollbar = MaxScroll > 0 && LogHeight > 0.0f;
+		const float LogTextRightInset = ShowConsoleScrollbar ? CONSOLE_SCROLLBAR_WIDTH + CONSOLE_SCROLLBAR_MARGIN : 0.0f;
+		if(ShowConsoleScrollbar)
+		{
+			CUIRect ScrollbarRect = {Screen.w - CONSOLE_SCROLLBAR_WIDTH - CONSOLE_SCROLLBAR_MARGIN, LogTop, CONSOLE_SCROLLBAR_WIDTH, LogHeight};
+			const float RailMargin = 5.0f;
+			CUIRect Rail;
+			ScrollbarRect.Margin(RailMargin, &Rail);
+			if(Rail.w > 0.0f && Rail.h > Rail.w)
+			{
+				const float HandleHeight = std::clamp(Rail.h * (VisibleBacklogLines / (float)maximum(TotalBacklogLines, 1)), maximum(Rail.w, 14.0f), Rail.h);
+				const float TrackRange = maximum(1.0f, Rail.h - HandleHeight);
+				const float Current = 1.0f - (pConsole->m_BacklogCurLine / (float)maximum(MaxScroll, 1));
+				CUIRect Handle = {Rail.x, Rail.y + TrackRange * Current, Rail.w, HandleHeight};
+				const vec2 MousePos = GetMousePosition();
+				const bool MouseDown = m_TouchState.m_PrimaryPressed || Input()->NativeMousePressed(1);
+				const auto InsideRect = [&](const CUIRect &Rect) {
+					return MousePos.x >= Rect.x && MousePos.x <= Rect.x + Rect.w && MousePos.y >= Rect.y && MousePos.y <= Rect.y + Rect.h;
+				};
+
+				if(!MouseDown)
+				{
+					pConsole->m_ScrollbarDragging = false;
+				}
+				else if(!pConsole->m_ScrollbarDragging && InsideRect(Rail))
+				{
+					pConsole->m_ScrollbarDragOffset = InsideRect(Handle) ? std::clamp(MousePos.y - Handle.y, 0.0f, Handle.h) : Handle.h * 0.5f;
+					pConsole->m_ScrollbarDragging = true;
+					pConsole->m_MouseIsPress = false;
+					pConsole->m_HasSelection = false;
+					pConsole->m_CurSelStart = 0;
+					pConsole->m_CurSelEnd = 0;
+				}
+
+				if(pConsole->m_ScrollbarDragging)
+				{
+					const float HandleTop = std::clamp(MousePos.y - pConsole->m_ScrollbarDragOffset, Rail.y, Rail.y + TrackRange);
+					const float Relative = (HandleTop - Rail.y) / TrackRange;
+					const int NewLine = std::clamp((int)std::round((1.0f - Relative) * MaxScroll), 0, MaxScroll);
+					if(NewLine != pConsole->m_BacklogCurLine)
+					{
+						pConsole->m_BacklogCurLine = NewLine;
+						pConsole->m_BacklogLastActiveLine = NewLine;
+					}
+					pConsole->m_MouseIsPress = false;
+					pConsole->m_HasSelection = false;
+					Handle.y = Rail.y + TrackRange * (1.0f - (pConsole->m_BacklogCurLine / (float)maximum(MaxScroll, 1)));
+				}
+
+				Rail.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.22f), IGraphics::CORNER_ALL, Rail.w * 0.5f);
+				const ColorRGBA HandleColor = pConsole->m_ScrollbarDragging ? ColorRGBA(0.85f, 0.85f, 0.85f, 0.95f) : ColorRGBA(0.62f, 0.62f, 0.62f, 0.82f);
+				Handle.Draw(HandleColor, IGraphics::CORNER_ALL, Handle.w * 0.5f);
+			}
+		}
+		else
+		{
+			pConsole->m_ScrollbarDragging = false;
+		}
+
 		// render console log (current entry, status, wrap lines)
 		CInstance::CBacklogEntry *pEntry = pConsole->m_Backlog.Last();
 		float OffsetY = 0.0f;
@@ -2507,7 +2638,7 @@ void CGameConsole::OnRender()
 			}
 
 			const float EntryTextX = pConsole->m_ChatExportMode ? 22.0f : 0.0f;
-			const float EntryLineWidth = Screen.w - 10.0f - EntryTextX;
+			const float EntryLineWidth = maximum(1.0f, Screen.w - 10.0f - EntryTextX - LogTextRightInset);
 			CTextCursor EntryCursor;
 			EntryCursor.SetPosition(vec2(EntryTextX, y - OffsetY));
 			EntryCursor.m_FontSize = FONT_SIZE;
@@ -2876,9 +3007,13 @@ bool CGameConsole::OnInput(const IInput::CEvent &Event)
 		return false;
 
 	if(Event.m_Key == KEY_ESCAPE && (Event.m_Flags & IInput::FLAG_PRESS) && CurrentConsole()->m_ChatExportMode)
+	{
 		CurrentConsole()->SetChatExportMode(false);
+	}
 	else if(Event.m_Key == KEY_ESCAPE && (Event.m_Flags & IInput::FLAG_PRESS) && !CurrentConsole()->m_Searching)
+	{
 		Toggle(m_ConsoleType);
+	}
 	else if(!CurrentConsole()->OnInput(Event))
 	{
 		if(GameClient()->Input()->ModifierIsPressed() && Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_C)

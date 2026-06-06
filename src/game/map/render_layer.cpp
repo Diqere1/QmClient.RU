@@ -12,150 +12,178 @@
 
 #include <array>
 #include <chrono>
+#include <limits>
 
-/************************
- * Render Buffer Helper *
- ************************/
-class CTexCoords
+namespace
 {
-public:
-	std::array<uint8_t, 4> m_aTexX;
-	std::array<uint8_t, 4> m_aTexY;
-};
 
-constexpr static CTexCoords CalculateTexCoords(unsigned int Flags)
-{
-	CTexCoords TexCoord;
-	TexCoord.m_aTexX = {0, 1, 1, 0};
-	TexCoord.m_aTexY = {0, 0, 1, 1};
-
-	if(Flags & TILEFLAG_XFLIP)
-		std::rotate(std::begin(TexCoord.m_aTexX), std::begin(TexCoord.m_aTexX) + 2, std::end(TexCoord.m_aTexX));
-
-	if(Flags & TILEFLAG_YFLIP)
-		std::rotate(std::begin(TexCoord.m_aTexY), std::begin(TexCoord.m_aTexY) + 2, std::end(TexCoord.m_aTexY));
-
-	if(Flags & (TILEFLAG_ROTATE >> 1))
+	/************************
+	 * Render Buffer Helper *
+	 ************************/
+	class CTexCoords
 	{
-		std::rotate(std::begin(TexCoord.m_aTexX), std::begin(TexCoord.m_aTexX) + 3, std::end(TexCoord.m_aTexX));
-		std::rotate(std::begin(TexCoord.m_aTexY), std::begin(TexCoord.m_aTexY) + 3, std::end(TexCoord.m_aTexY));
-	}
-	return TexCoord;
-}
+	public:
+		std::array<uint8_t, 4> m_aTexX;
+		std::array<uint8_t, 4> m_aTexY;
+	};
 
-template<std::size_t N>
-constexpr static std::array<CTexCoords, N> MakeTexCoordsTable()
-{
-	std::array<CTexCoords, N> aTexCoords = {};
-	for(std::size_t i = 0; i < N; ++i)
-		aTexCoords[i] = CalculateTexCoords(i);
-	return aTexCoords;
-}
-
-constexpr std::array<CTexCoords, 8> TEX_COORDS_TABLE = MakeTexCoordsTable<8>();
-
-static void FillTmpTile(CGraphicTile *pTmpTile, CGraphicTileTextureCoords *pTmpTex, unsigned char Flags, unsigned char Index, int x, int y, const ivec2 &Offset, int Scale)
-{
-	if(pTmpTex)
+	constexpr static CTexCoords CalculateTexCoords(unsigned int Flags)
 	{
-		uint8_t TableFlag = (Flags & (TILEFLAG_XFLIP | TILEFLAG_YFLIP)) + ((Flags & TILEFLAG_ROTATE) >> 1);
-		const auto &aTexX = TEX_COORDS_TABLE[TableFlag].m_aTexX;
-		const auto &aTexY = TEX_COORDS_TABLE[TableFlag].m_aTexY;
+		CTexCoords TexCoord;
+		TexCoord.m_aTexX = {0, 1, 1, 0};
+		TexCoord.m_aTexY = {0, 0, 1, 1};
 
-		pTmpTex->m_TexCoordTopLeft.x = aTexX[0];
-		pTmpTex->m_TexCoordTopLeft.y = aTexY[0];
-		pTmpTex->m_TexCoordBottomLeft.x = aTexX[3];
-		pTmpTex->m_TexCoordBottomLeft.y = aTexY[3];
-		pTmpTex->m_TexCoordTopRight.x = aTexX[1];
-		pTmpTex->m_TexCoordTopRight.y = aTexY[1];
-		pTmpTex->m_TexCoordBottomRight.x = aTexX[2];
-		pTmpTex->m_TexCoordBottomRight.y = aTexY[2];
+		if(Flags & TILEFLAG_XFLIP)
+			std::rotate(std::begin(TexCoord.m_aTexX), std::begin(TexCoord.m_aTexX) + 2, std::end(TexCoord.m_aTexX));
 
-		pTmpTex->m_TexCoordTopLeft.z = Index;
-		pTmpTex->m_TexCoordBottomLeft.z = Index;
-		pTmpTex->m_TexCoordTopRight.z = Index;
-		pTmpTex->m_TexCoordBottomRight.z = Index;
+		if(Flags & TILEFLAG_YFLIP)
+			std::rotate(std::begin(TexCoord.m_aTexY), std::begin(TexCoord.m_aTexY) + 2, std::end(TexCoord.m_aTexY));
 
-		bool HasRotation = (Flags & TILEFLAG_ROTATE) != 0;
-		pTmpTex->m_TexCoordTopLeft.w = HasRotation;
-		pTmpTex->m_TexCoordBottomLeft.w = HasRotation;
-		pTmpTex->m_TexCoordTopRight.w = HasRotation;
-		pTmpTex->m_TexCoordBottomRight.w = HasRotation;
+		if(Flags & (TILEFLAG_ROTATE >> 1))
+		{
+			std::rotate(std::begin(TexCoord.m_aTexX), std::begin(TexCoord.m_aTexX) + 3, std::end(TexCoord.m_aTexX));
+			std::rotate(std::begin(TexCoord.m_aTexY), std::begin(TexCoord.m_aTexY) + 3, std::end(TexCoord.m_aTexY));
+		}
+		return TexCoord;
 	}
 
-	vec2 TopLeft(x * Scale + Offset.x, y * Scale + Offset.y);
-	vec2 BottomRight(x * Scale + Scale + Offset.x, y * Scale + Scale + Offset.y);
-	pTmpTile->m_TopLeft = TopLeft;
-	pTmpTile->m_BottomLeft.x = TopLeft.x;
-	pTmpTile->m_BottomLeft.y = BottomRight.y;
-	pTmpTile->m_TopRight.x = BottomRight.x;
-	pTmpTile->m_TopRight.y = TopLeft.y;
-	pTmpTile->m_BottomRight = BottomRight;
+	template<std::size_t N>
+	constexpr static std::array<CTexCoords, N> MakeTexCoordsTable()
+	{
+		std::array<CTexCoords, N> aTexCoords = {};
+		for(std::size_t i = 0; i < N; ++i)
+			aTexCoords[i] = CalculateTexCoords(i);
+		return aTexCoords;
+	}
+
+	constexpr std::array<CTexCoords, 8> TEX_COORDS_TABLE = MakeTexCoordsTable<8>();
+
+	static void FillTmpTile(CGraphicTile *pTmpTile, CGraphicTileTextureCoords *pTmpTex, unsigned char Flags, unsigned char Index, int x, int y, const ivec2 &Offset, int Scale)
+	{
+		if(pTmpTex)
+		{
+			uint8_t TableFlag = (Flags & (TILEFLAG_XFLIP | TILEFLAG_YFLIP)) + ((Flags & TILEFLAG_ROTATE) >> 1);
+			const auto &aTexX = TEX_COORDS_TABLE[TableFlag].m_aTexX;
+			const auto &aTexY = TEX_COORDS_TABLE[TableFlag].m_aTexY;
+
+			pTmpTex->m_TexCoordTopLeft.x = aTexX[0];
+			pTmpTex->m_TexCoordTopLeft.y = aTexY[0];
+			pTmpTex->m_TexCoordBottomLeft.x = aTexX[3];
+			pTmpTex->m_TexCoordBottomLeft.y = aTexY[3];
+			pTmpTex->m_TexCoordTopRight.x = aTexX[1];
+			pTmpTex->m_TexCoordTopRight.y = aTexY[1];
+			pTmpTex->m_TexCoordBottomRight.x = aTexX[2];
+			pTmpTex->m_TexCoordBottomRight.y = aTexY[2];
+
+			pTmpTex->m_TexCoordTopLeft.z = Index;
+			pTmpTex->m_TexCoordBottomLeft.z = Index;
+			pTmpTex->m_TexCoordTopRight.z = Index;
+			pTmpTex->m_TexCoordBottomRight.z = Index;
+
+			bool HasRotation = (Flags & TILEFLAG_ROTATE) != 0;
+			pTmpTex->m_TexCoordTopLeft.w = HasRotation;
+			pTmpTex->m_TexCoordBottomLeft.w = HasRotation;
+			pTmpTex->m_TexCoordTopRight.w = HasRotation;
+			pTmpTex->m_TexCoordBottomRight.w = HasRotation;
+		}
+
+		vec2 TopLeft(x * Scale + Offset.x, y * Scale + Offset.y);
+		vec2 BottomRight(x * Scale + Scale + Offset.x, y * Scale + Scale + Offset.y);
+		pTmpTile->m_TopLeft = TopLeft;
+		pTmpTile->m_BottomLeft.x = TopLeft.x;
+		pTmpTile->m_BottomLeft.y = BottomRight.y;
+		pTmpTile->m_TopRight.x = BottomRight.x;
+		pTmpTile->m_TopRight.y = TopLeft.y;
+		pTmpTile->m_BottomRight = BottomRight;
+	}
+
+	static void FillTmpTileSpeedup(CGraphicTile *pTmpTile, CGraphicTileTextureCoords *pTmpTex, unsigned char Flags, int x, int y, const ivec2 &Offset, int Scale, short AngleRotate)
+	{
+		int Angle = AngleRotate % 360;
+		FillTmpTile(pTmpTile, pTmpTex, Angle >= 270 ? ROTATION_270 : (Angle >= 180 ? ROTATION_180 : (Angle >= 90 ? ROTATION_90 : 0)), AngleRotate % 90, x, y, Offset, Scale);
+	}
+
+	static bool AddTile(std::vector<CGraphicTile> &vTmpTiles, std::vector<CGraphicTileTextureCoords> &vTmpTileTexCoords, unsigned char Index, unsigned char Flags, int x, int y, bool DoTextureCoords, bool FillSpeedup = false, int AngleRotate = -1, const ivec2 &Offset = ivec2{0, 0}, int Scale = 32)
+	{
+		if(Index <= 0)
+			return false;
+
+		vTmpTiles.emplace_back();
+		CGraphicTile &Tile = vTmpTiles.back();
+		CGraphicTileTextureCoords *pTileTex = nullptr;
+		if(DoTextureCoords)
+		{
+			vTmpTileTexCoords.emplace_back();
+			CGraphicTileTextureCoords &TileTex = vTmpTileTexCoords.back();
+			pTileTex = &TileTex;
+		}
+		if(FillSpeedup)
+			FillTmpTileSpeedup(&Tile, pTileTex, Flags, x, y, Offset, Scale, AngleRotate);
+		else
+			FillTmpTile(&Tile, pTileTex, Flags, Index, x, y, Offset, Scale);
+
+		return true;
+	}
+
+	class CTmpQuadVertexTextured
+	{
+	public:
+		float m_X, m_Y, m_CenterX, m_CenterY;
+		unsigned char m_R, m_G, m_B, m_A;
+		float m_U, m_V;
+	};
+
+	class CTmpQuadVertex
+	{
+	public:
+		float m_X, m_Y, m_CenterX, m_CenterY;
+		unsigned char m_R, m_G, m_B, m_A;
+	};
+
+	class CTmpQuad
+	{
+	public:
+		CTmpQuadVertex m_aVertices[4];
+	};
+
+	class CTmpQuadTextured
+	{
+	public:
+		CTmpQuadVertexTextured m_aVertices[4];
+	};
+
+	static void mem_copy_special(void *pDest, void *pSource, size_t Size, size_t Count, size_t Steps)
+	{
+		size_t CurStep = 0;
+		for(size_t i = 0; i < Count; ++i)
+		{
+			mem_copy(((char *)pDest) + CurStep + i * Size, ((char *)pSource) + i * Size, Size);
+			CurStep += Steps;
+		}
+	}
+
 }
 
-static void FillTmpTileSpeedup(CGraphicTile *pTmpTile, CGraphicTileTextureCoords *pTmpTex, unsigned char Flags, int x, int y, const ivec2 &Offset, int Scale, short AngleRotate)
+static bool CheckedDataSize(size_t Count, size_t ItemSize, size_t &DataSize)
 {
-	int Angle = AngleRotate % 360;
-	FillTmpTile(pTmpTile, pTmpTex, Angle >= 270 ? ROTATION_270 : (Angle >= 180 ? ROTATION_180 : (Angle >= 90 ? ROTATION_90 : 0)), AngleRotate % 90, x, y, Offset, Scale);
-}
-
-static bool AddTile(std::vector<CGraphicTile> &vTmpTiles, std::vector<CGraphicTileTextureCoords> &vTmpTileTexCoords, unsigned char Index, unsigned char Flags, int x, int y, bool DoTextureCoords, bool FillSpeedup = false, int AngleRotate = -1, const ivec2 &Offset = ivec2{0, 0}, int Scale = 32)
-{
-	if(Index <= 0)
+	if(ItemSize != 0 && Count > std::numeric_limits<size_t>::max() / ItemSize)
+	{
+		DataSize = 0;
 		return false;
-
-	vTmpTiles.emplace_back();
-	CGraphicTile &Tile = vTmpTiles.back();
-	CGraphicTileTextureCoords *pTileTex = nullptr;
-	if(DoTextureCoords)
-	{
-		vTmpTileTexCoords.emplace_back();
-		CGraphicTileTextureCoords &TileTex = vTmpTileTexCoords.back();
-		pTileTex = &TileTex;
 	}
-	if(FillSpeedup)
-		FillTmpTileSpeedup(&Tile, pTileTex, Flags, x, y, Offset, Scale, AngleRotate);
-	else
-		FillTmpTile(&Tile, pTileTex, Flags, Index, x, y, Offset, Scale);
-
+	DataSize = Count * ItemSize;
 	return true;
 }
 
-class CTmpQuadVertexTextured
+static bool CheckedAddSize(size_t Lhs, size_t Rhs, size_t &DataSize)
 {
-public:
-	float m_X, m_Y, m_CenterX, m_CenterY;
-	unsigned char m_R, m_G, m_B, m_A;
-	float m_U, m_V;
-};
-
-class CTmpQuadVertex
-{
-public:
-	float m_X, m_Y, m_CenterX, m_CenterY;
-	unsigned char m_R, m_G, m_B, m_A;
-};
-
-class CTmpQuad
-{
-public:
-	CTmpQuadVertex m_aVertices[4];
-};
-
-class CTmpQuadTextured
-{
-public:
-	CTmpQuadVertexTextured m_aVertices[4];
-};
-
-static void mem_copy_special(void *pDest, void *pSource, size_t Size, size_t Count, size_t Steps)
-{
-	size_t CurStep = 0;
-	for(size_t i = 0; i < Count; ++i)
+	if(Lhs > std::numeric_limits<size_t>::max() - Rhs)
 	{
-		mem_copy(((char *)pDest) + CurStep + i * Size, ((char *)pSource) + i * Size, Size);
-		CurStep += Steps;
+		DataSize = 0;
+		return false;
 	}
+	DataSize = Lhs + Rhs;
+	return true;
 }
 
 bool CRenderLayerTile::CTileLayerVisuals::Init(unsigned int Width, unsigned int Height)
@@ -313,38 +341,75 @@ void CRenderLayerTile::RenderTileLayer(const ColorRGBA &Color, const CRenderLaye
 
 	if(IsVisibleInClipRegion(m_LayerClip))
 	{
-		// create the indice buffers we want to draw -- reuse them
-		std::vector<char *> vpIndexOffsets;
-		std::vector<unsigned int> vDrawCounts;
+		float VisibleX0 = ScreenX0;
+		float VisibleY0 = ScreenY0;
+		float VisibleX1 = ScreenX1;
+		float VisibleY1 = ScreenY1;
+		if(m_LayerClip.has_value())
+		{
+			const CClipRegion &Clip = m_LayerClip.value();
+			VisibleX0 = std::max(VisibleX0, Clip.m_X);
+			VisibleY0 = std::max(VisibleY0, Clip.m_Y);
+			VisibleX1 = std::min(VisibleX1, Clip.m_X + Clip.m_Width);
+			VisibleY1 = std::min(VisibleY1, Clip.m_Y + Clip.m_Height);
+		}
 
-		int X0 = std::max(ScreenRectX0, 0);
-		int X1 = std::min(ScreenRectX1, (int)Visuals.m_Width);
-		int XR = X1 - 1;
+		// create the indice buffers we want to draw -- reuse them
+		m_vpRenderTileLayerIndexOffsets.clear();
+		m_vRenderTileLayerDrawCounts.clear();
+
+		int VisibleRectY0 = std::floor(VisibleY0 / 32);
+		int VisibleRectX0 = std::floor(VisibleX0 / 32);
+		int VisibleRectY1 = std::ceil(VisibleY1 / 32);
+		int VisibleRectX1 = std::ceil(VisibleX1 / 32);
+
+		int X0 = std::max(VisibleRectX0, 0);
+		int X1 = std::min(VisibleRectX1, (int)Visuals.m_Width);
+		int XR = X1 == std::numeric_limits<int>::min() ? X1 : X1 - 1;
 		if(X0 <= XR)
 		{
-			int Y0 = std::max(ScreenRectY0, 0);
-			int Y1 = std::min(ScreenRectY1, (int)Visuals.m_Height);
+			int Y0 = std::max(VisibleRectY0, 0);
+			int Y1 = std::min(VisibleRectY1, (int)Visuals.m_Height);
 
 			unsigned long long Reserve = absolute(Y1 - Y0) + 1;
-			vpIndexOffsets.reserve(Reserve);
-			vDrawCounts.reserve(Reserve);
+			m_vpRenderTileLayerIndexOffsets.reserve(Reserve);
+			m_vRenderTileLayerDrawCounts.reserve(Reserve);
 
 			for(int y = Y0; y < Y1; ++y)
 			{
-				dbg_assert(Visuals.m_vTilesOfLayer[y * Visuals.m_Width + XR].IndexBufferByteOffset() >= Visuals.m_vTilesOfLayer[y * Visuals.m_Width + X0].IndexBufferByteOffset(), "Tile offsets are not monotone.");
-				unsigned int NumVertices = ((Visuals.m_vTilesOfLayer[y * Visuals.m_Width + XR].IndexBufferByteOffset() - Visuals.m_vTilesOfLayer[y * Visuals.m_Width + X0].IndexBufferByteOffset()) / sizeof(unsigned int)) + (Visuals.m_vTilesOfLayer[y * Visuals.m_Width + XR].DoDraw() ? 6lu : 0lu);
+				const auto &StartTileVisual = Visuals.m_vTilesOfLayer[y * Visuals.m_Width + X0];
+				const auto &EndTileVisual = Visuals.m_vTilesOfLayer[y * Visuals.m_Width + XR];
+				const offset_ptr RowStartOffset = StartTileVisual.IndexBufferByteOffset();
+				const offset_ptr RowEndOffset = EndTileVisual.IndexBufferByteOffset();
+				dbg_assert(RowEndOffset >= RowStartOffset, "Tile offsets are not monotone.");
+				unsigned int NumVertices = ((RowEndOffset - RowStartOffset) / sizeof(unsigned int)) + (EndTileVisual.DoDraw() ? 6lu : 0lu);
 
 				if(NumVertices)
 				{
-					vpIndexOffsets.push_back((offset_ptr_size)Visuals.m_vTilesOfLayer[y * Visuals.m_Width + X0].IndexBufferByteOffset());
-					vDrawCounts.push_back(NumVertices);
+					if(!m_vpRenderTileLayerIndexOffsets.empty())
+					{
+						const offset_ptr LastOffset = (offset_ptr)m_vpRenderTileLayerIndexOffsets.back();
+						const offset_ptr LastEndOffset = LastOffset + (offset_ptr)m_vRenderTileLayerDrawCounts.back() * sizeof(unsigned int);
+						if(LastEndOffset == RowStartOffset)
+						{
+							unsigned int &MergedDrawCount = m_vRenderTileLayerDrawCounts.back();
+							if(std::numeric_limits<unsigned int>::max() - MergedDrawCount >= NumVertices)
+							{
+								MergedDrawCount += NumVertices;
+								continue;
+							}
+						}
+					}
+
+					m_vpRenderTileLayerIndexOffsets.push_back((offset_ptr_size)RowStartOffset);
+					m_vRenderTileLayerDrawCounts.push_back(NumVertices);
 				}
 			}
 
-			int DrawCount = vpIndexOffsets.size();
+			int DrawCount = m_vpRenderTileLayerIndexOffsets.size();
 			if(DrawCount != 0)
 			{
-				Graphics()->RenderTileLayer(Visuals.m_BufferContainerIndex, Color, vpIndexOffsets.data(), vDrawCounts.data(), DrawCount);
+				Graphics()->RenderTileLayer(Visuals.m_BufferContainerIndex, Color, m_vpRenderTileLayerIndexOffsets.data(), m_vRenderTileLayerDrawCounts.data(), DrawCount);
 			}
 		}
 	}
@@ -804,15 +869,33 @@ void CRenderLayerTile::UploadTileData(std::optional<CTileLayerVisuals> &VisualsO
 	unsigned char *pTmpTileTexCoords = vTmpTileTexCoords.empty() ? nullptr : (unsigned char *)vTmpTileTexCoords.data();
 
 	Visuals.m_BufferContainerIndex = -1;
-	size_t UploadDataSize = vTmpTileTexCoords.size() * sizeof(CGraphicTileTextureCoords) + vTmpTiles.size() * sizeof(CGraphicTile);
+	size_t TileTexCoordsDataSize = 0;
+	size_t TileDataSize = 0;
+	size_t UploadDataSize = 0;
+	size_t TileCopyCount = 0;
+	if(!CheckedDataSize(vTmpTileTexCoords.size(), sizeof(CGraphicTileTextureCoords), TileTexCoordsDataSize) ||
+		!CheckedDataSize(vTmpTiles.size(), sizeof(CGraphicTile), TileDataSize) ||
+		!CheckedDataSize(vTmpTiles.size(), (size_t)4, TileCopyCount) ||
+		!CheckedAddSize(TileTexCoordsDataSize, TileDataSize, UploadDataSize))
+	{
+		log_error("map/render", "Tile layer upload data size overflow.");
+		RenderLoading();
+		return;
+	}
 	if(UploadDataSize > 0)
 	{
 		char *pUploadData = (char *)malloc(sizeof(char) * UploadDataSize);
+		if(pUploadData == nullptr)
+		{
+			log_error("map/render", "Failed to allocate tile layer upload data.");
+			RenderLoading();
+			return;
+		}
 
-		mem_copy_special(pUploadData, pTmpTiles, sizeof(vec2), vTmpTiles.size() * 4, (DoTextureCoords ? sizeof(ubvec4) : 0));
+		mem_copy_special(pUploadData, pTmpTiles, sizeof(vec2), TileCopyCount, (DoTextureCoords ? sizeof(ubvec4) : 0));
 		if(DoTextureCoords)
 		{
-			mem_copy_special(pUploadData + sizeof(vec2), pTmpTileTexCoords, sizeof(ubvec4), vTmpTiles.size() * 4, sizeof(vec2));
+			mem_copy_special(pUploadData + sizeof(vec2), pTmpTileTexCoords, sizeof(ubvec4), TileCopyCount, sizeof(vec2));
 		}
 
 		// first create the buffer object
@@ -1136,10 +1219,12 @@ void CRenderLayerQuads::Init()
 
 	// gpu upload
 	size_t UploadDataSize = 0;
-	if(Textured)
-		UploadDataSize = vTmpQuadsTextured.size() * sizeof(CTmpQuadTextured);
-	else
-		UploadDataSize = vTmpQuads.size() * sizeof(CTmpQuad);
+	if(Textured ? !CheckedDataSize(vTmpQuadsTextured.size(), sizeof(CTmpQuadTextured), UploadDataSize) : !CheckedDataSize(vTmpQuads.size(), sizeof(CTmpQuad), UploadDataSize))
+	{
+		log_error("map/render", "Quad layer upload data size overflow.");
+		RenderLoading();
+		return;
+	}
 
 	if(UploadDataSize > 0)
 	{
@@ -1628,7 +1713,6 @@ void CRenderLayerEntityGame::RenderTileLayerNoTileBuffer(const ColorRGBA &Color,
 	RenderFiltered(ColorRGBA(1.0f, 1.0f, 1.0f, QmOverlayAlpha(g_Config.m_QmEntityOverlayUnfreezeAlpha)), FilterUnfreezeAlphaTile);
 	RenderFiltered(ColorRGBA(1.0f, 1.0f, 1.0f, QmOverlayAlpha(g_Config.m_QmEntityOverlayDeepFreezeAlpha)), FilterDeepFreezeAlphaTile);
 	RenderFiltered(ColorRGBA(1.0f, 1.0f, 1.0f, QmOverlayAlpha(g_Config.m_QmEntityOverlayDeepUnfreezeAlpha)), FilterDeepUnfreezeAlphaTile);
-
 }
 
 ColorRGBA CRenderLayerEntityGame::GetDeathBorderColor() const
@@ -2163,9 +2247,13 @@ void CRenderLayerEntitySwitch::GetTileData(unsigned char *pIndex, unsigned char 
 			*pIndex = 8;
 	}
 	else if(CurOverlay == 1)
+	{
 		*pIndex = Tile.m_Number;
+	}
 	else if(CurOverlay == 2)
+	{
 		*pIndex = Tile.m_Delay;
+	}
 }
 
 void CRenderLayerEntitySwitch::RenderTileLayerWithTileBuffer(const ColorRGBA &Color, const CRenderLayerParams &Params)
@@ -2262,4 +2350,3 @@ void CRenderLayerEntityTune::RenderTileLayerNoTileBuffer(const ColorRGBA &Color,
 	Graphics()->BlendNormal();
 	RenderMap()->RenderTunemap(m_pTuneTiles, m_pLayerTilemap->m_Width, m_pLayerTilemap->m_Height, 32.0f, Color, (Params.m_RenderTileBorder ? TILERENDERFLAG_EXTEND : 0) | LAYERRENDERFLAG_TRANSPARENT);
 }
-

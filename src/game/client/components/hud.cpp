@@ -22,6 +22,7 @@
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/QmUi/QmLayout.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/layers.h>
 #include <game/mapitems.h>
 #include <game/localization.h>
@@ -34,6 +35,31 @@
 
 namespace
 {
+constexpr const char *JUMP_HINT_DEFAULT_TEXT = "3 Tiles Edge Jump:\\nLeft Jump: .34|.31|.16\\nLeft Double Jump: .41|.28|.25|.13\\nRight Jump: .63|.66|.81\\nRight Double Jump: .56|.69|.72|.84";
+constexpr int JUMP_HINT_DEFAULT_COLOR = 255;
+constexpr int JUMP_HINT_LEGACY_BLACK_COLOR = 256;
+
+void DecodeEscapedNewlines(const char *pInput, char *pOutput, size_t OutputSize)
+{
+	if(OutputSize == 0)
+		return;
+
+	size_t OutPos = 0;
+	for(size_t InPos = 0; pInput != nullptr && pInput[InPos] != '\0' && OutPos + 1 < OutputSize; ++InPos)
+	{
+		if(pInput[InPos] == '\\' && pInput[InPos + 1] == 'n')
+		{
+			pOutput[OutPos++] = '\n';
+			++InPos;
+		}
+		else
+		{
+			pOutput[OutPos++] = pInput[InPos];
+		}
+	}
+	pOutput[OutPos] = '\0';
+}
+
 bool IsVulkanAmdBackend(IGraphics *pGraphics)
 {
 	if(str_comp_nocase(g_Config.m_GfxBackend, "Vulkan") != 0 || pGraphics == nullptr)
@@ -92,7 +118,7 @@ SHudTextInfoLayout ComputeHudTextInfoLayoutV2(bool ShowFps, bool ShowPred, bool 
 	CUiV2LayoutEngine LayoutEngine;
 	std::vector<SUiLayoutChild> &vChildren = vChildrenScratch;
 	vChildren.clear();
-	vChildren.reserve(2);
+	vChildren.reserve(3);
 
 	if(ShowFps)
 	{
@@ -253,6 +279,12 @@ struct SSwapCountdownInfo
 	char m_aText[64] = {0};
 };
 
+struct SSwapCountdownList
+{
+	std::array<SSwapCountdownInfo, NUM_DUMMIES> m_aInfos{};
+	int m_Count = 0;
+};
+
 struct SHudFrozenTeamInfo
 {
 	bool m_Available = false;
@@ -345,6 +377,26 @@ bool BuildHudFrozenSummaryText(const SHudFrozenTeamInfo &FrozenInfo, char *pBuf,
 	return true;
 }
 
+bool BuildHudTeamText(const CGameClient &GameClient, char *pBuf, size_t BufSize)
+{
+	pBuf[0] = '\0';
+	if(!g_Config.m_QmHudIslandShowTeam || !GameClient.m_GameInfo.m_EntitiesDDRace)
+		return false;
+
+	int ClientId = GameClient.m_Snap.m_LocalClientId;
+	if(GameClient.m_Snap.m_SpecInfo.m_Active)
+	{
+		if(GameClient.m_Snap.m_SpecInfo.m_SpectatorId == SPEC_FREEVIEW)
+			return false;
+		ClientId = GameClient.m_Snap.m_SpecInfo.m_SpectatorId;
+	}
+	if(ClientId < 0 || ClientId >= MAX_CLIENTS || GameClient.m_Snap.m_apPlayerInfos[ClientId] == nullptr)
+		return false;
+
+	str_format(pBuf, BufSize, Localize("Team %d"), GameClient.m_Teams.Team(ClientId));
+	return pBuf[0] != '\0';
+}
+
 bool ShouldShowHudFrozenSummaryInStatus(bool ShowFrozenSummary, bool TimerVisible, bool StatusExpanded)
 {
 	return ShowFrozenSummary && TimerVisible && !StatusExpanded;
@@ -364,7 +416,7 @@ SHudFrozenHudRect BuildFrozenHudRect(const CGameClient &GameClient, float HudWid
 
 	const float TeeSize = g_Config.m_TcFrozenHudTeeSize;
 	int MaxTees = (int)(8.3f * (HudWidth / HudHeight) * 13.0f / TeeSize);
-	if(!g_Config.m_ClShowfps && !g_Config.m_ClShowpred)
+	if(!g_Config.m_ClShowfps && !g_Config.m_ClShowpred && !g_Config.m_ClShowPacketLoss)
 		MaxTees = (int)(9.5f * (HudWidth / HudHeight) * 13.0f / TeeSize);
 	const int MaxRows = g_Config.m_TcFrozenMaxRows;
 	float StartPos = HudWidth / 2.0f + 38.0f * (HudWidth / HudHeight) / 1.78f;
@@ -636,17 +688,17 @@ void DrawTexturedCircle(IGraphics *pGraphics, IGraphics::CTextureHandle Texture,
 	pGraphics->TextureClear();
 }
 
-bool BuildSwapCountdownInfo(const CGameClient &GameClient, const IClient &Client, SSwapCountdownInfo &Out)
+bool BuildSwapCountdownInfo(const CGameClient &GameClient, IClient &Client, int Dummy, SSwapCountdownInfo &Out)
 {
-	if(!GameClient.m_TClient.HasSwapCountdown())
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES || !GameClient.m_TClient.HasSwapCountdown(Dummy))
 		return false;
 
-	const int StartTick = GameClient.m_TClient.GetSwapCountdownStartTick();
+	const int StartTick = GameClient.m_TClient.GetSwapCountdownStartTick(Dummy);
 	if(StartTick <= 0)
 		return false;
 
 	const int TickSpeed = Client.GameTickSpeed();
-	const int CurTick = Client.GameTick(g_Config.m_ClDummy);
+	const int CurTick = Client.GameTick(Dummy);
 	const int ElapsedTicks = CurTick - StartTick;
 	if(ElapsedTicks < 0 || TickSpeed <= 0)
 		return false;
@@ -658,19 +710,37 @@ bool BuildSwapCountdownInfo(const CGameClient &GameClient, const IClient &Client
 	if(ElapsedSeconds >= SWAP_HIDE_AFTER_SECONDS)
 		return false;
 
+	const char *pRequester = GameClient.m_TClient.GetSwapCountdownRequester(Dummy);
+	if(pRequester[0] == '\0')
+		pRequester = "?";
+	const int TargetClientId = GameClient.m_aLocalIds[Dummy];
+	const char *pTarget = TargetClientId >= 0 && TargetClientId < MAX_CLIENTS && GameClient.m_aClients[TargetClientId].m_aName[0] != '\0' ?
+		GameClient.m_aClients[TargetClientId].m_aName :
+		(Dummy == 0 ? Client.PlayerName() : Client.DummyName());
 	const int SecondsLeft = SWAP_COUNTDOWN_SECONDS - ElapsedSeconds;
 	if(SecondsLeft > 0)
 	{
-		str_format(Out.m_aText, sizeof(Out.m_aText), "Swap倒计时:%d秒", SecondsLeft);
+		str_format(Out.m_aText, sizeof(Out.m_aText), "%s->%s Swap:%d秒", pRequester, pTarget, SecondsLeft);
 		Out.m_TextColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 	else
 	{
-		str_copy(Out.m_aText, "可交换!");
+		str_format(Out.m_aText, sizeof(Out.m_aText), "%s->%s 可交换!", pRequester, pTarget);
 		Out.m_TextColor = ColorRGBA(0.5f, 1.0f, 0.5f, 1.0f);
 	}
 
 	return true;
+}
+
+bool BuildSwapCountdownList(const CGameClient &GameClient, IClient &Client, SSwapCountdownList &Out)
+{
+	Out.m_Count = 0;
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+	{
+		if(Out.m_Count < (int)Out.m_aInfos.size() && BuildSwapCountdownInfo(GameClient, Client, Dummy, Out.m_aInfos[Out.m_Count]))
+			++Out.m_Count;
+	}
+	return Out.m_Count > 0;
 }
 
 float ResolveAnimatedLayoutValueEx(CUiV2AnimationRuntime &AnimRuntime, uint64_t NodeKey, EUiAnimProperty Property, float Target, float &LastTarget, float DurationSec, float DelaySec, EEasing Easing)
@@ -1031,7 +1101,7 @@ void CHud::RenderGameTimer()
 	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT);
 	TextRender()->TextOutlineColor(0.0f, 0.0f, 0.0f, 0.42f);
 
-	DrawSmoothRoundedRect(Graphics(), TimerBoxX, TimerCapsule.m_BoxY, CombinedWidth, TimerCapsule.m_BoxH, TimerRadius, ColorRGBA(0.04f, 0.05f, 0.07f, 0.80f));
+	DrawSmoothRoundedRect(Graphics(), TimerBoxX, TimerCapsule.m_BoxY, CombinedWidth, TimerCapsule.m_BoxH, TimerRadius, ColorRGBA(0.04f, 0.05f, 0.07f, 0.80f), HudEditorScope.m_Corners);
 	if(TimerCapsule.m_IsCritical)
 		TextRender()->TextColor(1.0f, 0.25f, 0.25f, TimerCapsule.m_Alpha);
 	else
@@ -1101,6 +1171,7 @@ void CHud::RenderScoreHud()
 	if(!(GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_GAMEOVER))
 	{
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::ScoreHud, {m_Width - 150.0f, 229.0f, 150.0f, 56.0f});
+		const int ScoreHudCorners = HudEditorScope.m_Corners;
 		float StartY = 229.0f; // the height of this display is 56, so EndY is 285
 
 		const float ScoreSingleBoxHeight = 18.0f;
@@ -1123,6 +1194,8 @@ void CHud::RenderScoreHud()
 			bool RecreateRect = ForceScoreInfoInit;
 			for(int t = 0; t < 2; t++)
 			{
+				if(m_aScoreInfo[t].m_RoundRectCorners != ScoreHudCorners)
+					RecreateRect = true;
 				if(aRecreateTeamScore[t])
 				{
 					m_aScoreInfo[t].m_ScoreTextWidth = TextRender()->TextWidth(14.0f, aScoreTeam[t == 0 ? TEAM_RED : TEAM_BLUE], -1, -1.0f);
@@ -1146,7 +1219,8 @@ void CHud::RenderScoreHud()
 						Graphics()->SetColor(0.975f, 0.17f, 0.17f, 0.3f);
 					else
 						Graphics()->SetColor(0.17f, 0.46f, 0.975f, 0.3f);
-					m_aScoreInfo[t].m_RoundRectQuadContainerIndex = Graphics()->CreateRectQuadContainer(m_Width - ScoreWidthMax - ImageSize - 2 * Split, StartY + t * 20, ScoreWidthMax + ImageSize + 2 * Split, ScoreSingleBoxHeight, 5.0f, IGraphics::CORNER_L);
+					m_aScoreInfo[t].m_RoundRectQuadContainerIndex = Graphics()->CreateRectQuadContainer(m_Width - ScoreWidthMax - ImageSize - 2 * Split, StartY + t * 20, ScoreWidthMax + ImageSize + 2 * Split, ScoreSingleBoxHeight, 5.0f, ScoreHudCorners);
+					m_aScoreInfo[t].m_RoundRectCorners = ScoreHudCorners;
 				}
 				Graphics()->TextureClear();
 				Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1280,6 +1354,8 @@ void CHud::RenderScoreHud()
 			bool RecreateRect = ForceScoreInfoInit;
 			for(int t = 0; t < 2; t++)
 			{
+				if(m_aScoreInfo[t].m_RoundRectCorners != ScoreHudCorners)
+					RecreateRect = true;
 				if(RecreateScores)
 				{
 					m_aScoreInfo[t].m_ScoreTextWidth = TextRender()->TextWidth(14.0f, aScore[t], -1, -1.0f);
@@ -1326,7 +1402,8 @@ void CHud::RenderScoreHud()
 						Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.25f);
 					else
 						Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.25f);
-					m_aScoreInfo[t].m_RoundRectQuadContainerIndex = Graphics()->CreateRectQuadContainer(m_Width - ScoreWidthMax - ImageSize - 2 * Split - PosSize, StartY + t * 20, ScoreWidthMax + ImageSize + 2 * Split + PosSize, ScoreSingleBoxHeight, 5.0f, IGraphics::CORNER_L);
+					m_aScoreInfo[t].m_RoundRectQuadContainerIndex = Graphics()->CreateRectQuadContainer(m_Width - ScoreWidthMax - ImageSize - 2 * Split - PosSize, StartY + t * 20, ScoreWidthMax + ImageSize + 2 * Split + PosSize, ScoreSingleBoxHeight, 5.0f, ScoreHudCorners);
+					m_aScoreInfo[t].m_RoundRectCorners = ScoreHudCorners;
 				}
 				Graphics()->TextureClear();
 				Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1538,7 +1615,7 @@ SHudDummyMiniViewState BuildHudDummyMiniViewState(const CGameClient &GameClient,
 	}
 	else if(!Client.DummyConnected())
 	{
-		str_copy(State.m_aPlaceholderSubtitle, Localize("Connect dummy to activate"), sizeof(State.m_aPlaceholderSubtitle));
+		str_copy(State.m_aPlaceholderSubtitle, Localize("连接分身以启用"), sizeof(State.m_aPlaceholderSubtitle));
 	}
 	else
 	{
@@ -1683,9 +1760,9 @@ void CHud::RenderDummyMiniMap()
 	const SHudDummyMiniViewState ViewState = BuildHudDummyMiniViewState(*GameClient(), *Client(), GameClient()->m_HudEditor.IsActive(), DummyClientId, MiniViewClientId);
 
 	const float Radius = std::clamp(MiniH * 0.11f, 5.0f, 7.5f);
-	DrawSmoothRoundedRect(Graphics(), MiniX + 0.8f, MiniY + 1.2f, MiniW, MiniH, Radius, ColorRGBA(0.0f, 0.0f, 0.0f, 0.18f));
-	DrawSmoothRoundedRect(Graphics(), MiniX, MiniY, MiniW, MiniH, Radius, ColorRGBA(0.02f, 0.03f, 0.05f, 0.92f));
-	DrawSmoothRoundedRect(Graphics(), MiniX + 0.75f, MiniY + 0.75f, maximum(0.0f, MiniW - 1.5f), maximum(0.0f, MiniH - 1.5f), maximum(0.0f, Radius - 0.55f), ViewState.m_TargetAccent.WithAlpha(0.16f));
+	DrawSmoothRoundedRect(Graphics(), MiniX + 0.8f, MiniY + 1.2f, MiniW, MiniH, Radius, ColorRGBA(0.0f, 0.0f, 0.0f, 0.18f), HudEditorScope.m_Corners);
+	DrawSmoothRoundedRect(Graphics(), MiniX, MiniY, MiniW, MiniH, Radius, ColorRGBA(0.02f, 0.03f, 0.05f, 0.92f), HudEditorScope.m_Corners);
+	DrawSmoothRoundedRect(Graphics(), MiniX + 0.75f, MiniY + 0.75f, maximum(0.0f, MiniW - 1.5f), maximum(0.0f, MiniH - 1.5f), maximum(0.0f, Radius - 0.55f), ViewState.m_TargetAccent.WithAlpha(0.16f), HudEditorScope.m_Corners);
 
 	const float FrameInset = 1.45f;
 	const float FrameX = MiniX + FrameInset;
@@ -1858,17 +1935,22 @@ void CHud::RenderTextInfo()
 	{
 		AnimState.m_FpsPositionInitialized = false;
 		AnimState.m_PredPositionInitialized = false;
+		AnimState.m_LossPositionInitialized = false;
 		AnimState.m_AlphaInitialized = false;
 	}
 
 	const uint64_t FpsNode = HudTextInfoNodeKey("fps");
 	const uint64_t PredNode = HudTextInfoNodeKey("pred");
+	const uint64_t LossNode = HudTextInfoNodeKey("loss");
+	const bool ShowLoss = g_Config.m_ClShowPacketLoss && Client()->State() != IClient::STATE_DEMOPLAYBACK;
 	if(UseV2TextInfoLayout && pAnimRuntime != nullptr && !AnimState.m_AlphaInitialized)
 	{
 		AnimState.m_FpsTargetAlpha = Showfps ? 1.0f : 0.0f;
 		AnimState.m_PredTargetAlpha = Showpred ? 1.0f : 0.0f;
+		AnimState.m_LossTargetAlpha = ShowLoss ? 1.0f : 0.0f;
 		pAnimRuntime->SetValue(FpsNode, EUiAnimProperty::ALPHA, AnimState.m_FpsTargetAlpha);
 		pAnimRuntime->SetValue(PredNode, EUiAnimProperty::ALPHA, AnimState.m_PredTargetAlpha);
+		pAnimRuntime->SetValue(LossNode, EUiAnimProperty::ALPHA, AnimState.m_LossTargetAlpha);
 		AnimState.m_AlphaInitialized = true;
 	}
 
@@ -1904,31 +1986,35 @@ void CHud::RenderTextInfo()
 		str_copy(AnimState.m_aLastPredText, aPredBuf);
 		AnimState.m_LastPredWidth = PredWidth;
 	}
-	const bool ShowLoss = Showpred;
 	const float PacketLoss = Client()->PacketLoss();
 	const ColorRGBA PredictionMarginColor = GetPredictionMarginColor(Client()->PredictionMarginState());
 	if(ShowLoss)
 	{
 		str_format(aLossBuf, sizeof(aLossBuf), "%.1f%%", PacketLoss);
 		LossWidth = TextRender()->TextWidth(TextInfoFontSize, aLossBuf, -1, -1.0f);
+		str_copy(AnimState.m_aLastLossText, aLossBuf);
+		AnimState.m_LastLossWidth = LossWidth;
 	}
 
 	float FpsAlpha = Showfps ? 1.0f : 0.0f;
 	float PredAlpha = Showpred ? 1.0f : 0.0f;
+	float LossAlpha = ShowLoss ? 1.0f : 0.0f;
 	if(UseV2TextInfoLayout && pAnimRuntime != nullptr)
 	{
 		FpsAlpha = ResolveAnimatedLayoutValue(*pAnimRuntime, FpsNode, EUiAnimProperty::ALPHA, Showfps ? 1.0f : 0.0f, AnimState.m_FpsTargetAlpha);
 		PredAlpha = ResolveAnimatedLayoutValue(*pAnimRuntime, PredNode, EUiAnimProperty::ALPHA, Showpred ? 1.0f : 0.0f, AnimState.m_PredTargetAlpha);
+		LossAlpha = ResolveAnimatedLayoutValue(*pAnimRuntime, LossNode, EUiAnimProperty::ALPHA, ShowLoss ? 1.0f : 0.0f, AnimState.m_LossTargetAlpha);
 	}
 
 	const bool RenderFps = Showfps || (UseV2TextInfoLayout && FpsAlpha > 0.01f && AnimState.m_aLastFpsText[0] != '\0');
 	const bool RenderPred = Showpred || (UseV2TextInfoLayout && PredAlpha > 0.01f && AnimState.m_aLastPredText[0] != '\0');
-	const bool RenderLoss = RenderPred && ShowLoss;
+	const bool RenderLoss = ShowLoss || (UseV2TextInfoLayout && LossAlpha > 0.01f && AnimState.m_aLastLossText[0] != '\0');
 	const float DisplayFpsWidth = Showfps ? FpsWidth : (RenderFps ? AnimState.m_LastFpsWidth : 0.0f);
 	const float DisplayPredWidth = Showpred ? PredWidth : (RenderPred ? AnimState.m_LastPredWidth : 0.0f);
-	const float DisplayLossWidth = RenderLoss ? LossWidth : 0.0f;
+	const float DisplayLossWidth = ShowLoss ? LossWidth : (RenderLoss ? AnimState.m_LastLossWidth : 0.0f);
 	const char *pFpsText = Showfps ? aFpsBuf : AnimState.m_aLastFpsText;
 	const char *pPredText = Showpred ? aPredBuf : AnimState.m_aLastPredText;
+	const char *pLossText = ShowLoss ? aLossBuf : AnimState.m_aLastLossText;
 	const bool UseMiniLayout = HasMiniMap && (RenderFps || RenderPred || RenderLoss);
 
 	SHudTextInfoLayout V2Layout;
@@ -1954,6 +2040,14 @@ void CHud::RenderTextInfo()
 			pAnimRuntime->SetValue(PredNode, EUiAnimProperty::POS_X, AnimState.m_PredTargetX);
 			pAnimRuntime->SetValue(PredNode, EUiAnimProperty::POS_Y, AnimState.m_PredTargetY);
 			AnimState.m_PredPositionInitialized = true;
+		}
+		if(RenderLoss && !AnimState.m_LossPositionInitialized)
+		{
+			AnimState.m_LossTargetX = V2Layout.m_LossX;
+			AnimState.m_LossTargetY = V2Layout.m_LossY;
+			pAnimRuntime->SetValue(LossNode, EUiAnimProperty::POS_X, AnimState.m_LossTargetX);
+			pAnimRuntime->SetValue(LossNode, EUiAnimProperty::POS_Y, AnimState.m_LossTargetY);
+			AnimState.m_LossPositionInitialized = true;
 		}
 	}
 
@@ -2139,8 +2233,16 @@ void CHud::RenderTextInfo()
 		float LossY = RenderPred ? 31.0f : (RenderFps ? 18.0f : 5.0f);
 		if(UseV2TextInfoLayout)
 		{
-			LossX = V2Layout.m_LossX;
-			LossY = V2Layout.m_LossY;
+			if(pAnimRuntime != nullptr)
+			{
+				LossX = ResolveAnimatedLayoutValue(*pAnimRuntime, LossNode, EUiAnimProperty::POS_X, V2Layout.m_LossX, AnimState.m_LossTargetX);
+				LossY = ResolveAnimatedLayoutValue(*pAnimRuntime, LossNode, EUiAnimProperty::POS_Y, V2Layout.m_LossY, AnimState.m_LossTargetY);
+			}
+			else
+			{
+				LossX = V2Layout.m_LossX;
+				LossY = V2Layout.m_LossY;
+			}
 		}
 		else if(UseMiniLayout)
 		{
@@ -2152,11 +2254,11 @@ void CHud::RenderTextInfo()
 		ColorRGBA OldOutlineColor = TextRender()->GetTextOutlineColor();
 		ColorRGBA LossTextColor = GetPredictionNetworkColor(PacketLoss, Client()->ConnectionProblems());
 		ColorRGBA LossOutlineColor = TextRender()->DefaultTextOutlineColor();
-		LossTextColor.a *= PredAlpha;
-		LossOutlineColor.a *= PredAlpha;
+		LossTextColor.a *= LossAlpha;
+		LossOutlineColor.a *= LossAlpha;
 		TextRender()->TextColor(LossTextColor);
 		TextRender()->TextOutlineColor(LossOutlineColor);
-		TextRender()->Text(LossX, LossY, TextInfoFontSize, aLossBuf, -1.0f);
+		TextRender()->Text(LossX, LossY, TextInfoFontSize, pLossText, -1.0f);
 		TextRender()->TextColor(OldColor);
 		TextRender()->TextOutlineColor(OldOutlineColor);
 	}
@@ -2273,7 +2375,7 @@ void CHud::RenderTextInfo()
 			float progressiveOffset = 0.0f;
 			float TeeSize = g_Config.m_TcFrozenHudTeeSize;
 			int MaxTees = (int)(8.3f * (m_Width / m_Height) * 13.0f / TeeSize);
-			if(!g_Config.m_ClShowfps && !g_Config.m_ClShowpred)
+			if(!g_Config.m_ClShowfps && !g_Config.m_ClShowpred && !g_Config.m_ClShowPacketLoss)
 				MaxTees = (int)(9.5f * (m_Width / m_Height) * 13.0f / TeeSize);
 			int MaxRows = g_Config.m_TcFrozenMaxRows;
 			float StartPos = m_Width / 2.0f + 38.0f * (m_Width / m_Height) / 1.78f;
@@ -2361,16 +2463,20 @@ void CHud::RenderTextInfo()
 
 void CHud::RenderSwapCountdown()
 {
-	SSwapCountdownInfo Info;
-	if(!BuildSwapCountdownInfo(*GameClient(), *Client(), Info))
+	SSwapCountdownList SwapList;
+	if(!BuildSwapCountdownList(*GameClient(), *Client(), SwapList))
 		return;
 
 	const float FontSize = 8.0f;
 	const float X = 5.0f;
 	const float Y = m_Height - 12.0f;
+	const float LineHeight = 9.0f;
 
-	TextRender()->TextColor(Info.m_TextColor);
-	TextRender()->Text(X, Y, FontSize, Info.m_aText, -1.0f);
+	for(int i = 0; i < SwapList.m_Count; ++i)
+	{
+		TextRender()->TextColor(SwapList.m_aInfos[i].m_TextColor);
+		TextRender()->Text(X, Y - LineHeight * i, FontSize, SwapList.m_aInfos[i].m_aText, -1.0f);
+	}
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
 }
 
@@ -2588,10 +2694,12 @@ void CHud::RenderSwitchCountdowns()
 	const float SlideOffsetX = 12.0f;
 
 	float SwitchBaseX = BaseX;
-	SSwapCountdownInfo SwapInfo;
-	if(BuildSwapCountdownInfo(*GameClient(), *Client(), SwapInfo))
+	SSwapCountdownList SwapList;
+	if(BuildSwapCountdownList(*GameClient(), *Client(), SwapList))
 	{
-		const float SwapWidth = TextRender()->TextWidth(FontSize, SwapInfo.m_aText, -1, -1.0f);
+		float SwapWidth = 0.0f;
+		for(int i = 0; i < SwapList.m_Count; ++i)
+			SwapWidth = std::max(SwapWidth, TextRender()->TextWidth(FontSize, SwapList.m_aInfos[i].m_aText, -1, -1.0f));
 		SwitchBaseX += SwapWidth + SwapGap;
 	}
 
@@ -3003,17 +3111,18 @@ bool CHud::HasVisibleMediaIsland() const
 	if(g_Config.m_QmHudIslandUseOriginalStyle)
 		return false;
 
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI && !GameClient()->m_HudEditor.IsActive())
-		return false;
-
-	SSwapCountdownInfo SwapInfo;
-	if(BuildSwapCountdownInfo(*GameClient(), *Client(), SwapInfo))
+	SSwapCountdownList SwapList;
+	if(BuildSwapCountdownList(*GameClient(), *Client(), SwapList))
 		return true;
 
 	if(HasActiveSwitchCountdown())
 		return true;
 
 	if(ShouldRenderHudLocalTime(*GameClient()))
+		return true;
+
+	char aTeamBuf[32];
+	if(BuildHudTeamText(*GameClient(), aTeamBuf, sizeof(aTeamBuf)))
 		return true;
 
 	if(g_Config.m_ClShowhudTimer)
@@ -3048,11 +3157,13 @@ float CHud::GetTopIslandAvoidanceRight() const
 	const bool ShowFrozenSummaryInStatus = ShouldShowHudFrozenSummaryInStatus(ShowFrozenSummary, TimerCapsule.m_Visible, ScoreboardExpanded);
 	const int SpectatorCount = GetMediaIslandSpectatorCount(*GameClient(), *Client());
 	const bool ShowSpectator = SpectatorCount > 0;
+	char aTeamBuf[32];
+	const bool ShowTeam = BuildHudTeamText(*GameClient(), aTeamBuf, sizeof(aTeamBuf));
 
 	CSystemMediaControls::SState MediaState;
 	const bool MediaHudEnabled = g_Config.m_QmSmtcEnable && g_Config.m_QmSmtcShowHud;
 	const bool HasMediaState = MediaHudEnabled && GameClient()->m_SystemMediaControls.GetStateSnapshot(MediaState);
-	const bool ShowTopRow = HasMediaState || ShowLocalTime || TimerCapsule.m_Visible || ShowRecordingStatus || ShowSpectator;
+	const bool ShowTopRow = HasMediaState || ShowLocalTime || TimerCapsule.m_Visible || ShowRecordingStatus || ShowSpectator || ShowTeam;
 	if(!ShowTopRow)
 		return 0.0f;
 
@@ -3089,9 +3200,12 @@ float CHud::GetTopIslandAvoidanceRight() const
 	const float TimeSlotWidth = std::round(TextRender()->TextBoundingBox(MetaFontSize, aTimeSlotBuf).m_W);
 	TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 	const float SpectatorIconWidth = TextRender()->TextWidth(MetaFontSize, FontIcons::FONT_ICON_EYE);
+	const float TeamIconWidth = TextRender()->TextWidth(MetaFontSize, FontIcons::FONT_ICON_USERS);
 	TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 	const float SpectatorTextWidth = ShowSpectator ? TextRender()->TextWidth(MetaFontSize, aSpectatorBuf) : 0.0f;
 	const float SpectatorWidth = ShowSpectator ? SpectatorIconWidth + SpectatorGap + SpectatorTextWidth : 0.0f;
+	const float TeamTextWidth = ShowTeam ? TextRender()->TextWidth(MetaFontSize, aTeamBuf) : 0.0f;
+	const float TeamWidth = ShowTeam ? TeamIconWidth + SpectatorGap + TeamTextWidth : 0.0f;
 	const float StatusTextWidth = ShowRecordingStatus ? std::round(TextRender()->TextBoundingBox(StatusFontSize, aRecordingBuf).m_W) : 0.0f;
 	const float RawCollapsedStatusWidth = StatusPaddingLeft + StatusDotSize + StatusPaddingRight;
 	const float RawExpandedStatusWidth = StatusPaddingLeft + StatusDotSize + StatusDotGap + StatusTextWidth + StatusPaddingRight;
@@ -3099,10 +3213,15 @@ float CHud::GetTopIslandAvoidanceRight() const
 	const float FrozenSummaryStatusWidth = ShowFrozenSummaryInStatus ? (StatusPaddingLeft + FrozenSummaryTextWidth + StatusPaddingRight) : 0.0f;
 	const bool ShowCover = HasMediaState;
 
+	const int MetaItemCount = (ShowTeam ? 1 : 0) + (ShowSpectator ? 1 : 0) + (ShowLocalTime ? 1 : 0);
 	float BaseWidth = PaddingX;
 	if(ShowCover)
 		BaseWidth += CoverSize;
-	if(ShowCover && (ShowSpectator || ShowLocalTime))
+	if(ShowCover && MetaItemCount > 0)
+		BaseWidth += Gap;
+	if(ShowTeam)
+		BaseWidth += TeamWidth;
+	if(ShowTeam && (ShowSpectator || ShowLocalTime))
 		BaseWidth += Gap;
 	if(ShowSpectator)
 		BaseWidth += SpectatorWidth;
@@ -3111,7 +3230,7 @@ float CHud::GetTopIslandAvoidanceRight() const
 	if(ShowLocalTime)
 		BaseWidth += TimeSlotWidth;
 	BaseWidth += PaddingX;
-	if(!ShowCover && !ShowSpectator && !ShowLocalTime)
+	if(!ShowCover && MetaItemCount == 0)
 		BaseWidth = 0.0f;
 
 	const bool Expanded = HasMediaState && m_MediaIslandAnimState.m_VisualState == SHudMediaIslandAnimState::EVisualState::EXPANDED;
@@ -3119,8 +3238,10 @@ float CHud::GetTopIslandAvoidanceRight() const
 	const float RightSlotWidth = ShowFrozenSummaryInStatus ? FrozenSummaryStatusWidth :
 		(ShowRecordingStatus ? (ScoreboardExpanded ? RawExpandedStatusWidth : RawCollapsedStatusWidth) : 0.0f);
 	const float RightSlotGap = TimerCapsule.m_Visible && RightSlotWidth > 0.0f ? TimerToStatusGap : 0.0f;
+	const float TimerBoxX = TimerCapsule.m_Visible ? std::round(m_Width * 0.5f - TimerCapsule.m_BoxW * 0.5f) : TimerCapsule.m_BoxX;
+	const float TimerBoxRight = TimerBoxX + TimerCapsule.m_BoxW;
 	const float MaxIslandWidth = TimerCapsule.m_Visible ?
-		std::max(BaseWidth, TimerCapsule.m_BoxX - GapToTimer - RightSlotGap - RightSlotWidth - ScreenPadding) :
+		std::max(BaseWidth, TimerBoxX - GapToTimer - RightSlotGap - RightSlotWidth - ScreenPadding) :
 		BaseWidth + (ShowCover ? (Gap + MaxTitleWidth) : 0.0f);
 	const float MaxExpandedTitleWidth = std::max(0.0f, MaxIslandWidth - BaseWidth - Gap);
 	const char *pDisplayTitle = HasMediaState && MediaState.m_aTitle[0] != '\0' ? MediaState.m_aTitle : "";
@@ -3131,17 +3252,21 @@ float CHud::GetTopIslandAvoidanceRight() const
 	if(Expanded && TitleWidth > 0.0f)
 		TargetWidth += Gap + TitleWidth;
 
+	const float CenteredCollapsedRight = m_Width * 0.5f + BaseWidth * 0.5f;
 	float TargetX = m_Width * 0.5f - TargetWidth * 0.5f;
 	if(TimerCapsule.m_Visible)
-		TargetX = TargetWidth > 0.0f ? std::max(ScreenPadding, TimerCapsule.m_BoxX - GapToTimer - TargetWidth) : TimerCapsule.m_BoxX;
+		TargetX = TargetWidth > 0.0f ? std::max(ScreenPadding, TimerBoxX - GapToTimer - TargetWidth) : TimerBoxX;
+	else if(ShowLocalTime && BaseWidth > 0.0f)
+		TargetX = CenteredCollapsedRight - TargetWidth;
 	else
 	{
 		const float MaxTargetX = std::max(ScreenPadding, m_Width - ScreenPadding - TargetWidth);
 		TargetX = std::clamp(TargetX, ScreenPadding, MaxTargetX);
 	}
+	TargetX = std::max(ScreenPadding, TargetX);
 
 	const float UnifiedRight = TimerCapsule.m_Visible ?
-		(TimerCapsule.m_BoxX + TimerCapsule.m_BoxW + (RightSlotWidth > 0.0f ? (RightSlotGap + RightSlotWidth) : 0.0f)) :
+		(TimerBoxRight + (RightSlotWidth > 0.0f ? (RightSlotGap + RightSlotWidth) : 0.0f)) :
 		(TargetX + TargetWidth);
 	return UnifiedRight;
 }
@@ -3149,17 +3274,11 @@ float CHud::GetTopIslandAvoidanceRight() const
 void CHud::RenderMediaIsland()
 {
 	CSystemMediaControls::SState MediaState;
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI && !GameClient()->m_HudEditor.IsActive())
-	{
-		m_MediaIslandAnimState.Reset();
-		return;
-	}
-
 	const bool MediaHudEnabled = g_Config.m_QmSmtcEnable && g_Config.m_QmSmtcShowHud;
 	const bool HasMediaState = MediaHudEnabled && GameClient()->m_SystemMediaControls.GetStateSnapshot(MediaState);
 
-	SSwapCountdownInfo SwapInfo;
-	const bool ShowSwapCountdown = BuildSwapCountdownInfo(*GameClient(), *Client(), SwapInfo);
+	SSwapCountdownList SwapList;
+	const bool ShowSwapCountdown = BuildSwapCountdownList(*GameClient(), *Client(), SwapList);
 
 	char aSwitchCountdownBuf[256];
 	const bool ShowSwitchCountdown = BuildSwitchCountdownSummary(aSwitchCountdownBuf, sizeof(aSwitchCountdownBuf));
@@ -3178,7 +3297,9 @@ void CHud::RenderMediaIsland()
 	const bool ShowBottomRow = ShowSwapCountdown || ShowSwitchCountdown || ShowFrozenSummaryInBottomRow;
 	const int SpectatorCount = GetMediaIslandSpectatorCount(*GameClient(), *Client());
 	const bool ShowSpectator = SpectatorCount > 0;
-	const bool ShowTopRow = HasMediaState || ShowLocalTime || TimerCapsule.m_Visible || ShowRecordingStatus || ShowSpectator;
+	char aTeamBuf[32];
+	const bool ShowTeam = BuildHudTeamText(*GameClient(), aTeamBuf, sizeof(aTeamBuf));
+	const bool ShowTopRow = HasMediaState || ShowLocalTime || TimerCapsule.m_Visible || ShowRecordingStatus || ShowSpectator || ShowTeam;
 
 	if(!ShowTopRow && !ShowBottomRow)
 	{
@@ -3248,7 +3369,6 @@ void CHud::RenderMediaIsland()
 	}
 
 	constexpr float BaseIslandHeight = 16.0f;
-	constexpr float BottomRowExpandedHeight = 10.0f;
 	constexpr float IslandY = 1.0f;
 	constexpr float CoverSize = 12.0f;
 	constexpr float PaddingX = 3.0f;
@@ -3267,6 +3387,8 @@ void CHud::RenderMediaIsland()
 	constexpr float BottomFontSize = 5.2f;
 	constexpr float BottomRowPaddingX = 10.0f;
 	constexpr float BottomRowItemGap = 8.0f;
+	constexpr float BottomRowLineHeight = 7.0f;
+	constexpr float BottomRowPaddingY = 2.5f;
 	constexpr float BottomRowDividerInset = 10.0f;
 	constexpr float CoverRotationSpeed = 0.75f;
 	constexpr float Tau = 6.28318530718f;
@@ -3275,10 +3397,13 @@ void CHud::RenderMediaIsland()
 	const float TimeTextWidth = std::round(TextRender()->TextBoundingBox(MetaFontSize, aTimeDisplayBuf).m_W);
 	TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 	const float SpectatorIconWidth = TextRender()->TextWidth(MetaFontSize, FontIcons::FONT_ICON_EYE);
+	const float TeamIconWidth = TextRender()->TextWidth(MetaFontSize, FontIcons::FONT_ICON_USERS);
 	const float PlaceholderWidth = TextRender()->TextWidth(MetaFontSize, FontIcons::FONT_ICON_MUSIC);
 	TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 	const float SpectatorTextWidth = ShowSpectator ? TextRender()->TextWidth(MetaFontSize, aSpectatorBuf) : 0.0f;
 	const float SpectatorWidth = ShowSpectator ? SpectatorIconWidth + SpectatorGap + SpectatorTextWidth : 0.0f;
+	const float TeamTextWidth = ShowTeam ? TextRender()->TextWidth(MetaFontSize, aTeamBuf) : 0.0f;
+	const float TeamWidth = ShowTeam ? TeamIconWidth + SpectatorGap + TeamTextWidth : 0.0f;
 	const float StatusTextWidth = ShowRecordingStatus ? std::round(TextRender()->TextBoundingBox(StatusFontSize, aRecordingBuf).m_W) : 0.0f;
 	const float RawCollapsedStatusWidth = StatusPaddingLeft + StatusDotSize + StatusPaddingRight;
 	const float RawExpandedStatusWidth = StatusPaddingLeft + StatusDotSize + StatusDotGap + StatusTextWidth + StatusPaddingRight;
@@ -3289,7 +3414,7 @@ void CHud::RenderMediaIsland()
 		const char *m_pText = nullptr;
 		float m_Width = 0.0f;
 	};
-	std::array<SBottomTextLayoutItem, 3> aBottomLayoutItems{};
+	std::array<SBottomTextLayoutItem, 2> aBottomLayoutItems{};
 	int BottomLayoutItemCount = 0;
 	const auto AddBottomLayoutItem = [&](const char *pText) {
 		if(pText == nullptr || pText[0] == '\0' || BottomLayoutItemCount >= (int)aBottomLayoutItems.size())
@@ -3298,23 +3423,31 @@ void CHud::RenderMediaIsland()
 		aBottomLayoutItems[BottomLayoutItemCount].m_Width = std::round(TextRender()->TextBoundingBox(BottomFontSize, pText).m_W);
 		++BottomLayoutItemCount;
 	};
-	if(ShowSwapCountdown)
-		AddBottomLayoutItem(SwapInfo.m_aText);
 	if(ShowFrozenSummaryInBottomRow)
 		AddBottomLayoutItem(aFrozenSummaryBuf);
 	if(ShowSwitchCountdown)
 		AddBottomLayoutItem(aSwitchCountdownBuf);
-	float NaturalBottomContentWidth = 0.0f;
+	float UtilityBottomContentWidth = 0.0f;
 	for(int i = 0; i < BottomLayoutItemCount; ++i)
-		NaturalBottomContentWidth += aBottomLayoutItems[i].m_Width;
+		UtilityBottomContentWidth += aBottomLayoutItems[i].m_Width;
 	if(BottomLayoutItemCount > 1)
-		NaturalBottomContentWidth += BottomRowItemGap * (BottomLayoutItemCount - 1);
-	const float DesiredBottomUnifiedWidth = BottomLayoutItemCount > 0 ? (NaturalBottomContentWidth + BottomRowPaddingX * 2.0f) : 0.0f;
+		UtilityBottomContentWidth += BottomRowItemGap * (BottomLayoutItemCount - 1);
+	float SwapBottomContentWidth = 0.0f;
+	for(int i = 0; i < SwapList.m_Count; ++i)
+		SwapBottomContentWidth = std::max(SwapBottomContentWidth, std::round(TextRender()->TextBoundingBox(BottomFontSize, SwapList.m_aInfos[i].m_aText).m_W));
+	const int BottomRowLineCount = SwapList.m_Count + (BottomLayoutItemCount > 0 ? 1 : 0);
+	const float NaturalBottomContentWidth = std::max(SwapBottomContentWidth, UtilityBottomContentWidth);
+	const float DesiredBottomUnifiedWidth = BottomRowLineCount > 0 ? (NaturalBottomContentWidth + BottomRowPaddingX * 2.0f) : 0.0f;
 	const bool ShowCover = HasMediaState;
+	const int MetaItemCount = (ShowTeam ? 1 : 0) + (ShowSpectator ? 1 : 0) + (ShowLocalTime ? 1 : 0);
 	float BaseWidth = PaddingX;
 	if(ShowCover)
 		BaseWidth += CoverSize;
-	if(ShowCover && (ShowSpectator || ShowLocalTime))
+	if(ShowCover && MetaItemCount > 0)
+		BaseWidth += Gap;
+	if(ShowTeam)
+		BaseWidth += TeamWidth;
+	if(ShowTeam && (ShowSpectator || ShowLocalTime))
 		BaseWidth += Gap;
 	if(ShowSpectator)
 		BaseWidth += SpectatorWidth;
@@ -3323,11 +3456,14 @@ void CHud::RenderMediaIsland()
 	if(ShowLocalTime)
 		BaseWidth += TimeSlotWidth;
 	BaseWidth += PaddingX;
-	if(!ShowCover && !ShowSpectator && !ShowLocalTime)
+	if(!ShowCover && MetaItemCount == 0)
 		BaseWidth = 0.0f;
 	const float MaxTitleWidth = std::clamp(m_Width * 0.18f, 42.0f, 88.0f);
+	const float TimerBoxX = TimerCapsule.m_Visible ? std::round(m_Width * 0.5f - TimerCapsule.m_BoxW * 0.5f) : TimerCapsule.m_BoxX;
+	const float TimerTextX = TimerCapsule.m_Visible ? std::round(m_Width * 0.5f - TimerInfo.m_W * 0.5f) : TimerCapsule.m_TextX;
+	const float TimerBoxRight = TimerBoxX + TimerCapsule.m_BoxW;
 	const float MaxIslandWidth = TimerCapsule.m_Visible ?
-		std::max(BaseWidth, TimerCapsule.m_BoxX - GapToTimer - ScreenPadding) :
+		std::max(BaseWidth, TimerBoxX - GapToTimer - ScreenPadding) :
 		BaseWidth + (ShowCover ? (Gap + MaxTitleWidth) : 0.0f);
 	const float MaxExpandedTitleWidth = std::max(0.0f, MaxIslandWidth - BaseWidth - Gap);
 	const float NaturalTitleWidth = std::round(TextRender()->TextBoundingBox(TitleFontSize, pDisplayTitle).m_W);
@@ -3342,15 +3478,20 @@ void CHud::RenderMediaIsland()
 		TargetWidth;
 	if(DesiredBottomUnifiedWidth > PlannedUnifiedWidth)
 		TargetWidth += DesiredBottomUnifiedWidth - PlannedUnifiedWidth;
+	const float CenteredCollapsedRight = m_Width * 0.5f + BaseWidth * 0.5f;
 	float TargetX = m_Width * 0.5f - TargetWidth * 0.5f;
 	if(TimerCapsule.m_Visible)
-		TargetX = TargetWidth > 0.0f ? std::max(ScreenPadding, TimerCapsule.m_BoxX - GapToTimer - TargetWidth) : TimerCapsule.m_BoxX;
+		TargetX = TargetWidth > 0.0f ? std::max(ScreenPadding, TimerBoxX - GapToTimer - TargetWidth) : TimerBoxX;
+	else if(ShowLocalTime && BaseWidth > 0.0f)
+		TargetX = CenteredCollapsedRight - TargetWidth;
 	else
 	{
 		const float MaxTargetX = std::max(ScreenPadding, m_Width - ScreenPadding - TargetWidth);
 		TargetX = std::clamp(TargetX, ScreenPadding, MaxTargetX);
 	}
-	const float TargetHeight = ShowBottomRow ? (BaseIslandHeight + BottomRowExpandedHeight) : BaseIslandHeight;
+	TargetX = std::max(ScreenPadding, TargetX);
+	const float TargetBottomHeight = ShowBottomRow ? (BottomRowPaddingY * 2.0f + BottomRowLineHeight * BottomRowLineCount) : 0.0f;
+	const float TargetHeight = BaseIslandHeight + TargetBottomHeight;
 	const float TitleAlphaTarget = Expanded && TitleWidth > 0.0f ? 1.0f : 0.0f;
 	const float TitleOffsetTarget = Expanded ? 0.0f : 4.0f;
 	const float SpectatorAlphaTarget = ShowSpectator ? 1.0f : 0.0f;
@@ -3399,9 +3540,11 @@ void CHud::RenderMediaIsland()
 	const float TimeTextX = TimeSlotX + std::max(0.0f, TimeSlotWidth - TimeTextWidth);
 	const float SpectatorAnchorX = ShowLocalTime ? TimeSlotX : RightMetaX;
 	const float SpectatorX = ShowSpectator ? (SpectatorAnchorX - (ShowLocalTime ? Gap : 0.0f) - SpectatorWidth) : SpectatorAnchorX;
+	const float TeamAnchorX = ShowSpectator ? SpectatorX : (ShowLocalTime ? TimeSlotX : RightMetaX);
+	const float TeamX = ShowTeam ? (TeamAnchorX - ((ShowSpectator || ShowLocalTime) ? Gap : 0.0f) - TeamWidth) : TeamAnchorX;
 	const float TitleBaseX = CoverX + CoverSize + Gap;
 	const float TitleX = TitleBaseX + TitleOffset;
-	const float TitleRight = (ShowSpectator ? SpectatorX : (ShowLocalTime ? TimeSlotX : (IslandX + IslandWidth - PaddingX))) - Gap;
+	const float TitleRight = (ShowTeam ? TeamX : (ShowSpectator ? SpectatorX : (ShowLocalTime ? TimeSlotX : (IslandX + IslandWidth - PaddingX)))) - Gap;
 	const float TitleAvailableWidth = std::max(0.0f, TitleRight - TitleX);
 	const float TitleY = IslandY + (BaseIslandHeight - TitleFontSize) * 0.5f - 0.5f;
 
@@ -3420,7 +3563,7 @@ void CHud::RenderMediaIsland()
 	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT);
 	TextRender()->TextOutlineColor(0.0f, 0.0f, 0.0f, 0.42f);
 
-	const float StatusSectionX = TimerCapsule.m_BoxX + TimerCapsule.m_BoxW + TimerToStatusGap;
+	const float StatusSectionX = TimerBoxRight + TimerToStatusGap;
 	const float TargetStatusWidth = PlannedStatusWidth;
 	const float TargetStatusAlpha = (ShowFrozenSummaryInStatus || ShowRecordingStatus) ? 1.0f : 0.0f;
 	const float TargetTextAlpha = ShowFrozenSummaryInStatus ? 1.0f : (ShowRecordingStatus && ScoreboardExpanded ? 1.0f : 0.0f);
@@ -3443,16 +3586,21 @@ void CHud::RenderMediaIsland()
 	const float StatusTextAlpha = std::clamp(ResolveAnimatedLayoutValueEx(AnimRuntime, StatusTextNode, EUiAnimProperty::ALPHA, TargetTextAlpha, m_RecordingStatusAnimState.m_TargetTextAlpha, 0.08f, 0.0f, EEasing::EASE_OUT), 0.0f, 1.0f);
 	const bool RenderStatusSection = StatusWidth > 1.0f && StatusAlpha > 0.01f;
 	const float UnifiedRight = TimerCapsule.m_Visible ?
-		(TimerCapsule.m_BoxX + TimerCapsule.m_BoxW + (RenderStatusSection ? (TimerToStatusGap + StatusWidth) : 0.0f)) :
+		(TimerBoxRight + (RenderStatusSection ? (TimerToStatusGap + StatusWidth) : 0.0f)) :
 		(IslandX + IslandWidth);
 	const float UnifiedWidth = std::max(IslandWidth, UnifiedRight - IslandX);
-	const bool RenderLeftSection = ShowCover || ShowSpectator || ShowLocalTime;
+	const float EditorX = TimerCapsule.m_Visible ? TimerBoxX : IslandX;
+	const float EditorRight = TimerCapsule.m_Visible ? UnifiedRight : (IslandX + UnifiedWidth);
+	const float EditorWidth = std::max(0.0f, EditorRight - EditorX);
+	const CUIRect EditorTransformRect = {EditorX, IslandY, EditorWidth, AnimatedIslandHeight};
+	const CUIRect EditorVisibleRect = {IslandX, IslandY, UnifiedWidth, AnimatedIslandHeight};
+	const bool RenderLeftSection = ShowCover || ShowTeam || ShowSpectator || ShowLocalTime;
 	const float TimerTextY = TimerCapsule.m_TextY;
 	ColorRGBA IslandBackgroundColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmHudIslandBgColor));
 	IslandBackgroundColor.a = std::clamp(g_Config.m_QmHudIslandBgOpacity / 100.0f, 0.0f, 1.0f);
-	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::MediaIsland, {IslandX, IslandY, UnifiedWidth, AnimatedIslandHeight});
+	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::MediaIsland, EditorTransformRect, EditorVisibleRect);
 
-	DrawSmoothRoundedRect(Graphics(), IslandX, IslandY, UnifiedWidth, AnimatedIslandHeight, Radius, IslandBackgroundColor);
+	DrawSmoothRoundedRect(Graphics(), IslandX, IslandY, UnifiedWidth, AnimatedIslandHeight, Radius, IslandBackgroundColor, HudEditorScope.m_Corners);
 
 	if(ShowCover && !MediaState.m_AlbumArt.IsValid())
 	{
@@ -3466,6 +3614,16 @@ void CHud::RenderMediaIsland()
 	else if(ShowCover)
 	{
 		DrawTexturedCircle(Graphics(), MediaState.m_AlbumArt, CoverCenter, CoverRadius, AnimState.m_CoverRotation);
+	}
+
+	if(ShowTeam)
+	{
+		TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
+		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 0.82f);
+		TextRender()->Text(TeamX, TimeY, MetaFontSize, FontIcons::FONT_ICON_USERS, -1.0f);
+		TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
+		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 0.82f);
+		TextRender()->Text(TeamX + TeamIconWidth + SpectatorGap, TimeY, MetaFontSize, aTeamBuf, -1.0f);
 	}
 
 	if(ShowSpectator)
@@ -3499,7 +3657,7 @@ void CHud::RenderMediaIsland()
 	{
 		if(RenderLeftSection)
 		{
-			const float LeftDividerX = TimerCapsule.m_BoxX - GapToTimer * 0.5f;
+			const float LeftDividerX = TimerBoxX - GapToTimer * 0.5f;
 			Graphics()->DrawRect(LeftDividerX, IslandY + 4.0f, 0.75f, BaseIslandHeight - 8.0f, ColorRGBA(1.0f, 1.0f, 1.0f, 0.10f), IGraphics::CORNER_ALL, 0.375f);
 		}
 
@@ -3507,12 +3665,12 @@ void CHud::RenderMediaIsland()
 			TextRender()->TextColor(1.0f, 0.25f, 0.25f, TimerCapsule.m_Alpha);
 		else
 			TextRender()->TextColor(0.98f, 0.99f, 1.0f, 0.98f);
-		TextRender()->Text(TimerCapsule.m_TextX, TimerTextY, TimerCapsule.m_FontSize, TimerCapsule.m_aText, -1.0f);
+		TextRender()->Text(TimerTextX, TimerTextY, TimerCapsule.m_FontSize, TimerCapsule.m_aText, -1.0f);
 	}
 
 	if(RenderStatusSection)
 	{
-		const float DividerX = TimerCapsule.m_BoxX + TimerCapsule.m_BoxW + TimerToStatusGap * 0.5f;
+		const float DividerX = TimerBoxRight + TimerToStatusGap * 0.5f;
 		Graphics()->DrawRect(DividerX, IslandY + 4.0f, 0.75f, BaseIslandHeight - 8.0f, ColorRGBA(1.0f, 1.0f, 1.0f, 0.10f * StatusAlpha), IGraphics::CORNER_ALL, 0.375f);
 
 		if(ShowFrozenSummaryInStatus)
@@ -3541,7 +3699,6 @@ void CHud::RenderMediaIsland()
 	if(BottomAlpha > 0.01f && AnimatedIslandHeight > BaseIslandHeight + 0.5f)
 	{
 		const float BottomRowY = IslandY + BaseIslandHeight;
-		const float BottomRowHeight = std::max(0.0f, AnimatedIslandHeight - BaseIslandHeight);
 		const float DividerInset = std::min(BottomRowDividerInset, UnifiedWidth * 0.25f);
 		const float DividerWidth = std::max(0.0f, UnifiedWidth - DividerInset * 2.0f);
 		if(DividerWidth > 0.0f)
@@ -3549,14 +3706,11 @@ void CHud::RenderMediaIsland()
 			Graphics()->DrawRect(IslandX + DividerInset, BottomRowY, DividerWidth, 0.75f, ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f * BottomAlpha), IGraphics::CORNER_ALL, 0.375f);
 		}
 
-		const float BottomTextY = BottomRowY + (BottomRowHeight - BottomFontSize) * 0.5f - 0.5f;
+		float BottomTextY = BottomRowY + BottomRowPaddingY;
 		const float ContentX = IslandX + BottomRowPaddingX;
 		const float ContentWidth = std::max(0.0f, UnifiedWidth - BottomRowPaddingX * 2.0f);
 		const ColorRGBA SwitchTextColor(0.97f, 0.98f, 1.0f, 0.90f * BottomAlpha);
-		ColorRGBA SwapTextColor = SwapInfo.m_TextColor;
-		SwapTextColor.a *= 0.92f * BottomAlpha;
-
-		const auto RenderBottomTextBlock = [&](float X, float MaxWidth, const char *pText, const ColorRGBA &Color, bool AlignRight) {
+		const auto RenderBottomTextBlock = [&](float X, float Y, float MaxWidth, const char *pText, const ColorRGBA &Color, bool AlignRight) {
 			if(pText == nullptr || pText[0] == '\0' || MaxWidth <= 0.0f)
 				return;
 
@@ -3565,7 +3719,7 @@ void CHud::RenderMediaIsland()
 			if(TextWidth <= MaxWidth + 0.01f)
 			{
 				const float DrawX = AlignRight ? (X + MaxWidth - TextWidth) : X;
-				TextRender()->Text(DrawX, BottomTextY, BottomFontSize, pText, -1.0f);
+				TextRender()->Text(DrawX, Y, BottomFontSize, pText, -1.0f);
 				return;
 			}
 
@@ -3573,11 +3727,11 @@ void CHud::RenderMediaIsland()
 			Cursor.m_FontSize = BottomFontSize;
 			Cursor.m_LineWidth = MaxWidth;
 			Cursor.m_Flags = TEXTFLAG_RENDER | TEXTFLAG_ELLIPSIS_AT_END;
-			Cursor.SetPosition(vec2(X, BottomTextY));
+			Cursor.SetPosition(vec2(X, Y));
 			TextRender()->TextEx(&Cursor, pText);
 		};
 
-		const auto RenderBottomTextCentered = [&](const char *pText, const ColorRGBA &Color) {
+		const auto RenderBottomTextCentered = [&](float Y, const char *pText, const ColorRGBA &Color) {
 			if(pText == nullptr || pText[0] == '\0' || ContentWidth <= 0.0f)
 				return;
 
@@ -3585,26 +3739,11 @@ void CHud::RenderMediaIsland()
 			if(TextWidth <= ContentWidth + 0.01f)
 			{
 				TextRender()->TextColor(Color);
-				TextRender()->Text(IslandX + (UnifiedWidth - TextWidth) * 0.5f, BottomTextY, BottomFontSize, pText, -1.0f);
+				TextRender()->Text(IslandX + (UnifiedWidth - TextWidth) * 0.5f, Y, BottomFontSize, pText, -1.0f);
 				return;
 			}
 
-			RenderBottomTextBlock(ContentX, ContentWidth, pText, Color, false);
-		};
-
-		const auto RenderBottomTextCenteredInBlock = [&](float X, float MaxWidth, const char *pText, const ColorRGBA &Color) {
-			if(pText == nullptr || pText[0] == '\0' || MaxWidth <= 0.0f)
-				return;
-
-			const float TextWidth = std::round(TextRender()->TextBoundingBox(BottomFontSize, pText).m_W);
-			TextRender()->TextColor(Color);
-			if(TextWidth <= MaxWidth + 0.01f)
-			{
-				TextRender()->Text(X + (MaxWidth - TextWidth) * 0.5f, BottomTextY, BottomFontSize, pText, -1.0f);
-				return;
-			}
-
-			RenderBottomTextBlock(X, MaxWidth, pText, Color, false);
+			RenderBottomTextBlock(ContentX, Y, ContentWidth, pText, Color, false);
 		};
 
 		struct SBottomTextItem
@@ -3614,10 +3753,16 @@ void CHud::RenderMediaIsland()
 			float m_Width = 0.0f;
 		};
 
-		std::array<SBottomTextItem, 3> aBottomItems{};
+		for(int i = 0; i < SwapList.m_Count; ++i)
+		{
+			ColorRGBA SwapTextColor = SwapList.m_aInfos[i].m_TextColor;
+			SwapTextColor.a *= 0.92f * BottomAlpha;
+			RenderBottomTextCentered(BottomTextY, SwapList.m_aInfos[i].m_aText, SwapTextColor);
+			BottomTextY += BottomRowLineHeight;
+		}
+
+		std::array<SBottomTextItem, 2> aBottomItems{};
 		int BottomItemCount = 0;
-		if(ShowSwapCountdown)
-			aBottomItems[BottomItemCount++] = {SwapInfo.m_aText, SwapTextColor, std::round(TextRender()->TextBoundingBox(BottomFontSize, SwapInfo.m_aText).m_W)};
 		if(ShowFrozenSummaryInBottomRow)
 			aBottomItems[BottomItemCount++] = {aFrozenSummaryBuf, SwitchTextColor, std::round(TextRender()->TextBoundingBox(BottomFontSize, aFrozenSummaryBuf).m_W)};
 		if(ShowSwitchCountdown)
@@ -3625,7 +3770,7 @@ void CHud::RenderMediaIsland()
 
 		if(BottomItemCount == 1)
 		{
-			RenderBottomTextCentered(aBottomItems[0].m_pText, aBottomItems[0].m_Color);
+			RenderBottomTextCentered(BottomTextY, aBottomItems[0].m_pText, aBottomItems[0].m_Color);
 		}
 		else if(BottomItemCount > 1)
 		{
@@ -3664,12 +3809,10 @@ void CHud::RenderMediaIsland()
 						BlockWidth = std::min(BlockWidth, RemainingWidth);
 					}
 
-					if(BottomItemCount == 3 && i == 1)
-						RenderBottomTextCenteredInBlock(CursorX, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color);
-					else if(LastItem)
-						RenderBottomTextBlock(CursorX, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color, true);
+					if(LastItem)
+						RenderBottomTextBlock(CursorX, BottomTextY, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color, true);
 					else
-						RenderBottomTextBlock(CursorX, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color, false);
+						RenderBottomTextBlock(CursorX, BottomTextY, BlockWidth, aBottomItems[i].m_pText, aBottomItems[i].m_Color, false);
 
 					CursorX += BlockWidth + BottomRowItemGap;
 					RemainingWidth = std::max(0.0f, RemainingWidth - BlockWidth);
@@ -4119,9 +4262,6 @@ void CHud::RenderSpectatorCount()
 	}
 
 	const bool Preview = GameClient()->m_HudEditor.IsActive();
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI && !Preview)
-		return;
-
 	int Count = 0;
 	if(Client()->IsSixup())
 	{
@@ -4194,7 +4334,7 @@ void CHud::RenderSpectatorCount()
 		StartY = maximum(0.0f, StartY);
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::SpectatorCount, {StartX, StartY, BoxWidth, BoxHeight});
 
-		Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_L, 5.0f);
+		Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 		const float y = StartY + BoxHeight / 3.0f;
 		const float x = StartX + 2.0f;
@@ -4224,7 +4364,7 @@ void CHud::RenderSpectatorCount()
 		StartY = 0.0f;
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::SpectatorCount, {StartX, StartY, BoxWidth, BoxHeight});
 
-		Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_B, 3.75f);
+		Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 		const float y = StartY + (BoxHeight - Fontsize) / 2.0f;
 		float x = StartX + 5.0f;
@@ -4246,8 +4386,6 @@ void CHud::RenderDummyActions()
 		return;
 	}
 
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI && !GameClient()->m_HudEditor.IsActive())
-		return;
 	// render small dummy actions hud
 	const float BoxHeight = 29.0f;
 	const float BoxWidth = 16.0f;
@@ -4262,7 +4400,7 @@ void CHud::RenderDummyActions()
 
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::DummyActions, {StartX, StartY, BoxWidth, BoxHeight});
 
-	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_L, 5.0f);
+	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 	float y = StartY + 2;
 	float x = StartX + 2;
@@ -4417,7 +4555,7 @@ void CHud::RenderKeyStatus()
 	if(Layout.m_H <= 0.0f)
 		return;
 
-	Graphics()->DrawRect(Layout.m_X, Layout.m_Y, Layout.m_W, Layout.m_H, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_ALL, 5.0f);
+	Graphics()->DrawRect(Layout.m_X, Layout.m_Y, Layout.m_W, Layout.m_H, ui_token::color::SURFACE_GLASS, IGraphics::CORNER_ALL, ui_token::radius::BASE);
 
 	float TextX = Layout.m_X + Layout.m_PaddingX;
 	float TextY = Layout.m_Y + Layout.m_PaddingY;
@@ -4427,7 +4565,7 @@ void CHud::RenderKeyStatus()
 	ColorHSLA KeyRainbowHsla(KeyHue, 0.75f, 0.6f, 1.0f);
 	ColorRGBA KeyRainbowColor = color_cast<ColorRGBA>(KeyRainbowHsla);
 
-	TextRender()->TextColor(KeyRainbowColor);
+	TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? KeyRainbowColor : TextRender()->DefaultTextColor());
 	if(Lines.m_ShowKey)
 	{
 		TextRender()->Text(TextX, TextY, Layout.m_FontSize, Lines.m_pKeyStatusText, -1.0f);
@@ -4473,10 +4611,6 @@ inline float CHud::GetMovementInformationBoxHeight()
 	if(GameClient()->m_Snap.m_SpecInfo.m_Active && (GameClient()->m_Snap.m_SpecInfo.m_SpectatorId == SPEC_FREEVIEW || GameClient()->m_aClients[GameClient()->m_Snap.m_SpecInfo.m_SpectatorId].m_SpecCharPresent))
 		return g_Config.m_ClShowhudPlayerPosition ? 3.0f * MOVEMENT_INFORMATION_LINE_HEIGHT + 2.0f : 0.0f;
 	float BoxHeight = 3.0f * MOVEMENT_INFORMATION_LINE_HEIGHT * (g_Config.m_ClShowhudPlayerPosition + g_Config.m_ClShowhudPlayerSpeed) + 2.0f * MOVEMENT_INFORMATION_LINE_HEIGHT * g_Config.m_ClShowhudPlayerAngle;
-	if(g_Config.m_TcJumpHint)
-	{
-		BoxHeight += 5.0f * MOVEMENT_INFORMATION_LINE_HEIGHT;
-	}
 	// 新增玩家统计显示行（3行：存活时长、救醒/落水、出钩比例）
 	if(g_Config.m_QmPlayerStatsHud)
 	{
@@ -4574,9 +4708,8 @@ void CHud::RenderMovementInformation()
 	const bool ShowPosition = g_Config.m_ClShowhudPlayerPosition;
 	const bool ShowSpeed = !PosOnly && g_Config.m_ClShowhudPlayerSpeed;
 	const bool ShowAngle = !PosOnly && g_Config.m_ClShowhudPlayerAngle;
-	const bool ShowJumpHint = !PosOnly && g_Config.m_TcJumpHint;
 	const bool ShowStats = !PosOnly && g_Config.m_QmPlayerStatsHud;
-	const bool ShowMovementInfo = ShowPosition || ShowSpeed || ShowAngle || ShowJumpHint || ShowStats;
+	const bool ShowMovementInfo = ShowPosition || ShowSpeed || ShowAngle || ShowStats;
 
 	const float LineSpacer = 1.0f; // above and below each entry
 	const float Fontsize = 6.0f;
@@ -4638,24 +4771,6 @@ void CHud::RenderMovementInformation()
 		MovementBoxHeight += 1.0f * MOVEMENT_INFORMATION_LINE_HEIGHT;
 
 	float BoxWidth = 62.0f;
-	if(ShowJumpHint)
-	{
-		const float TitleWidth = TextRender()->TextWidth(Fontsize, "三格edge:");
-		const float LeftJumpWidth = TextRender()->TextWidth(Fontsize, "左跳");
-		const float LeftDoubleJumpWidth = TextRender()->TextWidth(Fontsize, "左二跳");
-		const float RightJumpWidth = TextRender()->TextWidth(Fontsize, "右跳");
-		const float RightDoubleJumpWidth = TextRender()->TextWidth(Fontsize, "右二跳");
-		const float LeftJumpValueWidth = TextRender()->TextWidth(Fontsize, ".34|.31|.16");
-		const float LeftDoubleJumpValueWidth = TextRender()->TextWidth(Fontsize, ".41|.28|.25|.13");
-		const float RightJumpValueWidth = TextRender()->TextWidth(Fontsize, ".63|.66|.81");
-		const float RightDoubleJumpValueWidth = TextRender()->TextWidth(Fontsize, ".56|.69|.72|.84");
-		const float NeededWidth = maximum(
-			TitleWidth + 4.0f,
-			maximum(LeftJumpWidth + LeftJumpValueWidth, LeftDoubleJumpWidth + LeftDoubleJumpValueWidth) + 6.0f,
-			maximum(RightJumpWidth + RightJumpValueWidth, RightDoubleJumpWidth + RightDoubleJumpValueWidth) + 6.0f);
-		BoxWidth = maximum(BoxWidth, NeededWidth);
-	}
-
 	BoxWidth = maximum(BoxWidth, KeyStatusLayout.m_W);
 
 	float BoxHeight = 0.0f;
@@ -4693,7 +4808,7 @@ void CHud::RenderMovementInformation()
 	m_MovementInfoBoxH = BoxHeight;
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::MovementInfo, {StartX, StartY, BoxWidth, BoxHeight});
 
-	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_L, 5.0f);
+	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 	const bool HasMovementContent = ShowMovementInfo && MovementBoxHeight > 0.0f;
 	if(HasMovementContent)
@@ -4806,33 +4921,6 @@ void CHud::RenderMovementInformation()
 				}
 			}
 
-			if(ShowJumpHint)
-			{
-				TextRender()->Text(LeftX, y, Fontsize, Localize("3 Tiles Edge Jump:"), -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-
-				const char *pLeftJump = ".34|.31|.16";
-				const char *pLeftDoubleJump = ".41|.28|.25|.13";
-				const char *pRightJump = ".63|.66|.81";
-				const char *pRightDoubleJump = ".56|.69|.72|.84";
-
-				TextRender()->Text(LeftX, y, Fontsize, Localize("Left Jump:"), -1.0f);
-				TextRender()->Text(RightX - TextRender()->TextWidth(Fontsize, pLeftJump), y, Fontsize, pLeftJump, -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-
-				TextRender()->Text(LeftX, y, Fontsize, Localize("Left Double Jump:"), -1.0f);
-				TextRender()->Text(RightX - TextRender()->TextWidth(Fontsize, pLeftDoubleJump), y, Fontsize, pLeftDoubleJump, -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-
-				TextRender()->Text(LeftX, y, Fontsize, Localize("Right Jump:"), -1.0f);
-				TextRender()->Text(RightX - TextRender()->TextWidth(Fontsize, pRightJump), y, Fontsize, pRightJump, -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-
-				TextRender()->Text(LeftX, y, Fontsize, Localize("Right Double Jump:"), -1.0f);
-				TextRender()->Text(RightX - TextRender()->TextWidth(Fontsize, pRightDoubleJump), y, Fontsize, pRightDoubleJump, -1.0f);
-				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
-			}
-
 			// 玩家统计HUD显示
 			if(ShowStats)
 			{
@@ -4845,12 +4933,13 @@ void CHud::RenderMovementInformation()
 				const float StatsHue = std::fmod(StatsTime * 0.2f + 0.1f, 1.0f);
 				ColorHSLA RainbowHsla(StatsHue, 0.75f, 0.6f, 1.0f);
 				ColorRGBA RainbowColor = color_cast<ColorRGBA>(RainbowHsla);
+				const ColorRGBA DefaultHudTextColor = TextRender()->DefaultTextColor();
 
 				// 平均/最大存活时长
 				float AvgAlive = Stats.GetAverageAliveTime(TickSpeed);
 				float MaxAlive = Stats.GetMaxAliveTime(TickSpeed);
 				str_format(aBuf, sizeof(aBuf), Localize("Alive: %.1fs/%.1fs"), AvgAlive, MaxAlive);
-				TextRender()->TextColor(RainbowColor);
+				TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? RainbowColor : DefaultHudTextColor);
 				TextRender()->Text(LeftX, y, Fontsize, aBuf, -1.0f);
 				TextRender()->TextColor(TextRender()->DefaultTextColor());
 				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
@@ -4860,7 +4949,7 @@ void CHud::RenderMovementInformation()
 				ColorHSLA RainbowHsla2(Hue2, 0.75f, 0.6f, 1.0f);
 				ColorRGBA RainbowColor2 = color_cast<ColorRGBA>(RainbowHsla2);
 				str_format(aBuf, sizeof(aBuf), Localize("Rescue/Freeze: %d/%d"), Stats.m_RescueCount, Stats.m_FreezeCount);
-				TextRender()->TextColor(RainbowColor2);
+				TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? RainbowColor2 : DefaultHudTextColor);
 				TextRender()->Text(LeftX, y, Fontsize, aBuf, -1.0f);
 				TextRender()->TextColor(TextRender()->DefaultTextColor());
 				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
@@ -4872,7 +4961,7 @@ void CHud::RenderMovementInformation()
 				float LeftRatio = Stats.GetHookLeftRatio() * 100.0f;
 				float RightRatio = Stats.GetHookRightRatio() * 100.0f;
 				str_format(aBuf, sizeof(aBuf), Localize("Hooking L/R: %.0f%%/%.0f%%"), LeftRatio, RightRatio);
-				TextRender()->TextColor(RainbowColor3);
+				TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? RainbowColor3 : DefaultHudTextColor);
 				TextRender()->Text(LeftX, y, Fontsize, aBuf, -1.0f);
 				TextRender()->TextColor(TextRender()->DefaultTextColor());
 				y += MOVEMENT_INFORMATION_LINE_HEIGHT;
@@ -4891,7 +4980,8 @@ void CHud::RenderMovementInformation()
 					const float Hue4 = std::fmod(StatsTime * 0.2f + 0.4f, 1.0f);
 					ColorHSLA RainbowHsla4(Hue4, 0.75f, 0.6f, 1.0f);
 					ColorRGBA RainbowColor4 = color_cast<ColorRGBA>(RainbowHsla4);
-					TextRender()->TextColor(RainbowColor4);
+					const ColorRGBA ProgressColor = g_Config.m_ClHudRainbowColors ? RainbowColor4 : color_cast<ColorRGBA>(ColorHSLA(g_Config.m_QmPlayerStatsMapProgressColor, true));
+					TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? RainbowColor4 : DefaultHudTextColor);
 					TextRender()->Text(LeftX, y, Fontsize, aBuf, -1.0f);
 					TextRender()->TextColor(TextRender()->DefaultTextColor());
 					y += MOVEMENT_INFORMATION_LINE_HEIGHT;
@@ -4902,7 +4992,7 @@ void CHud::RenderMovementInformation()
 					const float BarY = y + (MOVEMENT_INFORMATION_LINE_HEIGHT - BarHeight) * 0.5f;
 					Graphics()->DrawRect(BarX, BarY, BarWidth, BarHeight, ColorRGBA(1.0f, 1.0f, 1.0f, 0.18f), IGraphics::CORNER_ALL, 1.0f);
 					if(HasProgress)
-						Graphics()->DrawRect(BarX, BarY, BarWidth * std::clamp(Progress, 0.0f, 1.0f), BarHeight, RainbowColor4.WithAlpha(0.85f), IGraphics::CORNER_ALL, 1.0f);
+						Graphics()->DrawRect(BarX, BarY, BarWidth * std::clamp(Progress, 0.0f, 1.0f), BarHeight, ProgressColor.WithAlpha(0.85f), IGraphics::CORNER_ALL, 1.0f);
 					y += MOVEMENT_INFORMATION_LINE_HEIGHT;
 				}
 			}
@@ -4920,7 +5010,7 @@ void CHud::RenderMovementInformation()
 		ColorHSLA KeyRainbowHsla(KeyHue, 0.75f, 0.6f, 1.0f);
 		ColorRGBA KeyRainbowColor = color_cast<ColorRGBA>(KeyRainbowHsla);
 
-		TextRender()->TextColor(KeyRainbowColor);
+		TextRender()->TextColor(g_Config.m_ClHudRainbowColors ? KeyRainbowColor : TextRender()->DefaultTextColor());
 		if(KeyStatusLines.m_ShowKey)
 		{
 			TextRender()->Text(KeyTextX, KeyTextY, KeyStatusLayout.m_FontSize, KeyStatusLines.m_pKeyStatusText, -1.0f);
@@ -4946,10 +5036,46 @@ void CHud::RenderMovementInformation()
 	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 }
 
+void CHud::RenderJumpHint()
+{
+	if(!g_Config.m_TcJumpHint)
+		return;
+
+	char aText[sizeof(g_Config.m_TcJumpHintText)];
+	DecodeEscapedNewlines(g_Config.m_TcJumpHintText[0] != '\0' ? g_Config.m_TcJumpHintText : JUMP_HINT_DEFAULT_TEXT, aText, sizeof(aText));
+	if(aText[0] == '\0')
+		return;
+
+	constexpr float PaddingX = 4.0f;
+	constexpr float PaddingY = 3.0f;
+	constexpr float LineSpacing = 0.0f;
+	const float FontSize = std::clamp((float)g_Config.m_TcJumpHintSize, 1.0f, 50.0f);
+	const STextBoundingBox TextBox = TextRender()->TextBoundingBox(FontSize, aText, -1, -1.0f, LineSpacing);
+	const float BoxWidth = maximum(24.0f, TextBox.m_W + PaddingX * 2.0f);
+	const float BoxHeight = maximum(FontSize + PaddingY * 2.0f, TextBox.m_H + PaddingY * 2.0f);
+	const float MaxX = maximum(0.0f, m_Width - BoxWidth);
+	const float MaxY = maximum(0.0f, m_Height - BoxHeight);
+	const float StartX = std::clamp(m_Width * std::clamp(g_Config.m_TcJumpHintX, 0, 100) / 100.0f, 0.0f, MaxX);
+	const float StartY = std::clamp(m_Height * std::clamp(g_Config.m_TcJumpHintY, 0, 100) / 100.0f, 0.0f, MaxY);
+
+	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::JumpHint, {StartX, StartY, BoxWidth, BoxHeight});
+	Graphics()->DrawRect(StartX, StartY, BoxWidth, BoxHeight, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
+
+	CTextCursor Cursor;
+	Cursor.SetPosition(vec2(StartX + PaddingX, StartY + PaddingY));
+	Cursor.m_FontSize = FontSize;
+	Cursor.m_LineSpacing = LineSpacing;
+	const int TextColorConfig = g_Config.m_TcJumpHintColor == JUMP_HINT_LEGACY_BLACK_COLOR ? JUMP_HINT_DEFAULT_COLOR : g_Config.m_TcJumpHintColor;
+	TextRender()->TextColor(color_cast<ColorRGBA>(ColorHSLA(TextColorConfig)));
+	TextRender()->TextEx(&Cursor, aText);
+	TextRender()->TextColor(TextRender()->DefaultTextColor());
+	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
+}
+
 void CHud::RenderMapProgressBar()
 {
 	const bool Preview = GameClient()->m_HudEditor.IsActive();
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI && !Preview)
+	if(ShouldHideFocusMapProgress(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMapProgress != 0) && !Preview)
 		return;
 	if(!g_Config.m_QmPlayerStatsMapProgress && !Preview)
 		return;
@@ -5004,9 +5130,9 @@ void CHud::RenderMapProgressBar()
 	const float TextY = std::round(std::clamp(BarY - TextSize - TextGap, 2.0f, maximum(2.0f, m_Height - TextSize - 2.0f)));
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::MapProgressBar, {BarX, TextY, BarWidth, BarY + BarHeight - TextY});
 
-	DrawSmoothRoundedRect(Graphics(), BarX, BarY, BarWidth, BarHeight, BarRadius, TrackColor);
+	DrawSmoothRoundedRect(Graphics(), BarX, BarY, BarWidth, BarHeight, BarRadius, TrackColor, HudEditorScope.m_Corners);
 	if(FillWidth > 0.0f)
-		DrawSmoothRoundedRect(Graphics(), BarX, BarY, FillWidth, BarHeight, BarRadius, FillColor);
+		DrawSmoothRoundedRect(Graphics(), BarX, BarY, FillWidth, BarHeight, BarRadius, FillColor, HudEditorScope.m_Corners);
 
 	const unsigned int PrevTextFlags = TextRender()->GetRenderFlags();
 	const ColorRGBA PrevTextColor = TextRender()->GetTextColor();
@@ -5071,7 +5197,7 @@ void CHud::RenderSpectatorHud()
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::SpectatorHud, {m_Width - 180.0f, BoundsTop, 180.0f, BoundsBottom - BoundsTop});
 
 	// draw the box
-	Graphics()->DrawRect(m_Width - 180.0f, AdjustedHeight - 15.0f, 180.0f, 15.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_TL, 5.0f);
+	Graphics()->DrawRect(m_Width - 180.0f, AdjustedHeight - 15.0f, 180.0f, 15.0f, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 
 	// draw the text
 	char aBuf[128];
@@ -5128,12 +5254,6 @@ void CHud::RenderLocalTime(float x)
 		return;
 	}
 
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI && !GameClient()->m_HudEditor.IsActive())
-	{
-		m_LocalTimeV2AnimState.Reset();
-		return;
-	}
-
 	if(g_Config.m_QmHudIslandUseOriginalStyle)
 	{
 		m_LocalTimeV2AnimState.Reset();
@@ -5141,7 +5261,7 @@ void CHud::RenderLocalTime(float x)
 		char aTimeStr[6];
 		str_timestamp_format(aTimeStr, sizeof(aTimeStr), "%H:%M");
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::LocalTime, {x - 30.0f, 0.0f, 25.0f, 12.5f});
-		Graphics()->DrawRect(x - 30.0f, 0.0f, 25.0f, 12.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_B, 3.75f);
+		Graphics()->DrawRect(x - 30.0f, 0.0f, 25.0f, 12.5f, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 		TextRender()->Text(x - 25.0f, (12.5f - 5.f) / 2.f, 5.0f, aTimeStr, -1.0f);
 		GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 		return;
@@ -5163,7 +5283,7 @@ void CHud::RenderLocalTime(float x)
 	if(!UseV2LocalTime)
 	{
 		const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::LocalTime, {x - (TextWidth + 15.0f), 0.0f, TextWidth + 10.0f, 12.5f});
-		Graphics()->DrawRect(x - (TextWidth + 15.0f), 0.0f, TextWidth + 10.0f, 12.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_B, 3.75f);
+		Graphics()->DrawRect(x - (TextWidth + 15.0f), 0.0f, TextWidth + 10.0f, 12.5f, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 		TextRender()->Text(x - (TextWidth + 10.0f), (12.5f - 5.f) / 2.f, 5.0f, aTimeStr, -1.0f);
 		GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 		return;
@@ -5219,7 +5339,7 @@ void CHud::RenderLocalTime(float x)
 	}
 
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::LocalTime, {BoxX, 0.0f, BoxW, 12.5f});
-	Graphics()->DrawRect(BoxX, 0.0f, BoxW, 12.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_B, 3.75f);
+	Graphics()->DrawRect(BoxX, 0.0f, BoxW, 12.5f, ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 	TextRender()->Text(TextX, TextY, 5.0f, aTimeStr, -1.0f);
 	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 
@@ -5230,7 +5350,7 @@ void CHud::RenderLocalTime(float x)
 float CHud::RenderLegacyMediaInfoAt(float AnchorX, float CenterY)
 {
 	const bool Preview = GameClient()->m_HudEditor.IsActive();
-	if((g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI && !Preview) || m_LegacyMediaInfoRendered || !g_Config.m_QmHudIslandUseOriginalStyle || !g_Config.m_QmSmtcEnable || !g_Config.m_QmSmtcShowHud)
+	if(m_LegacyMediaInfoRendered || !g_Config.m_QmHudIslandUseOriginalStyle || !g_Config.m_QmSmtcEnable || !g_Config.m_QmSmtcShowHud)
 		return CenterY;
 
 	CSystemMediaControls::SState MediaState{};
@@ -5269,7 +5389,7 @@ float CHud::RenderLegacyMediaInfoAt(float AnchorX, float CenterY)
 	const float ContentBottomTarget = HasLyric ? maximum(IslandY + IslandHeight, LyricY + LyricHeight) : (IslandY + IslandHeight);
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::LegacyMediaInfo, {IslandX, IslandY, IslandWidth, ContentBottomTarget - IslandY});
 
-	Graphics()->DrawRect(IslandX, IslandY, IslandWidth, IslandHeight, ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f), IGraphics::CORNER_ALL, 4.0f);
+	Graphics()->DrawRect(IslandX, IslandY, IslandWidth, IslandHeight, ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f), HudEditorScope.m_Corners, 4.0f);
 
 	const float CoverX = IslandX + PaddingX;
 	const float CoverY = IslandY + (IslandHeight - CoverSize) * 0.5f;
@@ -5461,6 +5581,11 @@ void CHud::OnRender()
 	if(!GameClient()->m_Snap.m_pGameInfoObj)
 		return;
 
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Client()->QmLiveDirectorActive())
+		return;
+#endif
+
 	m_Width = 300.0f * Graphics()->ScreenAspect();
 	m_Height = 300.0f;
 	Graphics()->MapScreen(0.0f, 0.0f, m_Width, m_Height);
@@ -5470,12 +5595,11 @@ void CHud::OnRender()
 	const bool ShowMediaIsland = HasVisibleMediaIsland();
 	if(!ShowMediaIsland)
 		m_MediaIslandAnimState.Reset();
-	const bool HideFocusHud = g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideHud;
 
 #if defined(CONF_VIDEORECORDER)
-	if(!HideFocusHud && ((IVideo::Current() && g_Config.m_ClVideoShowhud) || (!IVideo::Current() && g_Config.m_ClShowhud)))
+	if((IVideo::Current() && g_Config.m_ClVideoShowhud) || (!IVideo::Current() && g_Config.m_ClShowhud))
 #else
-	if(!HideFocusHud && g_Config.m_ClShowhud)
+	if(g_Config.m_ClShowhud)
 #endif
 	{
 		if(GameClient()->m_Snap.m_pLocalCharacter && !GameClient()->m_Snap.m_SpecInfo.m_Active && !(GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_GAMEOVER))
@@ -5508,6 +5632,7 @@ void CHud::OnRender()
 					RenderSpectatorCount();
 				RenderMovementInformation();
 			}
+			RenderJumpHint();
 			RenderDDRaceEffects();
 		}
 		else if(GameClient()->m_Snap.m_SpecInfo.m_Active)
@@ -5535,6 +5660,7 @@ void CHud::OnRender()
 				GameClient()->m_HudEditor.EndTransform(HudPlayerStateScope);
 			}
 			RenderMovementInformation();
+			RenderJumpHint();
 			RenderSpectatorHud();
 		}
 

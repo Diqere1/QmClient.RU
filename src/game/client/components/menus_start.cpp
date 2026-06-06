@@ -22,6 +22,8 @@
 #include <game/client/ui.h>
 #include <game/client/QmUi/QmLayout.h>
 #include <game/client/QmUi/QmLegacy.h>
+#include <game/client/QmUi/UiButtons.h>
+#include <game/client/QmUi/UiContext.h>
 #include <game/localization.h>
 #include <game/version.h>
 
@@ -121,11 +123,6 @@ void ComputeMainButtons(const CUIRect &MenuArea, bool UseV2Layout, CUIRect aMenu
 	aMenuButtons[1] = CUiV2LegacyAdapter::ToCUIRect(vChildren[4].m_Box);
 }
 
-uint64_t StartMenuButtonScaleNodeKey(int Index)
-{
-	static const uint64_t s_BaseKey = static_cast<uint64_t>(str_quickhash("start_menu_button_scale"));
-	return (s_BaseKey << 32) | static_cast<uint64_t>(static_cast<uint32_t>(Index));
-}
 }
 
 void CMenusStart::RenderStartMenu(CUIRect MainView)
@@ -226,165 +223,186 @@ void CMenusStart::RenderStartMenuImpl(CUIRect MainView, bool UseV2Layout)
 		CUIRect aMenuButtons[MenuButtonCount];
 		ComputeMainButtons(Menu, UseV2Layout, aMenuButtons);
 
-		static float s_aMenuButtonScale[MenuButtonCount] = {};
-		static float s_aMenuButtonTargetScale[MenuButtonCount] = {};
-		static bool s_MenuButtonScaleInit = false;
-		if(!s_MenuButtonScaleInit)
-		{
-			for(int i = 0; i < MenuButtonCount; ++i)
-			{
-				s_aMenuButtonScale[i] = 1.0f;
-				s_aMenuButtonTargetScale[i] = 1.0f;
-			}
-			s_MenuButtonScaleInit = true;
-		}
-
-		CUiV2AnimationRuntime *pAnimRuntime = nullptr;
 		if(UseV2Layout)
 		{
-			pAnimRuntime = &GameClient()->UiRuntimeV2()->AnimRuntime();
+			IUiContext Ctx;
+			Ctx.m_pUi = Ui();
+			Ctx.m_pMenus = &GameClient()->m_Menus;
+			Ctx.m_pAnim = &GameClient()->UiRuntimeV2()->AnimRuntime();
+			Ctx.m_pTooltips = &GameClient()->m_Tooltips;
+			Ctx.m_pTextRender = TextRender();
+			Ctx.m_ScopeHash = MakeUiScopeHash("start_menu");
+
+			static CButtonContainer s_QuitButton;
+			bool UsedEscape = false;
+			if(ui_widget::SecondaryButton(Ctx, &s_QuitButton, Localize("Quit"), aMenuButtons[0]) || (UsedEscape = Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE)) || CheckHotKey(KEY_Q))
+			{
+				if(UsedEscape || EditorDirty || (GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmQuitTime && g_Config.m_ClConfirmQuitTime >= 0))
+				{
+					GameClient()->m_Menus.ShowQuitPopup();
+				}
+				else
+				{
+					Client()->Quit();
+				}
+			}
+
+			static CButtonContainer s_SettingsButton;
+			if(ui_widget::SecondaryButton(Ctx, &s_SettingsButton, Localize("Settings"), aMenuButtons[1]) || CheckHotKey(KEY_S))
+				NewPage = CMenus::PAGE_SETTINGS;
+
+			static CButtonContainer s_LocalServerButton;
+			if(ui_widget::SecondaryButton(Ctx, &s_LocalServerButton, LocalServerRunning ? Localize("Stop server") : Localize("Run server"), aMenuButtons[2]) || (CheckHotKey(KEY_R) && Input()->KeyPress(KEY_R)))
+			{
+				if(LocalServerRunning)
+				{
+					GameClient()->m_LocalServer.KillServer();
+				}
+				else
+				{
+					GameClient()->m_LocalServer.RunServer({});
+				}
+			}
+
+			static CButtonContainer s_MapEditorButton;
+			if(ui_widget::SecondaryButton(Ctx, &s_MapEditorButton, Localize("Editor"), aMenuButtons[3]) || CheckHotKey(KEY_E))
+			{
+				g_Config.m_ClEditor = 1;
+				Input()->MouseModeRelative();
+			}
+
+			static CButtonContainer s_DemoButton;
+			if(ui_widget::SecondaryButton(Ctx, &s_DemoButton, Localize("Demos"), aMenuButtons[4]) || CheckHotKey(KEY_D))
+			{
+				NewPage = CMenus::PAGE_DEMOS;
+			}
+
+			static CButtonContainer s_PlayButton;
+			if(ui_widget::PrimaryButton(Ctx, &s_PlayButton, Localize("Play", "Start menu"), aMenuButtons[5]) || Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER) || CheckHotKey(KEY_P))
+			{
+				NewPage = ((g_Config.m_UiPage >= CMenus::PAGE_INTERNET && g_Config.m_UiPage <= CMenus::PAGE_FAVORITE_COMMUNITY_5) || g_Config.m_UiPage == CMenus::PAGE_FAVORITE_MAPS) ? g_Config.m_UiPage : CMenus::PAGE_INTERNET;
+			}
+		}
+		else
+		{
+			static float s_aMenuButtonScale[MenuButtonCount] = {};
+			static float s_aMenuButtonTargetScale[MenuButtonCount] = {};
+			static bool s_MenuButtonScaleInit = false;
+			if(!s_MenuButtonScaleInit)
+			{
+				for(int i = 0; i < MenuButtonCount; ++i)
+				{
+					s_aMenuButtonScale[i] = 1.0f;
+					s_aMenuButtonTargetScale[i] = 1.0f;
+				}
+				s_MenuButtonScaleInit = true;
+			}
+
+			const auto ScaleButtonRect = [](const CUIRect &Base, float Scale) {
+				CUIRect Out = Base;
+				Out.w *= Scale;
+				Out.h *= Scale;
+				Out.x = Base.x + (Base.w - Out.w) * 0.5f;
+				Out.y = Base.y + (Base.h - Out.h) * 0.5f;
+				return Out;
+			};
+
+			constexpr int QuitIndex = 0;
+			int HoveredIndex = -1;
 			for(int i = 0; i < MenuButtonCount; ++i)
 			{
-				const uint64_t NodeKey = StartMenuButtonScaleNodeKey(i);
-				s_aMenuButtonScale[i] = pAnimRuntime->GetValue(NodeKey, EUiAnimProperty::SCALE, 1.0f);
-			}
-		}
-
-		const auto ScaleButtonRect = [](const CUIRect &Base, float Scale) {
-			CUIRect Out = Base;
-			Out.w *= Scale;
-			Out.h *= Scale;
-			Out.x = Base.x + (Base.w - Out.w) * 0.5f;
-			Out.y = Base.y + (Base.h - Out.h) * 0.5f;
-			return Out;
-		};
-
-		constexpr int QuitIndex = 0;
-		int HoveredIndex = -1;
-		for(int i = 0; i < MenuButtonCount; ++i)
-		{
-			if(i == QuitIndex)
-				continue;
-			const CUIRect HoverRect = ScaleButtonRect(aMenuButtons[i], s_aMenuButtonScale[i]);
-			if(Ui()->MouseHovered(&HoverRect))
-			{
-				HoveredIndex = i;
-				break;
-			}
-		}
-		const CUIRect QuitHoverRect = ScaleButtonRect(aMenuButtons[QuitIndex], s_aMenuButtonScale[QuitIndex]);
-		const bool QuitHovered = Ui()->MouseHovered(&QuitHoverRect);
-
-		const bool AnyHovered = HoveredIndex != -1;
-		const float HoverScale = 1.08f;
-		const float OtherScale = 0.94f;
-		const float Speed = 12.0f;
-		const float Blend = std::clamp(Client()->RenderFrameTime() * Speed, 0.0f, 1.0f);
-		for(int i = 0; i < MenuButtonCount; ++i)
-		{
-			float Target = 1.0f;
-			if(i == QuitIndex)
-			{
-				Target = QuitHovered ? HoverScale : 1.0f;
-			}
-			else if(QuitHovered)
-			{
-				Target = 1.0f;
-			}
-			else if(AnyHovered)
-			{
-				Target = (i == HoveredIndex) ? HoverScale : OtherScale;
-			}
-
-			if(pAnimRuntime != nullptr)
-			{
-				const uint64_t NodeKey = StartMenuButtonScaleNodeKey(i);
-				const float CurrentScale = pAnimRuntime->GetValue(NodeKey, EUiAnimProperty::SCALE, 1.0f);
-				const bool HasActiveTrack = pAnimRuntime->HasActiveAnimation(NodeKey, EUiAnimProperty::SCALE);
-				const bool TargetChanged = std::abs(Target - s_aMenuButtonTargetScale[i]) > 0.0001f;
-				const bool NeedsSync = !HasActiveTrack && std::abs(Target - CurrentScale) > 0.0001f;
-				if(TargetChanged || NeedsSync)
+				if(i == QuitIndex)
+					continue;
+				const CUIRect HoverRect = ScaleButtonRect(aMenuButtons[i], s_aMenuButtonScale[i]);
+				if(Ui()->MouseHovered(&HoverRect))
 				{
-					// Ensure the animation starts from the currently shown scale.
-					// Without this, a missing runtime value can implicitly start from 0.
-					if(!HasActiveTrack)
-						pAnimRuntime->SetValue(NodeKey, EUiAnimProperty::SCALE, CurrentScale);
-
-					SUiAnimRequest Request;
-					Request.m_NodeKey = NodeKey;
-					Request.m_Property = EUiAnimProperty::SCALE;
-					Request.m_Target = Target;
-					Request.m_Transition.m_DurationSec = 0.12f;
-					Request.m_Transition.m_DelaySec = 0.0f;
-					Request.m_Transition.m_Priority = 1;
-					Request.m_Transition.m_Interrupt = EUiAnimInterruptPolicy::MERGE_TARGET;
-					Request.m_Transition.m_Easing = EEasing::EASE_OUT;
-					pAnimRuntime->RequestAnimation(Request);
+					HoveredIndex = i;
+					break;
 				}
-				s_aMenuButtonTargetScale[i] = Target;
-				s_aMenuButtonScale[i] = pAnimRuntime->GetValue(NodeKey, EUiAnimProperty::SCALE, 1.0f);
 			}
-			else
+			const CUIRect QuitHoverRect = ScaleButtonRect(aMenuButtons[QuitIndex], s_aMenuButtonScale[QuitIndex]);
+			const bool QuitHovered = Ui()->MouseHovered(&QuitHoverRect);
+
+			const bool AnyHovered = HoveredIndex != -1;
+			const float HoverScale = 1.08f;
+			const float OtherScale = 0.94f;
+			const float Speed = 12.0f;
+			const float Blend = std::clamp(Client()->RenderFrameTime() * Speed, 0.0f, 1.0f);
+			for(int i = 0; i < MenuButtonCount; ++i)
 			{
+				float Target = 1.0f;
+				if(i == QuitIndex)
+				{
+					Target = QuitHovered ? HoverScale : 1.0f;
+				}
+				else if(QuitHovered)
+				{
+					Target = 1.0f;
+				}
+				else if(AnyHovered)
+				{
+					Target = (i == HoveredIndex) ? HoverScale : OtherScale;
+				}
+
 				s_aMenuButtonScale[i] += (Target - s_aMenuButtonScale[i]) * Blend;
 				s_aMenuButtonTargetScale[i] = s_aMenuButtonScale[i];
 			}
-		}
 
-		CUIRect ScaledButton = ScaleButtonRect(aMenuButtons[0], s_aMenuButtonScale[0]);
-		static CButtonContainer s_QuitButton;
-		bool UsedEscape = false;
-		if(GameClient()->m_Menus.DoButton_Menu(&s_QuitButton, Localize("Quit"), 0, &ScaledButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || (UsedEscape = Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE)) || CheckHotKey(KEY_Q))
-		{
-			if(UsedEscape || EditorDirty || (GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmQuitTime && g_Config.m_ClConfirmQuitTime >= 0))
+			CUIRect ScaledButton = ScaleButtonRect(aMenuButtons[0], s_aMenuButtonScale[0]);
+			static CButtonContainer s_QuitButton;
+			bool UsedEscape = false;
+			if(GameClient()->m_Menus.DoButton_Menu(&s_QuitButton, Localize("Quit"), 0, &ScaledButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || (UsedEscape = Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE)) || CheckHotKey(KEY_Q))
 			{
-				GameClient()->m_Menus.ShowQuitPopup();
+				if(UsedEscape || EditorDirty || (GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmQuitTime && g_Config.m_ClConfirmQuitTime >= 0))
+				{
+					GameClient()->m_Menus.ShowQuitPopup();
+				}
+				else
+				{
+					Client()->Quit();
+				}
 			}
-			else
+
+			ScaledButton = ScaleButtonRect(aMenuButtons[1], s_aMenuButtonScale[1]);
+			static CButtonContainer s_SettingsButton;
+			if(GameClient()->m_Menus.DoButton_Menu(&s_SettingsButton, Localize("Settings"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "settings" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || CheckHotKey(KEY_S))
+				NewPage = CMenus::PAGE_SETTINGS;
+
+			ScaledButton = ScaleButtonRect(aMenuButtons[2], s_aMenuButtonScale[2]);
+			static CButtonContainer s_LocalServerButton;
+			if(GameClient()->m_Menus.DoButton_Menu(&s_LocalServerButton, LocalServerRunning ? Localize("Stop server") : Localize("Run server"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "local_server" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, LocalServerRunning ? ColorRGBA(0.0f, 1.0f, 0.0f, 0.25f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || (CheckHotKey(KEY_R) && Input()->KeyPress(KEY_R)))
 			{
-				Client()->Quit();
+				if(LocalServerRunning)
+				{
+					GameClient()->m_LocalServer.KillServer();
+				}
+				else
+				{
+					GameClient()->m_LocalServer.RunServer({});
+				}
 			}
-		}
 
-		ScaledButton = ScaleButtonRect(aMenuButtons[1], s_aMenuButtonScale[1]);
-		static CButtonContainer s_SettingsButton;
-		if(GameClient()->m_Menus.DoButton_Menu(&s_SettingsButton, Localize("Settings"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "settings" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || CheckHotKey(KEY_S))
-			NewPage = CMenus::PAGE_SETTINGS;
-
-		ScaledButton = ScaleButtonRect(aMenuButtons[2], s_aMenuButtonScale[2]);
-		static CButtonContainer s_LocalServerButton;
-		if(GameClient()->m_Menus.DoButton_Menu(&s_LocalServerButton, LocalServerRunning ? Localize("Stop server") : Localize("Run server"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "local_server" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, LocalServerRunning ? ColorRGBA(0.0f, 1.0f, 0.0f, 0.25f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || (CheckHotKey(KEY_R) && Input()->KeyPress(KEY_R)))
-		{
-			if(LocalServerRunning)
+			ScaledButton = ScaleButtonRect(aMenuButtons[3], s_aMenuButtonScale[3]);
+			static CButtonContainer s_MapEditorButton;
+			if(GameClient()->m_Menus.DoButton_Menu(&s_MapEditorButton, Localize("Editor"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "editor" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, EditorDirty ? ColorRGBA(0.0f, 1.0f, 0.0f, 0.25f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || CheckHotKey(KEY_E))
 			{
-				GameClient()->m_LocalServer.KillServer();
+				g_Config.m_ClEditor = 1;
+				Input()->MouseModeRelative();
 			}
-			else
+
+			ScaledButton = ScaleButtonRect(aMenuButtons[4], s_aMenuButtonScale[4]);
+			static CButtonContainer s_DemoButton;
+			if(GameClient()->m_Menus.DoButton_Menu(&s_DemoButton, Localize("Demos"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "demos" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || CheckHotKey(KEY_D))
 			{
-				GameClient()->m_LocalServer.RunServer({});
+				NewPage = CMenus::PAGE_DEMOS;
 			}
-		}
 
-		ScaledButton = ScaleButtonRect(aMenuButtons[3], s_aMenuButtonScale[3]);
-		static CButtonContainer s_MapEditorButton;
-		if(GameClient()->m_Menus.DoButton_Menu(&s_MapEditorButton, Localize("Editor"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "editor" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, EditorDirty ? ColorRGBA(0.0f, 1.0f, 0.0f, 0.25f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || CheckHotKey(KEY_E))
-		{
-			g_Config.m_ClEditor = 1;
-			Input()->MouseModeRelative();
-		}
-
-		ScaledButton = ScaleButtonRect(aMenuButtons[4], s_aMenuButtonScale[4]);
-		static CButtonContainer s_DemoButton;
-		if(GameClient()->m_Menus.DoButton_Menu(&s_DemoButton, Localize("Demos"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "demos" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || CheckHotKey(KEY_D))
-		{
-			NewPage = CMenus::PAGE_DEMOS;
-		}
-
-		ScaledButton = ScaleButtonRect(aMenuButtons[5], s_aMenuButtonScale[5]);
-		static CButtonContainer s_PlayButton;
-		if(GameClient()->m_Menus.DoButton_Menu(&s_PlayButton, Localize("Play", "Start menu"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "play_game" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER) || CheckHotKey(KEY_P))
-		{
-			NewPage = ((g_Config.m_UiPage >= CMenus::PAGE_INTERNET && g_Config.m_UiPage <= CMenus::PAGE_FAVORITE_COMMUNITY_5) || g_Config.m_UiPage == CMenus::PAGE_FAVORITE_MAPS) ? g_Config.m_UiPage : CMenus::PAGE_INTERNET;
+			ScaledButton = ScaleButtonRect(aMenuButtons[5], s_aMenuButtonScale[5]);
+			static CButtonContainer s_PlayButton;
+			if(GameClient()->m_Menus.DoButton_Menu(&s_PlayButton, Localize("Play", "Start menu"), 0, &ScaledButton, BUTTONFLAG_LEFT, g_Config.m_ClShowStartMenuImages ? "play_game" : nullptr, IGraphics::CORNER_ALL, Rounding, 0.5f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f)) || Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER) || CheckHotKey(KEY_P))
+			{
+				NewPage = ((g_Config.m_UiPage >= CMenus::PAGE_INTERNET && g_Config.m_UiPage <= CMenus::PAGE_FAVORITE_COMMUNITY_5) || g_Config.m_UiPage == CMenus::PAGE_FAVORITE_MAPS) ? g_Config.m_UiPage : CMenus::PAGE_INTERNET;
+			}
 		}
 	}
 
@@ -407,11 +425,11 @@ void CMenusStart::RenderStartMenuImpl(CUIRect MainView, bool UseV2Layout)
 	CUIRect UpdateToDateText;
 	MainView.HSplitTop(15.0f, &UpdateToDateText, nullptr);
 	UpdateToDateText.VSplitRight(40.0f, &UpdateToDateText, nullptr);
-	if(!GameClient()->m_TClient.m_FetchedTClientInfo)
+	if(!GameClient()->m_TClient.m_FetchedQmClientUpdateInfo)
 	{
 		Ui()->DoLabel(&UpdateToDateText, Localize("(Fetching Update Info)"), 14.0f, TEXTALIGN_MR);
 	}
-	else if(GameClient()->m_TClient.NeedUpdate())
+	else if(GameClient()->m_TClient.NeedQmClientUpdate())
 	{
 		Ui()->DoLabel(&UpdateToDateText, Localize("(需要更新)"), 14.0f, TEXTALIGN_MR);
 	}

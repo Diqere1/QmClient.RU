@@ -7,6 +7,12 @@
 #include <engine/image.h>
 #include <engine/shared/config.h>
 
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Graphics.Imaging.h>
+#include <winrt/Windows.Media.Control.h>
+#include <winrt/Windows.Storage.Streams.h>
+#include <winrt/base.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -14,12 +20,6 @@
 #include <mutex>
 #include <string>
 #include <vector>
-
-#include <winrt/Windows.Foundation.h>
-#include <winrt/Windows.Graphics.Imaging.h>
-#include <winrt/Windows.Media.Control.h>
-#include <winrt/Windows.Storage.Streams.h>
-#include <winrt/base.h>
 #else
 #define SYSTEM_MEDIA_CONTROLS_WINRT_ENABLED 0
 #endif
@@ -33,6 +33,7 @@ struct CSystemMediaControls::SWinrt
 	bool m_HasMedia = false;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SPlainState
 {
 	bool m_CanPlay = false;
@@ -47,6 +48,7 @@ struct SPlainState
 	int64_t m_DurationMs = 0;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class ECommand
 {
 	Prev,
@@ -403,6 +405,7 @@ void CSystemMediaControls::ThreadMain()
 						}
 						else
 						{
+							// NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
 							Manager = RequestOp.GetResults();
 						}
 					}
@@ -528,7 +531,11 @@ void CSystemMediaControls::ThreadMain()
 								const bool HasText = !Title.empty() || !Artist.empty() || !Album.empty();
 								if(HasText)
 								{
-									const std::string NewKey = Title + "\n" + Artist + "\n" + Album;
+									std::string NewKey = Title;
+									NewKey.push_back('\n');
+									NewKey.append(Artist);
+									NewKey.push_back('\n');
+									NewKey.append(Album);
 									if(NewKey != AlbumArtKey)
 									{
 										AlbumArtKey = NewKey;
@@ -584,6 +591,7 @@ void CSystemMediaControls::ThreadMain()
 						}
 						catch(const winrt::hresult_error &)
 						{
+							continue;
 						}
 					}
 				}

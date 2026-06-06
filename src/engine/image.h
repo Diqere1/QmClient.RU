@@ -104,6 +104,15 @@ public:
 	size_t DataSize() const;
 
 	/**
+	 * Returns the size of the data, as derived from the width, height and pixel size.
+	 *
+	 * @param Size Output parameter for the expected size of the image data.
+	 *
+	 * @return `true` if the image data size could be calculated without overflow.
+	 */
+	bool DataSize(size_t &Size) const;
+
+	/**
 	 * Returns whether this image is equal to the given image
 	 * in width, height, format and data.
 	 *

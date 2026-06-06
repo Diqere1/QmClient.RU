@@ -172,7 +172,9 @@ void CLayerTele::BrushDraw(CLayer *pBrush, vec2 WorldPos)
 void CLayerTele::RecordStateChange(int x, int y, STeleTileStateChange::SData Previous, STeleTileStateChange::SData Current)
 {
 	if(!m_History[y][x].m_Changed)
+	{
 		m_History[y][x] = STeleTileStateChange{true, Previous, Current};
+	}
 	else
 	{
 		m_History[y][x].m_Current = Current;
@@ -286,11 +288,17 @@ void CLayerTele::FillSelection(bool Empty, CLayer *pBrush, CUIRect Rect)
 						m_pTeleTile[TgtIndex].m_Number = 255;
 					}
 					else if(!IsCheckpoint && ((pLt->m_pTeleTile[SrcIndex].m_Number == 0 && Editor()->m_TeleNumber) || Editor()->m_TeleNumber != pLt->m_TeleNumber))
+					{
 						m_pTeleTile[TgtIndex].m_Number = Editor()->m_TeleNumber;
+					}
 					else if(IsCheckpoint && ((pLt->m_pTeleTile[SrcIndex].m_Number == 0 && Editor()->m_TeleCheckpointNumber) || Editor()->m_TeleCheckpointNumber != pLt->m_TeleCheckpointNumber))
+					{
 						m_pTeleTile[TgtIndex].m_Number = Editor()->m_TeleCheckpointNumber;
+					}
 					else
+					{
 						m_pTeleTile[TgtIndex].m_Number = pLt->m_pTeleTile[SrcIndex].m_Number;
+					}
 				}
 				else
 				{

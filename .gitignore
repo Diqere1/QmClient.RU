@@ -3,18 +3,30 @@
 data/
 !/data/
 
-# Agent documentation (local only)
-AGENTS.md
-CLAUDE.md
-
 # Local documentation
-dyl/
-docs/dyl
-!docs/dyl/QmClient_docs
-.trae
-.trae/
-docs/superpowers
+docs/dyl/BestClient/
+.ruff_cache
+
+# Agent workspace files
+.agents/
+.codex/
+.codegraph/
+
+# Local perf tooling artifacts
+qmclient_scripts/perf/node_modules/
+
+# Local Codex screenshots
+.codex-*.png
 .superpowers
+.trae
+.claude
+skills/
+docs/Promting.md
+
+# tmp
+tmp/
+QmClient_codeQmClienttmp_harness_repo/
+tmp_harness_deusyu/
 
 # Git worktrees
 worktrees/
@@ -40,6 +52,7 @@ SAN.*
 _CPack_Packages/
 build.ninja
 checksummed_*
+!cmake/checksummed_extra.txt
 cmake_install.cmake
 debug
 gmock.pc
@@ -116,18 +129,21 @@ target
 .vscode
 compile_commands.json
 cmake-build-*/*
+cmake-build-*
 cmake-build-release/
 build-ninja/
 cscope.files
 cscope.out
 out
 tags
+
 # don't ignore this, it's used for the vscode workspace that ddnet provides
 !ddnet-cmake-tools-kits.json
 
 *.a
 *.cmd
 !scripts/cmake-windows.cmd
+!qmclient_scripts/cmake-windows.cmd
 *.csv
 *.dll
 *.dmg
@@ -163,3 +179,6 @@ tags
 /build
 
 !steam_api.dll
+
+# Ignore packaged QmClient release outputs.
+/QmClient_Release/

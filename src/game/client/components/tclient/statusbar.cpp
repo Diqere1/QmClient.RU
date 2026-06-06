@@ -10,6 +10,21 @@
 #include <algorithm>
 #include <array>
 
+namespace
+{
+	const char *ConnectionGradeLabel(EQmConnectionGrade Grade)
+	{
+		switch(Grade)
+		{
+		case EQmConnectionGrade::NORMAL: return "正常";
+		case EQmConnectionGrade::ELEVATED: return "偏高";
+		case EQmConnectionGrade::SEVERE: return "严重";
+		case EQmConnectionGrade::DISCONNECTED: return "断开";
+		}
+		return "断开";
+	}
+}
+
 CStatusItem::CStatusItem(std::function<void()> Render, std::function<float()> Width, const char *pLetters, const char *pName, const char *pDisplayName, const char *pDesc, bool ShowLabel)
 {
 	m_RenderItem = std::move(Render);
@@ -26,11 +41,11 @@ CStatusItem::CStatusItem(std::function<void()> Render, std::function<float()> Wi
 
 int CStatusBar::GetDigitsIndex(const int Value, const int Max)
 {
-	int s_Value = Value;
-	if(s_Value < 0) // Normalize
-		s_Value *= -1;
+	int NormalizedValue = Value;
+	if(NormalizedValue < 0) // Normalize
+		NormalizedValue *= -1;
 
-	int DigitsIndex = static_cast<int>(log10((s_Value ? s_Value : 1)));
+	int DigitsIndex = static_cast<int>(log10((NormalizedValue ? NormalizedValue : 1)));
 
 	if(DigitsIndex > Max)
 		DigitsIndex = Max;
@@ -75,7 +90,9 @@ void CStatusBar::AngleRender()
 		Angle = atan2f(pExtendedData->m_TargetY, pExtendedData->m_TargetX);
 	}
 	else
+	{
 		Angle = pCharacter->m_Angle / 256.0f;
+	}
 	if(Angle < 0)
 		Angle += 2.0f * pi;
 	char aBuf[32];
@@ -139,9 +156,13 @@ void CStatusBar::RaceTimeRender()
 			RaceTime = 0;
 	}
 	else if(GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_RACETIME)
+	{
 		RaceTime = (Client()->GameTick(g_Config.m_ClDummy) + GameClient()->m_Snap.m_pGameInfoObj->m_WarmupTimer) / Client()->GameTickSpeed();
+	}
 	else
+	{
 		RaceTime = (Client()->GameTick(g_Config.m_ClDummy) - GameClient()->m_Snap.m_pGameInfoObj->m_RoundStartTick) / Client()->GameTickSpeed();
+	}
 	m_CurrentRaceTime = RaceTime;
 	char aTimeBuf[64];
 	str_time((int64_t)RaceTime * 100, TIME_DAYS, aTimeBuf, sizeof(aTimeBuf));
@@ -230,6 +251,113 @@ void CStatusBar::ZoomRender()
 	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
 }
 
+float CStatusBar::DownstreamWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000ms");
+}
+
+void CStatusBar::DownstreamRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "ms", GameClient()->m_QmMonitoring.Snapshot().m_Network.m_SnapshotLatencyMs);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::UpstreamWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000ms");
+}
+
+void CStatusBar::UpstreamRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "ms", GameClient()->m_QmMonitoring.Snapshot().m_Network.m_PredictionLatencyMs);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::JitterWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000ms");
+}
+
+void CStatusBar::JitterRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "ms", GameClient()->m_QmMonitoring.Snapshot().m_Network.m_JitterMs);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::PacketLossWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000.0%");
+}
+
+void CStatusBar::PacketLossRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "%", GameClient()->m_QmMonitoring.Snapshot().m_Network.m_PacketLossPct, 1);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::DownRateWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000.0KiB/s");
+}
+
+void CStatusBar::DownRateRender()
+{
+	char aBuf[32];
+	FormatRateValue(aBuf, sizeof(aBuf), GameClient()->m_QmMonitoring.Snapshot().m_Network.m_DownBytesPerSec);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::UpRateWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "000.0KiB/s");
+}
+
+void CStatusBar::UpRateRender()
+{
+	char aBuf[32];
+	FormatRateValue(aBuf, sizeof(aBuf), GameClient()->m_QmMonitoring.Snapshot().m_Network.m_UpBytesPerSec);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::ConnectionGradeWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "严重");
+}
+
+void CStatusBar::ConnectionGradeRender()
+{
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, Localize(ConnectionGradeLabel(GameClient()->m_QmMonitoring.Snapshot().m_Verdict.m_Grade)));
+}
+
+float CStatusBar::CpuWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "100%/100%");
+}
+
+void CStatusBar::CpuRender()
+{
+	char aBuf[32];
+	const SQmPerformanceMetrics &Perf = GameClient()->m_QmMonitoring.Snapshot().m_Performance;
+	FormatCpuRatioValue(aBuf, sizeof(aBuf), Perf.m_CpuUsagePct, Perf.m_TotalCpuUsagePct);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
+float CStatusBar::MemoryWidth()
+{
+	return TextRender()->TextWidth(m_FontSize, "4096MB");
+}
+
+void CStatusBar::MemoryRender()
+{
+	char aBuf[32];
+	FormatMetricValue(aBuf, sizeof(aBuf), "MB", GameClient()->m_QmMonitoring.Snapshot().m_Performance.m_MemoryUsageMb);
+	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
+}
+
 float CStatusBar::SpaceWidth() { return 0.0f; }
 void CStatusBar::SpaceRender() {}
 
@@ -304,9 +432,6 @@ void CStatusBar::OnRender()
 	if(!g_Config.m_TcStatusBar || !GameClient()->m_Snap.m_pGameInfoObj)
 		return;
 
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI)
-		return;
-
 	m_PlayerId = GameClient()->m_Snap.m_LocalClientId;
 	if(GameClient()->m_Snap.m_SpecInfo.m_Active)
 		m_PlayerId = GameClient()->m_Snap.m_SpecInfo.m_SpectatorId;
@@ -339,7 +464,9 @@ void CStatusBar::OnRender()
 		LayoutItem.m_pItem = pItem;
 		LayoutItem.m_IsSpace = str_comp(pItem->m_aName, "Space") == 0;
 		if(LayoutItem.m_IsSpace)
+		{
 			++SpaceCount;
+		}
 		else
 		{
 			LayoutItem.m_ItemWidth = pItem->m_GetWidth();

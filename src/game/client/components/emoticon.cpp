@@ -11,6 +11,7 @@
 
 #include <game/client/animstate.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/client/ui.h>
 
 CEmoticon::CEmoticon()
@@ -168,8 +169,10 @@ void CEmoticon::OnRender()
 
 	Graphics()->TextureClear();
 	Graphics()->QuadsBegin();
-	Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.3f);
+	Graphics()->SetColor(ui_token::color::SURFACE_OVERLAY.WithMultipliedAlpha(0.95f));
 	Graphics()->DrawCircle(ScreenCenter.x, ScreenCenter.y, s_OuterCircleRadius, 64);
+	Graphics()->SetColor(ui_token::color::ACCENT_PRIMARY_DIM.WithMultipliedAlpha(0.95f));
+	Graphics()->DrawCircle(ScreenCenter.x, ScreenCenter.y, s_InnerOuterMouseBoundaryRadius, 64);
 	Graphics()->QuadsEnd();
 
 	Graphics()->WrapClamp();
@@ -196,12 +199,12 @@ void CEmoticon::OnRender()
 	{
 		Graphics()->TextureClear();
 		Graphics()->QuadsBegin();
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.3f);
+		Graphics()->SetColor(ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(2.0f));
 		Graphics()->DrawCircle(ScreenCenter.x, ScreenCenter.y, s_InnerCircleRadius, 64);
 		Graphics()->QuadsEnd();
 
 		CTeeRenderInfo TeeInfo = GameClient()->m_aClients[GameClient()->m_aLocalIds[g_Config.m_ClDummy]].m_RenderInfo;
-		
+
 		for(int Emote = 0; Emote < NUM_EMOTES; Emote++)
 		{
 			float Angle = 2.0f * pi * Emote / NUM_EMOTES;
@@ -216,12 +219,14 @@ void CEmoticon::OnRender()
 
 		Graphics()->TextureClear();
 		Graphics()->QuadsBegin();
-		Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.3f);
+		Graphics()->SetColor(ui_token::color::SURFACE_ELEVATED);
 		Graphics()->DrawCircle(ScreenCenter.x, ScreenCenter.y, 30.0f, 64);
 		Graphics()->QuadsEnd();
 	}
 	else
+	{
 		m_SelectedEyeEmote = -1;
+	}
 
 	RenderTools()->RenderCursor(ScreenCenter + m_SelectorMouse, 24.0f, 1.0f);
 }

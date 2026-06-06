@@ -88,9 +88,9 @@ void CBindWheel::RemoveBind(const char *pName, const char *pCommand)
 	CBind Bind;
 	str_copy(Bind.m_aName, pName);
 	str_copy(Bind.m_aCommand, pCommand);
-	auto it = std::find(m_vBinds.begin(), m_vBinds.end(), Bind);
-	if(it != m_vBinds.end())
-		m_vBinds.erase(it);
+	auto Iter = std::find(m_vBinds.begin(), m_vBinds.end(), Bind);
+	if(Iter != m_vBinds.end())
+		m_vBinds.erase(Iter);
 }
 
 void CBindWheel::RemoveBind(int Index)

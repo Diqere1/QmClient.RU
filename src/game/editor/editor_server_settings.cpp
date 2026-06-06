@@ -421,7 +421,9 @@ int CEditor::DoEditBoxDropdown(SEditBoxDropdownContext *pDropdown, CLineInput *p
 			pDropdown->m_Visible = true;
 		}
 		else if(pDropdown->m_DidBecomeVisible)
+		{
 			pDropdown->m_DidBecomeVisible = false;
+		}
 
 		if(!pLineInput->IsEmpty() || !pLineInput->IsActive())
 			pDropdown->m_ShortcutUsed = false;
@@ -1237,7 +1239,9 @@ void CMapSettingsBackend::CContext::UpdateFromString(const char *pStr)
 	while(*pEnd)
 	{
 		if(*pEnd == '"')
+		{
 			InString ^= 1;
+		}
 		else if(*pEnd == '\\') // Escape sequences
 		{
 			if(pEnd[1] == '"')
@@ -1308,7 +1312,9 @@ void CMapSettingsBackend::CContext::ParseArgs(const char *pLineInputStr, const c
 			while(true)
 			{
 				if(pIterator[0] == '"' && !IsEscape)
+				{
 					break;
+				}
 				else if(pIterator[0] == 0)
 				{
 					Valid = false;
@@ -1453,7 +1459,9 @@ void CMapSettingsBackend::CContext::ParseArgs(const char *pLineInputStr, const c
 		{
 			// Error: too many arguments if no comment after
 			if(m_CommentOffset == -1)
+			{
 				Error = SCommandParseError::ERROR_TOO_MANY_ARGS;
+			}
 			else
 			{ // Otherwise, check if there are any arguments left between this argument and the comment
 				const char *pSubIt = pArgStart;

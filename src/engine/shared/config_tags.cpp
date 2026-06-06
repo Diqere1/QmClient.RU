@@ -228,11 +228,11 @@ void CConfigTagsManager::RegisterTag(const char *pPattern, EConfigTag Tag)
 	// 存储模式到 Tag 的映射，延迟到查询时匹配
 	// 这里简化处理：直接存储变量名到 Tags 的映射
 	// 实际实现中会在 GetTagsForVariable 中进行模式匹配
-	
+
 	// 为了简化，我们使用一个特殊的标记来存储模式
 	std::string PatternKey = std::string("__PATTERN__") + pPattern;
-	auto it = m_VariableTags.find(PatternKey);
-	if(it == m_VariableTags.end())
+	auto Iter = m_VariableTags.find(PatternKey);
+	if(Iter == m_VariableTags.end())
 	{
 		m_VariableTags[PatternKey] = {Tag};
 	}
@@ -240,7 +240,7 @@ void CConfigTagsManager::RegisterTag(const char *pPattern, EConfigTag Tag)
 	{
 		// 检查是否已存在
 		bool Found = false;
-		for(EConfigTag ExistingTag : it->second)
+		for(EConfigTag ExistingTag : Iter->second)
 		{
 			if(ExistingTag == Tag)
 			{
@@ -249,28 +249,28 @@ void CConfigTagsManager::RegisterTag(const char *pPattern, EConfigTag Tag)
 			}
 		}
 		if(!Found)
-			it->second.push_back(Tag);
+			Iter->second.push_back(Tag);
 	}
 }
 
 std::vector<EConfigTag> CConfigTagsManager::InferTagsFromName(const char *pScriptName) const
 {
 	std::vector<EConfigTag> Tags;
-	
+
 	for(const auto &Pair : m_VariableTags)
 	{
 		const std::string &PatternKey = Pair.first;
 		if(PatternKey.find("__PATTERN__") != 0)
 			continue;
-		
+
 		const char *pPattern = PatternKey.c_str() + strlen("__PATTERN__");
 		size_t PatternLen = strlen(pPattern);
 		size_t NameLen = strlen(pScriptName);
-		
+
 		bool Matches = false;
 		bool StartsWithStar = pPattern[0] == '*';
 		bool EndsWithStar = PatternLen > 0 && pPattern[PatternLen - 1] == '*';
-		
+
 		if(StartsWithStar && EndsWithStar && PatternLen > 2)
 		{
 			// 中间匹配: *laser* 匹配包含 laser 的任意字符串
@@ -306,7 +306,7 @@ std::vector<EConfigTag> CConfigTagsManager::InferTagsFromName(const char *pScrip
 			if(str_comp_nocase(pScriptName, pPattern) == 0)
 				Matches = true;
 		}
-		
+
 		if(Matches)
 		{
 			for(EConfigTag Tag : Pair.second)
@@ -325,17 +325,17 @@ std::vector<EConfigTag> CConfigTagsManager::InferTagsFromName(const char *pScrip
 			}
 		}
 	}
-	
+
 	return Tags;
 }
 
 std::vector<EConfigTag> CConfigTagsManager::GetTagsForVariable(const char *pScriptName) const
 {
 	// 首先检查是否有显式注册的 Tags
-	auto it = m_VariableTags.find(pScriptName);
-	if(it != m_VariableTags.end())
-		return it->second;
-	
+	auto Iter = m_VariableTags.find(pScriptName);
+	if(Iter != m_VariableTags.end())
+		return Iter->second;
+
 	// 否则从变量名推断
 	return InferTagsFromName(pScriptName);
 }
@@ -343,12 +343,7 @@ std::vector<EConfigTag> CConfigTagsManager::GetTagsForVariable(const char *pScri
 bool CConfigTagsManager::HasTag(const char *pScriptName, EConfigTag Tag) const
 {
 	std::vector<EConfigTag> Tags = GetTagsForVariable(pScriptName);
-	for(EConfigTag T : Tags)
-	{
-		if(T == Tag)
-			return true;
-	}
-	return false;
+	return std::ranges::any_of(Tags, [Tag](EConfigTag T) { return T == Tag; });
 }
 
 std::vector<EConfigTag> CConfigTagsManager::GetAllAvailableTags() const

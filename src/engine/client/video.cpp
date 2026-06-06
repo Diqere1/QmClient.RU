@@ -1022,7 +1022,9 @@ void CVideo::WriteFrame(COutputStream *pStream, size_t ThreadIndex)
 			}
 		}
 		else
+		{
 			break;
+		}
 	} while(true);
 
 	if(RecvResult && RecvResult != AVERROR(EAGAIN))
@@ -1038,7 +1040,9 @@ void CVideo::WriteFrame(COutputStream *pStream, size_t ThreadIndex)
 void CVideo::FinishFrames(COutputStream *pStream)
 {
 	if(!pStream->m_pCodecContext || !avcodec_is_open(pStream->m_pCodecContext))
+	{
 		return;
+	}
 
 	AVPacket *pPacket = av_packet_alloc();
 	if(pPacket == nullptr)
@@ -1070,7 +1074,9 @@ void CVideo::FinishFrames(COutputStream *pStream)
 			}
 		}
 		else
+		{
 			break;
+		}
 	} while(true);
 
 	if(RecvResult && RecvResult != AVERROR_EOF)

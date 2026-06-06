@@ -62,7 +62,10 @@ template<typename T>
 class CTypedRingBuffer : public CRingBufferBase
 {
 public:
+	// 保留与 CRingBufferBase 一致的调用名，但返回类型收窄为 T* 作为类型安全包装。
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	T *Allocate(int Size) { return (T *)CRingBufferBase::Allocate(Size); }
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	int PopFirst() { return CRingBufferBase::PopFirst(); }
 	void SetPopCallback(const std::function<void(T *pCurrent)> &PopCallback)
 	{
@@ -73,7 +76,9 @@ public:
 
 	T *Prev(T *pCurrent) { return (T *)CRingBufferBase::Prev(pCurrent); }
 	T *Next(T *pCurrent) { return (T *)CRingBufferBase::Next(pCurrent); }
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	T *First() { return (T *)CRingBufferBase::First(); }
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	T *Last() { return (T *)CRingBufferBase::Last(); }
 };
 

@@ -136,6 +136,7 @@ public:
 	void ScrollHere(EScrollOption Option = SCROLLHERE_KEEP_IN_VIEW);
 	void ScrollRelative(EScrollRelative Direction, float SpeedMultiplier = 1.0f);
 	void ScrollRelativeDirect(float ScrollAmount);
+	void SetScrollOffsetY(float OffsetY);
 	const CUIRect *ClipRect() const { return &m_ClipRect; }
 	void DoEdgeScrolling();
 	bool RectClipped(const CUIRect &Rect) const;

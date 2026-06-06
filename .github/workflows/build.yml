@@ -42,7 +42,7 @@ jobs:
       matrix:
         include:
           - name: Linux
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             package_ext: tar.xz
             output_name: QmClient-ubuntu.tar.xz
             artifact_name: packaged-linux
@@ -52,7 +52,7 @@ jobs:
             output_name: QmClient-windows.zip
             artifact_name: packaged-windows
           - name: macOS
-            os: macos-14
+            os: macos-26
             package_ext: dmg
             output_name: QmClient-macOS.dmg
             artifact_name: packaged-macos
@@ -90,11 +90,10 @@ jobs:
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG_VERSION#v}"
-          echo "Updating TCLIENT_VERSION to $VERSION"
-          sed -i.bak 's/^#define TCLIENT_VERSION ".*"/#define TCLIENT_VERSION "'"$VERSION"'"/' src/game/version.h && rm -f src/game/version.h.bak
-          echo "Updated version.h:"
-          grep "TCLIENT_VERSION" src/game/version.h
+          python3 qmclient_scripts/bump_version.py --tag "$TAG_VERSION"
+          echo "Updated version files:"
+          grep "QMCLIENT_VERSION" src/game/version.h
+          cat docs/info.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -146,7 +145,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake ninja-build pkg-config python3 python3-pip \
+            cmake ninja-build pkg-config python3 python3-pip python3-pil \
             libfreetype6-dev libnotify-dev libsdl2-dev libsqlite3-dev \
             libgl1-mesa-dev \
             libvulkan-dev glslang-tools spirv-tools \
@@ -169,117 +168,80 @@ jobs:
           python3 -m venv .venv-dmgbuild
           . .venv-dmgbuild/bin/activate
           python -m pip install --upgrade pip
-          python -m pip install dmgbuild
+          python -m pip install dmgbuild Pillow
           echo "${PWD}/.venv-dmgbuild/bin" >> "$GITHUB_PATH"
 
+      - name: Install Python build dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: python -m pip install Pillow
 
-
-      - name: Configure (Linux)
-        if: runner.os == 'Linux'
-        run: >
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          -DDOWNLOAD_GTEST=ON
-
-      - name: Configure (macOS)
-        if: runner.os == 'macOS'
+      - name: Configure
+        shell: bash
         run: |
-          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DPREFER_BUNDLED_LIBS=ON \
-            -DDOWNLOAD_GTEST=ON \
-            -DVULKAN=ON \
-            -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
-            -DIPO=OFF
+          ARGS=(-G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DDOWNLOAD_GTEST=ON)
+          case "$RUNNER_OS" in
+            Linux)
+              ARGS+=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+              ;;
+            macOS)
+              SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+              ARGS+=(
+                -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+                -DPREFER_BUNDLED_LIBS=ON -DVULKAN=ON
+                -DCMAKE_OSX_SYSROOT="${SDKROOT}" -DIPO=OFF
+              )
+              ;;
+            Windows)
+              ARGS+=(
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+                -DPREFER_BUNDLED_LIBS=ON -DCMAKE_OBJECT_PATH_MAX=1024
+              )
+              ;;
+          esac
+          cmake -S . -B build "${ARGS[@]}"
 
-      - name: Configure (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: >
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-          -DCMAKE_C_COMPILER_LAUNCHER=sccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-          -DPREFER_BUNDLED_LIBS=ON
-          -DDOWNLOAD_GTEST=ON
-          -DCMAKE_OBJECT_PATH_MAX=1024
+      - name: Build client
+        shell: bash
+        run: cmake --build build --target game-client --parallel
 
-      - name: Build client (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: cmake --build build --target game-client --parallel $(nproc)
-
-      - name: Build client (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target game-client --parallel $env:NUMBER_OF_PROCESSORS
-
-      - name: Run tests (Linux/macOS)
-        if: runner.os != 'Windows' && github.event.inputs.skip_tests != 'true'
+      - name: Run tests
+        if: github.event.inputs.skip_tests != 'true'
+        shell: bash
         run: cmake --build build --target run_tests --parallel
 
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows' && github.event.inputs.skip_tests != 'true'
-        shell: pwsh
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target run_tests --parallel
-
-      - name: Package (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Package
+        shell: bash
         run: cmake --build build --target package_default --parallel
 
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target package_default --parallel
-
-      - name: Collect package (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Collect package
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          PKG="$(find build -type f -name "*.${{ matrix.package_ext }}" ! -name "*-src*" | head -n 1)"
-          if [ -z "${PKG}" ]; then
-            echo "No package with extension .${{ matrix.package_ext }} found under build/"
-            exit 1
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            found=false
+            for ext in zip 7z; do
+              pkg="$(find build -type f -name "QmClient*.$ext" ! -name "*-src*" 2>/dev/null | head -n 1)"
+              [ -z "$pkg" ] && pkg="$(find build -type f -name "*.$ext" ! -name "*-src*" 2>/dev/null | head -n 1)"
+              if [ -n "$pkg" ]; then
+                cp "$pkg" "dist/QmClient-windows.$ext"
+                echo "Found: $pkg -> dist/QmClient-windows.$ext"
+                found=true
+              fi
+            done
+            if [ "$found" = "false" ]; then
+              echo "No zip or 7z package found under build/"
+              exit 1
+            fi
+          else
+            PKG="$(find build -type f -name "*.${{ matrix.package_ext }}" ! -name "*-src*" | head -n 1)"
+            if [ -z "$PKG" ]; then
+              echo "No package with extension .${{ matrix.package_ext }} found under build/"
+              exit 1
+            fi
+            cp "$PKG" "dist/${{ matrix.output_name }}"
           fi
-          cp "${PKG}" "dist/${{ matrix.output_name }}"
           ls -lah dist
-
-      - name: Collect package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          $found = $false
-          foreach ($ext in @('7z', 'zip')) {
-            Write-Host "Searching for QmClient*.$ext in build/..."
-            $pkg = Get-ChildItem -Path build -Recurse -File -Filter "QmClient*.$ext" |
-              Sort-Object LastWriteTime -Descending |
-              Select-Object -First 1
-            if (-not $pkg) {
-              $pkg = Get-ChildItem -Path build -Recurse -File -Filter "*.$ext" |
-                Where-Object { $_.Name -notmatch "-src\." } |
-                Sort-Object LastWriteTime -Descending |
-                Select-Object -First 1
-            }
-            if ($pkg) {
-              $destPath = Join-Path $PWD "dist\QmClient-windows.$ext"
-              Write-Host "Found: $($pkg.FullName) -> $destPath"
-              Copy-Item -LiteralPath $pkg.FullName -Destination $destPath
-              $found = $true
-            } else {
-              Write-Host "No .$ext package found"
-            }
-          }
-          if (-not $found) {
-            throw "No zip or 7z package found under build/"
-          }
-          Get-ChildItem -Path dist
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v6
@@ -290,34 +252,36 @@ jobs:
           retention-days: 14
 
       - name: Verify build artifact
-        if: runner.os != 'Windows'
+        shell: bash
         run: |
-          if [ ! -f "dist/${{ matrix.output_name }}" ]; then
-            echo "Build artifact not found!"
-            exit 1
+          set -euo pipefail
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            shopt -s nullglob
+            for file in dist/*; do
+              size=$(stat -c%s "$file")
+              if [ "$size" -lt 1000000 ]; then
+                echo "Artifact too small: $file ($size bytes)"
+                exit 1
+              fi
+              echo "Verified: $file ($size bytes)"
+            done
+          else
+            artifact="dist/${{ matrix.output_name }}"
+            if [ ! -f "$artifact" ]; then
+              echo "Build artifact not found!"
+              exit 1
+            fi
+            if [ "${{ runner.os }}" = "macOS" ]; then
+              size=$(stat -f%z "$artifact")
+            else
+              size=$(stat -c%s "$artifact")
+            fi
+            if [ "$size" -lt 1000000 ]; then
+              echo "Build artifact too small: $size bytes"
+              exit 1
+            fi
+            echo "Build artifact verified: $size bytes"
           fi
-          FILE_SIZE=$(stat -c%s "dist/${{ matrix.output_name }}" 2>/dev/null || stat -f%z "dist/${{ matrix.output_name }}")
-          if [ "$FILE_SIZE" -lt 1000000 ]; then
-            echo "Build artifact too small: $FILE_SIZE bytes"
-            exit 1
-          fi
-          echo "Build artifact verified: $FILE_SIZE bytes"
-
-      - name: Verify build artifact (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $files = Get-ChildItem -Path dist -File
-          if ($files.Count -eq 0) {
-            throw "No build artifacts found in dist/"
-          }
-          foreach ($file in $files) {
-            if ($file.Length -lt 1000000) {
-              throw "Build artifact too small: $($file.Name) ($($file.Length) bytes)"
-            }
-            Write-Host "Verified: $($file.Name) ($($file.Length) bytes)"
-          }
 
       - name: Build summary
         if: always()
@@ -340,7 +304,7 @@ jobs:
 
   build_android:
     name: Android
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
       ANDROID_APP_NAME: QmClient
@@ -373,11 +337,10 @@ jobs:
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG_VERSION#v}"
-          echo "Updating TCLIENT_VERSION to $VERSION"
-          sed -i.bak 's/^#define TCLIENT_VERSION ".*"/#define TCLIENT_VERSION "'"$VERSION"'"/' src/game/version.h && rm -f src/game/version.h.bak
-          echo "Updated version.h:"
-          grep "TCLIENT_VERSION" src/game/version.h
+          python3 qmclient_scripts/bump_version.py --tag "$TAG_VERSION"
+          echo "Updated version files:"
+          grep "QMCLIENT_VERSION" src/game/version.h
+          cat docs/info.json
 
       - name: Setup Java 21
         uses: actions/setup-java@v5
@@ -427,7 +390,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake ninja-build pkg-config curl python3 python3-pip \
+            cmake ninja-build pkg-config curl python3 python3-pip python3-pil \
             glslang-tools spirv-tools ccache
           if [ ! -f ~/.cargo/bin/cargo-ndk ]; then
             cargo install cargo-ndk
@@ -603,13 +566,18 @@ jobs:
 
   release-desktop:
     name: Publish Desktop Release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - build
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Download packaged artifacts
         uses: actions/download-artifact@v5
         with:
@@ -620,10 +588,22 @@ jobs:
       - name: List release assets
         run: ls -lah release-assets
 
+      - name: Generate release notes
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/}"
+          python3 qmclient_scripts/generate_release_notes.py \
+            --version "$TAG_VERSION" \
+            --current-tag "$TAG_VERSION" \
+            --output release-assets/release-notes.md
+
+      - name: Show release notes
+        run: cat release-assets/release-notes.md
+
       - name: Create release and upload desktop assets
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: release-assets/release-notes.md
           files: |
             release-assets/QmClient-windows.zip
             release-assets/QmClient-windows.7z
@@ -632,7 +612,7 @@ jobs:
 
   release-android:
     name: Publish Android Release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - build_android
     if: startsWith(github.ref, 'refs/tags/')

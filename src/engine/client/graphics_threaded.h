@@ -2,12 +2,14 @@
 #define ENGINE_CLIENT_GRAPHICS_THREADED_H
 
 #include <base/system.h>
+#include <base/tl/threading.h>
 
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 
 #include <atomic>
 #include <cstddef>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -131,6 +133,12 @@ public:
 		CMD_CLEAR,
 		CMD_RENDER,
 		CMD_RENDER_TEX3D,
+		CMD_RENDER_TARGET_CREATE,
+		CMD_RENDER_TARGET_DESTROY,
+		CMD_RENDER_TARGET_BEGIN,
+		CMD_RENDER_TARGET_END,
+		CMD_RENDER_TARGET_DRAW,
+		CMD_RENDER_TARGET_READBACK,
 
 		// opengl 2.0+ commands (some are just emulated and only exist in opengl 3.3+)
 		CMD_CREATE_BUFFER_OBJECT, // create vbo
@@ -237,6 +245,58 @@ public:
 		EPrimitiveType m_PrimType;
 		unsigned m_PrimCount;
 		SVertexTex3DStream *m_pVertices; // you should use the command buffer data to allocate vertices for this command
+	};
+
+	struct SCommand_RenderTarget_Create : public SCommand
+	{
+		SCommand_RenderTarget_Create() :
+			SCommand(CMD_RENDER_TARGET_CREATE) {}
+		int m_TargetId = -1;
+		int m_Width = 0;
+		int m_Height = 0;
+	};
+
+	struct SCommand_RenderTarget_Destroy : public SCommand
+	{
+		SCommand_RenderTarget_Destroy() :
+			SCommand(CMD_RENDER_TARGET_DESTROY) {}
+		int m_TargetId = -1;
+	};
+
+	struct SCommand_RenderTarget_Begin : public SCommand
+	{
+		SCommand_RenderTarget_Begin() :
+			SCommand(CMD_RENDER_TARGET_BEGIN) {}
+		int m_TargetId = -1;
+		SColorf m_ClearColor;
+		SState m_State;
+	};
+
+	struct SCommand_RenderTarget_End : public SCommand
+	{
+		SCommand_RenderTarget_End() :
+			SCommand(CMD_RENDER_TARGET_END) {}
+		SState m_State;
+	};
+
+	struct SCommand_RenderTarget_Draw : public SCommand
+	{
+		SCommand_RenderTarget_Draw() :
+			SCommand(CMD_RENDER_TARGET_DRAW) {}
+		int m_TargetId = -1;
+		float m_X = 0.0f;
+		float m_Y = 0.0f;
+		float m_W = 0.0f;
+		float m_H = 0.0f;
+		SState m_State;
+	};
+
+	struct SCommand_RenderTarget_Readback : public SCommand
+	{
+		SCommand_RenderTarget_Readback() :
+			SCommand(CMD_RENDER_TARGET_READBACK) {}
+		int m_TargetId = -1;
+		CImageInfo *m_pImage = nullptr;
 	};
 
 	struct SCommand_CreateBufferObject : public SCommand
@@ -734,6 +794,8 @@ public:
 	virtual bool HasQuadBuffering() { return false; }
 	virtual bool HasTextBuffering() { return false; }
 	virtual bool HasQuadContainerBuffering() { return false; }
+	virtual bool HasRenderTargets() { return false; }
+	virtual const char *RenderTargetSupportReason() { return HasRenderTargets() ? "supported" : "unsupported_by_backend"; }
 	virtual bool Uses2DTextureArrays() { return false; }
 	virtual bool HasTextureArraysSupport() { return false; }
 	virtual const char *GetErrorString() { return nullptr; }
@@ -772,6 +834,7 @@ class CGraphics_Threaded : public IEngineGraphics
 	bool m_GLUses2DTextureArrays;
 	bool m_GLHasTextureArraysSupport;
 	bool m_GLUseTrianglesAsQuad;
+	bool m_GLRenderTargetsSupported;
 
 	CCommandBuffer *m_apCommandBuffers[2];
 	CCommandBuffer *m_pCommandBuffer;
@@ -805,6 +868,29 @@ class CGraphics_Threaded : public IEngineGraphics
 	std::vector<uint32_t> m_vTextureGenerations;
 	size_t m_FirstFreeTexture;
 	int m_TextureMemoryUsage;
+
+	std::vector<int> m_vRenderTargetIndices;
+	size_t m_FirstFreeRenderTarget;
+
+	enum class ERenderTargetReadbackRequestState
+	{
+		FREE,
+		PENDING,
+		READY,
+		FAILED,
+		CANCELED,
+	};
+
+	struct SRenderTargetReadbackRequest
+	{
+		uint32_t m_Generation = 0;
+		int m_NextFree = -1;
+		ERenderTargetReadbackRequestState m_State = ERenderTargetReadbackRequestState::FREE;
+		CImageInfo m_Image;
+		std::unique_ptr<CSemaphore> m_pCompletion;
+	};
+	std::vector<SRenderTargetReadbackRequest> m_vRenderTargetReadbackRequests;
+	int m_FirstFreeRenderTargetReadback = -1;
 
 	std::atomic<bool> m_WarnPngliteIncompatibleImages = false;
 
@@ -909,6 +995,12 @@ class CGraphics_Threaded : public IEngineGraphics
 	ColorRGBA *m_pReadPixelColor = nullptr;
 	void ReadPixelDirect(bool *pSwapped);
 	void ScreenshotDirect(bool *pSwapped);
+	SRenderTargetReadbackRequest *GetRenderTargetReadbackRequest(CRenderTargetReadbackHandle Handle);
+	const SRenderTargetReadbackRequest *GetRenderTargetReadbackRequest(CRenderTargetReadbackHandle Handle) const;
+	void UpdateRenderTargetReadbackRequestState(SRenderTargetReadbackRequest &Request);
+	CRenderTargetReadbackHandle AllocateRenderTargetReadbackHandle();
+	void FreeRenderTargetReadbackHandle(CRenderTargetReadbackHandle Handle, bool FreeImageData);
+	void CleanupCanceledRenderTargetReadbacks();
 
 	int IssueInit();
 	int InitWindow();
@@ -951,6 +1043,19 @@ public:
 	void LoadTextureAddWarning(size_t Width, size_t Height, int Flags, const char *pTexName);
 	IGraphics::CTextureHandle LoadTextureRaw(const CImageInfo &Image, int Flags, const char *pTexName = nullptr) override;
 	IGraphics::CTextureHandle LoadTextureRawMove(CImageInfo &Image, int Flags, const char *pTexName = nullptr) override;
+
+	bool IsRenderTargetSupported() const override;
+	const char *RenderTargetSupportReason() const override;
+	CRenderTargetHandle CreateRenderTarget(int Width, int Height) override;
+	void DestroyRenderTarget(CRenderTargetHandle *pTarget) override;
+	bool BeginRenderTarget(CRenderTargetHandle Target, ColorRGBA ClearColor) override;
+	void EndRenderTarget() override;
+	void DrawRenderTarget(CRenderTargetHandle Target, float X, float Y, float W, float H) override;
+	CRenderTargetReadbackHandle BeginRenderTargetReadback(CRenderTargetHandle Target) override;
+	ERenderTargetReadbackState PollRenderTargetReadback(CRenderTargetReadbackHandle Handle) override;
+	bool ResolveRenderTargetReadback(CRenderTargetReadbackHandle *pHandle, CImageInfo &Image) override;
+	void CancelRenderTargetReadback(CRenderTargetReadbackHandle *pHandle) override;
+	bool ReadRenderTarget(CRenderTargetHandle Target, CImageInfo &Image) override;
 
 	bool LoadTextTextures(size_t Width, size_t Height, CTextureHandle &TextTexture, CTextureHandle &TextOutlineTexture, uint8_t *pTextData, uint8_t *pTextOutlineData) override;
 	bool UnloadTextTextures(CTextureHandle &TextTexture, CTextureHandle &TextOutlineTexture) override;
@@ -1192,7 +1297,9 @@ public:
 			PrimCount = NumVerts / 3;
 		}
 		else
+		{
 			return;
+		}
 
 		Command.m_pVertices = (decltype(Command.m_pVertices))AllocCommandBufferData(VertSize * NumVerts);
 		Command.m_State = m_State;

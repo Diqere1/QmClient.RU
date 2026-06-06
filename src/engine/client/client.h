@@ -22,6 +22,7 @@
 #include <engine/shared/fifo.h>
 #include <engine/shared/http.h>
 #include <engine/shared/network.h>
+#include <engine/shared/qm_live_observer_session.h>
 #include <engine/textrender.h>
 #include <engine/warning.h>
 
@@ -58,6 +59,10 @@ public:
 	bool m_PingEx = false;
 	bool m_AllowDummy = false;
 	bool m_SyncWeaponInput = false;
+	bool m_Kcp = false;
+	bool m_LiveObserver = false;
+	bool m_LiveDirector = false;
+	bool m_LiveReplay = false;
 };
 
 class CClient : public IClient, public CDemoPlayer::IListener
@@ -220,6 +225,7 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	CGraph m_InputtimeMarginGraph;
 	CGraph m_aGametimeMarginGraphs[NUM_DUMMIES];
 	CGraph m_FpsGraph;
+	float m_aLastGameTimeMarginMs[NUM_DUMMIES] = {0.0f, 0.0f};
 
 	// the game snapshots are modifiable by the game
 	CSnapshotStorage m_aSnapshotStorage[NUM_DUMMIES];
@@ -244,9 +250,43 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	bool m_CanReceiveServerCapabilities = false;
 	bool m_ServerSentCapabilities = false;
 	CServerCapabilities m_ServerCapabilities;
+	bool m_KcpNegotiationPending = false;
+	bool m_KcpNegotiated = false;
+	int64_t m_KcpNegotiationStartTime = 0;
+	int m_KcpNegotiationConv = 0;
+#if defined(CONF_QM_LIVE_CLIENT)
+	CLiveObserverSession m_LiveObserverSession;
+	int64_t m_LiveObserverRequestTime = 0;
+#endif
 
+public:
 	bool ServerCapAnyPlayerFlag() const override { return m_ServerCapabilities.m_AnyPlayerFlag; }
+	bool QmLiveObserverActive() const override
+	{
+#if defined(CONF_QM_LIVE_CLIENT)
+		return m_LiveObserverSession.Accepted();
+#else
+		return false;
+#endif
+	}
+	bool QmLiveDirectorActive() const override
+	{
+#if defined(CONF_QM_LIVE_CLIENT)
+		return m_LiveObserverSession.DirectorActive();
+#else
+		return false;
+#endif
+	}
+	bool QmLiveCompatDirectorActive() const override
+	{
+#if defined(CONF_QM_LIVE_CLIENT)
+		return m_LiveObserverSession.CompatDirectorActive();
+#else
+		return false;
+#endif
+	}
 
+private:
 	CServerInfo m_CurrentServerInfo;
 	int64_t m_CurrentServerInfoRequestTime = -1; // >= 0 should request, == -1 got info
 
@@ -299,11 +339,15 @@ class CClient : public IClient, public CDemoPlayer::IListener
 
 	std::shared_ptr<ILogger> m_pFileLogger = nullptr;
 	std::shared_ptr<ILogger> m_pStdoutLogger = nullptr;
+	std::shared_ptr<ILogger> m_pPerfFileLogger = nullptr;
 
-	// For RenderDebug function
-	NETSTATS m_NetstatsPrev = {};
-	NETSTATS m_NetstatsCurrent = {};
-	std::chrono::nanoseconds m_NetstatsLastUpdate = std::chrono::nanoseconds(0);
+	void UpdateNetStatsSnapshot() const;
+
+	// Shared by RenderDebug and Qm monitoring.
+	mutable NETSTATS m_NetstatsPrev = {};
+	mutable NETSTATS m_NetstatsCurrent = {};
+	mutable std::chrono::nanoseconds m_NetstatsLastUpdate = std::chrono::nanoseconds(0);
+	mutable std::chrono::nanoseconds m_NetstatsSampleInterval = std::chrono::nanoseconds(0);
 
 	// For DummyName function
 	char m_aAutomaticDummyName[MAX_NAME_LENGTH];
@@ -333,6 +377,10 @@ public:
 
 	void SendTClientInfo(int Conn);
 	void SendInfo(int Conn);
+	void SendKcpCapability(int Conn);
+	void SendKcpProbe(int Conn);
+	void SendQmLiveObserverRequest(int Conn);
+	void EnableQmLiveCompatDirector(EQmLiveDenyReason Reason, const char *pReasonText);
 	void SendEnterGame(int Conn);
 	void SendReady(int Conn);
 	void SendMapRequest();
@@ -353,6 +401,9 @@ public:
 	IGraphics::CTextureHandle GetDebugFont() const override { return m_DebugFont; }
 
 	void SendInput();
+#if defined(CONF_QM_LIVE_CLIENT)
+	void SendQmLiveObserverInputAck();
+#endif
 
 	// TODO: OPT: do this a lot smarter!
 	int *GetInput(int Tick, int IsDummy) const override;
@@ -372,6 +423,7 @@ public:
 	void Connect(const char *pAddress, const char *pPassword = nullptr) override;
 	void DisconnectWithReason(const char *pReason);
 	void Disconnect() override;
+	void DropCurrentServerConnection();
 
 	void DummyDisconnect(const char *pReason) override;
 	void DummyConnect() override;
@@ -391,6 +443,14 @@ public:
 	CSnapItem SnapGetItem(int SnapId, int Index) const override;
 	int GetPredictionTick() override;
 	EPredictionMarginState PredictionMarginState() const override;
+	float SnapshotLatencyMs() const override;
+	float PredictionLatencyMs() const override;
+	float PredictionMarginMs() const override;
+	float PredictionJitterMs() const override;
+	float GameTimeMarginMs() const override;
+	bool IsGameConnectionAlive() const override;
+	void NetStatsSnapshot(NETSTATS &Prev, NETSTATS &Current, std::chrono::nanoseconds &LastUpdate) const override;
+	int PendingResendCount() const override;
 	const void *SnapFindItem(int SnapId, int Type, int Id) const override;
 	int SnapNumItems(int SnapId) const override;
 	void SnapSetStaticsize(int ItemType, int Size) override;
@@ -430,7 +490,7 @@ public:
 
 	bool IsSixup() const override { return m_Sixup; }
 
-	const NETADDR &ServerAddress() const override { return *m_aNetClient[CONN_MAIN].ServerAddress(); }
+	const NETADDR *ServerAddress() const override { return m_aNetClient[CONN_MAIN].ServerAddress(); }
 	int ConnectNetTypes() const override;
 	const char *ConnectAddressString() const override { return m_aConnectAddressStr; }
 	const char *MapDownloadName() const override { return m_aMapdownloadName; }
@@ -455,6 +515,7 @@ public:
 
 	static void Con_Connect(IConsole::IResult *pResult, void *pUserData);
 	static void Con_Disconnect(IConsole::IResult *pResult, void *pUserData);
+	static void Con_QmTimeoutDisconnect(IConsole::IResult *pResult, void *pUserData);
 
 	static void Con_DummyConnect(IConsole::IResult *pResult, void *pUserData);
 	static void Con_DummyDisconnect(IConsole::IResult *pResult, void *pUserData);
@@ -586,7 +647,7 @@ public:
 
 	std::optional<int> ShowMessageBox(const IGraphics::CMessageBox &MessageBox) override;
 	void GetGpuInfoString(char (&aGpuInfo)[512]) override;
-	void SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger);
+	void SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger, std::shared_ptr<ILogger> &&pPerfFileLogger);
 };
 
 #endif

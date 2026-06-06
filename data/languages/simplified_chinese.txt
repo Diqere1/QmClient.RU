@@ -280,6 +280,51 @@ Hide Visual Effects
 HUD
 == HUD
 
+HUD notifications
+== HUD 通知
+
+System message toasts
+== 系统消息提示
+
+Show solo prompts as HUD notifications
+== 将 solo 提示显示为 HUD 通知
+
+Show echo messages as HUD notifications
+== 将 echo 消息显示为 HUD 通知
+
+Compat custom server solo prompts
+== 兼容自定义服务器 solo 提示
+
+Notification background
+== 通知背景
+
+Notification text
+== 通知文字
+
+Text size
+== 文字大小
+
+Hold time
+== 停留时间
+
+Animation
+== 动画
+
+Fade and slide
+== 淡入并滑入
+
+Fade only
+== 仅淡入
+
+No animation
+== 无动画
+
+Animation time
+== 动画时间
+
+Max visible
+== 最大显示数量
+
 Player country:
 == 玩家国家 / 地区：
 
@@ -318,6 +363,9 @@ Rename demo
 
 Reset filter
 == 重置筛选
+
+Reset column widths
+== 重置列宽
 
 Score
 == 分数
@@ -378,6 +426,9 @@ Spectate previous
 
 Spectator mode
 == 旁观者模式
+
+Spectator teleport
+== 旁观传送
 
 Spectators
 == 旁观者
@@ -588,6 +639,9 @@ Normal message
 
 Friend message
 == 好友消息
+
+Friend heart
+== 好友爱心
 
 Save the best demo of each race
 == 保存每场游戏最佳记录的回放
@@ -1311,6 +1365,9 @@ DDRace HUD
 
 Show DDRace HUD
 == 显示 DDRace HUD
+
+HUD rainbow colors
+== HUD 彩虹色
 
 Show jumps indicator
 == 显示可跳跃次数
@@ -3011,6 +3068,9 @@ Puts you into freeze
 Puts you into solo part
 == 使你进入 solo 状态
 
+You are now in a solo part
+== 你现在处于单人区域
+
 Puts you out of deep freeze
 == 让你摆脱深度冰冻
 
@@ -3022,6 +3082,9 @@ Puts you out of live freeze
 
 Puts you out of solo part
 == 使你退出 solo 状态
+
+You are now out of the solo part
+== 你现在已离开单人区域
 
 Quit the client
 == 退出客户端
@@ -3665,6 +3728,15 @@ Execute before connecting
 
 Voting
 == 投票
+
+Auto map vote
+== 自动地图投票
+
+Auto agree vote
+== 自动同意投票
+
+Auto reject vote
+== 自动拒绝投票
 
 Automatically vote no on map changes
 == 自动投票反对地图变更
@@ -4641,6 +4713,9 @@ Use the mouse wheel on a hovered module to scale it by 5%
 
 Press Esc to exit the HUD editor
 == 按 Esc 退出 HUD 编辑器
+
+Reset default
+== 恢复默认
 
 Assets editor
 == 材质编辑器
@@ -6948,6 +7023,18 @@ Show key stuck status
 Name order
 == 昵称顺序
 
+Free move
+== 自由移动
+
+X free move
+== X 自由移动
+
+Y free move
+== Y 自由移动
+
+Enable an axis, then drag visible nameplate rows in the preview.
+== 开启轴向后，在预览中拖动可见的昵称板行。
+
 Predict events (experimental)
 == 预测事件（实验性）
 
@@ -7285,3 +7372,99 @@ Map Progress: --
 
 Tee 0.7
 == Tee 0.7
+
+Cube
+== 方块
+
+Heart
+== 爱心
+
+Sphere
+== 球体
+
+Pyramid
+== 金字塔
+
+Diamond
+== 钻石
+
+Ring
+== 圆环
+
+Star
+== 星形
+
+Crescent
+== 月牙
+
+Mixed
+== 混合
+
+Particle count
+== 粒子数量
+
+Particle alpha
+== 粒子透明度
+
+Min size
+== 最小尺寸
+
+Max size
+== 最大尺寸
+
+Particle speed
+== 粒子速度
+
+Particle depth
+== 粒子深度
+
+View margin
+== 视野外边距
+
+Fade in
+== 淡入
+
+Fade out
+== 淡出
+
+Push radius
+== 推动半径
+
+Push strength
+== 推动强度
+
+Particle color
+== 粒子颜色
+
+Custom
+== 自定义
+
+Random
+== 随机
+
+Particle glow
+== 粒子辉光
+
+Glow alpha
+== 辉光透明度
+
+Glow offset
+== 辉光偏移
+
+Particle trail
+== 粒子拖尾
+
+Particle pulse
+== 粒子脉冲
+
+Pulse strength
+== 脉冲强度
+
+Pulse speed
+== 脉冲速度
+
+Particle twinkle
+== 粒子闪烁
+
+Twinkle strength
+== 闪烁强度

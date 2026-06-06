@@ -7,6 +7,7 @@
 
 #include <base/log.h>
 #include <base/math.h>
+#include <base/system.h>
 #include <base/vmath.h>
 
 #include <engine/shared/config.h>
@@ -17,6 +18,59 @@
 #include <game/mapitems.h>
 
 #include <limits>
+#include <vector>
+
+static bool IsSpectatorTeleportFromTile(int TeleType)
+{
+	return TeleType == TILE_TELEIN || TeleType == TILE_TELEINEVIL;
+}
+
+static bool IsSpectatorTeleportCheckFromTile(int TeleType)
+{
+	return TeleType == TILE_TELECHECKIN || TeleType == TILE_TELECHECKINEVIL;
+}
+
+static void CollectSpectatorTeleportFroms(const CCollision *pCollision, int TeleNumber, std::vector<vec2> &vTeleTargets)
+{
+	const CTeleTile *pTele = pCollision->TeleLayer();
+	if(pTele == nullptr || TeleNumber <= 0)
+		return;
+
+	const int MapCellCount = pCollision->GetWidth() * pCollision->GetHeight();
+	for(int TileIndex = 0; TileIndex < MapCellCount; ++TileIndex)
+	{
+		if(pTele[TileIndex].m_Number == TeleNumber && IsSpectatorTeleportFromTile(pTele[TileIndex].m_Type))
+			vTeleTargets.push_back(pCollision->GetPos(TileIndex));
+	}
+}
+
+static void CollectSpectatorTeleportCheckFroms(const CCollision *pCollision, std::vector<vec2> &vTeleTargets)
+{
+	const CTeleTile *pTele = pCollision->TeleLayer();
+	if(pTele == nullptr)
+		return;
+
+	const int MapCellCount = pCollision->GetWidth() * pCollision->GetHeight();
+	for(int TileIndex = 0; TileIndex < MapCellCount; ++TileIndex)
+	{
+		if(IsSpectatorTeleportCheckFromTile(pTele[TileIndex].m_Type))
+			vTeleTargets.push_back(pCollision->GetPos(TileIndex));
+	}
+}
+
+static void CollectSpectatorTeleportCheckOuts(const CCollision *pCollision, std::vector<vec2> &vTeleTargets)
+{
+	const CTeleTile *pTele = pCollision->TeleLayer();
+	if(pTele == nullptr)
+		return;
+
+	const int MapCellCount = pCollision->GetWidth() * pCollision->GetHeight();
+	for(int TileIndex = 0; TileIndex < MapCellCount; ++TileIndex)
+	{
+		if(pTele[TileIndex].m_Type == TILE_TELECHECKOUT)
+			vTeleTargets.push_back(pCollision->GetPos(TileIndex));
+	}
+}
 
 CCamera::CCamera()
 {
@@ -423,7 +477,9 @@ void CCamera::OnRender()
 		m_ForceFreeview = false;
 	}
 	else
+	{
 		m_ForceFreeviewPos = m_Center;
+	}
 
 	const int SpecId = GameClient()->m_Snap.m_SpecInfo.m_SpectatorId;
 
@@ -485,6 +541,7 @@ void CCamera::OnConsoleInit()
 	Console()->Register("set_view_relative", "i[x]i[y]", CFGFLAG_CLIENT, ConSetViewRelative, this, "Set camera position relative to current view in the map");
 	Console()->Register("goto_switch", "i[number]?i[offset]", CFGFLAG_CLIENT, ConGotoSwitch, this, "View switch found (at offset) with given number");
 	Console()->Register("goto_tele", "i[number]?i[offset]", CFGFLAG_CLIENT, ConGotoTele, this, "View tele found (at offset) with given number");
+	Console()->Register("qm_spec_teleport", "", CFGFLAG_CLIENT, ConSpectatorTeleportToHoveredTele, this, "Teleport free spectator camera between hovered tele-in/out or checkpoint tele and a matching counterpart");
 }
 
 void CCamera::OnReset()
@@ -571,6 +628,11 @@ void CCamera::ConGotoTele(IConsole::IResult *pResult, void *pUserData)
 	CCamera *pSelf = (CCamera *)pUserData;
 	pSelf->GotoTele(pResult->GetInteger(0), pResult->NumArguments() > 1 ? pResult->GetInteger(1) : -1);
 }
+void CCamera::ConSpectatorTeleportToHoveredTele(IConsole::IResult *pResult, void *pUserData)
+{
+	CCamera *pSelf = (CCamera *)pUserData;
+	pSelf->SpectatorTeleportToHoveredTele();
+}
 
 void CCamera::SetView(ivec2 Pos, bool Relative)
 {
@@ -582,6 +644,15 @@ void CCamera::SetView(ivec2 Pos, bool Relative)
 	m_ForceFreeviewPos = vec2(
 		std::clamp(UntestedViewPos.x, 200.0f, Collision()->GetWidth() * 32 - 200.0f),
 		std::clamp(UntestedViewPos.y, 200.0f, Collision()->GetHeight() * 32 - 200.0f));
+}
+
+void CCamera::SetViewWorld(vec2 Pos)
+{
+	m_ForceFreeview = true;
+
+	m_ForceFreeviewPos = vec2(
+		std::clamp(Pos.x, -201.0f * 32.0f, (Collision()->GetWidth() + 201.0f) * 32.0f),
+		std::clamp(Pos.y, -201.0f * 32.0f, (Collision()->GetHeight() + 201.0f) * 32.0f));
 }
 
 void CCamera::GotoSwitch(int Number, int Offset)
@@ -679,6 +750,66 @@ void CCamera::GotoTele(int Number, int Offset)
 	m_GotoTeleLastPos = MatchPos;
 	m_GotoTeleLastNumber = Number;
 	SetView(MatchPos);
+}
+
+void CCamera::SpectatorTeleportToHoveredTele()
+{
+	if(!GameClient()->m_Snap.m_SpecInfo.m_Active || GameClient()->m_Snap.m_SpecInfo.m_SpectatorId != SPEC_FREEVIEW)
+		return;
+	const CTeleTile *pTele = Collision()->TeleLayer();
+	if(pTele == nullptr)
+		return;
+
+	const vec2 HoveredWorldPos = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+	const int TileIndex = Collision()->GetPureMapIndex(HoveredWorldPos);
+	if(TileIndex < 0)
+		return;
+
+	const int TileType = pTele[TileIndex].m_Type;
+	const int TeleNumber = pTele[TileIndex].m_Number;
+	if(TeleNumber <= 0)
+	{
+		if(!IsSpectatorTeleportCheckFromTile(TileType))
+			return;
+	}
+
+	std::vector<vec2> vTeleFromTargets;
+	std::vector<vec2> vTeleCheckOutTargets;
+	const std::vector<vec2> *pTeleTargets = nullptr;
+	if(IsSpectatorTeleportFromTile(TileType))
+	{
+		pTeleTargets = &Collision()->TeleOuts(TeleNumber - 1);
+	}
+	else if(TileType == TILE_TELEOUT)
+	{
+		CollectSpectatorTeleportFroms(Collision(), TeleNumber, vTeleFromTargets);
+		pTeleTargets = &vTeleFromTargets;
+	}
+	else if(IsSpectatorTeleportCheckFromTile(TileType))
+	{
+		if(TeleNumber > 0)
+			pTeleTargets = &Collision()->TeleCheckOuts(TeleNumber - 1);
+		if(pTeleTargets == nullptr || pTeleTargets->empty())
+		{
+			CollectSpectatorTeleportCheckOuts(Collision(), vTeleCheckOutTargets);
+			pTeleTargets = &vTeleCheckOutTargets;
+		}
+	}
+	else if(TileType == TILE_TELECHECKOUT)
+	{
+		CollectSpectatorTeleportCheckFroms(Collision(), vTeleFromTargets);
+		pTeleTargets = &vTeleFromTargets;
+	}
+	else
+	{
+		return;
+	}
+
+	if(pTeleTargets->empty())
+		return;
+
+	const size_t TargetIndex = (size_t)secure_rand_below((int)pTeleTargets->size());
+	SetViewWorld((*pTeleTargets)[TargetIndex]);
 }
 
 void CCamera::SetZoom(float Target, int Smoothness, bool IsUser)

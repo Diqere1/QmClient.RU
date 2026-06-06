@@ -17,9 +17,16 @@ CConfig g_Config;
 // ----------------------- Config Variables
 namespace
 {
-	std::unordered_map<const SIntConfigVariable *, int> s_ToggleRestoreInts;
+	std::unordered_map<const SIntConfigVariable *, int> *s_pToggleRestoreInts = nullptr;
 
-	static bool EnsureConfigPathFolder(IStorage *pStorage, const char *pConfigPath)
+	std::unordered_map<const SIntConfigVariable *, int> &ToggleRestoreInts()
+	{
+		if(s_pToggleRestoreInts == nullptr)
+			s_pToggleRestoreInts = new std::unordered_map<const SIntConfigVariable *, int>();
+		return *s_pToggleRestoreInts;
+	}
+
+	bool EnsureConfigPathFolder(IStorage *pStorage, const char *pConfigPath)
 	{
 		const char *pSlash = str_rchr(pConfigPath, '/');
 		if(pSlash == nullptr)
@@ -626,19 +633,21 @@ void CConfigManager::Con_ToggleRestore(IConsole::IResult *pResult, void *pUserDa
 		{
 			// Key repeat sends extra "press" strokes while held. Preserve the original value
 			// from the first press so release can restore correctly.
-			if(s_ToggleRestoreInts.find(pIntVariable) == s_ToggleRestoreInts.end())
+			std::unordered_map<const SIntConfigVariable *, int> &ToggleRestoreIntsRef = ToggleRestoreInts();
+			if(!ToggleRestoreIntsRef.contains(pIntVariable))
 			{
-				s_ToggleRestoreInts[pIntVariable] = *pIntVariable->m_pVariable;
+				ToggleRestoreIntsRef[pIntVariable] = *pIntVariable->m_pVariable;
 			}
 			pIntVariable->SetValue(pResult->GetInteger(2));
 		}
 		else
 		{
-			auto It = s_ToggleRestoreInts.find(pIntVariable);
-			if(It != s_ToggleRestoreInts.end())
+			std::unordered_map<const SIntConfigVariable *, int> &ToggleRestoreIntsRef = ToggleRestoreInts();
+			auto It = ToggleRestoreIntsRef.find(pIntVariable);
+			if(It != ToggleRestoreIntsRef.end())
 			{
 				pIntVariable->SetValue(It->second);
-				s_ToggleRestoreInts.erase(It);
+				ToggleRestoreIntsRef.erase(It);
 			}
 		}
 		return;

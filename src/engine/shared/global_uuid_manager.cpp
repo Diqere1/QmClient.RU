@@ -4,7 +4,7 @@
 
 #include <engine/uuid.h>
 
-static CUuidManager CreateGlobalUuidManager()
+static CUuidManager CreateGlobalUuidManager() noexcept
 {
 	CUuidManager Manager;
 	RegisterUuids(&Manager);

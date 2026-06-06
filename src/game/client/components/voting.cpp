@@ -12,75 +12,76 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/localization.h>
 
 namespace
 {
-bool ExtractMapName(const char *pDescription, char *pMapName, int MaxLen)
-{
-	if(!pDescription)
-		return false;
-	const char *pMapPrefix = str_find_nocase(pDescription, "Map:");
-	if(pMapPrefix)
+	bool ExtractMapName(const char *pDescription, char *pMapName, int MaxLen)
 	{
-		pMapPrefix += 4;
-		while(*pMapPrefix == ' ')
-			pMapPrefix++;
-		str_copy(pMapName, pMapPrefix, MaxLen);
-		return true;
-	}
-	const char *pBy = str_find_nocase(pDescription, " by ");
-	if(pBy && (str_find(pDescription, "★") || str_find(pDescription, "✰")))
-	{
-		int Len = minimum((int)(pBy - pDescription), MaxLen - 1);
-		str_copy(pMapName, pDescription, Len + 1);
-		return true;
-	}
-	return false;
-}
-
-bool HasConfusableSubstring(const char *pText, const char *pNeedle)
-{
-	if(!pText || !pNeedle || pNeedle[0] == '\0')
-		return false;
-
-	int aText[128];
-	int aNeedle[64];
-	const int TextLen = str_utf8_to_skeleton(pText, aText, (int)(sizeof(aText) / sizeof(aText[0])));
-	const int NeedleLen = str_utf8_to_skeleton(pNeedle, aNeedle, (int)(sizeof(aNeedle) / sizeof(aNeedle[0])));
-	if(NeedleLen <= 0 || NeedleLen > TextLen)
-		return false;
-
-	for(int i = 0; i + NeedleLen <= TextLen; ++i)
-	{
-		bool Match = true;
-		for(int j = 0; j < NeedleLen; ++j)
+		if(!pDescription)
+			return false;
+		const char *pMapPrefix = str_find_nocase(pDescription, "Map:");
+		if(pMapPrefix)
 		{
-			if(aText[i + j] != aNeedle[j])
-			{
-				Match = false;
-				break;
-			}
-		}
-		if(Match)
+			pMapPrefix += 4;
+			while(*pMapPrefix == ' ')
+				pMapPrefix++;
+			str_copy(pMapName, pMapPrefix, MaxLen);
 			return true;
-	}
-	return false;
-}
-
-bool HasTypeVoteMatch(const char *pDescription, const char *pNeedle)
-{
-	if(!pDescription || !pNeedle || pNeedle[0] == '\0')
+		}
+		const char *pBy = str_find_nocase(pDescription, " by ");
+		if(pBy && (str_find(pDescription, "★") || str_find(pDescription, "✰")))
+		{
+			int Len = minimum((int)(pBy - pDescription), MaxLen - 1);
+			str_copy(pMapName, pDescription, Len + 1);
+			return true;
+		}
 		return false;
-	if(str_utf8_find_nocase(pDescription, pNeedle))
-		return true;
+	}
 
-	char aDescLower[256];
-	char aNeedleLower[96];
-	str_utf8_tolower(pDescription, aDescLower, sizeof(aDescLower));
-	str_utf8_tolower(pNeedle, aNeedleLower, sizeof(aNeedleLower));
-	return HasConfusableSubstring(aDescLower, aNeedleLower);
-}
+	bool HasConfusableSubstring(const char *pText, const char *pNeedle)
+	{
+		if(!pText || !pNeedle || pNeedle[0] == '\0')
+			return false;
+
+		int aText[128];
+		int aNeedle[64];
+		const int TextLen = str_utf8_to_skeleton(pText, aText, (int)(sizeof(aText) / sizeof(aText[0])));
+		const int NeedleLen = str_utf8_to_skeleton(pNeedle, aNeedle, (int)(sizeof(aNeedle) / sizeof(aNeedle[0])));
+		if(NeedleLen <= 0 || NeedleLen > TextLen)
+			return false;
+
+		for(int i = 0; i + NeedleLen <= TextLen; ++i)
+		{
+			bool Match = true;
+			for(int j = 0; j < NeedleLen; ++j)
+			{
+				if(aText[i + j] != aNeedle[j])
+				{
+					Match = false;
+					break;
+				}
+			}
+			if(Match)
+				return true;
+		}
+		return false;
+	}
+
+	bool HasTypeVoteMatch(const char *pDescription, const char *pNeedle)
+	{
+		if(!pDescription || !pNeedle || pNeedle[0] == '\0')
+			return false;
+		if(str_utf8_find_nocase(pDescription, pNeedle))
+			return true;
+
+		char aDescLower[256];
+		char aNeedleLower[96];
+		str_utf8_tolower(pDescription, aDescLower, sizeof(aDescLower));
+		str_utf8_tolower(pNeedle, aNeedleLower, sizeof(aNeedleLower));
+		return HasConfusableSubstring(aDescLower, aNeedleLower);
+	}
 }
 
 void CVoting::ConCallvote(IConsole::IResult *pResult, void *pUserData)
@@ -168,7 +169,9 @@ void CVoting::CallvoteOption(int OptionId, const char *pReason, bool ForceVote)
 				Client()->Rcon(aBuf);
 			}
 			else
+			{
 				Callvote("option", pOption->m_aDescription, pReason);
+			}
 			break;
 		}
 
@@ -387,7 +390,9 @@ void CVoting::AddOption(const char *pDescription)
 			m_pRecycleLast = nullptr;
 	}
 	else
+	{
 		pOption = m_Heap.Allocate<CVoteOptionClient>();
+	}
 
 	pOption->m_pNext = nullptr;
 	pOption->m_pPrev = m_pLast;
@@ -569,7 +574,9 @@ void CVoting::Render()
 	if(Seconds < 0)
 	{
 		if(HudEditorPreview)
+		{
 			Seconds = 24;
+		}
 		else
 		{
 			OnReset();
@@ -578,9 +585,9 @@ void CVoting::Render()
 	}
 
 	// TClient
-	if(g_Config.m_TcMiniVoteHud > 0 && !HudEditorPreview)
+	if(g_Config.m_TcMiniVoteHud > 0)
 	{
-		GameClient()->m_TClient.RenderMiniVoteHud();
+		GameClient()->m_TClient.RenderMiniVoteHud(HudEditorPreview);
 		return;
 	}
 
@@ -590,7 +597,7 @@ void CVoting::Render()
 
 	CUIRect View = {0.0f, 60.0f, 120.0f, 38.0f};
 	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::Voting, View);
-	View.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_R, 3.0f);
+	View.Draw(ui_token::color::SURFACE_GLASS, HudEditorScope.m_Corners, ui_token::radius::BASE);
 	View.Margin(3.0f, &View);
 
 	SLabelProperties Props;
@@ -660,11 +667,11 @@ void CVoting::Render()
 
 void CVoting::RenderBars(CUIRect Bars) const
 {
-	Bars.Draw(ColorRGBA(0.8f, 0.8f, 0.8f, 0.5f), IGraphics::CORNER_ALL, Bars.h / 2.0f);
+	Bars.Draw(ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(2.0f), IGraphics::CORNER_ALL, Bars.h / 2.0f);
 
 	CUIRect Splitter;
 	Bars.VMargin((Bars.w - 2.0f) / 2.0f, &Splitter);
-	Splitter.Draw(ColorRGBA(0.4f, 0.4f, 0.4f, 0.5f), IGraphics::CORNER_NONE, 0.0f);
+	Splitter.Draw(ui_token::color::BORDER_SUBTLE.WithMultipliedAlpha(2.0f), IGraphics::CORNER_NONE, 0.0f);
 
 	if(m_Total)
 	{
@@ -672,14 +679,14 @@ void CVoting::RenderBars(CUIRect Bars) const
 		{
 			CUIRect YesArea;
 			Bars.VSplitLeft(Bars.w * m_Yes / m_Total, &YesArea, nullptr);
-			YesArea.Draw(ColorRGBA(0.2f, 0.9f, 0.2f, 0.85f), IGraphics::CORNER_ALL, YesArea.h / 2.0f);
+			YesArea.Draw(ui_token::color::SUCCESS.WithMultipliedAlpha(0.85f), IGraphics::CORNER_ALL, YesArea.h / 2.0f);
 		}
 
 		if(m_No)
 		{
 			CUIRect NoArea;
 			Bars.VSplitRight(Bars.w * m_No / m_Total, nullptr, &NoArea);
-			NoArea.Draw(ColorRGBA(0.9f, 0.2f, 0.2f, 0.85f), IGraphics::CORNER_ALL, NoArea.h / 2.0f);
+			NoArea.Draw(ui_token::color::DANGER.WithMultipliedAlpha(0.85f), IGraphics::CORNER_ALL, NoArea.h / 2.0f);
 		}
 	}
 }

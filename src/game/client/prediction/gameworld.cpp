@@ -118,7 +118,9 @@ void CGameWorld::InsertEntity(CEntity *pEnt, bool Last)
 			pLast->m_pNextTypeEntity = pEnt;
 		}
 		else
+		{
 			m_apFirstEntityTypes[pEnt->m_ObjType] = pEnt;
+		}
 		pEnt->m_pPrevTypeEntity = pLast;
 		pEnt->m_pNextTypeEntity = nullptr;
 	}
@@ -473,7 +475,9 @@ void CGameWorld::NetObjAdd(int ObjId, int ObjType, const void *pObjData, const C
 						First = Dist;
 					}
 					else if(Dist < Second)
+					{
 						Second = Dist;
+					}
 				}
 				if(pClosest && maximum(First, 2.f) * 1.2f < Second)
 					NetProj.m_Owner = pClosest->m_Id;
@@ -810,7 +814,13 @@ void CGameWorld::Clear()
 	// delete all entities
 	for(auto &pFirstEntityType : m_apFirstEntityTypes)
 		while(pFirstEntityType)
-			delete pFirstEntityType; // NOLINT(clang-analyzer-cplusplus.NewDelete)
+		{
+			CEntity *pEntity = pFirstEntityType;
+			CEntity *pNextEntity = pEntity->m_pNextTypeEntity;
+			RemoveEntity(pEntity);
+			delete pEntity; // NOLINT(clang-analyzer-cplusplus.NewDelete)
+			pFirstEntityType = pNextEntity;
+		}
 }
 
 bool CGameWorld::EmulateBug(int Bug) const

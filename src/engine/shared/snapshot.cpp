@@ -179,12 +179,17 @@ enum
 	HASHLIST_BUCKET_SIZE = 64,
 };
 
-struct CItemList
+namespace
 {
-	int m_Num;
-	int m_aKeys[HASHLIST_BUCKET_SIZE];
-	int m_aIndex[HASHLIST_BUCKET_SIZE];
-};
+
+	struct CItemList
+	{
+		int m_Num;
+		int m_aKeys[HASHLIST_BUCKET_SIZE];
+		int m_aIndex[HASHLIST_BUCKET_SIZE];
+	};
+
+}
 
 static inline size_t CalcHashId(int Key)
 {
@@ -250,7 +255,9 @@ void CSnapshotDelta::UndiffItem(const int *pPast, const int *pDiff, int *pOut, i
 		*pOut = (unsigned)*pPast + (unsigned)*pDiff;
 
 		if(*pDiff == 0)
+		{
 			*pDataRate += 1;
+		}
 		else
 		{
 			unsigned char aBuf[CVariableInt::MAX_BYTES_PACKED];
@@ -390,7 +397,7 @@ int CSnapshotDelta::DebugDumpDelta(const void *pSrcData, int DataSize)
 {
 	CData *pDelta = (CData *)pSrcData;
 	int *pData = (int *)pDelta->m_aData;
-	int *pEnd = (int *)(((char *)pSrcData + DataSize));
+	int *pEnd = (int *)((char *)pSrcData + DataSize);
 
 	dbg_msg("delta_dump", "+-----------------------------------------------");
 	if(DataSize < 3 * (int)sizeof(int32_t))
@@ -522,7 +529,7 @@ int CSnapshotDelta::UnpackDelta(const CSnapshot *pFrom, CSnapshot *pTo, const vo
 {
 	CData *pDelta = (CData *)pSrcData;
 	int *pData = (int *)pDelta->m_aData;
-	int *pEnd = (int *)(((char *)pSrcData + DataSize));
+	int *pEnd = (int *)((char *)pSrcData + DataSize);
 
 	CSnapshotBuilder Builder;
 	Builder.Init();
@@ -578,7 +585,9 @@ int CSnapshotDelta::UnpackDelta(const CSnapshot *pFrom, CSnapshot *pTo, const vo
 		int ItemSize;
 		const short *pItemSizes = Sixup ? m_aItemSizes7 : m_aItemSizes;
 		if(Type < MAX_NETOBJSIZES && pItemSizes[Type])
+		{
 			ItemSize = pItemSizes[Type];
+		}
 		else
 		{
 			if(pData + 1 > pEnd)
@@ -594,9 +603,20 @@ int CSnapshotDelta::UnpackDelta(const CSnapshot *pFrom, CSnapshot *pTo, const vo
 		const int Key = (Type << 16) | Id;
 
 		// create the item if needed
-		int *pNewData = Builder.GetItemData(Key);
-		if(!pNewData)
+		std::optional<int> ExistingIndex = Builder.FindItemIndexByKey(Key);
+		int *pNewData;
+		if(ExistingIndex)
+		{
+			if(ItemSize != Builder.GetItemSize(ExistingIndex.value()))
+			{
+				return -206;
+			}
+			pNewData = Builder.GetItemData(ExistingIndex.value());
+		}
+		else
+		{
 			pNewData = (int *)Builder.NewItem(Type, Id, ItemSize);
+		}
 
 		if(!pNewData)
 			return -302;
@@ -604,6 +624,10 @@ int CSnapshotDelta::UnpackDelta(const CSnapshot *pFrom, CSnapshot *pTo, const vo
 		const int FromIndex = pFrom->GetItemIndex(Key);
 		if(FromIndex != -1)
 		{
+			if(pFrom->GetItemSize(FromIndex) != ItemSize)
+			{
+				return -207;
+			}
 			// we got an update so we need to apply the diff
 			UndiffItem(pFrom->GetItem(FromIndex)->Data(), pData, pNewData, ItemSize / sizeof(int32_t), &m_aSnapshotDataRate[Type]);
 		}
@@ -747,20 +771,34 @@ void CSnapshotBuilder::Init(bool Sixup)
 
 CSnapshotItem *CSnapshotBuilder::GetItem(int Index)
 {
+	dbg_assert(0 <= Index && Index < m_NumItems, "invalid item index");
 	return (CSnapshotItem *)&(m_aData[m_aOffsets[Index]]);
 }
 
-int *CSnapshotBuilder::GetItemData(int Key)
+int CSnapshotBuilder::GetItemSize(int Index) const
+{
+	dbg_assert(0 <= Index && Index < m_NumItems, "invalid item index");
+	const int Start = m_aOffsets[Index];
+	const int End = Index + 1 < m_NumItems ? m_aOffsets[Index + 1] : m_DataSize;
+	return (End - Start) - sizeof(CSnapshotItem);
+}
+
+int *CSnapshotBuilder::GetItemData(int Index)
+{
+	return GetItem(Index)->Data();
+}
+
+std::optional<int> CSnapshotBuilder::FindItemIndexByKey(int Key)
 {
 	for(int i = 0; i < m_NumItems; i++)
 	{
 		CSnapshotItem *pItem = GetItem(i);
 		if(pItem->Key() == Key)
 		{
-			return pItem->Data();
+			return i;
 		}
 	}
-	return nullptr;
+	return std::nullopt;
 }
 
 int CSnapshotBuilder::Finish(void *pSnapData)
@@ -864,7 +902,9 @@ void *CSnapshotBuilder::NewItem(int Type, int Id, int Size)
 			return pObj;
 	}
 	else if(Type < 0)
+	{
 		return nullptr;
+	}
 
 	pObj->m_TypeAndId = (Type << 16) | Id;
 	m_aOffsets[m_NumItems] = m_DataSize;

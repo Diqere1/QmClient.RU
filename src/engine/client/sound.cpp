@@ -21,9 +21,32 @@ extern "C" {
 }
 
 #include <cmath>
+#include <limits>
 
 static constexpr int SAMPLE_INDEX_USED = -2;
 static constexpr int SAMPLE_INDEX_FULL = -1;
+
+static bool CalculateSampleDataSize(int NumFrames, int NumChannels, size_t ElementSize, size_t &DataSize)
+{
+	if(NumFrames <= 0 || NumChannels <= 0)
+	{
+		DataSize = 0;
+		return false;
+	}
+	if((size_t)NumFrames > std::numeric_limits<size_t>::max() / (size_t)NumChannels)
+	{
+		DataSize = 0;
+		return false;
+	}
+	const size_t SampleCount = (size_t)NumFrames * (size_t)NumChannels;
+	if(SampleCount > std::numeric_limits<size_t>::max() / ElementSize)
+	{
+		DataSize = 0;
+		return false;
+	}
+	DataSize = SampleCount * ElementSize;
+	return true;
+}
 
 void CSound::Mix(short *pFinalOut, unsigned Frames)
 {
@@ -115,9 +138,13 @@ void CSound::Mix(short *pFinalOut, unsigned Frames)
 				if(!(Voice.m_Flags & ISound::FLAG_NO_PANNING))
 				{
 					if(Delta.x > 0)
+					{
 						VolumeL = ((RangeX - absolute(Delta.x)) * VolumeL) / RangeX;
+					}
 					else
+					{
 						VolumeR = ((RangeX - absolute(Delta.x)) * VolumeR) / RangeX;
+					}
 				}
 
 				{
@@ -146,7 +173,9 @@ void CSound::Mix(short *pFinalOut, unsigned Frames)
 		if(Voice.m_Tick == Voice.m_pSample->m_NumFrames)
 		{
 			if(Voice.m_Flags & ISound::FLAG_LOOP)
+			{
 				Voice.m_Tick = 0;
+			}
 			else
 			{
 				Voice.m_pSample = nullptr;
@@ -159,7 +188,9 @@ void CSound::Mix(short *pFinalOut, unsigned Frames)
 
 	// clamp accumulated values
 	for(unsigned i = 0; i < Frames * 2; i++)
+	{
 		pFinalOut[i] = std::clamp<int>(((m_pMixBuffer[i] * MasterVol) / 101) >> 8, std::numeric_limits<short>::min(), std::numeric_limits<short>::max());
+	}
 
 #if defined(CONF_ARCH_ENDIAN_BIG)
 	swap_endian(pFinalOut, sizeof(short), Frames * 2);
@@ -228,7 +259,9 @@ int CSound::Init()
 		return -1;
 	}
 	else
+	{
 		dbg_msg("sound", "sound init successful using audio driver '%s'", SDL_GetCurrentAudioDriver());
+	}
 
 	m_MixingRate = FormatOut.freq;
 	m_MaxFrames = FormatOut.samples * 2;
@@ -236,6 +269,14 @@ int CSound::Init()
 	m_MaxFrames = maximum<uint32_t>(m_MaxFrames, 1024 * 2); // make the buffer bigger just in case
 #endif
 	m_pMixBuffer = (int *)calloc(m_MaxFrames * 2, sizeof(int));
+	if(m_pMixBuffer == nullptr)
+	{
+		log_error("sound", "unable to allocate mixing buffer");
+		SDL_CloseAudioDevice(m_Device);
+		SDL_QuitSubSystem(SDL_INIT_AUDIO);
+		m_Device = 0;
+		return -1;
+	}
 
 	m_SoundEnabled = true;
 	Update();
@@ -254,7 +295,9 @@ void CSound::UpdateVolume()
 {
 	int WantedVolume = g_Config.m_SndVolume;
 	if(!m_pGraphics->WindowActive() && g_Config.m_SndNonactiveMute)
+	{
 		WantedVolume = 0;
+	}
 	m_SoundVolume.store(WantedVolume, std::memory_order_relaxed);
 }
 
@@ -295,16 +338,33 @@ CSample *CSound::AllocSample()
 	return pSample;
 }
 
-void CSound::RateConvert(CSample &Sample) const
+bool CSound::RateConvert(CSample &Sample) const
 {
 	dbg_assert(Sample.IsLoaded(), "Sample not loaded");
+	if(Sample.m_Rate <= 0 || m_MixingRate <= 0 || Sample.m_NumFrames <= 0 || (Sample.m_Channels != 1 && Sample.m_Channels != 2))
+	{
+		log_error("sound", "failed to resample sound, invalid input. frames=%d rate=%d channels=%d mixing_rate=%d", Sample.m_NumFrames, Sample.m_Rate, Sample.m_Channels, m_MixingRate);
+		return false;
+	}
+
 	// make sure that we need to convert this sound
 	if(Sample.m_Rate == m_MixingRate)
-		return;
+		return true;
 
 	// allocate new data
 	const int NumFrames = (int)((Sample.m_NumFrames / (float)Sample.m_Rate) * m_MixingRate);
-	short *pNewData = (short *)calloc((size_t)NumFrames * Sample.m_Channels, sizeof(short));
+	size_t DataSize = 0;
+	if(!CalculateSampleDataSize(NumFrames, Sample.m_Channels, sizeof(short), DataSize))
+	{
+		log_error("sound", "failed to resample sound, invalid output size. frames=%d channels=%d", NumFrames, Sample.m_Channels);
+		return false;
+	}
+	short *pNewData = (short *)calloc(DataSize, 1);
+	if(pNewData == nullptr)
+	{
+		log_error("sound", "failed to allocate resampled sound. frames=%d channels=%d", NumFrames, Sample.m_Channels);
+		return false;
+	}
 
 	for(int i = 0; i < NumFrames; i++)
 	{
@@ -312,11 +372,15 @@ void CSound::RateConvert(CSample &Sample) const
 		float a = i / (float)NumFrames;
 		int f = (int)(a * Sample.m_NumFrames);
 		if(f >= Sample.m_NumFrames)
+		{
 			f = Sample.m_NumFrames - 1;
+		}
 
 		// set new data
 		if(Sample.m_Channels == 1)
+		{
 			pNewData[i] = Sample.m_pData[f];
+		}
 		else if(Sample.m_Channels == 2)
 		{
 			pNewData[i * 2] = Sample.m_pData[f * 2];
@@ -329,6 +393,7 @@ void CSound::RateConvert(CSample &Sample) const
 	Sample.m_pData = pNewData;
 	Sample.m_NumFrames = NumFrames;
 	Sample.m_Rate = m_MixingRate;
+	return true;
 }
 
 bool CSound::DecodeOpus(CSample &Sample, const void *pData, unsigned DataSize, const char *pContextName) const
@@ -338,14 +403,21 @@ bool CSound::DecodeOpus(CSample &Sample, const void *pData, unsigned DataSize, c
 	if(pOpusFile)
 	{
 		const int NumChannels = op_channel_count(pOpusFile, -1);
-		if(NumChannels > 2)
+		if(NumChannels <= 0 || NumChannels > 2)
 		{
 			op_free(pOpusFile);
 			log_error("sound/opus", "File is not mono or stereo. Filename='%s'", pContextName);
 			return false;
 		}
 
-		const int NumSamples = op_pcm_total(pOpusFile, -1); // per channel!
+		const ogg_int64_t NumSamplesOgg = op_pcm_total(pOpusFile, -1); // per channel!
+		if(NumSamplesOgg > std::numeric_limits<int>::max())
+		{
+			op_free(pOpusFile);
+			log_error("sound/opus", "Sample count is too large. Filename='%s'", pContextName);
+			return false;
+		}
+		const int NumSamples = (int)NumSamplesOgg;
 		if(NumSamples < 0)
 		{
 			op_free(pOpusFile);
@@ -353,7 +425,20 @@ bool CSound::DecodeOpus(CSample &Sample, const void *pData, unsigned DataSize, c
 			return false;
 		}
 
-		short *pSampleData = (short *)calloc((size_t)NumSamples * NumChannels, sizeof(short));
+		size_t SampleDataSize = 0;
+		if(!CalculateSampleDataSize(NumSamples, NumChannels, sizeof(short), SampleDataSize))
+		{
+			op_free(pOpusFile);
+			log_error("sound/opus", "Invalid sample buffer size. NumSamples=%d NumChannels=%d Filename='%s'", NumSamples, NumChannels, pContextName);
+			return false;
+		}
+		short *pSampleData = (short *)calloc(SampleDataSize, 1);
+		if(pSampleData == nullptr)
+		{
+			op_free(pOpusFile);
+			log_error("sound/opus", "Failed to allocate sample buffer. NumSamples=%d NumChannels=%d Filename='%s'", NumSamples, NumChannels, pContextName);
+			return false;
+		}
 
 		int Pos = 0;
 		while(Pos < NumSamples)
@@ -367,11 +452,19 @@ bool CSound::DecodeOpus(CSample &Sample, const void *pData, unsigned DataSize, c
 				return false;
 			}
 			else if(Read == 0) // EOF
+			{
 				break;
+			}
 			Pos += Read;
 		}
 
 		op_free(pOpusFile);
+		if(Pos <= 0)
+		{
+			free(pSampleData);
+			log_error("sound/opus", "Decoded sample contains no frames. Filename='%s'", pContextName);
+			return false;
+		}
 
 		Sample.m_pData = pSampleData;
 		Sample.m_NumFrames = Pos;
@@ -466,9 +559,32 @@ bool CSound::DecodeWV(CSample &Sample, const void *pData, unsigned DataSize, con
 		const unsigned int SampleRate = WavpackGetSampleRate(pContext);
 		const int NumChannels = WavpackGetNumChannels(pContext);
 
-		if(NumChannels > 2)
+		if(SampleRate == 0 || SampleRate > (unsigned int)std::numeric_limits<int>::max())
+		{
+			log_error("sound/wv", "Invalid sample rate %u. Filename='%s'", SampleRate, pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
+			s_pWVBuffer = nullptr;
+			return false;
+		}
+
+		if(NumSamples <= 0)
+		{
+			log_error("sound/wv", "Invalid sample count %d. Filename='%s'", NumSamples, pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
+			s_pWVBuffer = nullptr;
+			return false;
+		}
+
+		if(NumChannels <= 0 || NumChannels > 2)
 		{
 			log_error("sound/wv", "File is not mono or stereo. Filename='%s'", pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
 			s_pWVBuffer = nullptr;
 			return false;
 		}
@@ -476,20 +592,66 @@ bool CSound::DecodeWV(CSample &Sample, const void *pData, unsigned DataSize, con
 		if(BitsPerSample != 16)
 		{
 			log_error("sound/wv", "Bits per sample is %d, not 16. Filename='%s'", BitsPerSample, pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
 			s_pWVBuffer = nullptr;
 			return false;
 		}
 
-		int *pBuffer = (int *)calloc((size_t)NumSamples * NumChannels, sizeof(int));
+		size_t BufferSize = 0;
+		if(!CalculateSampleDataSize(NumSamples, NumChannels, sizeof(int), BufferSize))
+		{
+			log_error("sound/wv", "Invalid decode buffer size. NumSamples=%d NumChannels=%d Filename='%s'", NumSamples, NumChannels, pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
+			s_pWVBuffer = nullptr;
+			return false;
+		}
+		int *pBuffer = (int *)calloc(BufferSize, 1);
+		if(pBuffer == nullptr)
+		{
+			log_error("sound/wv", "Failed to allocate decode buffer. NumSamples=%d NumChannels=%d Filename='%s'", NumSamples, NumChannels, pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
+			s_pWVBuffer = nullptr;
+			return false;
+		}
 		if(!WavpackUnpackSamples(pContext, pBuffer, NumSamples))
 		{
 			free(pBuffer);
 			log_error("sound/wv", "WavpackUnpackSamples failed. NumSamples=%d NumChannels=%d Filename='%s'", NumSamples, NumChannels, pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
 			s_pWVBuffer = nullptr;
 			return false;
 		}
 
-		Sample.m_pData = (short *)calloc((size_t)NumSamples * NumChannels, sizeof(short));
+		size_t SampleDataSize = 0;
+		if(!CalculateSampleDataSize(NumSamples, NumChannels, sizeof(short), SampleDataSize))
+		{
+			free(pBuffer);
+			log_error("sound/wv", "Invalid sample buffer size. NumSamples=%d NumChannels=%d Filename='%s'", NumSamples, NumChannels, pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
+			s_pWVBuffer = nullptr;
+			return false;
+		}
+		Sample.m_pData = (short *)calloc(SampleDataSize, 1);
+		if(Sample.m_pData == nullptr)
+		{
+			free(pBuffer);
+			log_error("sound/wv", "Failed to allocate sample buffer. NumSamples=%d NumChannels=%d Filename='%s'", NumSamples, NumChannels, pContextName);
+#ifdef CONF_WAVPACK_CLOSE_FILE
+			WavpackCloseFile(pContext);
+#endif
+			s_pWVBuffer = nullptr;
+			return false;
+		}
 
 		int *pSrc = pBuffer;
 		short *pDst = Sample.m_pData;
@@ -553,7 +715,11 @@ int CSound::LoadOpus(const char *pFilename, int StorageType)
 	if(g_Config.m_Debug)
 		log_trace("sound/opus", "Loaded '%s' (index %d)", pFilename, pSample->m_Index);
 
-	RateConvert(*pSample);
+	if(!RateConvert(*pSample))
+	{
+		UnloadSample(pSample->m_Index);
+		return -1;
+	}
 	return pSample->m_Index;
 }
 
@@ -590,7 +756,11 @@ int CSound::LoadWV(const char *pFilename, int StorageType)
 	if(g_Config.m_Debug)
 		log_trace("sound/wv", "Loaded '%s' (index %d)", pFilename, pSample->m_Index);
 
-	RateConvert(*pSample);
+	if(!RateConvert(*pSample))
+	{
+		UnloadSample(pSample->m_Index);
+		return -1;
+	}
 	return pSample->m_Index;
 }
 
@@ -610,7 +780,11 @@ int CSound::LoadOpusFromMem(const void *pData, unsigned DataSize, bool ForceLoad
 		return -1;
 	}
 
-	RateConvert(*pSample);
+	if(!RateConvert(*pSample))
+	{
+		UnloadSample(pSample->m_Index);
+		return -1;
+	}
 	return pSample->m_Index;
 }
 
@@ -630,7 +804,11 @@ int CSound::LoadWVFromMem(const void *pData, unsigned DataSize, bool ForceLoad, 
 		return -1;
 	}
 
-	RateConvert(*pSample);
+	if(!RateConvert(*pSample))
+	{
+		UnloadSample(pSample->m_Index);
+		return -1;
+	}
 	return pSample->m_Index;
 }
 

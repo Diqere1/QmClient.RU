@@ -90,7 +90,9 @@ std::vector<std::shared_ptr<IEditorEnvelopeReference>> CEditorMap::DeleteEnvelop
 			return true;
 		}
 		else if(ElementIndex > Index)
+		{
 			ElementIndex--;
+		}
 		return false;
 	});
 

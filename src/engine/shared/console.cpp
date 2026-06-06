@@ -197,7 +197,9 @@ int CConsole::ParseArgs(CResult *pResult, const char *pFormat, bool IsColor)
 			break;
 
 		if(Command == '?')
+		{
 			Optional = 1;
+		}
 		else
 		{
 			pStr = str_skip_whitespaces(pStr);
@@ -233,7 +235,9 @@ int CConsole::ParseArgs(CResult *pResult, const char *pFormat, bool IsColor)
 				while(true)
 				{
 					if(pStr[0] == '"')
+					{
 						break;
+					}
 					else if(pStr[0] == '\\')
 					{
 						if(pStr[1] == '\\')
@@ -242,7 +246,9 @@ int CConsole::ParseArgs(CResult *pResult, const char *pFormat, bool IsColor)
 							pStr++; // skip due to escape
 					}
 					else if(pStr[0] == 0)
+					{
 						return PARSEARGS_MISSING_VALUE; // return error
+					}
 
 					*pDst = *pStr;
 					pDst++;
@@ -359,7 +365,7 @@ LEVEL IConsole::ToLogLevel(int Level)
 	case IConsole::OUTPUT_LEVEL_DEBUG:
 		return LEVEL_TRACE;
 	}
-	dbg_assert(0, "invalid log level");
+	log_warn("console", "Invalid log level %d", Level);
 	return LEVEL_INFO;
 }
 
@@ -367,7 +373,8 @@ int IConsole::ToLogLevelFilter(int Level)
 {
 	if(!(-3 <= Level && Level <= 2))
 	{
-		dbg_assert(0, "invalid log level filter");
+		log_warn("console", "Invalid log level filter %d", Level);
+		return 0;
 	}
 	return Level + 2;
 }
@@ -445,7 +452,9 @@ bool CConsole::LineIsValid(const char *pStr)
 		while(*pEnd)
 		{
 			if(*pEnd == '"')
+			{
 				InString ^= 1;
+			}
 			else if(*pEnd == '\\') // escape sequences
 			{
 				if(pEnd[1] == '"')
@@ -459,7 +468,9 @@ bool CConsole::LineIsValid(const char *pStr)
 					break;
 				}
 				else if(*pEnd == '#') // comment, no need to do anything more
+				{
 					break;
+				}
 			}
 
 			pEnd++;
@@ -496,7 +507,9 @@ void CConsole::ExecuteLineStroked(int Stroke, const char *pStr, int ClientId, bo
 		while(*pEnd)
 		{
 			if(*pEnd == '"')
+			{
 				InString ^= 1;
+			}
 			else if(*pEnd == '\\') // escape sequences
 			{
 				if(pEnd[1] == '"')
@@ -510,7 +523,9 @@ void CConsole::ExecuteLineStroked(int Stroke, const char *pStr, int ClientId, bo
 					break;
 				}
 				else if(*pEnd == '#') // comment, no need to do anything more
+				{
 					break;
+				}
 			}
 
 			pEnd++;
@@ -803,7 +818,9 @@ void CConsole::ConCommandAccess(IResult *pResult, void *pUser)
 		}
 	}
 	else
+	{
 		str_format(aBuf, sizeof(aBuf), "No such command: '%s'.", pResult->GetString(0));
+	}
 
 	pConsole->Print(OUTPUT_LEVEL_STANDARD, "console", aBuf);
 }
@@ -1203,23 +1220,41 @@ std::optional<ColorHSLA> CConsole::ColorParse(const char *pStr, float DarkestLig
 			return std::nullopt;
 	}
 	else if(!str_comp_nocase(pStr, "red"))
+	{
 		return ColorHSLA(0.0f / 6.0f, 1.0f, 0.5f);
+	}
 	else if(!str_comp_nocase(pStr, "yellow"))
+	{
 		return ColorHSLA(1.0f / 6.0f, 1.0f, 0.5f);
+	}
 	else if(!str_comp_nocase(pStr, "green"))
+	{
 		return ColorHSLA(2.0f / 6.0f, 1.0f, 0.5f);
+	}
 	else if(!str_comp_nocase(pStr, "cyan"))
+	{
 		return ColorHSLA(3.0f / 6.0f, 1.0f, 0.5f);
+	}
 	else if(!str_comp_nocase(pStr, "blue"))
+	{
 		return ColorHSLA(4.0f / 6.0f, 1.0f, 0.5f);
+	}
 	else if(!str_comp_nocase(pStr, "magenta"))
+	{
 		return ColorHSLA(5.0f / 6.0f, 1.0f, 0.5f);
+	}
 	else if(!str_comp_nocase(pStr, "white"))
+	{
 		return ColorHSLA(0.0f, 0.0f, 1.0f);
+	}
 	else if(!str_comp_nocase(pStr, "gray"))
+	{
 		return ColorHSLA(0.0f, 0.0f, 0.5f);
+	}
 	else if(!str_comp_nocase(pStr, "black"))
+	{
 		return ColorHSLA(0.0f, 0.0f, 0.0f);
+	}
 
 	return std::nullopt;
 }

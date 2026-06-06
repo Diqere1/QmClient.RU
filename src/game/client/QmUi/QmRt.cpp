@@ -10,13 +10,15 @@
 #include <engine/client.h>
 #include <engine/shared/config.h>
 
+#include <game/client/components/qmclient/perf_logging.h>
+
 #include <algorithm>
 
 namespace
 {
 bool PerfDebugEnabled()
 {
-	return g_Config.m_QmPerfDebug != 0;
+	return QmPerfEnabled();
 }
 
 double PerfDebugThresholdMs()
@@ -24,17 +26,9 @@ double PerfDebugThresholdMs()
 	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 }
 
-void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+void LogPerfStage(IClient *pClient, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 {
-	if(!PerfDebugEnabled())
-		return;
-	if(DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg("perf/ui_runtime", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg("perf/ui_runtime", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+	QmPerfLogStage("perf/ui_runtime", pStage, DurationMs, Force, pClient, nullptr, nullptr, pExtra);
 }
 }
 
@@ -69,33 +63,42 @@ void CUiRuntimeV2::OnRender()
 		Dt = 0.0f;
 	Dt = std::min(Dt, 1.0f / 15.0f);
 
+	float TreeBeginMs = 0.0f;
+	float AnimAdvanceMs = 0.0f;
+	float RenderBridgeBeginMs = 0.0f;
+	float TreeEndMs = 0.0f;
+
 	{
 		CPerfTimer StageTimer;
 		m_Tree.BeginFrame();
-		LogPerfStage("tree_begin_frame", StageTimer.ElapsedMs());
+		TreeBeginMs = StageTimer.ElapsedMs();
+		LogPerfStage(m_pGameClient->Client(), "tree_begin_frame", TreeBeginMs);
 	}
 	{
 		CPerfTimer StageTimer;
 		m_AnimRuntime.Advance(Dt);
-		LogPerfStage("anim_advance", StageTimer.ElapsedMs());
+		AnimAdvanceMs = StageTimer.ElapsedMs();
+		LogPerfStage(m_pGameClient->Client(), "anim_advance", AnimAdvanceMs);
 	}
 	{
 		CPerfTimer StageTimer;
 		m_RenderBridge.BeginFrame();
-		LogPerfStage("render_bridge_begin_frame", StageTimer.ElapsedMs());
+		RenderBridgeBeginMs = StageTimer.ElapsedMs();
+		LogPerfStage(m_pGameClient->Client(), "render_bridge_begin_frame", RenderBridgeBeginMs);
 	}
 	{
 		CPerfTimer StageTimer;
 		m_Tree.EndFrame();
+		TreeEndMs = StageTimer.ElapsedMs();
 		char aExtra[96];
 		str_format(aExtra, sizeof(aExtra), "dt_ms=%.3f", Dt * 1000.0f);
-		LogPerfStage("tree_end_frame", StageTimer.ElapsedMs(), false, aExtra);
+		LogPerfStage(m_pGameClient->Client(), "tree_end_frame", TreeEndMs, false, aExtra);
 	}
 
-	m_LastStats.m_BuildTreeMs = 0.0f;
-	m_LastStats.m_LayoutMs = 0.0f;
-	m_LastStats.m_AnimMs = Dt * 1000.0f;
-	m_LastStats.m_RenderBridgeMs = 0.0f;
+	m_LastStats.m_BuildTreeMs = TreeBeginMs + TreeEndMs;
+	m_LastStats.m_LayoutMs = 0.0f; // layout computed externally by callers
+	m_LastStats.m_AnimMs = AnimAdvanceMs;
+	m_LastStats.m_RenderBridgeMs = RenderBridgeBeginMs;
 	m_LastStats.m_NodeCount = m_Tree.NodeCount();
 
 	if(g_Config.m_QmUiRuntimeV2Debug)
@@ -110,7 +113,7 @@ void CUiRuntimeV2::OnRender()
 
 	char aExtra[96];
 	str_format(aExtra, sizeof(aExtra), "nodes=%d", m_LastStats.m_NodeCount);
-	LogPerfStage("ui_runtime_total", RenderTimer.ElapsedMs(), false, aExtra);
+	LogPerfStage(m_pGameClient->Client(), "ui_runtime_total", RenderTimer.ElapsedMs(), false, aExtra);
 }
 
 const SUiV2PerfStats &CUiRuntimeV2::LastStats() const

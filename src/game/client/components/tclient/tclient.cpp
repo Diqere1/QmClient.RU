@@ -1,7 +1,4 @@
 #include "tclient.h"
-#include <game/client/components/qmclient/config_override.h>
-
-#include <game/client/components/qmclient/data_version.h>
 
 #include <base/hash.h>
 #include <base/log.h>
@@ -10,38 +7,45 @@
 
 #include <engine/client.h>
 #include <engine/client/enums.h>
+#include <engine/client/updater.h>
+#include <engine/engine.h>
 #include <engine/external/regex.h>
 #include <engine/external/tinyexpr.h>
 #include <engine/friends.h>
 #include <engine/graphics.h>
 #include <engine/keys.h>
+#include <engine/map.h>
 #include <engine/serverbrowser.h>
-#include <engine/engine.h>
 #include <engine/shared/config.h>
+#include <engine/shared/csv.h>
+#include <engine/shared/jobs.h>
 #include <engine/shared/json.h>
 #include <engine/shared/jsonwriter.h>
-#include <engine/shared/jobs.h>
-#include <engine/client/updater.h>
-#include <engine/map.h>
 #include <engine/storage.h>
 
 #include <generated/client_data.h>
 
 #include <game/client/animstate.h>
 #include <game/client/components/chat.h>
+#include <game/client/components/hud_editor.h>
+#include <game/client/components/qmclient/data_version.h>
+#include <game/client/components/qmclient/keyword_reply_rules.h>
+#include <game/client/components/qmclient/modes.h>
+#include <game/client/components/qmclient/update_version.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/render.h>
 #include <game/client/ui.h>
 #include <game/layers.h>
-#include <game/mapitems.h>
 #include <game/localization.h>
+#include <game/mapitems.h>
 #include <game/version.h>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <mutex>
 #include <queue>
@@ -54,8 +58,8 @@
 #include <windows.h>
 #endif
 
-static constexpr const char *TCLIENT_INFO_URL = "http://42.194.185.210:8080/client/version";
-static constexpr const char *TCLIENT_UPDATE_EXE_URL = "https://github.com/wxj881027/QmClient/releases/latest/download/DDNet.exe";
+static constexpr const char *QMCLIENT_INFO_URL = "http://42.194.185.210:8080/client/version";
+static constexpr const char *QMCLIENT_UPDATE_EXE_URL = "https://github.com/wxj881027/QmClient/releases/latest/download/DDNet.exe";
 static constexpr const char *MAP_CATEGORY_CACHE_FILE = "qmclient/map_categories.json";
 static constexpr int64_t MAP_CATEGORY_CACHE_SAVE_DELAY_SEC = 5;
 static constexpr const char *MAP_NOTES_FILE = "qmclient/map_notes.json";
@@ -63,6 +67,7 @@ static constexpr int64_t MAP_NOTES_SAVE_DELAY_SEC = 5;
 static constexpr const char *QMCLIENT_FREEZE_WAKEUP_TEXT = "快醒醒!";
 static constexpr int QMCLIENT_AXIOM_AUTO_LOGIN_MAX_ATTEMPTS = 3;
 static constexpr int QMCLIENT_AXIOM_AUTO_LOGIN_RETRY_DELAY_SECONDS = 2;
+static constexpr int LOCAL_SAVE_JOIN_HINT_MAX_ITEMS = 12;
 
 static bool TextContainsAny(const char *pText, const std::initializer_list<const char *> &Tokens)
 {
@@ -77,14 +82,14 @@ static bool TextContainsAny(const char *pText, const std::initializer_list<const
 	return false;
 }
 static constexpr float QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION = 2.0f;
-static constexpr float QMCLIENT_COMBO_POPUP_DURATION = 1.25f;
 static constexpr float QMCLIENT_TEXT_POPUP_FONT_SIZE = 30.0f;
 static constexpr vec2 QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET = vec2(34.0f, -78.0f);
 static constexpr vec2 QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT = vec2(18.0f, -16.0f);
 static constexpr int QMCLIENT_COMBO_POPUP_WINDOW_SECONDS = 2;
+static constexpr int QMCLIENT_COMBO_FREEZE_PARTICLE_COUNT = 14;
+static constexpr float QMCLIENT_COMBO_FREEZE_PARTICLE_RADIUS = 42.0f;
 static constexpr ColorRGBA QMCLIENT_POPUP_ROLL_COLOR_FROM = ColorRGBA(0.0f, 1.0f, 1.0f, 1.0f);
 static constexpr ColorRGBA QMCLIENT_POPUP_ROLL_COLOR_TO = ColorRGBA(1.0f, 0.0f, 1.0f, 1.0f);
-static constexpr ColorRGBA QMCLIENT_COMBO_POPUP_COLOR = ColorRGBA(1.0f, 0.96f, 0.45f, 1.0f);
 static constexpr const char *s_apKeywordNegationWords[] = {
 	"不",
 	"没",
@@ -109,91 +114,99 @@ static constexpr const char *s_pFriendEnterBroadcastDefaultText = "%s joined thi
 
 static int AutoReplySeparatorLength(const char *pStr);
 static bool AppendAutoReplyRuleBlock(char *pOutRules, size_t OutRulesSize, const char *pRules);
+static bool ExtractLoadSaveCode(const char *pLine, char *pOutCode, size_t OutCodeSize);
+static void TrimLocalSaveField(std::string &Field);
+static std::array<std::string, 4> ParseLocalSaveCsvFields(const char *pLine);
 
 namespace
 {
-enum class ETextPopupType
-{
-	FREEZE_WAKEUP = 0,
-	COMBO_AMAZING,
-	COMBO_FANTASTIC,
-	COMBO_UNBELIEVABLE,
-	COMBO_UNSTOPPABLE,
-	NUM_TYPES,
-};
-
-struct STextPopupDefinition
-{
-	const char *m_pText;
-};
-
-static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
-	{QMCLIENT_FREEZE_WAKEUP_TEXT},
-	{"Amazing!"},
-	{"Fantastic!"},
-	{"Unbelievable!"},
-	{"Unstoppable!"},
-}};
-
-enum class EFreezeWakeupType
-{
-	NONE,
-	LOCAL_HAMMER,
-	EXTERNAL_HAMMER,
-};
-
-int ComboPopupTextTypeFromCount(int ComboCount)
-{
-	switch(ComboCount)
+	enum class ETextPopupType
 	{
-	case 2: return (int)ETextPopupType::COMBO_AMAZING;
-	case 3: return (int)ETextPopupType::COMBO_FANTASTIC;
-	case 4: return (int)ETextPopupType::COMBO_UNBELIEVABLE;
-	default: return (int)ETextPopupType::COMBO_UNSTOPPABLE;
+		FREEZE_WAKEUP = 0,
+		NUM_TYPES,
+	};
+
+	struct STextPopupDefinition
+	{
+		const char *m_pText;
+	};
+
+	static constexpr std::array<STextPopupDefinition, (int)ETextPopupType::NUM_TYPES> s_aTextPopupDefinitions = {{
+		{QMCLIENT_FREEZE_WAKEUP_TEXT},
+	}};
+
+	enum class EFreezeWakeupType
+	{
+		NONE,
+		LOCAL_HAMMER,
+		EXTERNAL_HAMMER,
+	};
+
+	float TextPopupDuration(int TextType)
+	{
+		(void)TextType;
+		return QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
+	}
+
+	void AddComboFreezeParticleRing(CGameClient *pGameClient, vec2 Pos, float Alpha)
+	{
+		CParticle Part;
+		Part.SetDefault();
+		Part.m_Spr = SPRITE_PART_SNOWFLAKE;
+		Part.m_LifeSpan = 0.7f;
+		Part.m_StartSize = 18.0f;
+		Part.m_EndSize = 7.0f;
+		Part.m_UseAlphaFading = true;
+		Part.m_StartAlpha = Alpha;
+		Part.m_EndAlpha = 0.0f;
+		Part.m_Rotspeed = pi;
+		Part.m_Friction = 0.85f;
+		Part.m_FlowAffected = 0.0f;
+		Part.m_Collides = false;
+		Part.m_Color.a = Alpha;
+
+		for(int Index = 0; Index < QMCLIENT_COMBO_FREEZE_PARTICLE_COUNT; ++Index)
+		{
+			const float Angle = 2.0f * pi * Index / QMCLIENT_COMBO_FREEZE_PARTICLE_COUNT;
+			const vec2 Direction = vec2(std::cos(Angle), std::sin(Angle));
+			Part.m_Pos = Pos + Direction * QMCLIENT_COMBO_FREEZE_PARTICLE_RADIUS;
+			Part.m_Vel = Direction * 95.0f;
+			Part.m_Rot = Angle;
+			pGameClient->m_Particles.Add(CParticles::GROUP_EXTRA, &Part);
+		}
+	}
+
+	EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
+	{
+		const CCharacter *pPredictedChar = pGameClient->m_PredictedWorld.GetCharacterById(ClientId);
+		if(pPredictedChar == nullptr)
+			return EFreezeWakeupType::NONE;
+
+		const int LastDamageTick = pPredictedChar->GetLastDamageTick();
+		const int DamageTickDelta = pGameClient->m_PredictedWorld.GameTick() - LastDamageTick;
+		const int DamageTickWindow = maximum(2, pGameClient->m_PredictedWorld.GameTickSpeed() / 6);
+		const int DamageFrom = pPredictedChar->GetLastDamageFrom();
+		if(LastDamageTick <= 0 ||
+			DamageTickDelta < 0 ||
+			DamageTickDelta > DamageTickWindow ||
+			pPredictedChar->GetLastDamageWeapon() != WEAPON_HAMMER ||
+			DamageFrom < 0)
+		{
+			return EFreezeWakeupType::NONE;
+		}
+
+		if(DamageFrom == ClientId ||
+			DamageFrom == pGameClient->m_aLocalIds[0] ||
+			DamageFrom == pGameClient->m_aLocalIds[1])
+		{
+			return EFreezeWakeupType::LOCAL_HAMMER;
+		}
+
+		return EFreezeWakeupType::EXTERNAL_HAMMER;
 	}
 }
 
-bool IsComboPopupTextType(int TextType)
-{
-	return TextType >= (int)ETextPopupType::COMBO_AMAZING &&
-		TextType <= (int)ETextPopupType::COMBO_UNSTOPPABLE;
-}
-
-float TextPopupDuration(int TextType)
-{
-	return IsComboPopupTextType(TextType) ? QMCLIENT_COMBO_POPUP_DURATION : QMCLIENT_FREEZE_WAKEUP_POPUP_DURATION;
-}
-
-EFreezeWakeupType DetectFreezeWakeupType(CGameClient *pGameClient, int ClientId)
-{
-	const CCharacter *pPredictedChar = pGameClient->m_PredictedWorld.GetCharacterById(ClientId);
-	if(pPredictedChar == nullptr)
-		return EFreezeWakeupType::NONE;
-
-	const int LastDamageTick = pPredictedChar->GetLastDamageTick();
-	const int DamageTickDelta = pGameClient->m_PredictedWorld.GameTick() - LastDamageTick;
-	const int DamageTickWindow = maximum(2, pGameClient->m_PredictedWorld.GameTickSpeed() / 6);
-	const int DamageFrom = pPredictedChar->GetLastDamageFrom();
-	if(LastDamageTick <= 0 ||
-		DamageTickDelta < 0 ||
-		DamageTickDelta > DamageTickWindow ||
-		pPredictedChar->GetLastDamageWeapon() != WEAPON_HAMMER ||
-		DamageFrom < 0)
-	{
-		return EFreezeWakeupType::NONE;
-	}
-
-	if(DamageFrom == ClientId ||
-		DamageFrom == pGameClient->m_aLocalIds[0] ||
-		DamageFrom == pGameClient->m_aLocalIds[1])
-	{
-		return EFreezeWakeupType::LOCAL_HAMMER;
-	}
-
-	return EFreezeWakeupType::EXTERNAL_HAMMER;
-}
-}
-
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SKeywordReplyRule
 {
 	std::string m_Keywords;
@@ -429,6 +442,7 @@ static bool IsRewardTileForGoresDistanceField(int TileIndex)
 	return TileIndex == TILE_UNFREEZE || TileIndex == TILE_DUNFREEZE || TileIndex == TILE_LUNFREEZE;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum EGoresCMapValue
 {
 	GORES_CMAP_NORMAL = 0,
@@ -441,7 +455,7 @@ enum EGoresCMapValue
 static bool IsPlayerTeleportInputTileForGoresDistanceField(int TeleType)
 {
 	return TeleType == TILE_TELEIN || TeleType == TILE_TELEINEVIL ||
-		TeleType == TILE_TELECHECKIN || TeleType == TILE_TELECHECKINEVIL;
+	       TeleType == TILE_TELECHECKIN || TeleType == TILE_TELECHECKINEVIL;
 }
 
 static bool IsDirectTeleportInputTileForGoresDistanceField(int TeleType)
@@ -565,7 +579,7 @@ void CTClient::OnInit()
 {
 	TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
 	m_pGraphics = Kernel()->RequestInterface<IEngineGraphics>();
-	FetchTClientInfo();
+	FetchQmClientUpdateInfo();
 
 	// 先在 qmclient/ 目录找，找不到再返回上一级目录找
 	const bool MissingQmClientFolder = !Storage()->FolderExists("qmclient", IStorage::TYPE_ALL);
@@ -591,57 +605,6 @@ void CTClient::OnInit()
 	}
 	LoadMapCategoryCache();
 	LoadMapNotes();
-
-	// 兼容旧版恰分配置：将旧规则并入关键词回复，旧隐式关键词和预设触发词不再保留。
-	{
-		bool MigratedLegacyAutoReply = false;
-		char aMergedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
-		str_copy(aMergedRules, g_Config.m_QmKeywordReplyRules, sizeof(aMergedRules));
-
-		if(g_Config.m_QmQiaFenEnabled)
-		{
-			g_Config.m_QmKeywordReplyEnabled = 1;
-			g_Config.m_QmQiaFenEnabled = 0;
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmQiaFenUseDummy)
-		{
-			g_Config.m_QmKeywordReplyUseDummy = 1;
-			g_Config.m_QmQiaFenUseDummy = 0;
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmQiaFenRules[0] != '\0')
-		{
-			if(AppendAutoReplyRuleBlock(aMergedRules, sizeof(aMergedRules), g_Config.m_QmQiaFenRules))
-			{
-				g_Config.m_QmQiaFenRules[0] = '\0';
-				MigratedLegacyAutoReply = true;
-			}
-		}
-
-		if(g_Config.m_QmQiaFenKeywords[0] != '\0')
-		{
-			g_Config.m_QmQiaFenKeywords[0] = '\0';
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmKeywordReplyAutoRename)
-		{
-			char aMigratedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
-			if(MigrateKeywordReplyRulesAutoRenamePreservingLines(aMergedRules, aMigratedRules, sizeof(aMigratedRules)))
-			{
-				str_copy(aMergedRules, aMigratedRules, sizeof(aMergedRules));
-				g_Config.m_QmKeywordReplyAutoRename = 0;
-				MigratedLegacyAutoReply = true;
-			}
-		}
-
-		if(MigratedLegacyAutoReply)
-			str_copy(g_Config.m_QmKeywordReplyRules, aMergedRules, sizeof(g_Config.m_QmKeywordReplyRules));
-	}
-
 }
 
 void CTClient::OnShutdown()
@@ -654,7 +617,7 @@ void CTClient::OnShutdown()
 		}
 	};
 
-	AbortTask(m_pTClientInfoTask);
+	AbortTask(m_pQmClientUpdateInfoTask);
 	AbortTask(m_pUpdateExeTask);
 	if(m_MapNotesDirty)
 		SaveMapNotes();
@@ -699,9 +662,9 @@ void CTClient::TryAppendKeywordReplyRenameSuffix(bool UseDummy)
 
 	const int NameLen = str_length(pConfigName);
 	const bool AlreadyHasQia = NameLen >= 3 &&
-		(unsigned char)pConfigName[NameLen - 3] == 0xE6 &&
-		(unsigned char)pConfigName[NameLen - 2] == 0x81 &&
-		(unsigned char)pConfigName[NameLen - 1] == 0xB0;
+				   (unsigned char)pConfigName[NameLen - 3] == 0xE6 &&
+				   (unsigned char)pConfigName[NameLen - 2] == 0x81 &&
+				   (unsigned char)pConfigName[NameLen - 1] == 0xB0;
 	if(AlreadyHasQia || NameLen + 3 >= ConfigNameSize)
 		return;
 
@@ -733,6 +696,7 @@ static int AutoReplySeparatorLength(const char *pStr)
 	return 0;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class EAutoReplyTokenMode
 {
 	Literal,
@@ -1114,7 +1078,9 @@ static bool MatchAutoReplyRules(const char *pMessage, const char *pRules, char *
 	bool aMatchedRenameFlags[MAX_MATCHED_REPLIES] = {};
 	int MatchedReplyCount = 0;
 
-	const char *pCursor = pRules;
+	char aDecodedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
+	QmKeywordReplyRules::DecodeFromConfig(pRules, aDecodedRules, sizeof(aDecodedRules));
+	const char *pCursor = aDecodedRules;
 	while(*pCursor)
 	{
 		char aLine[1024];
@@ -1185,7 +1151,8 @@ const char *CTClient::CurrentCommunityIdForFinishCheck() const
 		return nullptr;
 
 	const char *pCommunityId = nullptr;
-	const IServerBrowser::CServerEntry *pEntry = pServerBrowser->Find(Client()->ServerAddress());
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	const IServerBrowser::CServerEntry *pEntry = pServerAddr ? pServerBrowser->Find(*pServerAddr) : nullptr;
 	if(pEntry)
 		pCommunityId = pEntry->m_Info.m_aCommunityId;
 	else if(GameClient()->m_ConnectServerInfo)
@@ -1221,6 +1188,9 @@ void CTClient::ResetAxiomAutoLoginState()
 	m_AxiomAutoLoginAttempts = 0;
 	m_AxiomAutoLoginNextTryTick = 0;
 	m_aAxiomAutoLoginServer[0] = '\0';
+	m_AxiomDummyAutoLoginSent = false;
+	m_AxiomDummyWasConnected = false;
+	m_aAxiomDummyAutoLoginServer[0] = '\0';
 }
 
 void CTClient::TrySendAxiomLogin()
@@ -1233,7 +1203,9 @@ void CTClient::TrySendAxiomLogin()
 		return;
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
 	if(aServerAddress[0] != '\0')
 		str_copy(m_aAxiomAutoLoginServer, aServerAddress, sizeof(m_aAxiomAutoLoginServer));
 
@@ -1247,9 +1219,32 @@ void CTClient::TrySendAxiomLogin()
 
 	if(!m_AxiomAutoLoginAnnounced)
 	{
-		GameClient()->Echo(Localize("Attempting Axiom auto login"));
+		GameClient()->Echo(Localize("正在尝试 Axiom 自动登录"));
 		m_AxiomAutoLoginAnnounced = true;
 	}
+}
+
+void CTClient::TrySendAxiomDummyLogin()
+{
+	if(g_Config.m_QmAxiomAutoLogin == 0 || g_Config.m_QmAxiomDummyLoginPassword[0] == '\0')
+		return;
+	if(Client()->State() != IClient::STATE_ONLINE || !Client()->DummyConnected() || !IsAxiomCommunity())
+		return;
+	if(m_AxiomDummyAutoLoginSent)
+		return;
+
+	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
+	if(aServerAddress[0] != '\0')
+		str_copy(m_aAxiomDummyAutoLoginServer, aServerAddress, sizeof(m_aAxiomDummyAutoLoginServer));
+
+	char aLoginCommand[192];
+	str_format(aLoginCommand, sizeof(aLoginCommand), "/login %s", g_Config.m_QmAxiomDummyLoginPassword);
+	GameClient()->m_Chat.SendChatOnConn(IClient::CONN_DUMMY, 0, aLoginCommand);
+	m_AxiomDummyAutoLoginSent = true;
+	GameClient()->Echo(Localize("正在尝试 Axiom 分身自动登录"));
 }
 
 void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
@@ -1269,7 +1264,7 @@ void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
 		m_AxiomAutoLoginSucceeded = true;
 		m_AxiomAutoLoginWaitingReply = false;
 		m_AxiomAutoLoginNextTryTick = 0;
-		GameClient()->Echo(Localize("Axiom auto login succeeded"));
+		GameClient()->Echo(Localize("Axiom 自动登录成功"));
 	}
 	else if(Failure)
 	{
@@ -1277,19 +1272,19 @@ void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
 		if(m_AxiomAutoLoginAttempts < QMCLIENT_AXIOM_AUTO_LOGIN_MAX_ATTEMPTS)
 		{
 			m_AxiomAutoLoginNextTryTick = time_get() + (int64_t)QMCLIENT_AXIOM_AUTO_LOGIN_RETRY_DELAY_SECONDS * time_freq();
-			GameClient()->Echo(Localize("Axiom auto login failed, retrying"));
+			GameClient()->Echo(Localize("Axiom 自动登录失败，正在重试"));
 		}
 		else
 		{
 			m_AxiomAutoLoginNextTryTick = 0;
-			GameClient()->Echo(Localize("Axiom auto login failed"));
+			GameClient()->Echo(Localize("Axiom 自动登录失败"));
 		}
 	}
 }
 
 void CTClient::UpdateAxiomAutoLogin()
 {
-	if(Client()->State() != IClient::STATE_ONLINE || g_Config.m_QmAxiomAutoLogin == 0 || g_Config.m_QmAxiomLoginPassword[0] == '\0')
+	if(Client()->State() != IClient::STATE_ONLINE || g_Config.m_QmAxiomAutoLogin == 0)
 	{
 		ResetAxiomAutoLoginState();
 		return;
@@ -1301,16 +1296,46 @@ void CTClient::UpdateAxiomAutoLogin()
 	}
 
 	char aServerAddress[NETADDR_MAXSTRSIZE] = "";
-	net_addr_str(&Client()->ServerAddress(), aServerAddress, sizeof(aServerAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, aServerAddress, sizeof(aServerAddress), true);
 	if(m_aAxiomAutoLoginServer[0] != '\0' && aServerAddress[0] != '\0' && str_comp(m_aAxiomAutoLoginServer, aServerAddress) != 0)
 		ResetAxiomAutoLoginState();
 
-	if(m_AxiomAutoLoginSucceeded || m_AxiomAutoLoginWaitingReply)
-		return;
+	if(g_Config.m_QmAxiomLoginPassword[0] == '\0')
+	{
+		m_AxiomAutoLoginAnnounced = false;
+		m_AxiomAutoLoginSucceeded = false;
+		m_AxiomAutoLoginWaitingReply = false;
+		m_AxiomAutoLoginAttempts = 0;
+		m_AxiomAutoLoginNextTryTick = 0;
+		m_aAxiomAutoLoginServer[0] = '\0';
+	}
+	else if(!m_AxiomAutoLoginSucceeded && !m_AxiomAutoLoginWaitingReply)
+	{
+		const int64_t Now = time_get();
+		if(m_AxiomAutoLoginAttempts == 0 || (m_AxiomAutoLoginNextTryTick > 0 && Now >= m_AxiomAutoLoginNextTryTick))
+			TrySendAxiomLogin();
+	}
 
-	const int64_t Now = time_get();
-	if(m_AxiomAutoLoginAttempts == 0 || (m_AxiomAutoLoginNextTryTick > 0 && Now >= m_AxiomAutoLoginNextTryTick))
-		TrySendAxiomLogin();
+	const bool DummyConnected = Client()->DummyConnected();
+	if(!DummyConnected || g_Config.m_QmAxiomDummyLoginPassword[0] == '\0')
+	{
+		m_AxiomDummyAutoLoginSent = false;
+		m_aAxiomDummyAutoLoginServer[0] = '\0';
+	}
+	else
+	{
+		if(m_aAxiomDummyAutoLoginServer[0] != '\0' && aServerAddress[0] != '\0' && str_comp(m_aAxiomDummyAutoLoginServer, aServerAddress) != 0)
+		{
+			m_AxiomDummyAutoLoginSent = false;
+			m_aAxiomDummyAutoLoginServer[0] = '\0';
+		}
+
+		if(!m_AxiomDummyWasConnected || !m_AxiomDummyAutoLoginSent)
+			TrySendAxiomDummyLogin();
+	}
+	m_AxiomDummyWasConnected = DummyConnected;
 }
 
 void CTClient::OnMessage(int MsgType, void *pRawMsg)
@@ -1329,25 +1354,6 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 			{
 				const char *pText = pMsg->m_pMessage;
 				HandleAxiomAutoLoginMessage(pText);
-				if(str_find_nocase(pText, "has requested to swap with you"))
-				{
-					StartSwapCountdown();
-				}
-				else if(str_find_nocase(pText, "has canceled swap with you"))
-				{
-					ClearSwapCountdown();
-				}
-				else if(str_find_nocase(pText, "has swapped with"))
-				{
-					const char *pMainName = g_Config.m_PlayerName;
-					const char *pDummyName = g_Config.m_ClDummyName;
-					const bool MainMatch = pMainName[0] && str_find_nocase(pText, pMainName);
-					const bool DummyMatch = Client()->DummyConnected() && pDummyName[0] && str_find_nocase(pText, pDummyName);
-					if(MainMatch || DummyMatch)
-					{
-						ClearSwapCountdown();
-					}
-				}
 			}
 			return;
 		}
@@ -1480,7 +1486,8 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 			bool FunVote = SettingVote && str_find_nocase(aDescription, "funvote");
 			bool MapVote = SettingVote && !RandomMapVote && !MapCoolDown && !CategoryVote && !FunVote && (str_find_nocase(aDescription, "Map:") || str_find_nocase(aDescription, "★") || str_find_nocase(aDescription, "✰"));
 
-			if(g_Config.m_TcAutoVoteWhenFar && (MapVote || RandomMapVote))
+			const int AutoMapVote = std::clamp(g_Config.m_TcAutoVoteWhenFar, 0, 2);
+			if(AutoMapVote != 0 && (MapVote || RandomMapVote))
 			{
 				int RaceTime = 0;
 				if(GameClient()->m_Snap.m_pGameInfoObj && GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_RACETIME)
@@ -1511,7 +1518,7 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 
 						if(!Friend && !SameTeam && !MySelf)
 						{
-							GameClient()->m_Voting.Vote(-1);
+							GameClient()->m_Voting.Vote(AutoMapVote == 2 ? 1 : -1);
 							if(str_comp(g_Config.m_TcAutoVoteWhenFarMessage, "") != 0)
 								SendNonDuplicateMessage(0, g_Config.m_TcAutoVoteWhenFarMessage);
 						}
@@ -1549,16 +1556,105 @@ void CTClient::OnMessage(int MsgType, void *pRawMsg)
 	}
 }
 
-void CTClient::StartSwapCountdown()
+namespace
 {
-	m_SwapCountdownActive = true;
-	m_SwapCountdownStartTick = Client()->GameTick(g_Config.m_ClDummy);
+	bool ExtractSwapRequesterName(const char *pText, const char *pMarker, char *pOut, int OutSize)
+	{
+		if(OutSize <= 0)
+			return false;
+		pOut[0] = '\0';
+		if(pText == nullptr || pMarker == nullptr)
+			return false;
+
+		const char *pMarkerPos = str_find_nocase(pText, pMarker);
+		if(pMarkerPos == nullptr || pMarkerPos == pText)
+			return false;
+
+		const int NameLength = minimum<int>(pMarkerPos - pText, OutSize - 1);
+		str_truncate(pOut, OutSize, pText, NameLength);
+		return pOut[0] != '\0';
+	}
 }
 
-void CTClient::ClearSwapCountdown()
+void CTClient::HandleSwapCountdownMessage(const char *pText, int Dummy)
 {
-	m_SwapCountdownActive = false;
-	m_SwapCountdownStartTick = 0;
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES || pText == nullptr)
+		return;
+
+	if(str_find_nocase(pText, "has requested to swap with you"))
+	{
+		char aRequester[MAX_NAME_LENGTH] = "";
+		ExtractSwapRequesterName(pText, " has requested to swap with you", aRequester, sizeof(aRequester));
+		StartSwapCountdown(Dummy, aRequester);
+	}
+	else if(str_find_nocase(pText, "has canceled swap with you"))
+	{
+		char aRequester[MAX_NAME_LENGTH] = "";
+		if(!ExtractSwapRequesterName(pText, " has canceled swap with you", aRequester, sizeof(aRequester)) ||
+			str_comp_nocase(aRequester, m_aaSwapCountdownRequester[Dummy]) == 0)
+		{
+			ClearSwapCountdown(Dummy);
+		}
+	}
+	else if(str_find_nocase(pText, "has swapped with"))
+	{
+		const char *pTargetName = Dummy == 0 ? g_Config.m_PlayerName : g_Config.m_ClDummyName;
+		if(pTargetName[0] != '\0' && str_find_nocase(pText, pTargetName))
+			ClearSwapCountdown(Dummy);
+	}
+}
+
+void CTClient::StartSwapCountdown(int Dummy, const char *pRequester)
+{
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES)
+		return;
+
+	m_aSwapCountdownActive[Dummy] = true;
+	m_aSwapCountdownStartTick[Dummy] = Client()->GameTick(Dummy);
+	str_copy(m_aaSwapCountdownRequester[Dummy], pRequester != nullptr ? pRequester : "", sizeof(m_aaSwapCountdownRequester[Dummy]));
+}
+
+void CTClient::ClearSwapCountdown(int Dummy)
+{
+	if(Dummy < 0)
+	{
+		for(int i = 0; i < NUM_DUMMIES; ++i)
+			ClearSwapCountdown(i);
+		return;
+	}
+	if(Dummy >= NUM_DUMMIES)
+		return;
+
+	m_aSwapCountdownActive[Dummy] = false;
+	m_aSwapCountdownStartTick[Dummy] = 0;
+	m_aaSwapCountdownRequester[Dummy][0] = '\0';
+}
+
+bool CTClient::HasSwapCountdown(int Dummy) const
+{
+	if(Dummy >= 0 && Dummy < NUM_DUMMIES)
+		return m_aSwapCountdownActive[Dummy];
+
+	for(int i = 0; i < NUM_DUMMIES; ++i)
+	{
+		if(m_aSwapCountdownActive[i])
+			return true;
+	}
+	return false;
+}
+
+int CTClient::GetSwapCountdownStartTick(int Dummy) const
+{
+	if(Dummy >= 0 && Dummy < NUM_DUMMIES)
+		return m_aSwapCountdownStartTick[Dummy];
+	return 0;
+}
+
+const char *CTClient::GetSwapCountdownRequester(int Dummy) const
+{
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES)
+		return "";
+	return m_aaSwapCountdownRequester[Dummy];
 }
 
 void CTClient::ConSpecId(IConsole::IResult *pResult, void *pUserData)
@@ -1722,6 +1818,13 @@ void CTClient::OnConsoleInit()
 	Console()->Chain("qm_aspect_ratio", AspectConchain, this);
 
 	Console()->Chain(
+		"qm_gores", [](IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData) {
+			pfnCallback(pResult, pCallbackUserData);
+			((CTClient *)pUserData)->ApplyGoresFastInputLink(false);
+		},
+		this);
+
+	Console()->Chain(
 		"tc_regex_chat_ignore", [](IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData) {
 			if(pResult->NumArguments() == 1)
 			{
@@ -1751,8 +1854,7 @@ void CTClient::RandomFeetColor()
 void CTClient::RandomSkin(void *pUserData)
 {
 	CTClient *pThis = static_cast<CTClient *>(pUserData);
-	const auto &Skins = pThis->GameClient()->m_Skins.SkinList().Skins();
-	str_copy(g_Config.m_ClPlayerSkin, Skins[std::rand() % (int)Skins.size()].SkinContainer()->Name());
+	pThis->GameClient()->m_Skins.RandomizeSkin(0);
 }
 
 void CTClient::RandomFlag(void *pUserData)
@@ -1870,34 +1972,34 @@ void CTClient::OnUpdate()
 		SetForcedAspect();
 	}
 
-	if(m_pTClientInfoTask)
+	if(m_pQmClientUpdateInfoTask)
 	{
-		if(m_pTClientInfoTask->Done())
+		if(m_pQmClientUpdateInfoTask->Done())
 		{
-			const bool InfoOk = m_pTClientInfoTask->State() == EHttpState::DONE;
+			const bool InfoOk = m_pQmClientUpdateInfoTask->State() == EHttpState::DONE;
 			if(InfoOk)
 			{
-				FinishTClientInfo();
+				FinishQmClientUpdateInfo();
 			}
-			ResetTClientInfoTask();
+			ResetQmClientUpdateInfoTask();
 
-			if(m_AutoUpdateAfterCheck)
+			if(m_QmClientAutoUpdateAfterCheck)
 			{
-				if(!InfoOk || !m_FetchedTClientInfo)
+				if(!InfoOk || !m_FetchedQmClientUpdateInfo)
 				{
 					Client()->AddWarning(SWarning(Localize("Update"), Localize("Failed to check for updates")));
 				}
-				else if(!NeedUpdate())
+				else if(!NeedQmClientUpdate())
 				{
-					Client()->AddWarning(SWarning(Localize("Update"), Localize("You are already on the latest version")));
+					Client()->AddWarning(SWarning(Localize("更新提示"), Localize("你已经是最新版本")));
 				}
 				else
 				{
 					Client()->AddWarning(SWarning(Localize("更新提示"), Localize("当前版本不是最新版，请前往 QQ 群更新最新版")));
 				}
-				m_AutoUpdateAfterCheck = false;
+				m_QmClientAutoUpdateAfterCheck = false;
 			}
-			else if(InfoOk && m_FetchedTClientInfo && NeedUpdate())
+			else if(g_Config.m_QmShowOutdatedVersionWarning && InfoOk && m_FetchedQmClientUpdateInfo && NeedQmClientUpdate())
 			{
 				Client()->AddWarning(SWarning(Localize("更新提示"), Localize("当前版本不是最新版，请前往 QQ 群更新最新版")));
 			}
@@ -2033,7 +2135,7 @@ void CTClient::CheckFreeze()
 					// Parse comma-separated messages and pick one randomly
 					char aMessages[128];
 					str_copy(aMessages, g_Config.m_TcFreezeChatMessage);
-					
+
 					// Count messages and store pointers
 					std::vector<const char *> vMessages;
 					char *pToken = strtok(aMessages, ",");
@@ -2046,7 +2148,7 @@ void CTClient::CheckFreeze()
 							vMessages.push_back(pToken);
 						pToken = strtok(nullptr, ",");
 					}
-					
+
 					// Pick a random message and send
 					if(!vMessages.empty())
 					{
@@ -2239,18 +2341,15 @@ void CTClient::CheckComboPopup()
 
 	if(!g_Config.m_QmComboPopup)
 	{
-		for(auto &Popup : m_aFreezeWakeupPopups)
-		{
-			if(Popup.m_Active && IsComboPopupTextType(Popup.m_TextType))
-				Popup.m_Active = false;
-		}
 		ResetComboState();
 		return;
 	}
 
 	const int ComboWindowTicks = maximum(1, Client()->GameTickSpeed() * QMCLIENT_COMBO_POPUP_WINDOW_SECONDS);
-	auto RegisterComboEvent = [&](int Dummy, int AnchorClientId, int TargetPlayer) {
+	auto RegisterComboEvent = [&](int Dummy, int AnchorClientId, const CCharacter *pAnchorChar, int TargetPlayer, const CCharacter *pTargetChar) {
 		if(TargetPlayer < 0 || TargetPlayer >= MAX_CLIENTS)
+			return;
+		if(pAnchorChar == nullptr)
 			return;
 
 		const int CurrentTick = Client()->GameTick(Dummy);
@@ -2266,8 +2365,22 @@ void CTClient::CheckComboPopup()
 		}
 		m_aComboLastEventTick[Dummy] = CurrentTick;
 
-		if(m_aComboPopupCount[Dummy] >= 2)
-			AddTextPopup(AnchorClientId, ComboPopupTextTypeFromCount(m_aComboPopupCount[Dummy]), true, QMCLIENT_COMBO_POPUP_COLOR);
+		const int ComboCount = m_aComboPopupCount[Dummy];
+		if(ComboCount >= 11)
+		{
+			AddComboFreezeParticleRing(GameClient(), pAnchorChar->GetPos(), 1.0f);
+			if(pTargetChar != nullptr)
+				AddComboFreezeParticleRing(GameClient(), pTargetChar->GetPos(), 1.0f);
+		}
+		else if(ComboCount >= 7)
+		{
+			AddComboFreezeParticleRing(GameClient(), pAnchorChar->GetPos(), 0.7f);
+		}
+		else if(ComboCount >= 3)
+		{
+			if(pTargetChar != nullptr)
+				AddComboFreezeParticleRing(GameClient(), pTargetChar->GetPos(), 0.4f);
+		}
 	};
 
 	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
@@ -2296,7 +2409,7 @@ void CTClient::CheckComboPopup()
 
 		const int HookedPlayer = pLocalChar->Core()->HookedPlayer();
 		if(HookedPlayer >= 0 && HookedPlayer != ClientId && HookedPlayer != m_aComboLastHookedPlayer[Dummy])
-			RegisterComboEvent(Dummy, ClientId, HookedPlayer);
+			RegisterComboEvent(Dummy, ClientId, pLocalChar, HookedPlayer, GameClient()->m_PredictedWorld.GetCharacterById(HookedPlayer));
 		m_aComboLastHookedPlayer[Dummy] = HookedPlayer >= 0 ? HookedPlayer : -1;
 
 		const int CurrentTick = Client()->GameTick(Dummy);
@@ -2313,7 +2426,7 @@ void CTClient::CheckComboPopup()
 				pTargetChar->GetLastDamageFrom() == ClientId &&
 				pTargetChar->GetLastDamageWeapon() == WEAPON_HAMMER)
 			{
-				RegisterComboEvent(Dummy, ClientId, TargetId);
+				RegisterComboEvent(Dummy, ClientId, pLocalChar, TargetId, pTargetChar);
 			}
 		}
 	}
@@ -2369,8 +2482,8 @@ void CTClient::RenderFreezeWakeupPopups()
 		const float FadeOut = 1.0f - std::clamp((Progress - 0.7f) / 0.3f, 0.0f, 1.0f);
 		const float Rise = (1.0f - PopIn) * 6.0f;
 		const vec2 AnchorPos = GameClient()->m_aClients[Popup.m_AnchorClientId].m_RenderPos +
-			vec2(QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET.x * Popup.m_HorizontalSign, QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET.y) +
-			vec2(QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT.x * Popup.m_HorizontalSign, QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT.y) * Progress;
+				       vec2(QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET.x * Popup.m_HorizontalSign, QMCLIENT_FREEZE_WAKEUP_POPUP_OFFSET.y) +
+				       vec2(QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT.x * Popup.m_HorizontalSign, QMCLIENT_FREEZE_WAKEUP_POPUP_DRIFT.y) * Progress;
 		const vec2 Pos =
 			Popup.m_HorizontalSign < 0.0f ?
 				vec2(AnchorPos.x - PopupCache.m_TextSize.x, AnchorPos.y - Rise) :
@@ -2595,7 +2708,7 @@ void CTClient::CheckFriendOnline()
 				{
 					char aBuf[256];
 					const char *pMap = pEntry->m_aMap[0] != '\0' ? pEntry->m_aMap : Localize("Unknown");
-				str_format(aBuf, sizeof(aBuf), Localize("Your friend %s is online and currently on map %s!"), Client.m_aName, pMap);
+					str_format(aBuf, sizeof(aBuf), Localize("Your friend %s is online and currently on map %s!"), Client.m_aName, pMap);
 					GameClient()->m_Chat.Echo(aBuf);
 					SFriendOnlineState State;
 					State.m_LastSeen = Now;
@@ -2642,6 +2755,11 @@ void CTClient::CheckFriendOnline()
 
 void CTClient::CheckFriendEnterGreet()
 {
+	auto ClearFriendEnterClientActive = [&]() {
+		for(bool &ClientActive : m_aFriendEnterClientActive)
+			ClientActive = false;
+	};
+
 	if(Client()->State() != IClient::STATE_ONLINE)
 	{
 		if(m_FriendEnterInitialized || !m_FriendEnterOnline.empty())
@@ -2649,6 +2767,7 @@ void CTClient::CheckFriendEnterGreet()
 			m_FriendEnterOnline.clear();
 			m_FriendEnterInitialized = false;
 		}
+		ClearFriendEnterClientActive();
 		m_FriendEnterPendingNames.clear();
 		m_FriendEnterPendingSendAt = 0.0f;
 		m_FriendEnterNextCheck = 0.0f;
@@ -2665,6 +2784,7 @@ void CTClient::CheckFriendEnterGreet()
 		m_FriendEnterPrevIgnoreClan = IgnoreClanSetting;
 		m_FriendEnterOnline.clear();
 		m_FriendEnterInitialized = false;
+		ClearFriendEnterClientActive();
 		m_FriendEnterPendingNames.clear();
 		m_FriendEnterPendingSendAt = 0.0f;
 		m_FriendEnterNextCheck = 0.0f;
@@ -2706,6 +2826,7 @@ void CTClient::CheckFriendEnterGreet()
 	{
 		m_FriendEnterOnline.clear();
 		m_FriendEnterInitialized = false;
+		ClearFriendEnterClientActive();
 		return;
 	}
 
@@ -2717,6 +2838,7 @@ void CTClient::CheckFriendEnterGreet()
 	CurrentFriends.reserve(32);
 	std::vector<std::string> NewFriends;
 	NewFriends.reserve(8);
+	bool aCurrentClientActive[MAX_CLIENTS] = {};
 	std::string Key;
 	Key.reserve(MAX_NAME_LENGTH + MAX_CLAN_LENGTH + 1);
 	const bool IgnoreClan = IgnoreClanSetting != 0;
@@ -2729,6 +2851,7 @@ void CTClient::CheckFriendEnterGreet()
 		const auto &Client = GameClient()->m_aClients[ClientId];
 		if(!Client.m_Active)
 			continue;
+		aCurrentClientActive[ClientId] = true;
 		if(ClientId == LocalMain || (HasDummy && ClientId == LocalDummy))
 			continue;
 		if(!GameClient()->Friends()->IsFriend(Client.m_aName, Client.m_aClan, true))
@@ -2736,18 +2859,22 @@ void CTClient::CheckFriendEnterGreet()
 
 		BuildFriendNotifyKey(Client.m_aName, Client.m_aClan, IgnoreClan, Key);
 		CurrentFriends.insert(Key);
-		if(m_FriendEnterOnline.find(Key) == m_FriendEnterOnline.end())
+		if(!m_aFriendEnterClientActive[ClientId])
 			NewFriends.push_back(Client.m_aName);
 	}
 
 	if(!m_FriendEnterInitialized)
 	{
 		m_FriendEnterOnline = std::move(CurrentFriends);
+		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+			m_aFriendEnterClientActive[ClientId] = aCurrentClientActive[ClientId];
 		m_FriendEnterInitialized = true;
 		return;
 	}
 
 	m_FriendEnterOnline = std::move(CurrentFriends);
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+		m_aFriendEnterClientActive[ClientId] = aCurrentClientActive[ClientId];
 
 	if(NewFriends.empty())
 		return;
@@ -2939,19 +3066,19 @@ void CTClient::CheckAutoCloseChatOnUnfreeze()
 	}
 }
 
-bool CTClient::NeedUpdate()
+bool CTClient::NeedQmClientUpdate()
 {
-	return str_comp(m_aVersionStr, "0") != 0;
+	return str_comp(m_aQmClientLatestVersionStr, "0") != 0;
 }
 
-void CTClient::RequestUpdateCheckAndUpdate()
+void CTClient::RequestQmClientUpdateCheckAndUpdate()
 {
-	if((m_pTClientInfoTask && !m_pTClientInfoTask->Done()) || (m_pUpdateExeTask && !m_pUpdateExeTask->Done()))
+	if((m_pQmClientUpdateInfoTask && !m_pQmClientUpdateInfoTask->Done()) || (m_pUpdateExeTask && !m_pUpdateExeTask->Done()))
 		return;
 
-	m_AutoUpdateAfterCheck = true;
-	m_FetchedTClientInfo = false;
-	FetchTClientInfo();
+	m_QmClientAutoUpdateAfterCheck = true;
+	m_FetchedQmClientUpdateInfo = false;
+	FetchQmClientUpdateInfo();
 }
 
 void CTClient::StartUpdateDownload()
@@ -2966,7 +3093,7 @@ void CTClient::StartUpdateDownload()
 
 	ResetUpdateExeTask();
 	IStorage::FormatTmpPath(m_aUpdateExeTmp, sizeof(m_aUpdateExeTmp), PLAT_CLIENT_EXEC);
-	m_pUpdateExeTask = HttpGet(TCLIENT_UPDATE_EXE_URL);
+	m_pUpdateExeTask = HttpGet(QMCLIENT_UPDATE_EXE_URL);
 	m_pUpdateExeTask->Timeout(CTimeout{10000, 0, 500, 10});
 	m_pUpdateExeTask->IpResolve(IPRESOLVE::V4);
 	m_pUpdateExeTask->WriteToFile(Storage(), m_aUpdateExeTmp, -2);
@@ -2997,53 +3124,32 @@ bool CTClient::ReplaceClientFromUpdate()
 	return Success;
 }
 
-void CTClient::ResetTClientInfoTask()
+void CTClient::ResetQmClientUpdateInfoTask()
 {
-	if(m_pTClientInfoTask)
+	if(m_pQmClientUpdateInfoTask)
 	{
-		m_pTClientInfoTask->Abort();
-		m_pTClientInfoTask = NULL;
+		m_pQmClientUpdateInfoTask->Abort();
+		m_pQmClientUpdateInfoTask = NULL;
 	}
 }
 
-void CTClient::FetchTClientInfo()
+void CTClient::FetchQmClientUpdateInfo()
 {
-	if(m_pTClientInfoTask && !m_pTClientInfoTask->Done())
+	if(m_pQmClientUpdateInfoTask && !m_pQmClientUpdateInfoTask->Done())
 		return;
 	char aUrl[256];
-	str_format(aUrl, sizeof(aUrl), "%s?current=%s", TCLIENT_INFO_URL, TCLIENT_VERSION);
-	m_pTClientInfoTask = HttpGet(aUrl);
-	m_pTClientInfoTask->AllowInsecureProtocol();
-	m_pTClientInfoTask->Timeout(CTimeout{10000, 0, 500, 10});
-	m_pTClientInfoTask->IpResolve(IPRESOLVE::V4);
-	m_pTClientInfoTask->LogProgress(HTTPLOG::FAILURE);
-	Http()->Run(m_pTClientInfoTask);
+	str_format(aUrl, sizeof(aUrl), "%s?current=%s", QMCLIENT_INFO_URL, QMCLIENT_VERSION);
+	m_pQmClientUpdateInfoTask = HttpGet(aUrl);
+	m_pQmClientUpdateInfoTask->AllowInsecureProtocol();
+	m_pQmClientUpdateInfoTask->Timeout(CTimeout{10000, 0, 500, 10});
+	m_pQmClientUpdateInfoTask->IpResolve(IPRESOLVE::V4);
+	m_pQmClientUpdateInfoTask->LogProgress(HTTPLOG::FAILURE);
+	Http()->Run(m_pQmClientUpdateInfoTask);
 }
 
-static void NormalizeTCVersion(const char *pStr, char *pBuf, size_t BufSize)
+void CTClient::FinishQmClientUpdateInfo()
 {
-	if(!pBuf || BufSize == 0)
-		return;
-	pBuf[0] = '\0';
-	if(!pStr)
-		return;
-
-	pStr = str_skip_whitespaces_const(pStr);
-	if(pStr[0] == 'v' || pStr[0] == 'V')
-		pStr++;
-
-	str_copy(pBuf, pStr, BufSize);
-	int End = str_length(pBuf);
-	while(End > 0 && str_isspace(pBuf[End - 1]))
-	{
-		pBuf[End - 1] = '\0';
-		End--;
-	}
-}
-
-void CTClient::FinishTClientInfo()
-{
-	json_value *pJson = m_pTClientInfoTask->ResultJson();
+	json_value *pJson = m_pQmClientUpdateInfoTask->ResultJson();
 	if(!pJson)
 		return;
 	const json_value &Json = *pJson;
@@ -3051,20 +3157,17 @@ void CTClient::FinishTClientInfo()
 
 	if(CurrentVersion.type == json_string)
 	{
-		char aLatestVersionStr[64];
-		NormalizeTCVersion(CurrentVersion, aLatestVersionStr, sizeof(aLatestVersionStr));
-		char aCurVersionStr[64];
-		NormalizeTCVersion(TCLIENT_VERSION, aCurVersionStr, sizeof(aCurVersionStr));
-		if(aLatestVersionStr[0] != '\0' && str_comp(aLatestVersionStr, aCurVersionStr) != 0)
+		const char *pLatestVersion = json_string_get(&CurrentVersion);
+		if(IsQmClientRemoteVersionNewer(pLatestVersion, QMCLIENT_VERSION))
 		{
-			str_copy(m_aVersionStr, aLatestVersionStr);
+			str_copy(m_aQmClientLatestVersionStr, pLatestVersion, sizeof(m_aQmClientLatestVersionStr));
 		}
 		else
 		{
-			m_aVersionStr[0] = '0';
-			m_aVersionStr[1] = '\0';
+			m_aQmClientLatestVersionStr[0] = '0';
+			m_aQmClientLatestVersionStr[1] = '\0';
 		}
-		m_FetchedTClientInfo = true;
+		m_FetchedQmClientUpdateInfo = true;
 	}
 
 	json_value_free(pJson);
@@ -3092,7 +3195,7 @@ void CTClient::SetForcedAspect()
 
 	if(g_Config.m_QmAspectPreset != 0)
 	{
-		int AspectRatio = g_Config.m_QmAspectRatio;
+		int AspectRatio = 0;
 		switch(g_Config.m_QmAspectPreset)
 		{
 		case 1: AspectRatio = 125; break;
@@ -3122,6 +3225,10 @@ void CTClient::OnStateChange(int NewState, int OldState)
 	if(NewState != IClient::STATE_ONLINE)
 	{
 		ResetAxiomAutoLoginState();
+		m_GoresModeStateKnown = false;
+		m_PrevGoresModeActive = false;
+		m_GoresAutoMapKnown = false;
+		m_GoresAutoMapToken = 0;
 		ClearSwapCountdown();
 		m_aLastChatMessage[0] = '\0';
 		m_LastRepeatTime = 0;
@@ -3147,12 +3254,19 @@ void CTClient::OnStateChange(int NewState, int OldState)
 		InvalidateGoresDistanceField();
 		m_FriendEnterOnline.clear();
 		m_FriendEnterInitialized = false;
+		m_aLastLocalSaveHintMap[0] = '\0';
 	}
 	m_aLastGameplayLogicTick[0] = -1;
 	m_aLastGameplayLogicTick[1] = -1;
 
 	if(NewState == IClient::STATE_ONLINE)
+	{
 		ResetAxiomAutoLoginState();
+		m_GoresModeStateKnown = false;
+		m_PrevGoresModeActive = IsGoresModuleEnabled();
+		m_GoresAutoMapKnown = false;
+		m_GoresAutoMapToken = 0;
+	}
 
 	// 进入服务器时重置统计数据
 	if(NewState == IClient::STATE_ONLINE && g_Config.m_QmPlayerStatsResetOnJoin)
@@ -3164,6 +3278,8 @@ void CTClient::OnStateChange(int NewState, int OldState)
 void CTClient::OnNewSnapshot()
 {
 	SetForcedAspect();
+	ApplyGoresFastInputLink(true);
+	MaybeShowLocalSaveJoinHint();
 	// Update volleyball
 	bool IsVolleyBall = false;
 	if(g_Config.m_TcVolleyBallBetterBall > 0 && g_Config.m_TcVolleyBallBetterBallSkin[0] != '\0')
@@ -3251,10 +3367,11 @@ static void StripStr(const char *pIn, char *pOut, const char *pEnd)
 		*pOut = '\0';
 }
 
-void CTClient::RenderMiniVoteHud()
+void CTClient::RenderMiniVoteHud(bool HudEditorPreview)
 {
 	CUIRect View = {0.0f, 60.0f, 70.0f, 35.0f};
-	View.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_R, 3.0f);
+	const auto HudEditorScope = GameClient()->m_HudEditor.BeginTransform(EHudEditorElement::Voting, View);
+	View.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), HudEditorScope.m_Corners, 3.0f);
 	View.Margin(3.0f, &View);
 
 	SLabelProperties Props;
@@ -3268,18 +3385,27 @@ void CTClient::RenderMiniVoteHud()
 
 	// Vote description
 	View.HSplitTop(6.0f, &Row, &View);
-	GameClient()->FormatStreamerVoteText(GameClient()->m_Voting.VoteDescription(), aVoteDescription, sizeof(aVoteDescription));
+	if(HudEditorPreview && !GameClient()->m_Voting.IsVoting())
+		str_copy(aVoteDescription, "funvote", sizeof(aVoteDescription));
+	else
+		GameClient()->FormatStreamerVoteText(GameClient()->m_Voting.VoteDescription(), aVoteDescription, sizeof(aVoteDescription));
 	StripStr(aVoteDescription, aBuf, aBuf + sizeof(aBuf));
 	Ui()->DoLabel(&Row, aBuf, 6.0f, TEXTALIGN_ML, Props);
 
 	// Vote reason
 	View.HSplitTop(3.0f, nullptr, &View);
 	View.HSplitTop(4.0f, &Row, &View);
-	GameClient()->FormatStreamerVoteText(GameClient()->m_Voting.VoteReason(), aVoteReason, sizeof(aVoteReason));
+	if(HudEditorPreview && !GameClient()->m_Voting.IsVoting())
+		str_copy(aVoteReason, "No reason given", sizeof(aVoteReason));
+	else
+		GameClient()->FormatStreamerVoteText(GameClient()->m_Voting.VoteReason(), aVoteReason, sizeof(aVoteReason));
 	Ui()->DoLabel(&Row, aVoteReason, 4.0f, TEXTALIGN_ML, Props);
 
 	// Time left
-	str_format(aBuf, sizeof(aBuf), Localize("%ds left"), GameClient()->m_Voting.SecondsLeft());
+	int Seconds = GameClient()->m_Voting.SecondsLeft();
+	if(HudEditorPreview && Seconds < 0)
+		Seconds = 24;
+	str_format(aBuf, sizeof(aBuf), Localize("%ds left"), Seconds);
 	View.HSplitTop(3.0f, nullptr, &View);
 	View.HSplitTop(3.0f, &Row, &View);
 	Row.VSplitLeft(2.0f, nullptr, &Row);
@@ -3312,6 +3438,8 @@ void CTClient::RenderMiniVoteHud()
 	Ui()->DoLabel(&RightColumn, aKey[0] == '\0' ? Localize("Disagree") : aKey, 0.5f, TEXTALIGN_MR);
 
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
+	GameClient()->m_HudEditor.UpdateVisibleRect(EHudEditorElement::Voting, {0.0f, 60.0f, 70.0f, 35.0f});
+	GameClient()->m_HudEditor.EndTransform(HudEditorScope);
 }
 
 void CTClient::RenderCenterLines()
@@ -3474,7 +3602,7 @@ void CTClient::TrackHookDirection(int Dummy)
 	SPlayerStats &Stats = m_aPlayerStats[Dummy];
 
 	// 检测 hook 状态
-	bool IsHooking = Char.m_Cur.m_HookState > 0 && Char.m_Cur.m_HookState != HOOK_RETRACTED;
+	bool IsHooking = Char.m_Cur.m_HookState > 0;
 
 	// 检测开始出钩的瞬间
 	if(IsHooking && !Stats.m_WasHooking)
@@ -3496,14 +3624,33 @@ bool CTClient::IsGoresGameMode() const
 	return pGameType != nullptr && pGameType[0] != '\0' && str_find_nocase(pGameType, "gores") != nullptr;
 }
 
-bool CTClient::IsGoresModuleEnabled() const
+bool CTClient::IsGoresMapProgressMap() const
 {
-	return g_Config.m_QmGores != 0 || (g_Config.m_QmGoresAutoEnable != 0 && IsGoresGameMode());
+	if(IsGoresGameMode())
+		return true;
+
+	const char *pMap = Client()->GetCurrentMap();
+	return pMap != nullptr && str_comp_nocase(pMap, "NUT_race9") == 0;
 }
 
-bool CTClient::ShouldHideGoresGuides() const
+bool CTClient::IsGoresModuleEnabled() const
 {
-	return IsGoresModuleEnabled() && g_Config.m_QmGoresHideGuides != 0;
+	return g_Config.m_QmGores != 0;
+}
+
+bool CTClient::IsFastInputActive() const
+{
+	return g_Config.m_TcFastInput != 0;
+}
+
+bool CTClient::IsFastInputOthersActive() const
+{
+	return g_Config.m_TcFastInputOthers != 0;
+}
+
+bool CTClient::ShouldHideGoresGuides(bool ManualGuideVisible) const
+{
+	return ShouldHideGoresGuide(IsGoresModuleEnabled(), g_Config.m_QmGoresHideGuides != 0, ManualGuideVisible);
 }
 
 bool CTClient::HasBlockingGoresWeapon() const
@@ -3513,18 +3660,18 @@ bool CTClient::HasBlockingGoresWeapon() const
 
 	const CCharacterCore &Core = GameClient()->m_PredictedPrevChar;
 	return Core.m_aWeapons[WEAPON_SHOTGUN].m_Got ||
-		Core.m_aWeapons[WEAPON_GRENADE].m_Got ||
-		Core.m_aWeapons[WEAPON_LASER].m_Got ||
-		Core.m_aWeapons[WEAPON_NINJA].m_Got;
+	       Core.m_aWeapons[WEAPON_GRENADE].m_Got ||
+	       Core.m_aWeapons[WEAPON_LASER].m_Got ||
+	       Core.m_aWeapons[WEAPON_NINJA].m_Got;
 }
 
 bool CTClient::ShouldAppendGoresPrevWeapon() const
 {
 	return Client()->State() == IClient::STATE_ONLINE &&
-		!GameClient()->m_Snap.m_SpecInfo.m_Active &&
-		GameClient()->m_Snap.m_pLocalCharacter != nullptr &&
-		IsGoresModuleEnabled() &&
-		!HasBlockingGoresWeapon();
+	       !GameClient()->m_Snap.m_SpecInfo.m_Active &&
+	       GameClient()->m_Snap.m_pLocalCharacter != nullptr &&
+	       IsGoresModuleEnabled() &&
+	       !HasBlockingGoresWeapon();
 }
 
 void CTClient::UpdateGoresWeaponCycle()
@@ -3538,12 +3685,12 @@ void CTClient::UpdateGoresWeaponCycle()
 
 bool CTClient::IsGoresMapProgressEnabled() const
 {
-	return IsGoresGameMode() && g_Config.m_QmPlayerStatsMapProgress;
+	return IsGoresMapProgressMap() && g_Config.m_QmPlayerStatsMapProgress;
 }
 
 bool CTClient::IsGoresMapProgressDebugRouteEnabled() const
 {
-	return IsGoresGameMode() && g_Config.m_QmPlayerStatsMapProgressDbgRoute != 0;
+	return IsGoresMapProgressMap() && g_Config.m_QmPlayerStatsMapProgressDbgRoute != 0;
 }
 
 void CTClient::InvalidateGoresDistanceField()
@@ -3568,7 +3715,7 @@ void CTClient::InvalidateGoresDistanceField()
 
 void CTClient::EnsureGoresDistanceField()
 {
-	if(Client()->State() != IClient::STATE_ONLINE || !IsGoresGameMode())
+	if(Client()->State() != IClient::STATE_ONLINE || !IsGoresMapProgressMap())
 		return;
 
 	const char *pCurrentMap = Client()->GetCurrentMap();
@@ -3638,7 +3785,7 @@ void CTClient::BuildGoresDistanceField()
 		const bool HasReward = IsRewardTileForGoresDistanceField(Tile) || IsRewardTileForGoresDistanceField(FrontTile);
 		const bool HasTeleport = pTele && pTele[Index].m_Type != 0;
 		const bool IsBlocked = !IsStart && !IsFinish &&
-			(IsHardBlockedForGoresDistanceField(Tile) || IsHardBlockedForGoresDistanceField(FrontTile));
+				       (IsHardBlockedForGoresDistanceField(Tile) || IsHardBlockedForGoresDistanceField(FrontTile));
 		if(IsStart)
 			HasStart = true;
 		if(IsFinish)
@@ -3858,10 +4005,16 @@ void CTClient::BuildGoresDistanceField()
 void CTClient::ApplyFocusModeEffects()
 {
 	const bool FocusActive = g_Config.m_QmFocusMode != 0;
-	const bool HideHud = FocusActive && g_Config.m_QmFocusModeHideHud != 0;
-	const bool HideUiOverlays = ShouldHideFocusUiOverlays(FocusActive, g_Config.m_QmFocusModeHideUI != 0);
-	const bool HideNames = FocusActive && g_Config.m_QmFocusModeHideNames != 0;
+	const auto ApplyFocusOverride = [](SQmFocusConfigOverrideState &State, bool HideActive, int &ConfigValue, int HiddenValue) {
+		bool Changed = false;
+		const int NextValue = ApplyQmFocusConfigOverride(State, HideActive, ConfigValue, HiddenValue, Changed);
+		if(Changed)
+			ConfigValue = NextValue;
+	};
 	const bool StateWasKnown = m_FocusModeStateKnown;
+	const bool HideFocusHud = ShouldHideFocusHud(FocusActive, g_Config.m_QmFocusModeHideHud != 0);
+	const bool HideFocusNameplates = ShouldHideFocusNameplates(FocusActive, g_Config.m_QmFocusModeHideNameplates != 0);
+	const bool HideFocusDirectionIndicators = ShouldHideFocusDirectionIndicators(FocusActive, g_Config.m_QmFocusModeHideDirectionIndicators != 0);
 	if(!m_FocusModeStateKnown)
 	{
 		m_FocusModeStateKnown = true;
@@ -3878,116 +4031,82 @@ void CTClient::ApplyFocusModeEffects()
 		char aFocusMsg[128];
 		str_format(aFocusMsg, sizeof(aFocusMsg), "%s%s: %s",
 			FocusActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
-			Localize("Focus Mode"),
-			Localize(FocusActive ? "On" : "Off"));
+			Localize("禅模式"),
+			Localize(FocusActive ? "开启" : "关闭"));
 		GameClient()->Echo(aFocusMsg, true);
 	}
-	else if(StateWasKnown && !FocusActive && !m_FocusHudOverridden && !m_FocusUiOverlayOverridden && !m_FocusNamesOverridden)
-	{
-		return;
-	}
 
-	SConfigIntOverrideEntry aHudEntries[] = {
-		{&g_Config.m_ClShowhud, &m_SavedHudConfig.m_ClShowhud, 0},
-		{&g_Config.m_ClShowhudHealthAmmo, &m_SavedHudConfig.m_ClShowhudHealthAmmo, 0},
-		{&g_Config.m_ClShowhudScore, &m_SavedHudConfig.m_ClShowhudScore, 0},
-		{&g_Config.m_ClShowhudTimer, &m_SavedHudConfig.m_ClShowhudTimer, 0},
-		{&g_Config.m_ClShowhudTimeCpDiff, &m_SavedHudConfig.m_ClShowhudTimeCpDiff, 0},
-		{&g_Config.m_ClShowLocalTimeAlways, &m_SavedHudConfig.m_ClShowLocalTimeAlways, 0},
-		{&g_Config.m_ClSpecCursor, &m_SavedHudConfig.m_ClSpecCursor, 0},
-		{&g_Config.m_ClShowVotesAfterVoting, &m_SavedHudConfig.m_ClShowVotesAfterVoting, 0},
-		{&g_Config.m_ClShowIds, &m_SavedHudConfig.m_ClShowIds, 0},
-		{&g_Config.m_ClShowhudDDRace, &m_SavedHudConfig.m_ClShowhudDDRace, 0},
-		{&g_Config.m_ClShowhudJumpsIndicator, &m_SavedHudConfig.m_ClShowhudJumpsIndicator, 0},
-		{&g_Config.m_ClShowhudSpectatorCount, &m_SavedHudConfig.m_ClShowhudSpectatorCount, 0},
-		{&g_Config.m_ClShowhudSpectator, &m_SavedHudConfig.m_ClShowhudSpectator, 0},
-		{&g_Config.m_ClShowhudDummyActions, &m_SavedHudConfig.m_ClShowhudDummyActions, 0},
-		{&g_Config.m_ClShowhudKeyStatusReset, &m_SavedHudConfig.m_ClShowhudKeyStatusReset, 0},
-		{&g_Config.m_ClShowhudKeyStatusHammer, &m_SavedHudConfig.m_ClShowhudKeyStatusHammer, 0},
-		{&g_Config.m_ClShowhudKeyStatusControl, &m_SavedHudConfig.m_ClShowhudKeyStatusControl, 0},
-		{&g_Config.m_ClShowhudKeyStatusSync, &m_SavedHudConfig.m_ClShowhudKeyStatusSync, 0},
-		{&g_Config.m_ClShowhudPlayerPosition, &m_SavedHudConfig.m_ClShowhudPlayerPosition, 0},
-		{&g_Config.m_ClShowhudPlayerSpeed, &m_SavedHudConfig.m_ClShowhudPlayerSpeed, 0},
-		{&g_Config.m_ClShowhudPlayerAngle, &m_SavedHudConfig.m_ClShowhudPlayerAngle, 0},
-		{&g_Config.m_ClShowFreezeBars, &m_SavedHudConfig.m_ClShowFreezeBars, 0},
-	};
-	UpdateConfigIntOverrides(aHudEntries, sizeof(aHudEntries) / sizeof(aHudEntries[0]), HideHud, m_FocusHudOverridden);
-
-	SConfigIntOverrideEntry aUiOverlayEntries[] = {
-		{&g_Config.m_TcStatusBar, &m_SavedHudConfig.m_TcStatusBar, 0},
-		{&g_Config.m_TcNotifyWhenLast, &m_SavedHudConfig.m_TcNotifyWhenLast, 0},
-		{&g_Config.m_QmDummyMiniView, &m_SavedHudConfig.m_QmDummyMiniView, 0},
-		{&g_Config.m_QmPlayerStatsMapProgress, &m_SavedHudConfig.m_QmPlayerStatsMapProgress, 0},
-		{&g_Config.m_QmSmtcShowHud, &m_SavedHudConfig.m_QmSmtcShowHud, 0},
-		{&g_Config.m_QmInputOverlay, &m_SavedHudConfig.m_QmInputOverlay, 0},
-	};
-	UpdateConfigIntOverrides(aUiOverlayEntries, sizeof(aUiOverlayEntries) / sizeof(aUiOverlayEntries[0]), HideUiOverlays, m_FocusUiOverlayOverridden);
-
-	SConfigIntOverrideEntry aNameEntries[] = {
-		{&g_Config.m_ClNamePlates, &m_SavedClNamePlates, 0},
-		{&g_Config.m_ClNamePlatesOwn, &m_SavedClNamePlatesOwn, 0},
-	};
-	UpdateConfigIntOverrides(aNameEntries, sizeof(aNameEntries) / sizeof(aNameEntries[0]), HideNames, m_FocusNamesOverridden);
-
+	ApplyFocusOverride(m_FocusHudOverrideState, HideFocusHud, g_Config.m_ClShowhud, 0);
+	ApplyFocusOverride(m_FocusNamePlatesOverrideState, HideFocusNameplates, g_Config.m_ClNamePlates, 0);
+	ApplyFocusOverride(m_FocusNamePlatesOwnOverrideState, HideFocusNameplates, g_Config.m_ClNamePlatesOwn, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordsOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoords, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordsOwnOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordsOwn, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordXOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordX, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordYOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordY, 0);
+	ApplyFocusOverride(m_FocusDirectionOverrideState, HideFocusDirectionIndicators, g_Config.m_ClShowDirection, 0);
+	ApplyFocusOverride(m_FocusVideoHudOverrideState, HideFocusHud, g_Config.m_ClVideoShowhud, 0);
+	ApplyFocusOverride(m_FocusVideoDirectionOverrideState, HideFocusDirectionIndicators, g_Config.m_ClVideoShowDirection, 0);
 	m_PrevFocusModeActive = FocusActive;
 }
 
-void CTClient::ApplyGoresFastInputLink()
+void CTClient::ApplyGoresFastInputLink(bool AutoMapCheck)
 {
-	const bool GoresActive = g_Config.m_QmGores != 0;
-	const bool PreviousGoresActive = m_PrevGoresModeActive;
+	if(Client()->State() != IClient::STATE_ONLINE)
+	{
+		m_GoresModeStateKnown = false;
+		m_PrevGoresModeActive = false;
+		m_GoresAutoMapKnown = false;
+		m_GoresAutoMapToken = 0;
+		return;
+	}
+
+	bool FastInputConfigChanged = false;
+	const unsigned GoresMapToken = str_quickhash(Client()->GetCurrentMap());
+	const bool MapChanged = !m_GoresAutoMapKnown || m_GoresAutoMapToken != GoresMapToken;
+	if(AutoMapCheck && MapChanged)
+	{
+		const bool GoresGameMode = IsGoresGameMode();
+		if(g_Config.m_QmGoresAutoEnable != 0 && g_Config.m_QmGores != (GoresGameMode ? 1 : 0))
+			g_Config.m_QmGores = GoresGameMode ? 1 : 0;
+		m_GoresAutoMapKnown = true;
+		m_GoresAutoMapToken = GoresMapToken;
+	}
+
 	const bool StateWasKnown = m_GoresModeStateKnown;
-	const int PreviousTcFastInput = StateWasKnown ? m_PrevTcFastInput : g_Config.m_TcFastInput;
-	const int PreviousTcFastInputOthers = StateWasKnown ? m_PrevTcFastInputOthers : g_Config.m_TcFastInputOthers;
-	const int PreviousQmGoresFastInput = StateWasKnown ? m_PrevQmGoresFastInput : g_Config.m_QmGoresFastInput;
-	const int PreviousQmGoresFastInputOthers = StateWasKnown ? m_PrevQmGoresFastInputOthers : g_Config.m_QmGoresFastInputOthers;
 	if(!m_GoresModeStateKnown)
 	{
 		m_GoresModeStateKnown = true;
-		m_PrevGoresModeActive = false;
-	}
-	else if(GoresActive == m_PrevGoresModeActive &&
-		g_Config.m_TcFastInput == m_PrevTcFastInput &&
-		g_Config.m_TcFastInputOthers == m_PrevTcFastInputOthers &&
-		g_Config.m_QmGoresFastInput == m_PrevQmGoresFastInput &&
-		g_Config.m_QmGoresFastInputOthers == m_PrevQmGoresFastInputOthers)
-	{
-		return;
-	}
-	if(GoresActive != m_PrevGoresModeActive)
-	{
-		if(StateWasKnown)
-		{
-			char aGoresMsg[128];
-			str_format(aGoresMsg, sizeof(aGoresMsg), "%s%s: %s",
-				GoresActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
-				Localize("Gores Mode"),
-				Localize(GoresActive ? "On" : "Off"));
-			GameClient()->Echo(aGoresMsg, true);
-		}
 	}
 
-	g_Config.m_QmGoresFastInput = DeriveGoresAutoTogglePreference(
-		GoresActive,
-		PreviousGoresActive,
-		PreviousQmGoresFastInput,
-		g_Config.m_QmGoresFastInput,
-		PreviousTcFastInput,
-		g_Config.m_TcFastInput);
-	g_Config.m_QmGoresFastInputOthers = DeriveGoresAutoTogglePreference(
-		GoresActive,
-		PreviousGoresActive,
-		PreviousQmGoresFastInputOthers,
-		g_Config.m_QmGoresFastInputOthers,
-		PreviousTcFastInputOthers,
-		g_Config.m_TcFastInputOthers);
-	g_Config.m_TcFastInput = DeriveGoresLinkedConfigValue(PreviousGoresActive, GoresActive, g_Config.m_QmGoresFastInput != 0, g_Config.m_TcFastInput);
-	g_Config.m_TcFastInputOthers = DeriveGoresLinkedConfigValue(PreviousGoresActive, GoresActive, g_Config.m_QmGoresFastInputOthers != 0, g_Config.m_TcFastInputOthers);
-	m_PrevTcFastInput = g_Config.m_TcFastInput;
-	m_PrevTcFastInputOthers = g_Config.m_TcFastInputOthers;
-	m_PrevQmGoresFastInput = g_Config.m_QmGoresFastInput;
-	m_PrevQmGoresFastInputOthers = g_Config.m_QmGoresFastInputOthers;
+	bool TcFastInputChanged = false;
+	bool TcFastInputOthersChanged = false;
+	const bool GoresActive = g_Config.m_QmGores != 0;
+	const bool TcFastInput = ApplyQmGoresLinkedConfig(GoresActive, g_Config.m_QmGoresFastInput != 0, g_Config.m_TcFastInput != 0, TcFastInputChanged);
+	const bool TcFastInputOthers = ApplyQmGoresLinkedConfig(GoresActive, g_Config.m_QmGoresFastInputOthers != 0, g_Config.m_TcFastInputOthers != 0, TcFastInputOthersChanged);
+	if(TcFastInputChanged)
+		g_Config.m_TcFastInput = TcFastInput ? 1 : 0;
+	if(TcFastInputOthersChanged)
+		g_Config.m_TcFastInputOthers = TcFastInputOthers ? 1 : 0;
+	if(!StateWasKnown)
+		m_PrevGoresModeActive = GoresActive;
+	if(StateWasKnown && GoresActive != m_PrevGoresModeActive)
+	{
+		char aGoresMsg[128];
+		str_format(aGoresMsg, sizeof(aGoresMsg), "%s%s: %s",
+			GoresActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
+			Localize("Gores 模式"),
+			Localize(GoresActive ? "开" : "关"));
+		GameClient()->Echo(aGoresMsg, true);
+	}
+
+	FastInputConfigChanged = TcFastInputChanged || TcFastInputOthersChanged;
+
 	m_PrevGoresModeActive = GoresActive;
+
+	if(FastInputConfigChanged)
+	{
+		GameClient()->RequestPredictionRefresh();
+	}
 }
 
 bool CTClient::BuildGoresDebugRoute(std::vector<vec2> &vRoutePoints, int Dummy) const
@@ -4033,8 +4152,8 @@ bool CTClient::BuildGoresDebugRoute(std::vector<vec2> &vRoutePoints, int Dummy) 
 	const vec2 RefPos = GameClient()->m_aClients[ClientId].m_RenderPos;
 	const auto IsReachableIndex = [&](int Index) {
 		return Index >= 0 && Index < MapCellCount &&
-			m_vGoresCMap[(size_t)Index] != GORES_CMAP_BLOCKED &&
-			m_vGoresDistanceToFinish[(size_t)Index] != DISTANCE_INF;
+		       m_vGoresCMap[(size_t)Index] != GORES_CMAP_BLOCKED &&
+		       m_vGoresDistanceToFinish[(size_t)Index] != DISTANCE_INF;
 	};
 
 	int StartIndex = pCollision->GetPureMapIndex(RefPos);
@@ -4136,7 +4255,7 @@ bool CTClient::BuildGoresDebugRoute(std::vector<vec2> &vRoutePoints, int Dummy) 
 
 void CTClient::RenderGoresDebugRoute()
 {
-	if(Client()->State() != IClient::STATE_ONLINE || !IsGoresMapProgressDebugRouteEnabled() || ShouldHideGoresGuides())
+	if(!ShouldRenderGoresDebugRoute(Client()->State() == IClient::STATE_ONLINE, g_Config.m_QmPlayerStatsMapProgressDbgRoute != 0, IsGoresMapProgressEnabled()))
 		return;
 
 	EnsureGoresDistanceField();
@@ -4307,7 +4426,7 @@ bool CTClient::IsFavoriteMap(const char *pMapName) const
 {
 	if(!pMapName || pMapName[0] == '\0')
 		return false;
-	return m_FavoriteMaps.find(std::string(pMapName)) != m_FavoriteMaps.end();
+	return m_FavoriteMaps.contains(std::string(pMapName));
 }
 
 void CTClient::AddFavoriteMap(const char *pMapName)
@@ -4372,7 +4491,7 @@ void CTClient::LoadMapCategoryCache()
 
 	json_settings JsonSettings{};
 	char aError[256];
-	json_value *pJson = json_parse_ex(&JsonSettings, static_cast<json_char *>(pFileData), FileSize, aError);
+	json_value *pJson = JsonParseEx(&JsonSettings, static_cast<json_char *>(pFileData), FileSize, aError);
 	free(pFileData);
 
 	if(pJson == nullptr)
@@ -4503,7 +4622,7 @@ void CTClient::LoadMapNotes()
 
 	json_settings JsonSettings{};
 	char aError[256];
-	json_value *pJson = json_parse_ex(&JsonSettings, static_cast<json_char *>(pFileData), FileSize, aError);
+	json_value *pJson = JsonParseEx(&JsonSettings, static_cast<json_char *>(pFileData), FileSize, aError);
 	free(pFileData);
 
 	if(pJson == nullptr)
@@ -4634,32 +4753,276 @@ void CTClient::SetMapNote(const char *pMapName, const char *pNote)
 	}
 }
 
+static void TrimLocalSaveField(std::string &Field)
+{
+	while(!Field.empty() && str_isspace(Field.front()))
+		Field.erase(Field.begin());
+	while(!Field.empty() && str_isspace(Field.back()))
+		Field.pop_back();
+}
+
+static bool ExtractLoadSaveCode(const char *pLine, char *pOutCode, size_t OutCodeSize)
+{
+	if(!pOutCode || OutCodeSize == 0)
+		return false;
+	pOutCode[0] = '\0';
+	if(!pLine)
+		return false;
+
+	const char *pCursor = str_skip_whitespaces_const(pLine);
+	const char *pAfterCommand = str_startswith_nocase(pCursor, "/load");
+	if(!pAfterCommand || (pAfterCommand[0] != '\0' && !str_isspace(pAfterCommand[0])))
+		return false;
+
+	pCursor = str_skip_whitespaces_const(pAfterCommand);
+	if(pCursor[0] == '\0')
+		return false;
+
+	if(pCursor[0] == '"')
+	{
+		++pCursor;
+		char *pDst = pOutCode;
+		char *pEnd = pOutCode + OutCodeSize;
+		while(pCursor[0] != '\0' && pCursor[0] != '"' && pDst + 1 < pEnd)
+		{
+			if(pCursor[0] == '\\' && pCursor[1] != '\0')
+				++pCursor;
+			*pDst++ = *pCursor++;
+		}
+		*pDst = '\0';
+		return pOutCode[0] != '\0';
+	}
+
+	str_copy(pOutCode, pCursor, OutCodeSize);
+	str_utf8_trim_right(pOutCode);
+	return pOutCode[0] != '\0';
+}
+
+static std::array<std::string, 4> ParseLocalSaveCsvFields(const char *pLine)
+{
+	std::array<std::string, 4> aFields;
+	int FieldIndex = 0;
+	bool InQuotes = false;
+
+	for(int CharIndex = 0; pLine[CharIndex] != '\0' && FieldIndex < (int)aFields.size(); ++CharIndex)
+	{
+		if(pLine[CharIndex] == '"')
+		{
+			if(InQuotes && pLine[CharIndex + 1] == '"')
+			{
+				aFields[FieldIndex].push_back('"');
+				++CharIndex;
+			}
+			else
+			{
+				InQuotes = !InQuotes;
+			}
+		}
+		else if(pLine[CharIndex] == ',' && !InQuotes)
+		{
+			++FieldIndex;
+		}
+		else
+		{
+			aFields[FieldIndex].push_back(pLine[CharIndex]);
+		}
+	}
+
+	for(std::string &Field : aFields)
+		TrimLocalSaveField(Field);
+	return aFields;
+}
+
+bool CTClient::LoadLocalSaveEntries(std::vector<SLocalSaveEntry> &vEntries, bool *pFileExists) const
+{
+	if(pFileExists)
+		*pFileExists = false;
+	vEntries.clear();
+
+	IOHANDLE File = Storage()->OpenFile(SAVES_FILE, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+		return false;
+	if(pFileExists)
+		*pFileExists = true;
+
+	char *pFileContent = io_read_all_str(File);
+	io_close(File);
+	if(!pFileContent)
+		return false;
+
+	const char *pCursor = pFileContent;
+	char aLine[2048];
+	bool FirstLine = true;
+	while((pCursor = str_next_token(pCursor, "\n", aLine, sizeof(aLine))))
+	{
+		str_utf8_trim_right(aLine);
+		if(aLine[0] == '\0')
+			continue;
+		if(FirstLine)
+		{
+			FirstLine = false;
+			if(str_startswith(aLine, "Time"))
+				continue;
+		}
+
+		std::array<std::string, 4> aFields = ParseLocalSaveCsvFields(aLine);
+		SLocalSaveEntry Entry;
+		Entry.m_Time = std::move(aFields[0]);
+		Entry.m_Players = std::move(aFields[1]);
+		Entry.m_Map = std::move(aFields[2]);
+		Entry.m_Code = std::move(aFields[3]);
+		vEntries.push_back(std::move(Entry));
+	}
+
+	free(pFileContent);
+	return true;
+}
+
+bool CTClient::RemoveLocalSaveByCode(const char *pCode)
+{
+	if(!pCode || pCode[0] == '\0')
+		return false;
+
+	std::vector<SLocalSaveEntry> vEntries;
+	bool FileExists = false;
+	if(!LoadLocalSaveEntries(vEntries, &FileExists) || vEntries.empty())
+		return false;
+
+	const char *pCurrentMap = Client()->GetCurrentMap();
+	const bool HasCurrentMap = pCurrentMap && pCurrentMap[0] != '\0';
+	auto MatchesCurrentMap = [&](const SLocalSaveEntry &Entry) {
+		if(str_comp(Entry.m_Code.c_str(), pCode) != 0)
+			return false;
+		if(!HasCurrentMap || Entry.m_Map.empty())
+			return true;
+		return str_comp_nocase(Entry.m_Map.c_str(), pCurrentMap) == 0;
+	};
+
+	const size_t OriginalSize = vEntries.size();
+	vEntries.erase(std::remove_if(vEntries.begin(), vEntries.end(), MatchesCurrentMap), vEntries.end());
+	if(vEntries.size() == OriginalSize)
+	{
+		vEntries.erase(std::remove_if(vEntries.begin(), vEntries.end(), [pCode](const SLocalSaveEntry &Entry) {
+			return str_comp(Entry.m_Code.c_str(), pCode) == 0;
+		}),
+			vEntries.end());
+	}
+	if(vEntries.size() == OriginalSize)
+		return false;
+
+	IOHANDLE File = Storage()->OpenFile(SAVES_FILE, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+		return false;
+
+	static constexpr const char *s_apSavesHeader[] = {
+		"Time",
+		"Players",
+		"Map",
+		"Code",
+	};
+	CsvWrite(File, std::size(s_apSavesHeader), s_apSavesHeader);
+	for(const SLocalSaveEntry &Entry : vEntries)
+	{
+		const char *apColumns[std::size(s_apSavesHeader)] = {
+			Entry.m_Time.c_str(),
+			Entry.m_Players.c_str(),
+			Entry.m_Map.c_str(),
+			Entry.m_Code.c_str(),
+		};
+		CsvWrite(File, std::size(s_apSavesHeader), apColumns);
+	}
+	io_close(File);
+
+	m_aLastLocalSaveHintMap[0] = '\0';
+	return true;
+}
+
+bool CTClient::TryRemoveLocalSaveForLoadCommand(const char *pLine)
+{
+	char aCode[256];
+	if(!ExtractLoadSaveCode(pLine, aCode, sizeof(aCode)))
+		return false;
+	return RemoveLocalSaveByCode(aCode);
+}
+
+void CTClient::MaybeShowLocalSaveJoinHint()
+{
+	if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
+		return;
+
+	const char *pCurrentMap = Client()->GetCurrentMap();
+	if(!pCurrentMap || pCurrentMap[0] == '\0')
+		return;
+	if(str_comp(m_aLastLocalSaveHintMap, pCurrentMap) == 0)
+		return;
+
+	std::vector<SLocalSaveEntry> vEntries;
+	bool FileExists = false;
+	if(!LoadLocalSaveEntries(vEntries, &FileExists))
+	{
+		str_copy(m_aLastLocalSaveHintMap, pCurrentMap, sizeof(m_aLastLocalSaveHintMap));
+		return;
+	}
+
+	std::vector<const SLocalSaveEntry *> vMatchedEntries;
+	for(const SLocalSaveEntry &Entry : vEntries)
+	{
+		if(!Entry.m_Map.empty() && str_comp_nocase(Entry.m_Map.c_str(), pCurrentMap) == 0)
+			vMatchedEntries.push_back(&Entry);
+	}
+
+	if(vMatchedEntries.empty())
+	{
+		str_copy(m_aLastLocalSaveHintMap, pCurrentMap, sizeof(m_aLastLocalSaveHintMap));
+		return;
+	}
+
+	char aMessage[1024];
+	str_format(aMessage, sizeof(aMessage), "— 您在这张图有%d个存档！", (int)vMatchedEntries.size());
+	GameClient()->Echo(aMessage, true);
+
+	std::string PlayersLine = "— 保存者按顺序是";
+	std::string CodesLine = "— 密码依次为";
+	const int DisplayCount = minimum((int)vMatchedEntries.size(), LOCAL_SAVE_JOIN_HINT_MAX_ITEMS);
+	for(int EntryIndex = 0; EntryIndex < DisplayCount; ++EntryIndex)
+	{
+		const SLocalSaveEntry *pEntry = vMatchedEntries[EntryIndex];
+		if(EntryIndex > 0)
+		{
+			PlayersLine += ",";
+			CodesLine += ",";
+		}
+		PlayersLine += pEntry->m_Players.empty() ? "Unknown" : pEntry->m_Players;
+		CodesLine += pEntry->m_Code.empty() ? "no-code" : pEntry->m_Code;
+	}
+	if(DisplayCount < (int)vMatchedEntries.size())
+	{
+		PlayersLine += ",...";
+		CodesLine += ",...";
+	}
+	PlayersLine += "！";
+	CodesLine += "！";
+	GameClient()->Echo(PlayersLine.c_str(), true);
+	GameClient()->Echo(CodesLine.c_str(), true);
+
+	str_copy(m_aLastLocalSaveHintMap, pCurrentMap, sizeof(m_aLastLocalSaveHintMap));
+}
+
 void CTClient::ConSaveList(IConsole::IResult *pResult, void *pUserData)
 {
 	CTClient *pThis = static_cast<CTClient *>(pUserData);
 	// 如果用户指定了地图名，使用指定的；否则使用当前地图
 	const char *pFilterMap = pResult->NumArguments() > 0 ? pResult->GetString(0) : pThis->Client()->GetCurrentMap();
 
-	// 打开本地存档文件
-	IOHANDLE File = pThis->Storage()->OpenFile(SAVES_FILE, IOFLAG_READ, IStorage::TYPE_SAVE);
-	if(!File)
+	std::vector<SLocalSaveEntry> vEntries;
+	bool FileExists = false;
+	if(!pThis->LoadLocalSaveEntries(vEntries, &FileExists))
 	{
-		pThis->GameClient()->Echo(Localize("No local saves file found (ddnet-saves.txt)"));
-		return;
-	}
-
-	// 读取整个文件内容
-	char *pFileContent = io_read_all_str(File);
-	io_close(File);
-
-	if(!pFileContent)
-	{
-		pThis->GameClient()->Echo(Localize("Failed to read saves file"));
+		pThis->GameClient()->Echo(FileExists ? Localize("Failed to read saves file") : Localize("No local saves file found (ddnet-saves.txt)"));
 		return;
 	}
 
 	int Count = 0;
-	bool IsFirstLine = true;
 
 	// 显示标题
 	char aTitle[256];
@@ -4669,109 +5032,26 @@ void CTClient::ConSaveList(IConsole::IResult *pResult, void *pUserData)
 		str_copy(aTitle, "=== All Local Saves ===");
 	pThis->GameClient()->Echo(aTitle);
 
-	// 逐行处理
-	char *pLine = pFileContent;
-	while(*pLine)
+	for(const SLocalSaveEntry &Entry : vEntries)
 	{
-		// 找到行尾
-		char *pLineEnd = pLine;
-		while(*pLineEnd && *pLineEnd != '\n' && *pLineEnd != '\r')
-			pLineEnd++;
-
-		// 保存行尾字符并临时设为结束符
-		char LineEndChar = *pLineEnd;
-		if(*pLineEnd)
-			*pLineEnd = '\0';
-
-		// 处理这一行
-		if(pLine[0] != '\0')
+		// 过滤地图
+		if(pFilterMap && pFilterMap[0] != '\0')
 		{
-			// 跳过表头
-			if(IsFirstLine)
-			{
-				IsFirstLine = false;
-				if(!str_startswith(pLine, "Time"))
-				{
-					// 如果第一行不是表头，也要处理
-					IsFirstLine = false;
-				}
-				else
-				{
-					// 跳过表头行
-					goto next_line;
-				}
-			}
-
-			// 解析 CSV 行: Time,Players,Map,Code
-			char aTime[64] = {0};
-			char aPlayers[256] = {0};
-			char aMap[128] = {0};
-			char aCode[128] = {0};
-
-			// 简单的 CSV 解析
-			const char *pCurrent = pLine;
-			char *apFields[4] = {aTime, aPlayers, aMap, aCode};
-			int FieldSizes[4] = {sizeof(aTime), sizeof(aPlayers), sizeof(aMap), sizeof(aCode)};
-			int FieldIndex = 0;
-			bool InQuotes = false;
-
-			for(int i = 0; pCurrent[i] && FieldIndex < 4; i++)
-			{
-				if(pCurrent[i] == '"')
-				{
-					InQuotes = !InQuotes;
-				}
-				else if(pCurrent[i] == ',' && !InQuotes)
-				{
-					FieldIndex++;
-				}
-				else if(FieldIndex < 4)
-				{
-					int Len = str_length(apFields[FieldIndex]);
-					if(Len < FieldSizes[FieldIndex] - 1)
-					{
-						apFields[FieldIndex][Len] = pCurrent[i];
-						apFields[FieldIndex][Len + 1] = '\0';
-					}
-				}
-			}
-
-			// 过滤地图
-			if(pFilterMap && pFilterMap[0] != '\0')
-			{
-				// 精确匹配地图名（不区分大小写）
-				if(str_comp_nocase(aMap, pFilterMap) != 0)
-					goto next_line;
-			}
-
-			// 输出格式: [玩家名] 密码 (地图: xxx, 保存时间: xxx)
-			char aOutput[512];
-			str_format(aOutput, sizeof(aOutput), "[%s] %s (Map: %s, Time: %s)",
-				aPlayers[0] ? aPlayers : "Unknown",
-				aCode[0] ? aCode : "no-code",
-				aMap[0] ? aMap : "Unknown",
-				aTime[0] ? aTime : "Unknown");
-			pThis->GameClient()->Echo(aOutput);
-			Count++;
+			// 精确匹配地图名（不区分大小写）
+			if(str_comp_nocase(Entry.m_Map.c_str(), pFilterMap) != 0)
+				continue;
 		}
 
-next_line:
-		// 恢复行尾字符并移动到下一行
-		if(LineEndChar)
-		{
-			*pLineEnd = LineEndChar;
-			pLine = pLineEnd + 1;
-			// 跳过 \r\n 的第二个字符
-			if(LineEndChar == '\r' && *pLine == '\n')
-				pLine++;
-		}
-		else
-		{
-			break;
-		}
+		// 输出格式: [玩家名] 密码 (地图: xxx, 保存时间: xxx)
+		char aOutput[512];
+		str_format(aOutput, sizeof(aOutput), "[%s] %s (Map: %s, Time: %s)",
+			Entry.m_Players.empty() ? "Unknown" : Entry.m_Players.c_str(),
+			Entry.m_Code.empty() ? "no-code" : Entry.m_Code.c_str(),
+			Entry.m_Map.empty() ? "Unknown" : Entry.m_Map.c_str(),
+			Entry.m_Time.empty() ? "Unknown" : Entry.m_Time.c_str());
+		pThis->GameClient()->Echo(aOutput);
+		Count++;
 	}
-
-	free(pFileContent);
 
 	char aCountMsg[128];
 	str_format(aCountMsg, sizeof(aCountMsg), "Total: %d save(s)", Count);

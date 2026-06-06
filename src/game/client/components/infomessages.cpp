@@ -11,9 +11,11 @@
 #include <generated/protocol.h>
 
 #include <game/client/animstate.h>
+#include <game/client/components/qmclient/modes.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
+#include <game/client/QmUi/UiTokens.h>
 #include <game/localization.h>
 
 static constexpr float ROW_HEIGHT = 46.0f;
@@ -445,7 +447,7 @@ void CInfoMessages::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
-	if(g_Config.m_QmFocusMode && g_Config.m_QmFocusModeHideUI)
+	if(ShouldHideFocusInfoMessages(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideInfoMessages != 0))
 		return;
 
 	const float Height = 1.5f * 400.0f * 3.0f;
@@ -460,7 +462,8 @@ void CInfoMessages::OnRender()
 		Showfps = 0;
 #endif
 	const float StartX = Width - 10.0f;
-	float StartY = 30.0f + (Showfps ? 100.0f : 0.0f) + (g_Config.m_ClShowpred && Client()->State() != IClient::STATE_DEMOPLAYBACK ? 100.0f : 0.0f);
+	const bool HasTopRightTextInfo = (g_Config.m_ClShowpred || g_Config.m_ClShowPacketLoss) && Client()->State() != IClient::STATE_DEMOPLAYBACK;
+	float StartY = 30.0f + (Showfps ? 100.0f : 0.0f) + (HasTopRightTextInfo ? 100.0f : 0.0f);
 
 	float y = StartY;
 	for(int i = 1; i <= MAX_INFOMSGS; i++)

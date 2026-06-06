@@ -81,8 +81,27 @@ public:
 	void GetKey(const char *pBindStr, char *pBuf, size_t BufSize) const;
 	static int GetModifierMask(IInput *pInput);
 	static int GetModifierMaskOfKey(int Key);
+	static bool AllowsUnmodifiedFallback(int Key, int ModifierMask)
+	{
+		if(ModifierMask == ((1 << KeyModifier::CTRL) | (1 << KeyModifier::SHIFT)) ||
+			ModifierMask == ((1 << KeyModifier::GUI) | (1 << KeyModifier::SHIFT)))
+			return false;
+
+		if((Key == KEY_LSHIFT || Key == KEY_RSHIFT) &&
+			(ModifierMask & ((1 << KeyModifier::CTRL) | (1 << KeyModifier::GUI))) != 0)
+			return false;
+
+		return true;
+	}
+	static bool ShouldReleaseUnmodifiedModifierBindOnModifierPress(const CBindSlot &ActiveBind, int PressedKeyModifierMask)
+	{
+		return ActiveBind.m_ModifierMask == KeyModifier::NONE &&
+		       (ActiveBind.m_Key == KEY_LSHIFT || ActiveBind.m_Key == KEY_RSHIFT) &&
+		       (PressedKeyModifierMask == (1 << KeyModifier::CTRL) || PressedKeyModifierMask == (1 << KeyModifier::GUI));
+	}
 	static const char *GetModifierName(int Modifier);
 	void GetKeyBindName(int Key, int ModifierMask, char *pBuf, size_t BufSize) const;
+	void RefreshActiveBinds();
 
 	void OnConsoleInit() override;
 	bool OnInput(const IInput::CEvent &Event) override;

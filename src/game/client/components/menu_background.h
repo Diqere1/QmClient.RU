@@ -87,8 +87,10 @@ public:
 private:
 	CCamera m_Camera;
 
+protected:
 	CBackgroundEngineMap *CreateBGMap() override;
 
+private:
 	vec2 m_RotationCenter;
 	std::array<vec2, NUM_POS> m_aPositions;
 	int m_CurrentPosition;

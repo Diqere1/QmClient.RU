@@ -4,6 +4,7 @@
 #include <game/editor/mapitems/image.h>
 
 #include <array>
+#include <utility>
 
 static bool operator<(const ColorRGBA &Left, const ColorRGBA &Right) // NOLINT(unused-function)
 {
@@ -76,7 +77,12 @@ static CImageInfo ColorGroupToImage(const std::array<ColorRGBA, NumTiles> &aColo
 	Image.m_Width = NumTilesRow * TileSize;
 	Image.m_Height = NumTilesColumn * TileSize;
 	Image.m_Format = CImageInfo::FORMAT_RGBA;
-	Image.m_pData = static_cast<uint8_t *>(malloc(Image.DataSize()));
+	size_t ImageDataSize = 0;
+	if(!Image.DataSize(ImageDataSize))
+		return {};
+	Image.m_pData = static_cast<uint8_t *>(malloc(ImageDataSize));
+	if(Image.m_pData == nullptr)
+		return {};
 
 	for(int y = 0; y < NumTilesColumn; y++)
 	{
@@ -95,7 +101,17 @@ static std::vector<CImageInfo> ColorGroupsToImages(const std::vector<std::array<
 	std::vector<CImageInfo> vImages;
 	vImages.reserve(vaColorGroups.size());
 	for(const auto &ColorGroup : vaColorGroups)
-		vImages.push_back(ColorGroupToImage(ColorGroup));
+	{
+		CImageInfo Image = ColorGroupToImage(ColorGroup);
+		if(Image.m_pData == nullptr)
+		{
+			for(auto &GeneratedImage : vImages)
+				GeneratedImage.Free();
+			vImages.clear();
+			break;
+		}
+		vImages.push_back(std::move(Image));
+	}
 
 	return vImages;
 }
@@ -143,14 +159,21 @@ void CEditor::AddTileart(bool IgnoreHistory)
 	char aTileArtFilename[IO_MAX_PATH_LENGTH];
 	IStorage::StripPathAndExtension(m_aTileartFilename, aTileArtFilename, sizeof(aTileArtFilename));
 
+	auto vUniqueColors = GetUniqueColors(m_TileartImageInfo);
+	auto vaColorGroups = GroupColors(vUniqueColors);
+	auto vColorImages = ColorGroupsToImages(vaColorGroups);
+	if(vColorImages.size() != vaColorGroups.size())
+	{
+		m_TileartImageInfo.Free();
+		ShowFileDialogError("无法生成图块画图像。");
+		return;
+	}
+
 	std::shared_ptr<CLayerGroup> pGroup = m_Map.NewGroup();
 	str_copy(pGroup->m_aName, aTileArtFilename);
 
 	int ImageCount = m_Map.m_vpImages.size();
 
-	auto vUniqueColors = GetUniqueColors(m_TileartImageInfo);
-	auto vaColorGroups = GroupColors(vUniqueColors);
-	auto vColorImages = ColorGroupsToImages(vaColorGroups);
 	char aImageName[IO_MAX_PATH_LENGTH];
 	for(size_t i = 0; i < vColorImages.size(); i++)
 	{
@@ -186,7 +209,9 @@ void CEditor::TileartCheckColors()
 		m_PopupEventActivated = true;
 	}
 	else
+	{
 		AddTileart();
+	}
 }
 
 bool CEditor::CallbackAddTileart(const char *pFilepath, int StorageType, void *pUser)
@@ -195,7 +220,7 @@ bool CEditor::CallbackAddTileart(const char *pFilepath, int StorageType, void *p
 
 	if(!pEditor->Graphics()->LoadPng(pEditor->m_TileartImageInfo, pFilepath, StorageType))
 	{
-	pEditor->ShowFileDialogError("无法从文件“%s”加载图像。", pFilepath);
+		pEditor->ShowFileDialogError("无法从文件“%s”加载图像。", pFilepath);
 		return false;
 	}
 

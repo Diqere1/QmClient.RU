@@ -3,8 +3,8 @@
 #include <base/log.h>
 
 #include <engine/client/serverbrowser.h>
-#include <engine/external/json-parser/json.h>
 #include <engine/shared/config.h>
+#include <engine/shared/json.h>
 
 static constexpr char CUSTOM_COMMUNITIES_DDNET_INFO_FILE[] = "custom-communities-ddnet-info.json";
 
@@ -56,7 +56,7 @@ void CCustomCommunities::LoadCustomCommunitiesDDNetInfo()
 	}
 	json_settings JsonSettings{};
 	char aError[256];
-	json_value *pCustomCommunitiesDDNetInfo = json_parse_ex(&JsonSettings, static_cast<json_char *>(pBuf), Length, aError);
+	json_value *pCustomCommunitiesDDNetInfo = JsonParseEx(&JsonSettings, static_cast<json_char *>(pBuf), Length, aError);
 	free(pBuf);
 	if(pCustomCommunitiesDDNetInfo == nullptr)
 	{

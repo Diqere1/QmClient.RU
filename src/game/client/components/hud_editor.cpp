@@ -19,6 +19,8 @@ namespace
 {
 constexpr float EPSILON = 0.001f;
 constexpr float HUD_EDITOR_SNAP_DISTANCE = 6.0f;
+constexpr float HUD_EDITOR_EDGE_ANCHOR_DISTANCE = EPSILON;
+constexpr const char *JUMP_HINT_DEFAULT_TEXT = "这是示例文本";
 
 float Clamp01(float Value)
 {
@@ -42,10 +44,54 @@ float SnapHudEditorAxis(float Position, float Size, float ScreenStart, float Scr
 		}
 	};
 
-	TrySnap(ScreenStart, std::fabs(Position - ScreenStart));
-	TrySnap(ScreenEnd - Size, std::fabs(Position + Size - ScreenEnd));
 	TrySnap(ScreenCenter - Size * 0.5f, std::fabs(Position + Size * 0.5f - ScreenCenter));
 	return SnappedPosition;
+}
+
+void DecodeEscapedNewlines(const char *pInput, char *pOutput, size_t OutputSize)
+{
+	if(OutputSize == 0)
+		return;
+
+	size_t OutPos = 0;
+	for(size_t InPos = 0; pInput != nullptr && pInput[InPos] != '\0' && OutPos + 1 < OutputSize; ++InPos)
+	{
+		if(pInput[InPos] == '\\' && pInput[InPos + 1] == 'n')
+		{
+			pOutput[OutPos++] = '\n';
+			++InPos;
+		}
+		else
+		{
+			pOutput[OutPos++] = pInput[InPos];
+		}
+	}
+	pOutput[OutPos] = '\0';
+}
+
+void EncodeEscapedNewlines(const char *pInput, char *pOutput, size_t OutputSize)
+{
+	if(OutputSize == 0)
+		return;
+
+	size_t OutPos = 0;
+	for(size_t InPos = 0; pInput != nullptr && pInput[InPos] != '\0' && OutPos + 1 < OutputSize; ++InPos)
+	{
+		if(pInput[InPos] == '\r')
+			continue;
+		if(pInput[InPos] == '\n')
+		{
+			if(OutPos + 2 >= OutputSize)
+				break;
+			pOutput[OutPos++] = '\\';
+			pOutput[OutPos++] = 'n';
+		}
+		else
+		{
+			pOutput[OutPos++] = pInput[InPos];
+		}
+	}
+	pOutput[OutPos] = '\0';
 }
 }
 
@@ -101,6 +147,27 @@ bool CHudEditor::OnInput(const IInput::CEvent &Event)
 	if(!m_Active)
 		return false;
 
+	if(m_JumpHintTextEditorActive)
+	{
+		if((Event.m_Flags & IInput::FLAG_PRESS) != 0 && Event.m_Key == KEY_ESCAPE)
+		{
+			CloseJumpHintTextEditor();
+			return true;
+		}
+		if((Event.m_Flags & IInput::FLAG_PRESS) != 0 && (Event.m_Key == KEY_RETURN || Event.m_Key == KEY_KP_ENTER))
+		{
+			if(Input()->ModifierIsPressed())
+			{
+				SaveJumpHintTextEditor();
+			}
+			else if(m_JumpHintTextInput.IsActive())
+			{
+				m_JumpHintTextInput.SetRange("\n", m_JumpHintTextInput.GetSelectionStart(), m_JumpHintTextInput.GetSelectionEnd());
+			}
+			return true;
+		}
+	}
+
 	if((Event.m_Flags & IInput::FLAG_PRESS) != 0 && Event.m_Key == KEY_ESCAPE)
 	{
 		SetActive(false);
@@ -122,6 +189,7 @@ void CHudEditor::SetActive(bool Active)
 	Ui()->SetActiveItem(nullptr);
 	if(!m_Active)
 	{
+		CloseJumpHintTextEditor();
 		ResetRuntimeState();
 		if(m_DirtyLayout)
 			SaveLayoutConfig();
@@ -175,6 +243,7 @@ const char *CHudEditor::ElementToken(EHudEditorElement Element)
 	case EHudEditorElement::TextInfo: return "text_info";
 	case EHudEditorElement::SpectatorCount: return "spectator_count";
 	case EHudEditorElement::MovementInfo: return "movement_info";
+	case EHudEditorElement::JumpHint: return "jump_hint";
 	case EHudEditorElement::MapProgressBar: return "map_progress_bar";
 	case EHudEditorElement::SpectatorHud: return "spectator_hud";
 	case EHudEditorElement::LocalTime: return "local_time";
@@ -295,6 +364,20 @@ void CHudEditor::SaveLayoutConfig()
 	m_DirtyLayout = false;
 }
 
+void CHudEditor::ResetLayoutConfig()
+{
+	for(SElementState &State : m_aElementStates)
+		State = SElementState{};
+
+	g_Config.m_QmHudEditorLayout[0] = '\0';
+	m_aLayoutCache[0] = '\0';
+	m_LayoutLoaded = true;
+	m_DirtyLayout = false;
+	m_DraggingElement = -1;
+	m_DragGrabOffset = vec2(0.0f, 0.0f);
+	ConfigManager()->Save();
+}
+
 CHudEditor::SElementState &CHudEditor::EnsureState(EHudEditorElement Element)
 {
 	SyncLayoutConfig();
@@ -306,7 +389,7 @@ const CHudEditor::SElementState &CHudEditor::State(EHudEditorElement Element) co
 	return m_aElementStates[static_cast<int>(Element)];
 }
 
-void CHudEditor::ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight) const
+void CHudEditor::ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight, float StateOffsetX, float StateOffsetY) const
 {
 	const CUIRect *pScreen = Ui()->Screen();
 	if(pScreen == nullptr || pScreen->w <= 0.0f || pScreen->h <= 0.0f)
@@ -315,24 +398,33 @@ void CHudEditor::ClampStateToScreen(SElementState &State, float BaseWidth, float
 	const float Scale = std::clamp(State.m_ScalePercent / 100.0f, MIN_SCALE_PERCENT / 100.0f, MAX_SCALE_PERCENT / 100.0f);
 	const float Width = BaseWidth * Scale;
 	const float Height = BaseHeight * Scale;
+	const bool AnchorRight = State.m_PosXPermille >= POSITION_SCALE;
+	const bool AnchorBottom = State.m_PosYPermille >= POSITION_SCALE;
 	const float XNorm = Clamp01(State.m_PosXPermille / (float)POSITION_SCALE);
 	const float YNorm = Clamp01(State.m_PosYPermille / (float)POSITION_SCALE);
 	float X = pScreen->x + XNorm * pScreen->w;
 	float Y = pScreen->y + YNorm * pScreen->h;
 
-	const float MaxX = Width >= pScreen->w ? pScreen->x : pScreen->x + pScreen->w - Width;
-	const float MaxY = Height >= pScreen->h ? pScreen->y : pScreen->y + pScreen->h - Height;
-	X = std::clamp(X, pScreen->x, MaxX);
-	Y = std::clamp(Y, pScreen->y, MaxY);
+	const float MinX = pScreen->x - StateOffsetX * Scale;
+	const float MinY = pScreen->y - StateOffsetY * Scale;
+	const float MaxX = Width >= pScreen->w ? MinX : pScreen->x + pScreen->w - Width - StateOffsetX * Scale;
+	const float MaxY = Height >= pScreen->h ? MinY : pScreen->y + pScreen->h - Height - StateOffsetY * Scale;
+	X = std::clamp(X, MinX, MaxX);
+	Y = std::clamp(Y, MinY, MaxY);
 
-	State.m_PosXPermille = std::clamp(round_to_int((X - pScreen->x) / pScreen->w * POSITION_SCALE), 0, POSITION_SCALE);
-	State.m_PosYPermille = std::clamp(round_to_int((Y - pScreen->y) / pScreen->h * POSITION_SCALE), 0, POSITION_SCALE);
+	State.m_PosXPermille = AnchorRight ? POSITION_SCALE : std::clamp(round_to_int((X - pScreen->x) / pScreen->w * POSITION_SCALE), 0, POSITION_SCALE);
+	State.m_PosYPermille = AnchorBottom ? POSITION_SCALE : std::clamp(round_to_int((Y - pScreen->y) / pScreen->h * POSITION_SCALE), 0, POSITION_SCALE);
 }
 
 CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element, const CUIRect &DefaultRect, bool Scalable, bool ApplyMapScreen)
 {
+	return BeginTransform(Element, DefaultRect, DefaultRect, Scalable, ApplyMapScreen);
+}
+
+CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element, const CUIRect &TransformRect, const CUIRect &VisibleRect, bool Scalable, bool ApplyMapScreen)
+{
 	STransformScope Scope;
-	if(DefaultRect.w <= 0.0f || DefaultRect.h <= 0.0f)
+	if(TransformRect.w <= 0.0f || TransformRect.h <= 0.0f || VisibleRect.w <= 0.0f || VisibleRect.h <= 0.0f)
 		return Scope;
 
 	SyncLayoutConfig();
@@ -349,10 +441,12 @@ CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element
 	if(pUiScreen == nullptr || pUiScreen->w <= 0.0f || pUiScreen->h <= 0.0f)
 		return Scope;
 
-	const float DefaultNormX = Clamp01((DefaultRect.x - ScreenX0) / ScreenW);
-	const float DefaultNormY = Clamp01((DefaultRect.y - ScreenY0) / ScreenH);
-	const float BaseUiWidth = DefaultRect.w * pUiScreen->w / ScreenW;
-	const float BaseUiHeight = DefaultRect.h * pUiScreen->h / ScreenH;
+	const float DefaultNormX = Clamp01((TransformRect.x - ScreenX0) / ScreenW);
+	const float DefaultNormY = Clamp01((TransformRect.y - ScreenY0) / ScreenH);
+	const float BaseUiWidth = VisibleRect.w * pUiScreen->w / ScreenW;
+	const float BaseUiHeight = VisibleRect.h * pUiScreen->h / ScreenH;
+	const float TransformToVisibleOffsetX = VisibleRect.x - TransformRect.x;
+	const float TransformToVisibleOffsetY = VisibleRect.y - TransformRect.y;
 
 	const SElementState &SavedState = State(Element);
 	const float Scale = std::clamp(SavedState.m_HasCustom ? SavedState.m_ScalePercent / 100.0f : 1.0f, MIN_SCALE_PERCENT / 100.0f, MAX_SCALE_PERCENT / 100.0f);
@@ -361,29 +455,61 @@ CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element
 	float AnchorX = ScreenX0 + NormX * ScreenW;
 	float AnchorY = ScreenY0 + NormY * ScreenH;
 
-	const float Width = DefaultRect.w * Scale;
-	const float Height = DefaultRect.h * Scale;
-	const float MaxX = Width >= ScreenW ? ScreenX0 : ScreenX0 + ScreenW - Width;
-	const float MaxY = Height >= ScreenH ? ScreenY0 : ScreenY0 + ScreenH - Height;
-	AnchorX = std::clamp(AnchorX, ScreenX0, MaxX);
-	AnchorY = std::clamp(AnchorY, ScreenY0, MaxY);
+	const float TransformWidth = TransformRect.w * Scale;
+	const float TransformHeight = TransformRect.h * Scale;
+	const float VisibleWidth = VisibleRect.w * Scale;
+	const float VisibleHeight = VisibleRect.h * Scale;
+	const float VisibleOffsetX = TransformToVisibleOffsetX * Scale;
+	const float VisibleOffsetY = TransformToVisibleOffsetY * Scale;
+	const float MinAnchorX = ScreenX0 - VisibleOffsetX;
+	const float MinAnchorY = ScreenY0 - VisibleOffsetY;
+	const float MaxAnchorX = VisibleWidth >= ScreenW ? MinAnchorX : ScreenX0 + ScreenW - VisibleWidth - VisibleOffsetX;
+	const float MaxAnchorY = VisibleHeight >= ScreenH ? MinAnchorY : ScreenY0 + ScreenH - VisibleHeight - VisibleOffsetY;
+	if(SavedState.m_HasCustom)
+	{
+		if(SavedState.m_PosXPermille <= 0)
+			AnchorX = MinAnchorX;
+		else if(SavedState.m_PosXPermille >= POSITION_SCALE)
+			AnchorX = MaxAnchorX;
+		if(SavedState.m_PosYPermille <= 0)
+			AnchorY = MinAnchorY;
+		else if(SavedState.m_PosYPermille >= POSITION_SCALE)
+			AnchorY = MaxAnchorY;
+	}
+	AnchorX = std::clamp(AnchorX, MinAnchorX, MaxAnchorX);
+	AnchorY = std::clamp(AnchorY, MinAnchorY, MaxAnchorY);
 
 	SVisibleElement Visible;
 	Visible.m_Element = Element;
 	Visible.m_Rect = {
-			pUiScreen->x + (AnchorX - ScreenX0) * pUiScreen->w / ScreenW,
-			pUiScreen->y + (AnchorY - ScreenY0) * pUiScreen->h / ScreenH,
+			pUiScreen->x + (AnchorX + VisibleOffsetX - ScreenX0) * pUiScreen->w / ScreenW,
+			pUiScreen->y + (AnchorY + VisibleOffsetY - ScreenY0) * pUiScreen->h / ScreenH,
 			BaseUiWidth * Scale,
 			BaseUiHeight * Scale};
 	Visible.m_BaseWidth = BaseUiWidth;
 	Visible.m_BaseHeight = BaseUiHeight;
+	Visible.m_StateOffsetX = TransformToVisibleOffsetX * pUiScreen->w / ScreenW;
+	Visible.m_StateOffsetY = TransformToVisibleOffsetY * pUiScreen->h / ScreenH;
 	Visible.m_Scalable = Scalable;
 	m_vVisibleElements.push_back(Visible);
-	Scope.m_TargetRect = {AnchorX, AnchorY, Width, Height};
+	Scope.m_TargetRect = {AnchorX, AnchorY, TransformWidth, TransformHeight};
+	Scope.m_VisibleRect = {AnchorX + VisibleOffsetX, AnchorY + VisibleOffsetY, VisibleWidth, VisibleHeight};
+	Scope.m_AnchoredLeft = std::fabs(Scope.m_VisibleRect.x - ScreenX0) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+	Scope.m_AnchoredRight = std::fabs(Scope.m_VisibleRect.x + Scope.m_VisibleRect.w - ScreenX1) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+	Scope.m_AnchoredTop = std::fabs(Scope.m_VisibleRect.y - ScreenY0) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+	Scope.m_AnchoredBottom = std::fabs(Scope.m_VisibleRect.y + Scope.m_VisibleRect.h - ScreenY1) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+	if(Scope.m_AnchoredLeft)
+		Scope.m_Corners &= ~IGraphics::CORNER_L;
+	if(Scope.m_AnchoredRight)
+		Scope.m_Corners &= ~IGraphics::CORNER_R;
+	if(Scope.m_AnchoredTop)
+		Scope.m_Corners &= ~IGraphics::CORNER_T;
+	if(Scope.m_AnchoredBottom)
+		Scope.m_Corners &= ~IGraphics::CORNER_B;
 
 	const bool Transformed =
-		std::fabs(AnchorX - DefaultRect.x) > EPSILON ||
-		std::fabs(AnchorY - DefaultRect.y) > EPSILON ||
+		std::fabs(AnchorX - TransformRect.x) > EPSILON ||
+		std::fabs(AnchorY - TransformRect.y) > EPSILON ||
 		std::fabs(Scale - 1.0f) > EPSILON;
 	if(!Transformed || !ApplyMapScreen)
 		return Scope;
@@ -394,8 +520,8 @@ CHudEditor::STransformScope CHudEditor::BeginTransform(EHudEditorElement Element
 	Scope.m_ScreenX1 = ScreenX1;
 	Scope.m_ScreenY1 = ScreenY1;
 
-	const float NewScreenX0 = DefaultRect.x - (AnchorX - ScreenX0) / Scale;
-	const float NewScreenY0 = DefaultRect.y - (AnchorY - ScreenY0) / Scale;
+	const float NewScreenX0 = TransformRect.x - (AnchorX - ScreenX0) / Scale;
+	const float NewScreenY0 = TransformRect.y - (AnchorY - ScreenY0) / Scale;
 	Graphics()->MapScreen(NewScreenX0, NewScreenY0, NewScreenX0 + ScreenW / Scale, NewScreenY0 + ScreenH / Scale);
 	return Scope;
 }
@@ -439,6 +565,197 @@ void CHudEditor::UpdateInteractionUi()
 	m_InteractionUiActive = true;
 }
 
+void CHudEditor::OpenJumpHintTextEditor()
+{
+	char aDecoded[sizeof(g_Config.m_TcJumpHintText)];
+	DecodeEscapedNewlines(g_Config.m_TcJumpHintText[0] != '\0' ? g_Config.m_TcJumpHintText : JUMP_HINT_DEFAULT_TEXT, aDecoded, sizeof(aDecoded));
+	m_JumpHintTextInput.Set(aDecoded);
+	m_JumpHintTextInput.SetEmptyText(Localize("Jump hint text"));
+	m_JumpHintTextEditorActive = true;
+	m_JumpHintTextEditorNeedsFocus = true;
+	m_DraggingElement = -1;
+	m_DragGrabOffset = vec2(0.0f, 0.0f);
+}
+
+void CHudEditor::SaveJumpHintTextEditor()
+{
+	char aEncoded[sizeof(g_Config.m_TcJumpHintText)];
+	EncodeEscapedNewlines(m_JumpHintTextInput.GetString(), aEncoded, sizeof(aEncoded));
+	if(aEncoded[0] == '\0')
+		str_copy(aEncoded, JUMP_HINT_DEFAULT_TEXT, sizeof(aEncoded));
+	str_copy(g_Config.m_TcJumpHintText, aEncoded, sizeof(g_Config.m_TcJumpHintText));
+	ConfigManager()->Save();
+	CloseJumpHintTextEditor();
+}
+
+void CHudEditor::CloseJumpHintTextEditor()
+{
+	if(!m_JumpHintTextEditorActive)
+		return;
+
+	m_JumpHintTextEditorActive = false;
+	m_JumpHintTextEditorNeedsFocus = false;
+	Ui()->ReleaseActiveTextInput(&m_JumpHintTextInput);
+}
+
+bool CHudEditor::HandleElementDoubleClick(EHudEditorElement Element)
+{
+	if(!Ui()->DoDoubleClickLogic(&m_aElementStates[static_cast<int>(Element)]))
+		return false;
+
+	if(Element != EHudEditorElement::JumpHint)
+		return false;
+
+	OpenJumpHintTextEditor();
+	return true;
+}
+
+bool CHudEditor::DoJumpHintTextArea(CLineInput *pLineInput, const CUIRect *pRect, float FontSize)
+{
+	const bool Inside = Ui()->MouseHovered(pRect);
+	bool Active = Ui()->ActiveItem() == pLineInput || pLineInput->IsActive();
+	const bool Changed = pLineInput->WasChanged();
+	const bool CursorChanged = pLineInput->WasCursorChanged();
+	const bool ClickedOutside = (Ui()->MouseButtonClicked(0) || Ui()->MouseButtonClicked(1)) && !Inside;
+
+	CUIRect Textbox;
+	pRect->VMargin(3.0f, &Textbox);
+	Textbox.HMargin(3.0f, &Textbox);
+
+	bool JustGotActive = false;
+	if(Ui()->CheckActiveItem(pLineInput))
+	{
+		if(Ui()->MouseButton(0))
+		{
+			if(pLineInput->IsActive() && (Input()->HasComposition() || Input()->GetCandidateCount()))
+			{
+				Input()->StopTextInput();
+				Input()->StartTextInput();
+			}
+		}
+		else
+		{
+			Ui()->SetActiveItem(nullptr);
+		}
+	}
+	else if(Ui()->HotItem() == pLineInput)
+	{
+		if(Ui()->MouseButton(0))
+		{
+			if(!Active)
+				JustGotActive = true;
+			Ui()->SetActiveItem(pLineInput);
+		}
+	}
+
+	if(Inside && !Ui()->MouseButton(0))
+		Ui()->SetHotItem(pLineInput);
+
+	if(Active && ClickedOutside)
+	{
+		Ui()->ReleaseActiveTextInput(pLineInput);
+		Active = false;
+	}
+	if(Ui()->Enabled() && Active && !JustGotActive)
+		pLineInput->Activate(EInputPriority::UI);
+	else
+		pLineInput->Deactivate();
+
+	CLineInput::SMouseSelection *pMouseSelection = pLineInput->GetMouseSelection();
+	if(Inside && !pMouseSelection->m_Selecting && Ui()->MouseButtonClicked(0))
+	{
+		pMouseSelection->m_Selecting = true;
+		pMouseSelection->m_PressMouse = Ui()->MousePos();
+		pMouseSelection->m_Offset = vec2(0.0f, 0.0f);
+	}
+	if(pMouseSelection->m_Selecting)
+	{
+		pMouseSelection->m_ReleaseMouse = Ui()->MousePos();
+		if(!Ui()->MouseButton(0))
+		{
+			pMouseSelection->m_Selecting = false;
+			if(Active)
+				Input()->EnsureScreenKeyboardShown();
+		}
+	}
+
+	pRect->Draw(CUi::ms_LightButtonColorFunction.GetColor(Active, Ui()->HotItem() == pLineInput), IGraphics::CORNER_ALL, 4.0f);
+	Ui()->ClipEnable(pRect);
+	pLineInput->Render(&Textbox, FontSize, TEXTALIGN_TL, Changed || CursorChanged, Textbox.w, 2.0f);
+	Ui()->ClipDisable();
+	pLineInput->SetScrollOffset(0.0f);
+	pLineInput->SetScrollOffsetChange(0.0f);
+
+	return Changed;
+}
+
+void CHudEditor::RenderJumpHintTextEditor(const CUIRect &Screen)
+{
+	constexpr float PopupWidth = 260.0f;
+	constexpr float PopupHeight = 150.0f;
+	constexpr float Padding = 10.0f;
+	constexpr float ButtonHeight = 20.0f;
+	constexpr float ButtonWidth = 58.0f;
+	constexpr float FontSize = 8.0f;
+
+	Graphics()->DrawRect(Screen.x, Screen.y, Screen.w, Screen.h, ColorRGBA(0.0f, 0.0f, 0.0f, 0.42f), IGraphics::CORNER_NONE, 0.0f);
+
+	CUIRect Popup{
+		Screen.x + (Screen.w - PopupWidth) * 0.5f,
+		Screen.y + (Screen.h - PopupHeight) * 0.5f,
+		PopupWidth,
+		PopupHeight};
+	Popup.Draw(ColorRGBA(0.03f, 0.04f, 0.06f, 0.92f), IGraphics::CORNER_ALL, 7.0f);
+
+	CUIRect Content;
+	Popup.Margin(Padding, &Content);
+
+	CUIRect Title;
+	Content.HSplitTop(18.0f, &Title, &Content);
+	Ui()->DoLabel(&Title, Localize("位置跳跃提示"), 10.0f, TEXTALIGN_ML);
+	Content.HSplitTop(5.0f, nullptr, &Content);
+
+	CUIRect EditBox;
+	Content.HSplitBottom(ButtonHeight + 8.0f, &EditBox, &Content);
+	DoJumpHintTextArea(&m_JumpHintTextInput, &EditBox, FontSize);
+
+	if(m_JumpHintTextEditorNeedsFocus)
+	{
+		Ui()->SetActiveItem(&m_JumpHintTextInput);
+		m_JumpHintTextEditorNeedsFocus = false;
+	}
+
+	CUIRect Buttons = Content;
+	CUIRect CancelButton, SaveButton, ResetButton;
+	Buttons.VSplitRight(ButtonWidth, &Buttons, &SaveButton);
+	Buttons.VSplitRight(7.0f, &Buttons, nullptr);
+	Buttons.VSplitRight(ButtonWidth, &Buttons, &CancelButton);
+	Buttons.VSplitLeft(ButtonWidth, &ResetButton, nullptr);
+
+	static CButtonContainer s_ResetButton;
+	static CButtonContainer s_CancelButton;
+	static CButtonContainer s_SaveButton;
+
+	ResetButton.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f * Ui()->ButtonColorMul(&s_ResetButton)), IGraphics::CORNER_ALL, 4.0f);
+	CancelButton.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f * Ui()->ButtonColorMul(&s_CancelButton)), IGraphics::CORNER_ALL, 4.0f);
+	SaveButton.Draw(ColorRGBA(0.25f, 0.62f, 1.0f, 0.22f * Ui()->ButtonColorMul(&s_SaveButton)), IGraphics::CORNER_ALL, 4.0f);
+	Ui()->DoLabel(&ResetButton, Localize("Reset"), FontSize, TEXTALIGN_MC);
+	Ui()->DoLabel(&CancelButton, Localize("Cancel"), FontSize, TEXTALIGN_MC);
+	Ui()->DoLabel(&SaveButton, Localize("Save"), FontSize, TEXTALIGN_MC);
+
+	if(Ui()->DoButtonLogic(&s_ResetButton, 0, &ResetButton, BUTTONFLAG_LEFT) != 0)
+	{
+		char aDecoded[sizeof(g_Config.m_TcJumpHintText)];
+		DecodeEscapedNewlines(JUMP_HINT_DEFAULT_TEXT, aDecoded, sizeof(aDecoded));
+		m_JumpHintTextInput.Set(aDecoded);
+		Ui()->SetActiveItem(&m_JumpHintTextInput);
+	}
+	if(Ui()->DoButtonLogic(&s_CancelButton, 0, &CancelButton, BUTTONFLAG_LEFT) != 0)
+		CloseJumpHintTextEditor();
+	if(Ui()->DoButtonLogic(&s_SaveButton, 0, &SaveButton, BUTTONFLAG_LEFT) != 0)
+		SaveJumpHintTextEditor();
+}
+
 void CHudEditor::OnRender()
 {
 	if(!m_Active)
@@ -450,7 +767,37 @@ void CHudEditor::OnRender()
 
 	UpdateInteractionUi();
 
-	const int HoveredIndex = FindHoveredVisibleElement();
+	if(m_JumpHintTextEditorActive)
+	{
+		float PrevX0 = 0.0f;
+		float PrevY0 = 0.0f;
+		float PrevX1 = 0.0f;
+		float PrevY1 = 0.0f;
+		Graphics()->GetScreen(&PrevX0, &PrevY0, &PrevX1, &PrevY1);
+		Graphics()->MapScreen(pUiScreen->x, pUiScreen->y, pUiScreen->x + pUiScreen->w, pUiScreen->y + pUiScreen->h);
+		RenderJumpHintTextEditor(*pUiScreen);
+		RenderTools()->RenderCursor(Ui()->MousePos(), 24.0f);
+		Graphics()->MapScreen(PrevX0, PrevY0, PrevX1, PrevY1);
+		Ui()->FinishCheck();
+		m_InteractionUiActive = false;
+		return;
+	}
+
+	constexpr float ResetButtonWidth = 68.0f;
+	constexpr float ResetButtonHeight = 18.0f;
+	constexpr float ResetButtonMargin = 10.0f;
+	CUIRect ResetButton{
+		pUiScreen->x + pUiScreen->w - ResetButtonWidth - ResetButtonMargin,
+		pUiScreen->y + ResetButtonMargin,
+		ResetButtonWidth,
+		ResetButtonHeight};
+	static CButtonContainer s_ResetDefaultButton;
+	const bool ResetButtonHovered = Ui()->MouseHovered(&ResetButton);
+	const bool ResetDefaultClicked = Ui()->DoButtonLogic(&s_ResetDefaultButton, 0, &ResetButton, BUTTONFLAG_LEFT) != 0;
+	if(ResetDefaultClicked)
+		ResetLayoutConfig();
+
+	const int HoveredIndex = ResetButtonHovered ? -1 : FindHoveredVisibleElement();
 	if(m_DraggingElement >= 0)
 	{
 		const bool MouseReleased = !Ui()->MouseButton(0) && Ui()->LastMouseButton(0);
@@ -465,8 +812,12 @@ void CHudEditor::OnRender()
 
 	if(HoveredIndex >= 0 && m_DraggingElement < 0 && Ui()->MouseButtonClicked(0) && Ui()->ActiveItem() == nullptr)
 	{
-		m_DraggingElement = static_cast<int>(m_vVisibleElements[HoveredIndex].m_Element);
-		m_DragGrabOffset = vec2(Ui()->MouseX() - m_vVisibleElements[HoveredIndex].m_Rect.x, Ui()->MouseY() - m_vVisibleElements[HoveredIndex].m_Rect.y);
+		const EHudEditorElement Element = m_vVisibleElements[HoveredIndex].m_Element;
+		if(!HandleElementDoubleClick(Element))
+		{
+			m_DraggingElement = static_cast<int>(Element);
+			m_DragGrabOffset = vec2(Ui()->MouseX() - m_vVisibleElements[HoveredIndex].m_Rect.x, Ui()->MouseY() - m_vVisibleElements[HoveredIndex].m_Rect.y);
+		}
 	}
 
 	if(m_DraggingElement >= 0 && Ui()->MouseButton(0))
@@ -482,8 +833,12 @@ void CHudEditor::OnRender()
 			const float Height = Visible.m_BaseHeight * Scale;
 			const float X = SnapHudEditorAxis(Ui()->MouseX() - m_DragGrabOffset.x, Width, pUiScreen->x, pUiScreen->w);
 			const float Y = SnapHudEditorAxis(Ui()->MouseY() - m_DragGrabOffset.y, Height, pUiScreen->y, pUiScreen->h);
-			State.m_PosXPermille = std::clamp(round_to_int((X - pUiScreen->x) / pUiScreen->w * POSITION_SCALE), 0, POSITION_SCALE);
-			State.m_PosYPermille = std::clamp(round_to_int((Y - pUiScreen->y) / pUiScreen->h * POSITION_SCALE), 0, POSITION_SCALE);
+			const bool SnapLeft = std::fabs(X - pUiScreen->x) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+			const bool SnapRight = std::fabs(X + Width - (pUiScreen->x + pUiScreen->w)) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+			const bool SnapTop = std::fabs(Y - pUiScreen->y) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+			const bool SnapBottom = std::fabs(Y + Height - (pUiScreen->y + pUiScreen->h)) <= HUD_EDITOR_EDGE_ANCHOR_DISTANCE;
+			State.m_PosXPermille = SnapLeft ? 0 : (SnapRight ? POSITION_SCALE : std::clamp(round_to_int((X - Visible.m_StateOffsetX * Scale - pUiScreen->x) / pUiScreen->w * POSITION_SCALE), 0, POSITION_SCALE));
+			State.m_PosYPermille = SnapTop ? 0 : (SnapBottom ? POSITION_SCALE : std::clamp(round_to_int((Y - Visible.m_StateOffsetY * Scale - pUiScreen->y) / pUiScreen->h * POSITION_SCALE), 0, POSITION_SCALE));
 			m_DirtyLayout = true;
 		}
 	}
@@ -501,7 +856,7 @@ void CHudEditor::OnRender()
 		{
 			State.m_HasCustom = true;
 			State.m_ScalePercent = std::clamp(State.m_ScalePercent + DeltaScale, MIN_SCALE_PERCENT, MAX_SCALE_PERCENT);
-			ClampStateToScreen(State, Visible.m_BaseWidth, Visible.m_BaseHeight);
+			ClampStateToScreen(State, Visible.m_BaseWidth, Visible.m_BaseHeight, Visible.m_StateOffsetX, Visible.m_StateOffsetY);
 			m_DirtyLayout = true;
 			SaveLayoutConfig();
 		}
@@ -561,6 +916,9 @@ void CHudEditor::OnRender()
 	{
 		TextRender()->Text(HelpX + HelpPaddingX, HelpY + HelpPaddingY + HelpLineHeight * i, HelpFontSize, apHelpLines[i], -1.0f);
 	}
+
+	ResetButton.Draw(ColorRGBA(0.03f, 0.04f, 0.06f, 0.78f), IGraphics::CORNER_ALL, 6.0f);
+	Ui()->DoLabel(&ResetButton, Localize("Reset default"), 8.0f, TEXTALIGN_MC);
 
 	RenderTools()->RenderCursor(Ui()->MousePos(), 24.0f);
 

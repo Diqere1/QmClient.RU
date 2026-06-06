@@ -1745,6 +1745,12 @@ void CGameContext::OnClientEnter(int ClientId)
 	LogEvent("Connect", ClientId);
 }
 
+void CGameContext::OnLiveObserverEnter(int ClientId)
+{
+	m_pController->Teams().SendTeamsState(ClientId);
+	m_VoteUpdate = true;
+}
+
 bool CGameContext::OnClientDataPersist(int ClientId, void *pData)
 {
 	CPersistentClientData *pPersistent = (CPersistentClientData *)pData;
@@ -2131,18 +2137,20 @@ void CGameContext::CensorMessage(char *pCensoredMessage, const char *pMessage, i
 	for(auto &Item : m_vCensorlist)
 	{
 		char *pCurLoc = pCensoredMessage;
-		do
+		while(true)
 		{
-			pCurLoc = (char *)str_utf8_find_nocase(pCurLoc, Item.c_str());
-			if(pCurLoc)
+			const char *pEndMatch;
+			pCurLoc = (char *)str_utf8_find_nocase(pCurLoc, Item.c_str(), &pEndMatch);
+			if(!pCurLoc)
 			{
-				for(int i = 0; i < (int)Item.length(); i++)
-				{
-					pCurLoc[i] = '*';
-				}
+				break;
+			}
+			while(pCurLoc < pEndMatch)
+			{
+				*pCurLoc = '*';
 				pCurLoc++;
 			}
-		} while(pCurLoc);
+		}
 	}
 }
 

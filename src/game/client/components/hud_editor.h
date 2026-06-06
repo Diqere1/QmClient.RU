@@ -3,7 +3,10 @@
 #define GAME_CLIENT_COMPONENTS_HUD_EDITOR_H
 
 #include <game/client/component.h>
+#include <game/client/lineinput.h>
 #include <game/client/ui_rect.h>
+
+#include <engine/graphics.h>
 
 #include <array>
 #include <vector>
@@ -22,6 +25,7 @@ enum class EHudEditorElement
 	TextInfo,
 	SpectatorCount,
 	MovementInfo,
+	JumpHint,
 	MapProgressBar,
 	SpectatorHud,
 	LocalTime,
@@ -31,6 +35,7 @@ enum class EHudEditorElement
 	Chat,
 	VoiceOverlay,
 	InputOverlay,
+	HudNotifications,
 
 	Count,
 };
@@ -46,6 +51,12 @@ public:
 		float m_ScreenX1 = 0.0f;
 		float m_ScreenY1 = 0.0f;
 		CUIRect m_TargetRect{};
+		CUIRect m_VisibleRect{};
+		int m_Corners = IGraphics::CORNER_ALL;
+		bool m_AnchoredLeft = false;
+		bool m_AnchoredRight = false;
+		bool m_AnchoredTop = false;
+		bool m_AnchoredBottom = false;
 	};
 
 	CHudEditor();
@@ -64,6 +75,7 @@ public:
 	void UpdateVisibleRect(EHudEditorElement Element, const CUIRect &RenderedRect);
 
 	STransformScope BeginTransform(EHudEditorElement Element, const CUIRect &DefaultRect, bool Scalable = true, bool ApplyMapScreen = true);
+	STransformScope BeginTransform(EHudEditorElement Element, const CUIRect &TransformRect, const CUIRect &VisibleRect, bool Scalable = true, bool ApplyMapScreen = true);
 	void EndTransform(const STransformScope &Scope);
 
 private:
@@ -81,6 +93,8 @@ private:
 		CUIRect m_Rect{};
 		float m_BaseWidth = 0.0f;
 		float m_BaseHeight = 0.0f;
+		float m_StateOffsetX = 0.0f;
+		float m_StateOffsetY = 0.0f;
 		bool m_Scalable = true;
 	};
 
@@ -98,17 +112,27 @@ private:
 	std::array<SElementState, ELEMENT_COUNT> m_aElementStates{};
 	std::vector<SVisibleElement> m_vVisibleElements;
 	bool m_InteractionUiActive = false;
+	bool m_JumpHintTextEditorActive = false;
+	bool m_JumpHintTextEditorNeedsFocus = false;
+	CLineInputBuffered<512> m_JumpHintTextInput;
 
 	void ResetRuntimeState();
 	void SyncLayoutConfig();
 	void ParseLayoutConfig(const char *pConfig);
 	void SaveLayoutConfig();
-	void ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight) const;
+	void ResetLayoutConfig();
+	void ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight, float StateOffsetX, float StateOffsetY) const;
 	SElementState &EnsureState(EHudEditorElement Element);
 	const SElementState &State(EHudEditorElement Element) const;
 	int FindHoveredVisibleElement() const;
 	int FindVisibleElementIndex(EHudEditorElement Element) const;
 	void UpdateInteractionUi();
+	void OpenJumpHintTextEditor();
+	void SaveJumpHintTextEditor();
+	void CloseJumpHintTextEditor();
+	bool HandleElementDoubleClick(EHudEditorElement Element);
+	bool DoJumpHintTextArea(CLineInput *pLineInput, const CUIRect *pRect, float FontSize);
+	void RenderJumpHintTextEditor(const CUIRect &Screen);
 	static const char *ElementToken(EHudEditorElement Element);
 	static int ElementFromToken(const char *pToken);
 };

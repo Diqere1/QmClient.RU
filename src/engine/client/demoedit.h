@@ -20,9 +20,11 @@ class CDemoEdit : public IJob
 	int m_EndTick;
 	bool m_Success;
 
+protected:
+	void Run() override;
+
 public:
 	CDemoEdit(const char *pNetVersion, CSnapshotDelta *pSnapshotDelta, IStorage *pStorage, const char *pDemo, const char *pDst, int StartTick, int EndTick);
-	void Run() override;
 	char *Destination() { return m_aDst; }
 	bool Success() const { return m_Success; }
 };

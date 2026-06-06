@@ -42,6 +42,7 @@
 #include <engine/shared/protocol.h>
 #include <engine/shared/protocol7.h>
 #include <engine/shared/protocol_ex.h>
+#include <engine/shared/client_brand.h>
 #include <engine/shared/protocolglue.h>
 #include <engine/shared/rust_version.h>
 #include <engine/shared/snapshot.h>
@@ -57,6 +58,7 @@
 
 #include <game/localization.h>
 #include <game/version.h>
+#include <game/client/components/qmclient/perf_logging.h>
 
 #if defined(CONF_VIDEORECORDER)
 #include "video.h"
@@ -72,28 +74,6 @@
 
 namespace
 {
-bool PerfDebugEnabled()
-{
-	return g_Config.m_QmPerfDebug != 0;
-}
-
-double PerfDebugThresholdMs()
-{
-	return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-}
-
-void LogPerfStage(const char *pSystem, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
-{
-	if(!PerfDebugEnabled())
-		return;
-	if(!Force && DurationMs < PerfDebugThresholdMs())
-		return;
-
-	if(pExtra != nullptr && pExtra[0] != '\0')
-		dbg_msg(pSystem, "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-	else
-		dbg_msg(pSystem, "stage=%s duration_ms=%.3f", pStage, DurationMs);
-}
 }
 #ifdef main
 #undef main
@@ -107,6 +87,7 @@ void LogPerfStage(const char *pSystem, const char *pStage, const double Duration
 
 #if defined(CONF_FAMILY_WINDOWS)
 #include <windows.h>
+
 #include <dbghelp.h>
 #ifdef ERROR
 #undef ERROR
@@ -167,8 +148,7 @@ static bool WriteMiniDumpFile(const char *pFilename)
 		return false;
 	}
 
-	const MINIDUMP_TYPE DumpType = static_cast<MINIDUMP_TYPE>(
-		MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithIndirectlyReferencedMemory);
+	const MINIDUMP_TYPE DumpType = MINIDUMP_TYPE(MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithIndirectlyReferencedMemory); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
 	const BOOL Result = pMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), FileHandle, DumpType, nullptr, nullptr, nullptr);
 
 	CloseHandle(FileHandle);
@@ -212,21 +192,37 @@ static inline bool RepackMsg(const CMsgPacker *pMsg, CPacker &Packer, bool Sixup
 		if(pMsg->m_System)
 		{
 			if(MsgId >= OFFSET_UUID)
+			{
 				;
+			}
 			else if(MsgId == NETMSG_INFO || MsgId == NETMSG_REQUEST_MAP_DATA)
+			{
 				;
+			}
 			else if(MsgId == NETMSG_READY)
+			{
 				MsgId = protocol7::NETMSG_READY;
+			}
 			else if(MsgId == NETMSG_RCON_CMD)
+			{
 				MsgId = protocol7::NETMSG_RCON_CMD;
+			}
 			else if(MsgId == NETMSG_ENTERGAME)
+			{
 				MsgId = protocol7::NETMSG_ENTERGAME;
+			}
 			else if(MsgId == NETMSG_INPUT)
+			{
 				MsgId = protocol7::NETMSG_INPUT;
+			}
 			else if(MsgId == NETMSG_RCON_AUTH)
+			{
 				MsgId = protocol7::NETMSG_RCON_AUTH;
+			}
 			else if(MsgId == NETMSG_PING)
+			{
 				MsgId = protocol7::NETMSG_PING;
+			}
 			else
 			{
 				log_error("net", "0.7 DROP send sys %d", MsgId);
@@ -302,7 +298,7 @@ int CClient::SendMsgActive(CMsgPacker *pMsg, int Flags)
 void CClient::SendTClientInfo(int Conn)
 {
 	CMsgPacker Msg(NETMSG_IAMTATER, true);
-	Msg.AddString(TCLIENT_VERSION " built on " __DATE__ ", " __TIME__);
+	Msg.AddString(QMCLIENT_VERSION " built on " __DATE__ ", " __TIME__);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL);
 }
 
@@ -315,6 +311,10 @@ void CClient::SendInfo(int Conn)
 	MsgVer.AddInt(GameClient()->DDNetVersion());
 	MsgVer.AddString(GameClient()->DDNetVersionStr());
 	SendMsg(Conn, &MsgVer, MSGFLAG_VITAL);
+
+#if defined(CONF_QM_LIVE_CLIENT)
+	SendQmLiveObserverRequest(Conn);
+#endif
 
 	if(IsSixup())
 	{
@@ -330,16 +330,102 @@ void CClient::SendInfo(int Conn)
 	Msg.AddString(GameClient()->NetVersion());
 	Msg.AddString(m_aPassword);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	SendKcpCapability(Conn);
+}
+
+void CClient::SendKcpCapability(int Conn)
+{
+	if(Conn != CONN_MAIN)
+		return;
+	CMsgPacker Msg(NETMSG_KCP_CAPABLE, true);
+	Msg.AddInt(1); // negotiation version
+	Msg.AddInt(NET_MAX_PACKETSIZE);
+	Msg.AddInt(NET_MAX_PAYLOAD);
+	Msg.AddInt(Conn == CONN_DUMMY ? 1 : 0);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	if(g_Config.m_Debug)
+	{
+		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "sent kcp capability", gs_ClientNetworkPrintColor);
+	}
+
+	m_KcpNegotiationPending = true;
+	m_KcpNegotiationStartTime = time_get();
+}
+
+void CClient::SendKcpProbe(int Conn)
+{
+	if(Conn != CONN_MAIN || !m_aNetClient[Conn].IsKcpActive())
+		return;
+	CMsgPacker Msg(NETMSG_KCP_CAPABLE, true);
+	Msg.AddInt(1);
+	Msg.AddInt(NET_MAX_PACKETSIZE);
+	Msg.AddInt(NET_MAX_PAYLOAD);
+	Msg.AddInt(0);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+}
+
+void CClient::SendQmLiveObserverRequest(int Conn)
+{
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn != CONN_MAIN)
+		return;
+
+	CMsgPacker Msg(NETMSG_QM_LIVE_OBSERVER_REQUEST, true);
+	Msg.AddInt(QM_LIVE_OBSERVER_PROTOCOL_VERSION);
+	Msg.AddInt(SERVERCAP_LIVE_OBSERVER | SERVERCAP_LIVE_DIRECTOR);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	m_LiveObserverSession.StartRequest();
+	m_LiveObserverRequestTime = time_get();
+#else
+	(void)Conn;
+#endif
+}
+
+void CClient::EnableQmLiveCompatDirector(EQmLiveDenyReason Reason, const char *pReasonText)
+{
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.CompatDirectorActive() || m_LiveObserverSession.Accepted())
+		return;
+
+	m_LiveObserverSession.StartCompatDirector(Reason, pReasonText);
+	m_LiveObserverRequestTime = 0;
+
+	char aBuf[128];
+	str_format(aBuf, sizeof(aBuf), "live observer fallback: %s", m_LiveObserverSession.DenyReasonText());
+	m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+
+	if(m_LiveObserverSession.ReadyPending())
+	{
+		m_LiveObserverSession.SetReadyPending(false);
+		SendReady(CONN_MAIN);
+	}
+#else
+	(void)Reason;
+	(void)pReasonText;
+#endif
 }
 
 void CClient::SendEnterGame(int Conn)
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn == CONN_MAIN && m_LiveObserverSession.Accepted())
+		return;
+#endif
+
 	CMsgPacker Msg(NETMSG_ENTERGAME, true);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
 }
 
 void CClient::SendReady(int Conn)
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn == CONN_MAIN && m_LiveObserverSession.RequestPending())
+	{
+		m_LiveObserverSession.SetReadyPending(true);
+		return;
+	}
+#endif
+
 	CMsgPacker Msg(NETMSG_READY, true);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
 }
@@ -429,8 +515,106 @@ float CClient::PacketLoss() const
 	return m_aNetClient[g_Config.m_ClDummy].PacketLoss();
 }
 
+void CClient::UpdateNetStatsSnapshot() const
+{
+	const std::chrono::nanoseconds Now = time_get_nanoseconds();
+	if(Now - m_NetstatsLastUpdate <= 1s)
+		return;
+
+	m_NetstatsSampleInterval = m_NetstatsLastUpdate.count() > 0 ? Now - m_NetstatsLastUpdate : std::chrono::nanoseconds::zero();
+	m_NetstatsLastUpdate = Now;
+	m_NetstatsPrev = m_NetstatsCurrent;
+	net_stats(&m_NetstatsCurrent);
+}
+
+float CClient::SnapshotLatencyMs() const
+{
+	if(State() != IClient::STATE_ONLINE || m_CurrentServerInfo.m_Latency < 0)
+		return 0.0f;
+	return (float)m_CurrentServerInfo.m_Latency;
+}
+
+float CClient::PredictionLatencyMs() const
+{
+	const int64_t Now = time_get();
+	return (float)((m_PredictedTime.Get(Now) - m_aGameTime[g_Config.m_ClDummy].Get(Now)) * 1000 / (float)time_freq());
+}
+
+float CClient::PredictionMarginMs() const
+{
+	return (float)PredictionMargin();
+}
+
+float CClient::PredictionJitterMs() const
+{
+	return std::max(0.0f, m_AutoMarginLatencyJitterMs);
+}
+
+float CClient::GameTimeMarginMs() const
+{
+	return m_aLastGameTimeMarginMs[g_Config.m_ClDummy];
+}
+
+bool CClient::IsGameConnectionAlive() const
+{
+	return State() == IClient::STATE_ONLINE;
+}
+
+void CClient::NetStatsSnapshot(NETSTATS &Prev, NETSTATS &Current, std::chrono::nanoseconds &LastUpdate) const
+{
+	UpdateNetStatsSnapshot();
+	Prev = m_NetstatsPrev;
+	Current = m_NetstatsCurrent;
+	LastUpdate = m_NetstatsSampleInterval;
+}
+
+int CClient::PendingResendCount() const
+{
+	return m_aNetClient[g_Config.m_ClDummy].PendingResendCount();
+}
+
+#if defined(CONF_QM_LIVE_CLIENT)
+void CClient::SendQmLiveObserverInputAck()
+{
+	constexpr int Conn = CONN_MAIN;
+	const int PredTick = m_aPredTick[Conn];
+	if(PredTick <= 0)
+		return;
+
+	const int64_t Now = time_get();
+
+	CMsgPacker Msg(NETMSG_INPUT, true);
+	Msg.AddInt(m_aAckGameTick[Conn]);
+	Msg.AddInt(PredTick);
+	// Keep the normal snapshot ack and input-timing loop alive without sending gameplay input.
+	Msg.AddInt(0);
+
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_Tick = PredTick;
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictedTime = m_PredictedTime.Get(Now);
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictionMargin = PredictionMargin() * time_freq() / 1000;
+	if(g_Config.m_TcSmoothPredictionMargin)
+		m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictionMargin = m_PredictedTime.GetMargin(Now);
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_Time = Now;
+
+	m_aCurrentInput[Conn]++;
+	m_aCurrentInput[Conn] %= 200;
+
+	SendMsg(Conn, &Msg, MSGFLAG_FLUSH);
+	if(m_aNetClient[Conn].IsKcpActive())
+		SendMsg(Conn, &Msg, MSGFLAG_FLUSH);
+}
+#endif
+
 void CClient::SendInput()
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.Accepted())
+	{
+		SendQmLiveObserverInputAck();
+		return;
+	}
+#endif
+
 	int64_t Now = time_get();
 
 	if(m_aPredTick[g_Config.m_ClDummy] <= 0)
@@ -486,6 +670,8 @@ void CClient::SendInput()
 			m_aCurrentInput[i] %= 200;
 
 			SendMsg(i, &Msg, MSGFLAG_FLUSH);
+			if(i == CONN_MAIN && m_aNetClient[i].IsKcpActive())
+				SendMsg(i, &Msg, MSGFLAG_FLUSH);
 			// ugly workaround for dummy. we need to send input with dummy to prevent
 			// prediction time resets. but if we do it too often, then it's
 			// impossible to use grenade with frozen dummy that gets hammered...
@@ -547,12 +733,14 @@ void CClient::SetState(EClientState State)
 
 	if(State == IClient::STATE_ONLINE)
 	{
-		const bool Registered = m_ServerBrowser.IsRegistered(ServerAddress());
+		const NETADDR *pServerAddr = ServerAddress();
+		dbg_assert(pServerAddr != nullptr, "online state requires server address");
+		const bool Registered = m_ServerBrowser.IsRegistered(*pServerAddr);
 		CServerInfo CurrentServerInfo;
 		GetServerInfo(&CurrentServerInfo);
 
 		Discord()->SetGameInfo(CurrentServerInfo, m_aCurrentMap, Registered);
-		Steam()->SetGameInfo(ServerAddress(), m_aCurrentMap, Registered);
+		Steam()->SetGameInfo(*pServerAddr, m_aCurrentMap, Registered);
 	}
 	else if(OldState == IClient::STATE_ONLINE)
 	{
@@ -732,10 +920,10 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 	// Disconnect will not change the state if we are already quitting/restarting
 	if(m_State == IClient::STATE_QUITTING || m_State == IClient::STATE_RESTARTING)
 		return;
+	const NETADDR *pLastAddr = m_aNetClient[CONN_MAIN].ServerAddress();
+	const NETADDR LastAddr = pLastAddr ? *pLastAddr : NETADDR{};
 	Disconnect();
 	dbg_assert(m_State == IClient::STATE_OFFLINE, "Disconnect must ensure that client is offline");
-
-	const NETADDR LastAddr = ServerAddress();
 
 	if(pAddress != m_aConnectAddressStr)
 		str_copy(m_aConnectAddressStr, pAddress);
@@ -820,11 +1008,19 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 		m_SendPassword = false;
 	}
 	else if(!pPassword)
+	{
 		m_aPassword[0] = 0;
+	}
 	else
+	{
 		str_copy(m_aPassword, pPassword);
+	}
 
 	m_CanReceiveServerCapabilities = true;
+#if defined(CONF_QM_LIVE_CLIENT)
+	m_LiveObserverSession.Reset();
+	m_LiveObserverRequestTime = 0;
+#endif
 
 	m_Sixup = OnlySixup;
 	if(m_Sixup)
@@ -832,7 +1028,9 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 		m_aNetClient[CONN_MAIN].Connect7(aConnectAddrs, NumConnectAddrs);
 	}
 	else
+	{
 		m_aNetClient[CONN_MAIN].Connect(aConnectAddrs, NumConnectAddrs);
+	}
 
 	m_aNetClient[CONN_MAIN].RefreshStun();
 	SetState(IClient::STATE_CONNECTING);
@@ -868,6 +1066,15 @@ void CClient::DisconnectWithReason(const char *pReason)
 	mem_zero(m_aRconPassword, sizeof(m_aRconPassword));
 	m_MapDetails = std::nullopt;
 	m_ServerSentCapabilities = false;
+	m_ServerCapabilities = {};
+	m_KcpNegotiationPending = false;
+	m_KcpNegotiated = false;
+	m_KcpNegotiationStartTime = 0;
+	m_KcpNegotiationConv = 0;
+#if defined(CONF_QM_LIVE_CLIENT)
+	m_LiveObserverSession.Reset();
+	m_LiveObserverRequestTime = 0;
+#endif
 	m_UseTempRconCommands = 0;
 	m_ExpectedRconCommands = -1;
 	m_GotRconCommands = 0;
@@ -912,6 +1119,20 @@ void CClient::Disconnect()
 	}
 }
 
+void CClient::DropCurrentServerConnection()
+{
+	if(m_State == IClient::STATE_OFFLINE || m_State == IClient::STATE_DEMOPLAYBACK)
+	{
+		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "not connected", gs_ClientNetworkErrPrintColor);
+		return;
+	}
+
+	static constexpr const char *pReason = "abnormal disconnect";
+	m_aNetClient[CONN_DUMMY].Drop(pReason);
+	m_aNetClient[CONN_MAIN].Drop(pReason);
+	DisconnectWithReason(pReason);
+}
+
 bool CClient::DummyConnected() const
 {
 	return m_DummyConnected;
@@ -929,6 +1150,12 @@ bool CClient::DummyConnectingDelayed() const
 
 void CClient::DummyConnect()
 {
+	if(QmLiveDirectorActive())
+	{
+		log_info("client", "Dummy connection is disabled for QmLive director.");
+		return;
+	}
+
 	if(m_aNetClient[CONN_MAIN].State() != NETSTATE_ONLINE)
 	{
 		log_info("client", "Not online.");
@@ -965,12 +1192,15 @@ void CClient::DummyConnect()
 	g_Config.m_ClDummyCopyMoves = 0;
 	g_Config.m_ClDummyHammer = 0;
 
+	const NETADDR *pMainAddr = m_aNetClient[CONN_MAIN].ServerAddress();
+	if(!pMainAddr)
+		return;
 	m_DummyConnecting = true;
 	// connect to the server
 	if(IsSixup())
-		m_aNetClient[CONN_DUMMY].Connect7(m_aNetClient[CONN_MAIN].ServerAddress(), 1);
+		m_aNetClient[CONN_DUMMY].Connect7(pMainAddr, 1);
 	else
-		m_aNetClient[CONN_DUMMY].Connect(m_aNetClient[CONN_MAIN].ServerAddress(), 1);
+		m_aNetClient[CONN_DUMMY].Connect(pMainAddr, 1);
 
 	m_aGametimeMarginGraphs[CONN_DUMMY].Init(-150.0f, 150.0f);
 }
@@ -993,6 +1223,8 @@ void CClient::DummyDisconnect(const char *pReason)
 
 bool CClient::DummyAllowed() const
 {
+	if(QmLiveDirectorActive())
+		return false;
 	return m_ServerCapabilities.m_AllowDummy;
 }
 
@@ -1060,13 +1292,7 @@ void CClient::RenderDebug()
 		return;
 	}
 
-	const std::chrono::nanoseconds Now = time_get_nanoseconds();
-	if(Now - m_NetstatsLastUpdate > 1s)
-	{
-		m_NetstatsLastUpdate = Now;
-		m_NetstatsPrev = m_NetstatsCurrent;
-		net_stats(&m_NetstatsCurrent);
-	}
+	UpdateNetStatsSnapshot();
 
 	char aBuffer[512];
 	const float FontSize = 16.0f;
@@ -1185,22 +1411,12 @@ void CClient::RenderGraphs()
 	if(!g_Config.m_DbgGraphs)
 		return;
 
-	// Make sure graph positions and sizes are aligned with pixels to avoid lines overlapping graph edges
 	Graphics()->MapScreen(0, 0, Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
-	const float GraphW = std::round(Graphics()->ScreenWidth() / 4.0f);
-	const float GraphH = std::round(Graphics()->ScreenHeight() / 6.0f);
 	const float GraphSpacing = std::round(Graphics()->ScreenWidth() / 100.0f);
-	const float GraphX = Graphics()->ScreenWidth() - GraphW - GraphSpacing;
+	const float GraphX = Graphics()->ScreenWidth() - GraphSpacing;
 
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
-	TextRender()->Text(GraphX, GraphSpacing * 5 - 12.0f - 10.0f, 12.0f, Localize("Press Ctrl+Shift+G to toggle debug graphs"));
-
-	m_FpsGraph.Scale(time_freq());
-	m_FpsGraph.Render(Graphics(), TextRender(), GraphX, GraphSpacing * 5, GraphW, GraphH, Localize("FPS"));
-	m_InputtimeMarginGraph.Scale(5 * time_freq());
-	m_InputtimeMarginGraph.Render(Graphics(), TextRender(), GraphX, GraphSpacing * 6 + GraphH, GraphW, GraphH, Localize("Prediction margin"));
-	m_aGametimeMarginGraphs[g_Config.m_ClDummy].Scale(5 * time_freq());
-	m_aGametimeMarginGraphs[g_Config.m_ClDummy].Render(Graphics(), TextRender(), GraphX, GraphSpacing * 7 + GraphH * 2, GraphW, GraphH, Localize("Game time margin"));
+	GameClient()->RenderQmMonitoringHud(GraphX, GraphSpacing);
 }
 
 void CClient::Restart()
@@ -1282,28 +1498,28 @@ void CClient::Render()
 	{
 		CPerfTimer StageTimer;
 		m_pEditor->OnRender();
-		LogPerfStage("perf/render", "editor_onrender", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "editor_onrender", StageTimer.ElapsedMs(), false, this);
 	}
 	else
 	{
 		CPerfTimer StageTimer;
 		GameClient()->OnRender();
-		LogPerfStage("perf/render", "gameclient_onrender", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "gameclient_onrender", StageTimer.ElapsedMs(), false, this);
 	}
 
 	{
 		CPerfTimer StageTimer;
 		RenderDebug();
-		LogPerfStage("perf/render", "client_render_debug", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "client_render_debug", StageTimer.ElapsedMs(), false, this);
 	}
 
 	{
 		CPerfTimer StageTimer;
 		RenderGraphs();
-		LogPerfStage("perf/render", "client_render_graphs", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "client_render_graphs", StageTimer.ElapsedMs(), false, this);
 	}
 
-	LogPerfStage("perf/render", "client_render_total", RenderTimer.ElapsedMs());
+	QmPerfLogStage("perf/render", "client_render_total", RenderTimer.ElapsedMs(), false, this);
 }
 
 const char *CClient::LoadMap(const char *pName, const char *pFilename, SHA256_DIGEST *pWantedSha256, unsigned WantedCrc)
@@ -1619,7 +1835,8 @@ void CClient::ProcessServerInfo(int RawType, NETADDR *pFrom, const void *pData, 
 		//
 		// SERVERINFO_EXTENDED_MORE doesn't carry any server
 		// information, so just skip it.
-		if(net_addr_comp(&ServerAddress(), pFrom) == 0 && RawType != SERVERINFO_EXTENDED_MORE)
+		const NETADDR *pServerAddr = ServerAddress();
+		if(pServerAddr != nullptr && net_addr_comp(pServerAddr, pFrom) == 0 && RawType != SERVERINFO_EXTENDED_MORE)
 		{
 			// Only accept server info that has a type that is
 			// newer or equal to something the server already sent
@@ -1646,7 +1863,7 @@ void CClient::ProcessServerInfo(int RawType, NETADDR *pFrom, const void *pData, 
 			if(ValidPong)
 			{
 				int LatencyMs = (time_get() - m_CurrentServerCurrentPingTime) * 1000 / time_freq();
-				m_ServerBrowser.SetCurrentServerPing(ServerAddress(), LatencyMs);
+				m_ServerBrowser.SetCurrentServerPing(*pServerAddr, LatencyMs);
 				m_CurrentServerInfo.m_Latency = LatencyMs;
 				m_CurrentServerPingInfoType = SavedType;
 				m_CurrentServerCurrentPingTime = -1;
@@ -1695,11 +1912,24 @@ static CServerCapabilities GetServerCapabilities(int Version, int Flags, bool Si
 	{
 		Result.m_SyncWeaponInput = Flags & SERVERCAPFLAG_SYNCWEAPONINPUT;
 	}
+	if(Version >= 6)
+	{
+		Result.m_Kcp = Flags & SERVERCAPFLAG_KCP;
+	}
+	if(Version >= 7)
+	{
+		Result.m_LiveObserver = Flags & SERVERCAP_LIVE_OBSERVER;
+		Result.m_LiveDirector = Flags & SERVERCAP_LIVE_DIRECTOR;
+		Result.m_LiveReplay = Flags & SERVERCAP_LIVE_REPLAY;
+	}
 	return Result;
 }
 
 void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 {
+	if(Conn < 0 || Conn >= NUM_DUMMIES)
+		return;
+
 	CUnpacker Unpacker;
 	Unpacker.Reset(pPacket->m_pData, pPacket->m_DataSize);
 	CMsgPacker Packer(NETMSG_EX, true);
@@ -1753,13 +1983,13 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 				pMapUrl = "";
 			}
 
-			m_MapDetails = std::make_optional<CMapDetails>();
-			CMapDetails &MapDetails = m_MapDetails.value();
+			CMapDetails MapDetails;
 			str_copy(MapDetails.m_aName, pMap);
 			MapDetails.m_Size = MapSize;
 			MapDetails.m_Crc = MapCrc;
 			MapDetails.m_Sha256 = *pMapSha256;
 			str_copy(MapDetails.m_aUrl, pMapUrl);
+			m_MapDetails = MapDetails;
 		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CAPABILITIES)
 		{
@@ -1776,6 +2006,89 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			m_ServerCapabilities = GetServerCapabilities(Version, Flags, IsSixup());
 			m_CanReceiveServerCapabilities = false;
 			m_ServerSentCapabilities = true;
+			if(m_ServerCapabilities.m_Kcp && !m_KcpNegotiated && !m_KcpNegotiationPending)
+			{
+				SendKcpCapability(Conn);
+			}
+		}
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_KCP_ACCEPT)
+		{
+			const int Version = Unpacker.GetInt();
+			const int Conv = Unpacker.GetInt();
+			if(Unpacker.Error() || Version != 1 || Conv <= 0)
+			{
+				return;
+			}
+			if(!m_aNetClient[Conn].ActivateKcp((uint32_t)Conv))
+			{
+				m_KcpNegotiationPending = false;
+				m_KcpNegotiated = false;
+				m_KcpNegotiationConv = 0;
+				if(g_Config.m_Debug)
+				{
+					m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "kcp negotiation accepted but activation failed", gs_ClientNetworkErrPrintColor);
+				}
+				return;
+			}
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiated = true;
+			m_KcpNegotiationConv = Conv;
+			SendKcpProbe(Conn);
+			if(g_Config.m_Debug)
+			{
+				char aBuf[128];
+				str_format(aBuf, sizeof(aBuf), "kcp negotiation accepted conv=%d", Conv);
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+			}
+		}
+		else if(Conn == CONN_MAIN && Msg == NETMSG_KCP_FALLBACK)
+		{
+			const char *pReason = Unpacker.GetString(CUnpacker::SANITIZE_CC);
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiated = false;
+			m_KcpNegotiationConv = 0;
+			m_aNetClient[Conn].DeactivateKcp();
+			if(g_Config.m_Debug)
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "kcp negotiation fallback reason='%s'", pReason);
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+			}
+		}
+#if defined(CONF_QM_LIVE_CLIENT)
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_QM_LIVE_OBSERVER_ACCEPT)
+		{
+			const int Capabilities = Unpacker.GetInt();
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			m_LiveObserverSession.Accept(Capabilities);
+			m_LiveObserverRequestTime = 0;
+			if(m_LiveObserverSession.ReadyPending())
+			{
+				m_LiveObserverSession.SetReadyPending(false);
+				SendReady(CONN_MAIN);
+			}
+		}
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_QM_LIVE_OBSERVER_DENY)
+		{
+			const EQmLiveDenyReason Reason = QmLiveDenyReasonFromInt(Unpacker.GetInt());
+			const char *pReasonText = Unpacker.GetString(CUnpacker::SANITIZE_CC);
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			EnableQmLiveCompatDirector(Reason, pReasonText);
+		}
+#endif
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CLIENT_BRANDS)
+		{
+			GameClient()->OnClientBrandsMessage(&Unpacker);
 		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_MAP_CHANGE)
 		{
@@ -1947,11 +2260,20 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 				g_Config.m_ClDummy = 0;
 			}
 			else
+			{
 				m_DummyDeactivateOnReconnect = false;
+			}
 		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CON_READY)
 		{
 			GameClient()->OnConnected();
+#if defined(CONF_QM_LIVE_CLIENT)
+			if(m_LiveObserverSession.Accepted())
+			{
+				// Live observers do not get a game-layer ReadyToEnter because the server never creates a CPlayer.
+				EnterGame(CONN_MAIN);
+			}
+#endif
 			if(m_DummyReconnectOnReload)
 			{
 				m_DummySendConnInfo = true;
@@ -1995,7 +2317,9 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			if(m_ServerCapabilities.m_PingEx && m_CurrentServerCurrentPingTime >= 0 && *pId == m_CurrentServerPingUuid)
 			{
 				int LatencyMs = (time_get() - m_CurrentServerCurrentPingTime) * 1000 / time_freq();
-				m_ServerBrowser.SetCurrentServerPing(ServerAddress(), LatencyMs);
+				const NETADDR *pServerAddr = ServerAddress();
+				if(pServerAddr)
+					m_ServerBrowser.SetCurrentServerPing(*pServerAddr, LatencyMs);
 				m_CurrentServerInfo.m_Latency = LatencyMs;
 				m_CurrentServerCurrentPingTime = -1;
 
@@ -2072,7 +2396,10 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			}
 			if(Conn == CONN_MAIN)
 			{
-				NETADDR ServerAddr = ServerAddress();
+				const NETADDR *pServerAddr = ServerAddress();
+				if(!pServerAddr)
+					return;
+				NETADDR ServerAddr = *pServerAddr;
 				ServerAddr.port = RedirectPort;
 				char aAddr[NETADDR_MAXSTRSIZE];
 				net_addr_str(&ServerAddr, aAddr, sizeof(aAddr), true);
@@ -2081,7 +2408,8 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			else
 			{
 				DummyDisconnect("redirect");
-				if(ServerAddress().port != RedirectPort)
+				const NETADDR *pServerAddr = ServerAddress();
+				if(!pServerAddr || pServerAddr->port != RedirectPort)
 				{
 					// Only allow redirecting to the same port to reconnect. The dummy
 					// should not be connected to a different server than the main, as
@@ -2445,6 +2773,7 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 						int64_t Now = m_aGameTime[Conn].Get(time_get());
 						int64_t TickStart = GameTick * time_freq() / GameTickSpeed();
 						int64_t TimeLeft = (TickStart - Now) * 1000 / time_freq();
+						m_aLastGameTimeMarginMs[Conn] = (float)TimeLeft;
 						m_aGameTime[Conn].Update(&m_aGametimeMarginGraphs[Conn], (GameTick - 1) * time_freq() / GameTickSpeed(), TimeLeft, CSmoothTime::ADJUSTDIRECTION_DOWN);
 					}
 
@@ -2807,6 +3136,15 @@ void CClient::PumpNetwork()
 			SetLoadingStateDetail(IClient::LOADING_STATE_DETAIL_INITIAL);
 			SendInfo(CONN_MAIN);
 		}
+		if(m_KcpNegotiationPending && !m_KcpNegotiated && time_get() - m_KcpNegotiationStartTime > time_freq() * 3)
+		{
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiationStartTime = 0;
+			if(g_Config.m_Debug)
+			{
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "kcp negotiation timed out, using legacy udp", gs_ClientNetworkPrintColor);
+			}
+		}
 
 		// progress on dummy connect when the connection is online
 		if(m_DummySendConnInfo && m_aNetClient[CONN_DUMMY].State() == NETSTATE_ONLINE)
@@ -2920,6 +3258,13 @@ void CClient::UpdateDemoIntraTimers()
 void CClient::Update()
 {
 	PumpNetwork();
+
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.RequestPending() && m_LiveObserverRequestTime != 0 && time_get() > m_LiveObserverRequestTime + time_freq() * 5)
+	{
+		EnableQmLiveCompatDirector(EQmLiveDenyReason::UNSUPPORTED, "no accept");
+	}
+#endif
 
 	if(State() == IClient::STATE_DEMOPLAYBACK)
 	{
@@ -3050,7 +3395,7 @@ void CClient::Update()
 					SendInput();
 				}
 
-				if(g_Config.m_TcFastInput && GameClient()->CheckNewInput())
+				if(GameClient()->IsFastInputActive() && GameClient()->CheckNewInput())
 				{
 					Repredict = true;
 				}
@@ -3067,7 +3412,9 @@ void CClient::Update()
 			if(m_CurrentServerInfoRequestTime >= 0 &&
 				time_get() > m_CurrentServerInfoRequestTime)
 			{
-				m_ServerBrowser.RequestCurrentServer(ServerAddress());
+				const NETADDR *pServerAddr = ServerAddress();
+				if(pServerAddr)
+					m_ServerBrowser.RequestCurrentServer(*pServerAddr);
 				m_CurrentServerInfoRequestTime = time_get() + time_freq() * 2;
 			}
 
@@ -3085,7 +3432,9 @@ void CClient::Update()
 				m_CurrentServerPingUuid = RandomUuid();
 				if(!m_ServerCapabilities.m_PingEx)
 				{
-					m_ServerBrowser.RequestCurrentServerWithRandomToken(ServerAddress(), &m_CurrentServerPingBasicToken, &m_CurrentServerPingToken);
+					const NETADDR *pServerAddr = ServerAddress();
+					if(pServerAddr)
+						m_ServerBrowser.RequestCurrentServerWithRandomToken(*pServerAddr, &m_CurrentServerPingBasicToken, &m_CurrentServerPingToken);
 				}
 				else
 				{
@@ -3141,7 +3490,9 @@ void CClient::Update()
 	if(m_pMapdownloadTask)
 	{
 		if(m_pMapdownloadTask->State() == EHttpState::DONE)
+		{
 			FinishMapDownload();
+		}
 		else if(m_pMapdownloadTask->State() == EHttpState::ERROR || m_pMapdownloadTask->State() == EHttpState::ABORTED)
 		{
 			dbg_msg("webdl", "http failed, falling back to gameserver");
@@ -3426,7 +3777,6 @@ void CClient::Run()
 
 	bool LastD = false;
 	bool LastE = false;
-	bool LastG = false;
 
 	auto LastTime = time_get_nanoseconds();
 	int64_t LastRenderTime = time_get();
@@ -3434,6 +3784,7 @@ void CClient::Run()
 	while(true)
 	{
 		CPerfTimer LoopTimer;
+		++m_PerfFrame;
 		set_new_tick();
 		UpdateHangHeartbeat();
 
@@ -3471,7 +3822,7 @@ void CClient::Run()
 			const bool QuitRequested = Input()->Update();
 			char aExtra[96];
 			str_format(aExtra, sizeof(aExtra), "state=%d quit=%d", State(), QuitRequested ? 1 : 0);
-			LogPerfStage("perf/main_thread", "input_update", StageTimer.ElapsedMs(), QuitRequested, aExtra);
+			QmPerfLogStage("perf/main_thread", "input_update", StageTimer.ElapsedMs(), QuitRequested, this, nullptr, nullptr, aExtra);
 			if(QuitRequested)
 			{
 				if(State() == IClient::STATE_QUITTING)
@@ -3496,7 +3847,7 @@ void CClient::Run()
 		{
 			CPerfTimer StageTimer;
 			Updater()->Update();
-			LogPerfStage("perf/main_thread", "updater_update", StageTimer.ElapsedMs());
+			QmPerfLogStage("perf/main_thread", "updater_update", StageTimer.ElapsedMs(), false, this);
 		}
 #endif
 
@@ -3504,14 +3855,11 @@ void CClient::Run()
 		{
 			CPerfTimer StageTimer;
 			Sound()->Update();
-			LogPerfStage("perf/main_thread", "sound_update", StageTimer.ElapsedMs());
+			QmPerfLogStage("perf/main_thread", "sound_update", StageTimer.ElapsedMs(), false, this);
 		}
 
 		if(CtrlShiftKey(KEY_D, LastD))
 			g_Config.m_Debug ^= 1;
-
-		if(CtrlShiftKey(KEY_G, LastG))
-			g_Config.m_DbgGraphs ^= 1;
 
 		if(CtrlShiftKey(KEY_E, LastE))
 		{
@@ -3542,7 +3890,7 @@ void CClient::Run()
 				Update();
 				char aExtra[96];
 				str_format(aExtra, sizeof(aExtra), "state=%d editor=%d", State(), m_EditorActive ? 1 : 0);
-				LogPerfStage("perf/main_thread", "client_update", StageTimer.ElapsedMs(), false, aExtra);
+				QmPerfLogStage("perf/main_thread", "client_update", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 			}
 			int64_t Now = time_get();
 
@@ -3597,14 +3945,14 @@ void CClient::Run()
 					Render();
 					char aExtra[64];
 					str_format(aExtra, sizeof(aExtra), "state=%d", State());
-					LogPerfStage("perf/main_thread", "frame_render", StageTimer.ElapsedMs(), false, aExtra);
+					QmPerfLogStage("perf/main_thread", "frame_render", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 				}
 				{
 					CPerfTimer StageTimer;
 					m_pGraphics->Swap();
 					char aExtra[64];
 					str_format(aExtra, sizeof(aExtra), "state=%d", State());
-					LogPerfStage("perf/main_thread", "graphics_swap", StageTimer.ElapsedMs(), false, aExtra);
+					QmPerfLogStage("perf/main_thread", "graphics_swap", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 				}
 			}
 			else if(!IsRenderActive)
@@ -3619,7 +3967,7 @@ void CClient::Run()
 		AutoCSV_Cleanup();
 
 		m_Fifo.Update();
-		LogPerfStage("perf/main_thread", "loop_total", LoopTimer.ElapsedMs());
+		QmPerfLogStage("perf/main_thread", "loop_total", LoopTimer.ElapsedMs(), false, this);
 
 		if(State() == IClient::STATE_QUITTING || State() == IClient::STATE_RESTARTING)
 			break;
@@ -3664,7 +4012,9 @@ void CClient::Run()
 			LastTime = Now + SleepTimeInNanoSeconds;
 		}
 		else
+		{
 			LastTime = Now;
+		}
 
 		// update local and global time
 		m_LocalTime = (time_get() - m_LocalStartTime) / (float)time_freq();
@@ -3710,7 +4060,6 @@ void CClient::Run()
 
 	// shutdown text render while graphics are still available
 	m_pTextRender->Shutdown();
-
 }
 
 bool CClient::InitNetworkClient(char *pError, size_t ErrorSize)
@@ -3792,7 +4141,9 @@ bool CClient::CtrlShiftKey(int Key, bool &Last)
 		return true;
 	}
 	else if(Last && !Input()->KeyIsPressed(Key))
+	{
 		Last = false;
+	}
 
 	return false;
 }
@@ -3807,6 +4158,12 @@ void CClient::Con_Disconnect(IConsole::IResult *pResult, void *pUserData)
 {
 	CClient *pSelf = (CClient *)pUserData;
 	pSelf->Disconnect();
+}
+
+void CClient::Con_QmTimeoutDisconnect(IConsole::IResult *pResult, void *pUserData)
+{
+	CClient *pSelf = (CClient *)pUserData;
+	pSelf->DropCurrentServerConnection();
 }
 
 void CClient::Con_DummyConnect(IConsole::IResult *pResult, void *pUserData)
@@ -4141,17 +4498,25 @@ void CClient::Con_SaveReplay(IConsole::IResult *pResult, void *pUserData)
 	{
 		int Length = pResult->GetInteger(0);
 		if(Length <= 0)
+		{
 			pSelf->m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "replay", "ERROR: length must be greater than 0 second.");
+		}
 		else
 		{
 			if(pResult->NumArguments() >= 2)
+			{
 				pSelf->SaveReplay(Length, pResult->GetString(1));
+			}
 			else
+			{
 				pSelf->SaveReplay(Length);
+			}
 		}
 	}
 	else
+	{
 		pSelf->SaveReplay(g_Config.m_ClReplayLength);
+	}
 }
 
 void CClient::SaveReplay(const int Length, const char *pFilename)
@@ -4540,15 +4905,15 @@ void CClient::UpdateHangHeartbeat()
 	SHangInfo &Info = m_aHangInfo[NextIndex];
 	Info.m_State = m_State;
 	str_copy(Info.m_aCurrentMap, m_aCurrentMap, sizeof(Info.m_aCurrentMap));
-	const NETADDR &Addr = ServerAddress();
-	if(Addr.type == NETTYPE_INVALID)
+	const NETADDR *pAddr = ServerAddress();
+	if(!pAddr || pAddr->type == NETTYPE_INVALID)
 	{
 		str_copy(Info.m_aServerAddr, "unknown", sizeof(Info.m_aServerAddr));
 	}
 	else
 	{
 		char aAddr[NETADDR_MAXSTRSIZE];
-		net_addr_str(&Addr, aAddr, sizeof(aAddr), true);
+		net_addr_str(pAddr, aAddr, sizeof(aAddr), true);
 		str_copy(Info.m_aServerAddr, aAddr, sizeof(Info.m_aServerAddr));
 	}
 	m_HangInfoIndex.store(NextIndex, std::memory_order_release);
@@ -4786,10 +5151,14 @@ void CClient::ConchainWindowScreen(IConsole::IResult *pResult, void *pUserData, 
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxScreen != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SwitchWindowScreen(pResult->GetInteger(0), true);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainFullscreen(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -4798,10 +5167,14 @@ void CClient::ConchainFullscreen(IConsole::IResult *pResult, void *pUserData, IC
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxFullscreen != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SetWindowParams(pResult->GetInteger(0), g_Config.m_GfxBorderless);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainWindowBordered(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -4810,10 +5183,14 @@ void CClient::ConchainWindowBordered(IConsole::IResult *pResult, void *pUserData
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(!g_Config.m_GfxFullscreen && (g_Config.m_GfxBorderless != pResult->GetInteger(0)))
+		{
 			pSelf->Graphics()->SetWindowParams(g_Config.m_GfxFullscreen, !g_Config.m_GfxBorderless);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::Notify(const char *pTitle, const char *pMessage)
@@ -4839,10 +5216,14 @@ void CClient::ConchainWindowVSync(IConsole::IResult *pResult, void *pUserData, I
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxVsync != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SetVSync(pResult->GetInteger(0));
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainWindowResize(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -4934,6 +5315,7 @@ void CClient::RegisterCommands()
 	m_pConsole->Register("minimize", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Minimize, this, "Minimize the client");
 	m_pConsole->Register("connect", "r[host|ip]", CFGFLAG_CLIENT, Con_Connect, this, "Connect to the specified host/ip");
 	m_pConsole->Register("disconnect", "", CFGFLAG_CLIENT, Con_Disconnect, this, "Disconnect from the server");
+	m_pConsole->Register("qm_timeout_disconnect", "", CFGFLAG_CLIENT, Con_QmTimeoutDisconnect, this, "静默断开当前服务器连接，用于保留 Tee 超时保护");
 	m_pConsole->Register("ping", "", CFGFLAG_CLIENT, Con_Ping, this, "Ping the current server");
 	m_pConsole->Register("screenshot", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Screenshot, this, "Take a screenshot");
 	m_pConsole->Register("net_reset", "", CFGFLAG_CLIENT, ConNetReset, this, "Rebinds the client's listening address and port");
@@ -5175,6 +5557,7 @@ int main(int argc, const char **argv)
 		pStdoutLogger = std::shared_ptr<ILogger>(log_logger_stdout());
 	}
 #endif
+	std::shared_ptr<CFutureLogger> pFuturePerfFileLogger = std::make_shared<CFutureLogger>();
 	if(pStdoutLogger)
 	{
 		vpLoggers.push_back(pStdoutLogger);
@@ -5185,7 +5568,8 @@ int main(int argc, const char **argv)
 	vpLoggers.push_back(pFutureConsoleLogger);
 	std::shared_ptr<CFutureLogger> pFutureAssertionLogger = std::make_shared<CFutureLogger>();
 	vpLoggers.push_back(pFutureAssertionLogger);
-	log_set_global_logger(log_logger_collection(std::move(vpLoggers)).release());
+	std::shared_ptr<ILogger> pFallbackLogger(log_logger_collection(std::move(vpLoggers)).release());
+	log_set_global_logger(log_logger_prefix_router(pFuturePerfFileLogger, pFallbackLogger, "perf/").release());
 
 #if defined(CONF_PLATFORM_ANDROID)
 	// Initialize Android after logger is available
@@ -5239,7 +5623,7 @@ int main(int argc, const char **argv)
 	CleanerFunctions.emplace([]() { SDL_Quit(); });
 
 	CClient *pClient = CreateClient();
-	pClient->SetLoggers(pFutureFileLogger, std::move(pStdoutLogger));
+	pClient->SetLoggers(pFutureFileLogger, std::move(pStdoutLogger), pFuturePerfFileLogger);
 
 	IKernel *pKernel = IKernel::Create();
 	pKernel->RegisterInterface(pClient, false);
@@ -5456,7 +5840,22 @@ int main(int argc, const char **argv)
 			g_Config.m_ClAntiPingWeapons = 1;
 		}
 	}
-	g_Config.m_ClConfigVersion = 1;
+	if(g_Config.m_ClConfigVersion < 2)
+	{
+		if(g_Config.m_QmSkinQueueInterval <= 120)
+			g_Config.m_QmSkinQueueInterval *= 10;
+		if(g_Config.m_QmDummySkinQueueInterval <= 120)
+			g_Config.m_QmDummySkinQueueInterval *= 10;
+	}
+	if(g_Config.m_ClConfigVersion < 3)
+	{
+		if(g_Config.m_QmShowCollisionHitbox && !g_Config.m_QmHitboxMode)
+			g_Config.m_QmHitboxMode = 1;
+		g_Config.m_QmHitboxAlpha = g_Config.m_QmCollisionHitboxAlpha;
+		g_Config.m_QmHitboxColorFreeze = g_Config.m_QmCollisionHitboxColorFreeze;
+		g_Config.m_QmShowCollisionHitbox = 0;
+	}
+	g_Config.m_ClConfigVersion = 3;
 
 	// parse the command line arguments
 	pConsole->SetUnknownCommandCallback(UnknownArgumentCallback, pClient);
@@ -5487,6 +5886,43 @@ int main(int argc, const char **argv)
 	{
 		pFutureFileLogger->Set(log_logger_noop());
 	}
+
+	if(g_Config.m_QmPerfLogfile || g_Config.m_QmPerfDebug)
+	{
+		pStorage->CreateFolder("dumps", IStorage::TYPE_SAVE);
+		pStorage->CreateFolder("dumps/QmClient_Perf", IStorage::TYPE_SAVE);
+		char aDate[64];
+		str_timestamp(aDate, sizeof(aDate));
+		char aPerfLogPath[128];
+		str_format(aPerfLogPath, sizeof(aPerfLogPath), "dumps/QmClient_Perf/qm_perf_%s.log", aDate);
+		char aPerfLogCompletePath[IO_MAX_PATH_LENGTH];
+		pStorage->GetCompletePath(IStorage::TYPE_SAVE, aPerfLogPath, aPerfLogCompletePath, sizeof(aPerfLogCompletePath));
+		IOHANDLE PerfLogfile = pStorage->OpenFile(aPerfLogPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+		if(PerfLogfile)
+		{
+			pFuturePerfFileLogger->Set(log_logger_prefix_file(PerfLogfile, "perf/"));
+			log_info("client", "writing performance log to '%s'", aPerfLogCompletePath);
+		}
+		else
+		{
+			log_error("client", "failed to open '%s' for performance logging", aPerfLogCompletePath);
+			pFuturePerfFileLogger->Set(log_logger_noop());
+		}
+	}
+	else
+	{
+		pFuturePerfFileLogger->Set(log_logger_noop());
+	}
+
+#if defined(CONF_FAMILY_WINDOWS)
+	if(g_Config.m_QmProcessHighPriority)
+	{
+		if(SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS))
+			log_info("client", "applied Windows high priority class");
+		else
+			log_error("client", "failed to apply Windows high priority class (error=%lu)", GetLastError());
+	}
+#endif
 
 	// Register protocol and file extensions
 #if defined(CONF_FAMILY_WINDOWS)
@@ -5783,7 +6219,8 @@ int CClient::PredictionMargin() const
 
 	const int BaseMaxLatencyTicks = GameTickSpeed() + (BaseMargin * GameTickSpeed()) / 1000;
 	const bool ConnectionProblems = m_aNetClient[g_Config.m_ClDummy].GotProblems(BaseMaxLatencyTicks * time_freq() / GameTickSpeed());
-	const CServerBrowser::CServerEntry *pCurrentServerEntry = const_cast<CServerBrowser &>(m_ServerBrowser).Find(ServerAddress());
+	const NETADDR *pServerAddr = ServerAddress();
+	const CServerBrowser::CServerEntry *pCurrentServerEntry = pServerAddr ? const_cast<CServerBrowser &>(m_ServerBrowser).Find(*pServerAddr) : nullptr;
 	const bool HasMeasuredPing = pCurrentServerEntry != nullptr && !pCurrentServerEntry->m_Info.m_LatencyIsEstimated && pCurrentServerEntry->m_Info.m_Latency >= 0;
 	const float MeasuredPingMargin = HasMeasuredPing ? pCurrentServerEntry->m_Info.m_Latency * 0.5f : 0.0f;
 	const float LiveConnectionMargin = std::max({MeasuredPingMargin, m_AutoMarginLatencyAverageMs, (float)LivePredictionMs});
@@ -5830,7 +6267,7 @@ int CClient::UdpConnectivity(int NetType)
 			NewConnectivity = CONNECTIVITY_REACHABLE;
 			break;
 		default:
-			dbg_assert(0, "invalid connectivity value");
+			log_warn("client", "Invalid connectivity value");
 			return CONNECTIVITY_UNKNOWN;
 		}
 		Connectivity = std::max(Connectivity, NewConnectivity);
@@ -5885,7 +6322,9 @@ bool CClient::ViewFile(const char *pFilename)
 		str_append(aWorkingDir, "/");
 	}
 	else
+	{
 		aWorkingDir[0] = '\0';
+	}
 
 	char aFileLink[IO_MAX_PATH_LENGTH];
 	str_format(aFileLink, sizeof(aFileLink), "file://%s%s", aWorkingDir, pFilename);
@@ -5980,8 +6419,9 @@ void CClient::GetGpuInfoString(char (&aGpuInfo)[512])
 	}
 }
 
-void CClient::SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger)
+void CClient::SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger, std::shared_ptr<ILogger> &&pPerfFileLogger)
 {
 	m_pFileLogger = pFileLogger;
 	m_pStdoutLogger = pStdoutLogger;
+	m_pPerfFileLogger = pPerfFileLogger;
 }

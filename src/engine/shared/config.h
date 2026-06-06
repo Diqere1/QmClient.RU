@@ -43,26 +43,26 @@ public:
 
 extern CConfig g_Config;
 
-static constexpr int BC_FAST_INPUT_GAMMA_UI_MAX = 600;
-static constexpr int BC_FAST_INPUT_GAMMA_EFFECTIVE_MAX = 600;
+static constexpr int QM_FAST_INPUT_GAMMA_UI_MAX = 600;
+static constexpr int QM_FAST_INPUT_GAMMA_EFFECTIVE_MAX = 600;
 
-constexpr int BcFastInputGammaClampUiAmount(int GammaUiAmount)
+constexpr int QmFastInputGammaClampUiAmount(int GammaUiAmount)
 {
 	if(GammaUiAmount <= 0)
 		return 0;
-	if(GammaUiAmount >= BC_FAST_INPUT_GAMMA_UI_MAX)
-		return BC_FAST_INPUT_GAMMA_UI_MAX;
+	if(GammaUiAmount >= QM_FAST_INPUT_GAMMA_UI_MAX)
+		return QM_FAST_INPUT_GAMMA_UI_MAX;
 	return GammaUiAmount;
 }
 
-constexpr int BcFastInputGammaUiToEffectiveAmount(int GammaUiAmount)
+constexpr int QmFastInputGammaUiToEffectiveAmount(int GammaUiAmount)
 {
-	return BcFastInputGammaClampUiAmount(GammaUiAmount);
+	return QmFastInputGammaClampUiAmount(GammaUiAmount);
 }
 
-constexpr int BcFastInputGammaEffectiveToUiAmount(int EffectiveAmount)
+constexpr int QmFastInputGammaEffectiveToUiAmount(int EffectiveAmount)
 {
-	return BcFastInputGammaClampUiAmount(EffectiveAmount);
+	return QmFastInputGammaClampUiAmount(EffectiveAmount);
 }
 
 enum

@@ -1,4 +1,73 @@
+# 全局兜底：Git 自动检测文本/二进制，仓库 LF，checkout 跟随 core.autocrlf
+* text=auto
+.gitattributes text eol=lf
+
+# Merge 策略
 README.md merge=ours
 
+# 语言标记
 other/*/include/* linguist-vendored
 src/engine/external/* linguist-vendored
+
+# C/C++ 源码：仓库 LF，工作区也固定 LF，避免 Windows mixed-EOL 噪声。
+*.c text eol=lf
+*.cc text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.inl text eol=lf
+
+# Rust 源码：仓库 LF，工作区跟随平台
+*.rs text
+
+# 脚本和配置：仓库 LF，工作区也固定 LF
+*.py text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.cfg text eol=lf
+*.conf text eol=lf
+*.xml text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+
+# Shell 脚本：仓库 LF，工作区也 LF（bash 需要 LF，不能是 CRLF）
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows 批处理：仓库 CRLF（cmd.exe 需要 CRLF）
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制文件（不转换）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.wav binary
+*.ogg binary
+*.opus binary
+*.wv binary
+*.zip binary
+*.gz binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.o binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary

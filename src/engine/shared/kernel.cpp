@@ -70,6 +70,7 @@ public:
 		}
 	}
 
+private:
 	void RegisterInterfaceImpl(const char *pName, IInterface *pInterface, bool Destroy) override
 	{
 		dbg_assert(str_length(pName) < (int)sizeof(CInterfaceInfo().m_aName), "Interface name too long");

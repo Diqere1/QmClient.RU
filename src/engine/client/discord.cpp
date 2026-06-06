@@ -243,14 +243,20 @@ static IDiscord *CreateDiscordImpl()
 }
 #endif
 
-class CDiscordStub : public IDiscord
+namespace
 {
-	void Update(bool Enabled) override {}
-	void ClearGameInfo() override {}
-	void SetGameInfo(const CServerInfo &ServerInfo, const char *pMapName, bool Registered) override {}
-	void UpdateServerInfo(const CServerInfo &ServerInfo, const char *pMapName) override {}
-	void UpdatePlayerCount(int Count) override {}
-};
+
+	class CDiscordStub : public IDiscord
+	{
+	public:
+		void Update(bool Enabled) override {}
+		void ClearGameInfo() override {}
+		void SetGameInfo(const CServerInfo &ServerInfo, const char *pMapName, bool Registered) override {}
+		void UpdateServerInfo(const CServerInfo &ServerInfo, const char *pMapName) override {}
+		void UpdatePlayerCount(int Count) override {}
+	};
+
+} // namespace
 
 IDiscord *CreateDiscord()
 {

@@ -7,6 +7,7 @@
 #include <engine/client.h>
 #include <engine/external/json-parser/json.h>
 #include <engine/shared/config.h>
+#include <engine/shared/json.h>
 #include <engine/shared/jsonwriter.h>
 #include <engine/shared/localization.h>
 
@@ -47,7 +48,7 @@ static constexpr const char *const CONFIGURATION_FILENAME = "touch_controls.json
 /* This is required for the localization script to find the labels of the default bind buttons specified in the configuration file:
 Localizable("Move left") Localizable("Move right") Localizable("Jump") Localizable("Prev. weapon") Localizable("Next weapon")
 Localizable("Zoom out") Localizable("Default zoom") Localizable("Zoom in") Localizable("Scoreboard") Localizable("Chat") Localizable("Team chat")
-Localizable("Vote yes") Localizable("Vote no") Localizable("Toggle dummy")
+Localizable("Vote yes") Localizable("Vote no") Localizable("切换分身")
 */
 
 CTouchControls::CTouchButton::CTouchButton(CTouchControls *pTouchControls) :
@@ -63,7 +64,7 @@ CTouchControls::CTouchButton::CTouchButton(CTouchButton &&Other) noexcept :
 	m_pTouchControls(Other.m_pTouchControls),
 	m_UnitRect(Other.m_UnitRect),
 	m_Shape(Other.m_Shape),
-	m_vVisibilities(Other.m_vVisibilities),
+	m_vVisibilities(std::move(Other.m_vVisibilities)),
 	m_pBehavior(std::move(Other.m_pBehavior)),
 	m_VisibilityCached(false)
 {
@@ -82,7 +83,7 @@ CTouchControls::CTouchButton &CTouchControls::CTouchButton::operator=(CTouchButt
 	Other.m_pTouchControls = nullptr;
 	m_UnitRect = Other.m_UnitRect;
 	m_Shape = Other.m_Shape;
-	m_vVisibilities = Other.m_vVisibilities;
+	m_vVisibilities = std::move(Other.m_vVisibilities);
 	m_pBehavior = std::move(Other.m_pBehavior);
 	m_VisibilityCached = false;
 	UpdatePointers();
@@ -506,7 +507,7 @@ void CTouchControls::CEmoticonTouchButtonBehavior::OnDeactivate(bool ByFinger)
 // Spectate button: keeps the spectate menu open, next touch in spectate menu will close it again.
 CTouchControls::CButtonLabel CTouchControls::CSpectateTouchButtonBehavior::GetLabel() const
 {
-	return {CButtonLabel::EType::LOCALIZED, Localizable("Spectator mode")};
+	return {CButtonLabel::EType::LOCALIZED, Localizable("旁观模式")};
 }
 
 void CTouchControls::CSpectateTouchButtonBehavior::OnDeactivate(bool ByFinger)
@@ -1217,7 +1218,7 @@ bool CTouchControls::ParseConfiguration(const void *pFileData, unsigned FileLeng
 {
 	json_settings JsonSettings{};
 	char aError[256];
-	json_value *pConfiguration = json_parse_ex(&JsonSettings, static_cast<const json_char *>(pFileData), FileLength, aError);
+	json_value *pConfiguration = JsonParseEx(&JsonSettings, static_cast<const json_char *>(pFileData), FileLength, aError);
 
 	if(pConfiguration == nullptr)
 	{
@@ -1816,7 +1817,9 @@ void CTouchControls::UpdateButtonsEditor(const std::vector<IInput::CTouchFingerS
 
 	// Update active and zoom fingerstate. The first finger will be used for moving button.
 	if(!vTouchFingerStates.empty())
+	{
 		m_ActiveFingerState = vTouchFingerStates[0];
+	}
 	else
 	{
 		m_ActiveFingerState = std::nullopt;
@@ -2008,9 +2011,13 @@ void CTouchControls::UpdateButtonsEditor(const std::vector<IInput::CTouchFingerS
 					else
 					{
 						if(LimitH.has_value())
+						{
 							BiggestH = std::min(*LimitH, BiggestH.value_or(BUTTON_SIZE_SCALE));
+						}
 						else if(LimitW.has_value())
+						{
 							BiggestW = std::min(*LimitW, BiggestW.value_or(BUTTON_SIZE_SCALE));
+						}
 						else
 						{
 							/*

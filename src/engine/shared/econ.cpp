@@ -94,7 +94,9 @@ void CEcon::Init(CConfig *pConfig, IConsole *pConsole, CNetBan *pNetBan)
 		Console()->Register("logout", "", CFGFLAG_ECON, ConLogout, this, "Logout of econ");
 	}
 	else
+	{
 		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "econ", "couldn't open socket. port might already be in use");
+	}
 }
 
 void CEcon::Update()
@@ -168,7 +170,9 @@ void CEcon::Send(int ClientId, const char *pLine)
 		}
 	}
 	else if(ClientId >= 0 && ClientId < NET_MAX_CONSOLE_CLIENTS && m_aClients[ClientId].m_State == CClient::STATE_AUTHED)
+	{
 		m_NetConsole.Send(ClientId, pLine);
+	}
 }
 
 void CEcon::Shutdown()

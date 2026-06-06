@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <functional>
 
 CTestInfo::CTestInfo()
 {
@@ -31,6 +32,7 @@ CTestInfo::CTestInfo()
 	str_format(m_aFilenamePrefix, sizeof(m_aFilenamePrefix), "%s.%s-%d",
 		aTestCaseName, pTestInfo->name(), pid());
 	Filename(m_aFilename, sizeof(m_aFilename), ".tmp");
+	str_format(m_aStoragePath, sizeof(m_aStoragePath), "tmp/tests/%s", m_aFilename);
 }
 
 void CTestInfo::Filename(char *pBuffer, size_t BufferLength, const char *pSuffix)
@@ -40,16 +42,18 @@ void CTestInfo::Filename(char *pBuffer, size_t BufferLength, const char *pSuffix
 
 std::unique_ptr<IStorage> CTestInfo::CreateTestStorage()
 {
-	bool Error = fs_makedir(m_aFilename);
+	fs_makedir_rec_for(m_aStoragePath);
+	bool Error = fs_makedir(m_aStoragePath);
 	EXPECT_FALSE(Error);
 	if(Error)
 	{
 		return nullptr;
 	}
+	m_HasCreatedStoragePath = true;
 	char aTestPath[IO_MAX_PATH_LENGTH];
 	str_copy(aTestPath, ::testing::internal::GetArgvs().front().c_str());
 	const char *apArgs[] = {aTestPath};
-	return CreateTempStorage(m_aFilename, std::size(apArgs), apArgs);
+	return CreateTempStorage(m_aStoragePath, std::size(apArgs), apArgs);
 }
 
 class CTestInfoPath
@@ -129,11 +133,35 @@ void TestDeleteTestStorageFiles(const char *pPath)
 	}
 }
 
+static void WriteTestFileOrDir(const char *pBasePath, const char *pRelativePath, bool Directory)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	str_format(aPath, sizeof(aPath), "%s/%s", pBasePath, pRelativePath);
+	if(Directory)
+	{
+		ASSERT_FALSE(fs_makedir(aPath));
+		return;
+	}
+
+	IOHANDLE File = io_open(aPath, IOFLAG_WRITE);
+	ASSERT_TRUE(File != nullptr);
+	static const char *pContents = "tmp";
+	io_write(File, pContents, str_length(pContents));
+	io_close(File);
+}
+
+static void CreateScopedTestStorageFixture(const std::function<void(CTestInfo &)> &Body)
+{
+	CTestInfo Info;
+	Body(Info);
+}
+
 CTestInfo::~CTestInfo()
 {
 	if(!::testing::Test::HasFailure() && m_DeleteTestStorageFilesOnSuccess)
 	{
-		TestDeleteTestStorageFiles(m_aFilename);
+		const char *pCleanupPath = m_HasCreatedStoragePath ? m_aStoragePath : m_aFilename;
+		TestDeleteTestStorageFiles(pCleanupPath);
 	}
 }
 
@@ -142,6 +170,7 @@ int main(int argc, const char **argv)
 	CCmdlineFix CmdlineFix(&argc, &argv);
 	log_set_global_logger_default();
 	::testing::InitGoogleTest(&argc, const_cast<char **>(argv));
+	GTEST_FLAG_SET(death_test_style, "threadsafe");
 	net_init();
 	return RUN_ALL_TESTS();
 }
@@ -173,4 +202,66 @@ TEST(TestInfo, Sort)
 	EXPECT_EQ(str_comp(vEntries[1].m_aData, aSubPath), 0);
 	EXPECT_TRUE(vEntries[2].m_IsDirectory);
 	EXPECT_EQ(str_comp(vEntries[2].m_aData, aBasePath), 0);
+}
+
+TEST(TestInfo, DeletesTestStorageOnSuccessByDefault)
+{
+	CTestInfo Info;
+	EXPECT_TRUE(Info.m_DeleteTestStorageFilesOnSuccess);
+}
+
+TEST(TestInfo, SuccessfulScopedStorageIsDeletedRecursively)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	CreateScopedTestStorageFixture([&](CTestInfo &Info) {
+		str_copy(aPath, Info.m_aFilename, sizeof(aPath));
+		ASSERT_FALSE(fs_makedir(Info.m_aFilename));
+		WriteTestFileOrDir(Info.m_aFilename, "root.txt", false);
+		WriteTestFileOrDir(Info.m_aFilename, "nested", true);
+		WriteTestFileOrDir(Info.m_aFilename, "nested/child.txt", false);
+		EXPECT_TRUE(fs_is_dir(Info.m_aFilename));
+	});
+
+	EXPECT_FALSE(fs_is_dir(aPath));
+	EXPECT_FALSE(fs_is_file(aPath));
+}
+
+TEST(TestInfo, CreateTestStorageCleansCreatedSaveFilesOnSuccess)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	CreateScopedTestStorageFixture([&](CTestInfo &Info) {
+		str_copy(aPath, Info.StoragePath(), sizeof(aPath));
+		std::unique_ptr<IStorage> pStorage = Info.CreateTestStorage();
+		ASSERT_NE(pStorage, nullptr);
+
+		char aSavePath[IO_MAX_PATH_LENGTH];
+		pStorage->GetCompletePath(IStorage::TYPE_SAVE, "cleanup.txt", aSavePath, sizeof(aSavePath));
+		IOHANDLE File = io_open(aSavePath, IOFLAG_WRITE);
+		ASSERT_TRUE(File != nullptr);
+		static const char *pContents = "cleanup";
+		io_write(File, pContents, str_length(pContents));
+		io_close(File);
+
+		EXPECT_TRUE(fs_is_file(aSavePath));
+	});
+
+	EXPECT_FALSE(fs_is_dir(aPath));
+}
+
+TEST(TestInfo, DisabledCleanupPreservesFilesForInspection)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	CreateScopedTestStorageFixture([&](CTestInfo &Info) {
+		Info.m_DeleteTestStorageFilesOnSuccess = false;
+		str_copy(aPath, Info.StoragePath(), sizeof(aPath));
+		std::unique_ptr<IStorage> pStorage = Info.CreateTestStorage();
+		ASSERT_NE(pStorage, nullptr);
+		WriteTestFileOrDir(Info.StoragePath(), "keep.txt", false);
+	});
+
+	EXPECT_TRUE(fs_is_dir(aPath));
+	char aFile[IO_MAX_PATH_LENGTH];
+	str_format(aFile, sizeof(aFile), "%s/keep.txt", aPath);
+	EXPECT_TRUE(fs_is_file(aFile));
+	TestDeleteTestStorageFiles(aPath);
 }

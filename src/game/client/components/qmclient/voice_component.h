@@ -1,10 +1,11 @@
 #ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_COMPONENT_H
 #define GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_COMPONENT_H
 
-#include <engine/shared/config.h>
-#include <game/client/component.h>
-
 #include "voice_core.h"
+
+#include <engine/shared/config.h>
+
+#include <game/client/component.h>
 
 class CVoiceComponent : public CComponent
 {
@@ -16,6 +17,7 @@ public:
 	void OnConsoleInit() override;
 
 	void RenderOverlay();
+	const CRClientVoice &Voice() const { return m_Voice; }
 
 private:
 	static void ConVoicePtt(IConsole::IResult *pResult, void *pUserData);

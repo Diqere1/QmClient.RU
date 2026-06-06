@@ -21,8 +21,6 @@
 #include <engine/shared/http.h>
 #include <engine/shared/json.h>
 #include <engine/shared/localization.h>
-
-#include <generated/protocol.h>
 #include <engine/storage.h>
 #include <engine/textrender.h>
 
@@ -48,274 +46,274 @@ using namespace std::chrono_literals;
 
 namespace
 {
-constexpr const char *REPORT_SCAN_PATH = "/v1/scan";
-constexpr const char *REPORT_CONTENT_TYPE = "application/json; charset=utf-8";
+	constexpr const char *REPORT_SCAN_PATH = "/v1/scan";
+	constexpr const char *REPORT_CONTENT_TYPE = "application/json; charset=utf-8";
 
-void HmacSha256Hex(const char *pSecret, const char *pMessage, char *pBuffer, int BufferSize)
-{
-	const unsigned char *pSecretBytes = reinterpret_cast<const unsigned char *>(pSecret);
-	size_t SecretLength = str_length(pSecret);
-	unsigned char aKeyBlock[64] = {0};
-
-	if(SecretLength > sizeof(aKeyBlock))
+	void HmacSha256Hex(const char *pSecret, const char *pMessage, char *pBuffer, int BufferSize)
 	{
-		const SHA256_DIGEST SecretDigest = sha256(pSecretBytes, SecretLength);
-		mem_copy(aKeyBlock, SecretDigest.data, sizeof(SecretDigest.data));
-	}
-	else
-	{
-		mem_copy(aKeyBlock, pSecretBytes, SecretLength);
-	}
+		const unsigned char *pSecretBytes = reinterpret_cast<const unsigned char *>(pSecret);
+		size_t SecretLength = str_length(pSecret);
+		unsigned char aKeyBlock[64] = {0};
 
-	unsigned char aOuterPad[64];
-	unsigned char aInnerPad[64];
-	for(size_t KeyIndex = 0; KeyIndex < sizeof(aKeyBlock); ++KeyIndex)
-	{
-		aOuterPad[KeyIndex] = aKeyBlock[KeyIndex] ^ 0x5c;
-		aInnerPad[KeyIndex] = aKeyBlock[KeyIndex] ^ 0x36;
-	}
-
-	SHA256_CTX InnerContext;
-	sha256_init(&InnerContext);
-	sha256_update(&InnerContext, aInnerPad, sizeof(aInnerPad));
-	sha256_update(&InnerContext, pMessage, str_length(pMessage));
-	const SHA256_DIGEST InnerDigest = sha256_finish(&InnerContext);
-
-	SHA256_CTX OuterContext;
-	sha256_init(&OuterContext);
-	sha256_update(&OuterContext, aOuterPad, sizeof(aOuterPad));
-	sha256_update(&OuterContext, InnerDigest.data, sizeof(InnerDigest.data));
-	const SHA256_DIGEST Digest = sha256_finish(&OuterContext);
-	sha256_str(Digest, pBuffer, BufferSize);
-}
-
-void BuildReportUrl(const char *pPath, char *pBuffer, int BufferSize)
-{
-	str_copy(pBuffer, g_Config.m_QmReportEndpoint, BufferSize);
-	while(pBuffer[0] != '\0' && pBuffer[str_length(pBuffer) - 1] == '/')
-		pBuffer[str_length(pBuffer) - 1] = '\0';
-	str_append(pBuffer, pPath, BufferSize);
-}
-
-bool AddReportHeaders(CHttpRequest *pRequest, const char *pPath, const char *pBody)
-{
-	if(g_Config.m_QmReportAppId[0] == '\0' || g_Config.m_QmReportSecret[0] == '\0')
-		return false;
-
-	char aTimestamp[32];
-	str_format(aTimestamp, sizeof(aTimestamp), "%" PRId64, time_timestamp());
-
-	char aNonce[33];
-	secure_random_password(aNonce, sizeof(aNonce), 32);
-
-	const SHA256_DIGEST BodyDigest = sha256(pBody, str_length(pBody));
-	char aBodySha256[SHA256_MAXSTRSIZE];
-	sha256_str(BodyDigest, aBodySha256, sizeof(aBodySha256));
-
-	char aMessage[1024];
-	str_format(aMessage, sizeof(aMessage), "POST\n%s\n%s\n%s\n%s", pPath, aTimestamp, aNonce, aBodySha256);
-
-	char aSignature[SHA256_MAXSTRSIZE];
-	HmacSha256Hex(g_Config.m_QmReportSecret, aMessage, aSignature, sizeof(aSignature));
-
-	pRequest->HeaderString("Content-Type", REPORT_CONTENT_TYPE);
-	pRequest->HeaderString("X-Adrastia-App-Id", g_Config.m_QmReportAppId);
-	pRequest->HeaderString("X-Adrastia-Timestamp", aTimestamp);
-	pRequest->HeaderString("X-Adrastia-Nonce", aNonce);
-	pRequest->HeaderString("X-Adrastia-Signature", aSignature);
-	return true;
-}
-
-std::shared_ptr<CHttpRequest> CreateReportRequest(const char *pPath, const char *pBody)
-{
-	char aUrl[256];
-	BuildReportUrl(pPath, aUrl, sizeof(aUrl));
-
-	auto pRequest = std::make_shared<CHttpRequest>(aUrl);
-	pRequest->AllowInsecureProtocol();
-	pRequest->LogProgress(HTTPLOG::FAILURE);
-	pRequest->FailOnErrorStatus(false);
-	pRequest->Timeout(CTimeout{10000, 30000, 100, 10});
-	if(!AddReportHeaders(pRequest.get(), pPath, pBody))
-		return nullptr;
-	pRequest->Post(reinterpret_cast<const unsigned char *>(pBody), str_length(pBody));
-	return pRequest;
-}
-
-struct SUnfinishedMapsQuery
-{
-	enum class EState
-	{
-		IDLE,
-		RUNNING,
-		READY,
-		FAILED,
-	};
-
-	std::shared_ptr<CHttpRequest> m_pRequest;
-	std::unordered_map<std::string, std::vector<std::string>> m_UnfinishedByType;
-	EState m_State = EState::IDLE;
-
-	void Reset()
-	{
-		if(m_pRequest)
-			m_pRequest->Abort();
-		m_pRequest.reset();
-		m_UnfinishedByType.clear();
-		m_State = EState::IDLE;
-	}
-
-	void Start(IHttp *pHttp, const char *pPlayerName)
-	{
-		if(!pHttp || !pPlayerName || pPlayerName[0] == '\0')
+		if(SecretLength > sizeof(aKeyBlock))
 		{
-			Reset();
-			m_State = EState::FAILED;
-			return;
+			const SHA256_DIGEST SecretDigest = sha256(pSecretBytes, SecretLength);
+			mem_copy(aKeyBlock, SecretDigest.data, sizeof(SecretDigest.data));
+		}
+		else
+		{
+			mem_copy(aKeyBlock, pSecretBytes, SecretLength);
 		}
 
-		Reset();
-		m_State = EState::RUNNING;
+		unsigned char aOuterPad[64];
+		unsigned char aInnerPad[64];
+		for(size_t KeyIndex = 0; KeyIndex < sizeof(aKeyBlock); ++KeyIndex)
+		{
+			aOuterPad[KeyIndex] = aKeyBlock[KeyIndex] ^ 0x5c;
+			aInnerPad[KeyIndex] = aKeyBlock[KeyIndex] ^ 0x36;
+		}
 
-		char aEncodedName[256];
-		EscapeUrl(aEncodedName, sizeof(aEncodedName), pPlayerName);
+		SHA256_CTX InnerContext;
+		sha256_init(&InnerContext);
+		sha256_update(&InnerContext, aInnerPad, sizeof(aInnerPad));
+		sha256_update(&InnerContext, pMessage, str_length(pMessage));
+		const SHA256_DIGEST InnerDigest = sha256_finish(&InnerContext);
 
-		char aUrl[512];
-		str_format(aUrl, sizeof(aUrl), "https://ddnet.org/players/?json2=%s", aEncodedName);
+		SHA256_CTX OuterContext;
+		sha256_init(&OuterContext);
+		sha256_update(&OuterContext, aOuterPad, sizeof(aOuterPad));
+		sha256_update(&OuterContext, InnerDigest.data, sizeof(InnerDigest.data));
+		const SHA256_DIGEST Digest = sha256_finish(&OuterContext);
+		sha256_str(Digest, pBuffer, BufferSize);
+	}
+
+	void BuildReportUrl(const char *pPath, char *pBuffer, int BufferSize)
+	{
+		str_copy(pBuffer, g_Config.m_QmReportEndpoint, BufferSize);
+		while(pBuffer[0] != '\0' && pBuffer[str_length(pBuffer) - 1] == '/')
+			pBuffer[str_length(pBuffer) - 1] = '\0';
+		str_append(pBuffer, pPath, BufferSize);
+	}
+
+	bool AddReportHeaders(CHttpRequest *pRequest, const char *pPath, const char *pBody)
+	{
+		if(g_Config.m_QmReportAppId[0] == '\0' || g_Config.m_QmReportSecret[0] == '\0')
+			return false;
+
+		char aTimestamp[32];
+		str_format(aTimestamp, sizeof(aTimestamp), "%" PRId64, time_timestamp());
+
+		char aNonce[33];
+		secure_random_password(aNonce, sizeof(aNonce), 32);
+
+		const SHA256_DIGEST BodyDigest = sha256(pBody, str_length(pBody));
+		char aBodySha256[SHA256_MAXSTRSIZE];
+		sha256_str(BodyDigest, aBodySha256, sizeof(aBodySha256));
+
+		char aMessage[1024];
+		str_format(aMessage, sizeof(aMessage), "POST\n%s\n%s\n%s\n%s", pPath, aTimestamp, aNonce, aBodySha256);
+
+		char aSignature[SHA256_MAXSTRSIZE];
+		HmacSha256Hex(g_Config.m_QmReportSecret, aMessage, aSignature, sizeof(aSignature));
+
+		pRequest->HeaderString("Content-Type", REPORT_CONTENT_TYPE);
+		pRequest->HeaderString("X-Adrastia-App-Id", g_Config.m_QmReportAppId);
+		pRequest->HeaderString("X-Adrastia-Timestamp", aTimestamp);
+		pRequest->HeaderString("X-Adrastia-Nonce", aNonce);
+		pRequest->HeaderString("X-Adrastia-Signature", aSignature);
+		return true;
+	}
+
+	std::shared_ptr<CHttpRequest> CreateReportRequest(const char *pPath, const char *pBody)
+	{
+		char aUrl[256];
+		BuildReportUrl(pPath, aUrl, sizeof(aUrl));
 
 		auto pRequest = std::make_shared<CHttpRequest>(aUrl);
-		pRequest->Timeout(CTimeout{10000, 30000, 100, 10});
+		pRequest->AllowInsecureProtocol();
 		pRequest->LogProgress(HTTPLOG::FAILURE);
 		pRequest->FailOnErrorStatus(false);
-		m_pRequest = pRequest;
-		pHttp->Run(pRequest);
-	}
-
-	bool IsReady() const { return m_State == EState::READY; }
-	bool IsLoading() const { return m_State == EState::RUNNING; }
-	bool HasData() const { return m_State == EState::READY; }
-
-	const std::vector<std::string> *FindType(const char *pTypeKey) const
-	{
-		if(!pTypeKey || pTypeKey[0] == '\0')
+		pRequest->Timeout(CTimeout{10000, 30000, 100, 10});
+		if(!AddReportHeaders(pRequest.get(), pPath, pBody))
 			return nullptr;
-
-		auto It = m_UnfinishedByType.find(pTypeKey);
-		if(It != m_UnfinishedByType.end())
-			return &It->second;
-
-		if(const char *pRest = str_startswith(pTypeKey, "DDmaX "))
-		{
-			char aKey[32];
-			str_format(aKey, sizeof(aKey), "DDmaX.%s", pRest);
-			It = m_UnfinishedByType.find(aKey);
-			if(It != m_UnfinishedByType.end())
-				return &It->second;
-		}
-		if(const char *pRest = str_startswith(pTypeKey, "DDmaX."))
-		{
-			char aKey[32];
-			str_copy(aKey, "DDmaX ");
-			str_append(aKey, pRest, sizeof(aKey));
-			It = m_UnfinishedByType.find(aKey);
-			if(It != m_UnfinishedByType.end())
-				return &It->second;
-		}
-		return nullptr;
+		pRequest->Post(reinterpret_cast<const unsigned char *>(pBody), str_length(pBody));
+		return pRequest;
 	}
 
-	void Update()
+	struct SUnfinishedMapsQuery
 	{
-		if(!m_pRequest || !m_pRequest->Done())
-			return;
-
-		const EHttpState State = m_pRequest->State();
-		if(State != EHttpState::DONE || m_pRequest->StatusCode() != 200)
+		enum class EState
 		{
-			Reset();
-			m_State = EState::FAILED;
-			return;
+			IDLE,
+			RUNNING,
+			READY,
+			FAILED,
+		};
+
+		std::shared_ptr<CHttpRequest> m_pRequest;
+		std::unordered_map<std::string, std::vector<std::string>> m_UnfinishedByType;
+		EState m_State = EState::IDLE;
+
+		void Reset()
+		{
+			if(m_pRequest)
+				m_pRequest->Abort();
+			m_pRequest.reset();
+			m_UnfinishedByType.clear();
+			m_State = EState::IDLE;
 		}
 
-		json_value *pRoot = m_pRequest->ResultJson();
-		if(!pRoot || pRoot->type != json_object)
+		void Start(IHttp *pHttp, const char *pPlayerName)
 		{
-			if(pRoot)
-				json_value_free(pRoot);
-			Reset();
-			m_State = EState::FAILED;
-			return;
-		}
-
-		const json_value *pTypes = json_object_get(pRoot, "types");
-		if(pTypes == &json_value_none || pTypes->type != json_object)
-		{
-			json_value_free(pRoot);
-			Reset();
-			m_State = EState::FAILED;
-			return;
-		}
-
-		for(unsigned i = 0; i < pTypes->u.object.length; ++i)
-		{
-			const char *pTypeName = pTypes->u.object.values[i].name;
-			const json_value *pTypeObj = pTypes->u.object.values[i].value;
-			if(!pTypeName || !pTypeObj || pTypeObj->type != json_object)
-				continue;
-
-			const json_value *pMaps = json_object_get(pTypeObj, "maps");
-			if(pMaps == &json_value_none || pMaps->type != json_object)
-				continue;
-
-			std::vector<std::string> Unfinished;
-			Unfinished.reserve(pMaps->u.object.length);
-			for(unsigned j = 0; j < pMaps->u.object.length; ++j)
+			if(!pHttp || !pPlayerName || pPlayerName[0] == '\0')
 			{
-				const char *pMapName = pMaps->u.object.values[j].name;
-				const json_value *pMapObj = pMaps->u.object.values[j].value;
-				if(!pMapName || !pMapObj || pMapObj->type != json_object)
-					continue;
-
-				const json_value *pFinishes = json_object_get(pMapObj, "finishes");
-				int Finishes = 0;
-				if(pFinishes != &json_value_none && pFinishes->type == json_integer)
-					Finishes = (int)pFinishes->u.integer;
-				if(Finishes == 0)
-					Unfinished.emplace_back(pMapName);
+				Reset();
+				m_State = EState::FAILED;
+				return;
 			}
 
-			m_UnfinishedByType.emplace(pTypeName, std::move(Unfinished));
+			Reset();
+			m_State = EState::RUNNING;
+
+			char aEncodedName[256];
+			EscapeUrl(aEncodedName, sizeof(aEncodedName), pPlayerName);
+
+			char aUrl[512];
+			str_format(aUrl, sizeof(aUrl), "https://ddnet.org/players/?json2=%s", aEncodedName);
+
+			auto pRequest = std::make_shared<CHttpRequest>(aUrl);
+			pRequest->Timeout(CTimeout{10000, 30000, 100, 10});
+			pRequest->LogProgress(HTTPLOG::FAILURE);
+			pRequest->FailOnErrorStatus(false);
+			m_pRequest = pRequest;
+			pHttp->Run(pRequest);
 		}
 
-		json_value_free(pRoot);
-		m_pRequest.reset();
-		m_State = EState::READY;
+		bool IsReady() const { return m_State == EState::READY; }
+		bool IsLoading() const { return m_State == EState::RUNNING; }
+		bool HasData() const { return m_State == EState::READY; }
+
+		const std::vector<std::string> *FindType(const char *pTypeKey) const
+		{
+			if(!pTypeKey || pTypeKey[0] == '\0')
+				return nullptr;
+
+			auto It = m_UnfinishedByType.find(pTypeKey);
+			if(It != m_UnfinishedByType.end())
+				return &It->second;
+
+			if(const char *pRest = str_startswith(pTypeKey, "DDmaX "))
+			{
+				char aKey[32];
+				str_format(aKey, sizeof(aKey), "DDmaX.%s", pRest);
+				It = m_UnfinishedByType.find(aKey);
+				if(It != m_UnfinishedByType.end())
+					return &It->second;
+			}
+			if(const char *pRest = str_startswith(pTypeKey, "DDmaX."))
+			{
+				char aKey[32];
+				str_copy(aKey, "DDmaX ");
+				str_append(aKey, pRest, sizeof(aKey));
+				It = m_UnfinishedByType.find(aKey);
+				if(It != m_UnfinishedByType.end())
+					return &It->second;
+			}
+			return nullptr;
+		}
+
+		void Update()
+		{
+			if(!m_pRequest || !m_pRequest->Done())
+				return;
+
+			const EHttpState State = m_pRequest->State();
+			if(State != EHttpState::DONE || m_pRequest->StatusCode() != 200)
+			{
+				Reset();
+				m_State = EState::FAILED;
+				return;
+			}
+
+			json_value *pRoot = m_pRequest->ResultJson();
+			if(!pRoot || pRoot->type != json_object)
+			{
+				if(pRoot)
+					json_value_free(pRoot);
+				Reset();
+				m_State = EState::FAILED;
+				return;
+			}
+
+			const json_value *pTypes = json_object_get(pRoot, "types");
+			if(pTypes == &json_value_none || pTypes->type != json_object)
+			{
+				json_value_free(pRoot);
+				Reset();
+				m_State = EState::FAILED;
+				return;
+			}
+
+			for(unsigned i = 0; i < pTypes->u.object.length; ++i)
+			{
+				const char *pTypeName = pTypes->u.object.values[i].name;
+				const json_value *pTypeObj = pTypes->u.object.values[i].value;
+				if(!pTypeName || !pTypeObj || pTypeObj->type != json_object)
+					continue;
+
+				const json_value *pMaps = json_object_get(pTypeObj, "maps");
+				if(pMaps == &json_value_none || pMaps->type != json_object)
+					continue;
+
+				std::vector<std::string> Unfinished;
+				Unfinished.reserve(pMaps->u.object.length);
+				for(unsigned j = 0; j < pMaps->u.object.length; ++j)
+				{
+					const char *pMapName = pMaps->u.object.values[j].name;
+					const json_value *pMapObj = pMaps->u.object.values[j].value;
+					if(!pMapName || !pMapObj || pMapObj->type != json_object)
+						continue;
+
+					const json_value *pFinishes = json_object_get(pMapObj, "finishes");
+					int Finishes = 0;
+					if(pFinishes != &json_value_none && pFinishes->type == json_integer)
+						Finishes = (int)pFinishes->u.integer;
+					if(Finishes == 0)
+						Unfinished.emplace_back(pMapName);
+				}
+
+				m_UnfinishedByType.emplace(pTypeName, std::move(Unfinished));
+			}
+
+			json_value_free(pRoot);
+			m_pRequest.reset();
+			m_State = EState::READY;
+		}
+	};
+
+	int ParseCallvoteMapStars(const char *pDescription)
+	{
+		if(!pDescription)
+			return -1;
+
+		const char *pStars = str_find(pDescription, "/5");
+		if(!pStars || pStars <= pDescription)
+			return -1;
+
+		const char *pStarNumber = pStars;
+		while(pStarNumber > pDescription && pStarNumber[-1] >= '0' && pStarNumber[-1] <= '9')
+			--pStarNumber;
+		if(pStarNumber == pStars)
+			return -1;
+
+		char aStars[8];
+		const int StarNumberLength = minimum((int)(pStars - pStarNumber), (int)sizeof(aStars) - 1);
+		str_copy(aStars, pStarNumber, StarNumberLength + 1);
+		const int Stars = str_toint(aStars);
+		if(Stars < 1 || Stars > 5)
+			return -1;
+		return Stars;
 	}
-};
-
-int ParseCallvoteMapStars(const char *pDescription)
-{
-	if(!pDescription)
-		return -1;
-
-	const char *pStars = str_find(pDescription, "/5");
-	if(!pStars || pStars <= pDescription)
-		return -1;
-
-	const char *pStarNumber = pStars;
-	while(pStarNumber > pDescription && pStarNumber[-1] >= '0' && pStarNumber[-1] <= '9')
-		--pStarNumber;
-	if(pStarNumber == pStars)
-		return -1;
-
-	char aStars[8];
-	const int StarNumberLength = minimum((int)(pStars - pStarNumber), (int)sizeof(aStars) - 1);
-	str_copy(aStars, pStarNumber, StarNumberLength + 1);
-	const int Stars = str_toint(aStars);
-	if(Stars < 1 || Stars > 5)
-		return -1;
-	return Stars;
-}
 } // namespace
 
 void CMenus::ResetReportScan()
@@ -339,13 +337,20 @@ void CMenus::StartReportScan()
 		GameClient()->Echo("需要先连接到服务器");
 		return;
 	}
+	if(GameClient()->m_TClient.IsAxiomCommunity())
+	{
+		GameClient()->Echo("Axiom 服务器内不可使用举报功能");
+		return;
+	}
 	if(g_Config.m_QmReportAppId[0] == '\0' || g_Config.m_QmReportSecret[0] == '\0')
 	{
 		GameClient()->Echo("请先设置 qm_report_app_id 和 qm_report_secret");
 		return;
 	}
 
-	net_addr_str(&Client()->ServerAddress(), m_aReportScanAddress, sizeof(m_aReportScanAddress), true);
+	const NETADDR *pServerAddr = Client()->ServerAddress();
+	if(pServerAddr)
+		net_addr_str(pServerAddr, m_aReportScanAddress, sizeof(m_aReportScanAddress), true);
 	if(m_aReportScanAddress[0] == '\0')
 	{
 		GameClient()->Echo("无法获取当前服务器地址");
@@ -377,8 +382,15 @@ void CMenus::UpdateReportScan()
 		return;
 
 	const EHttpState RequestState = m_pReportScanRequest->State();
+	if(RequestState != EHttpState::DONE)
+	{
+		ResetReportScan();
+		GameClient()->Echo(RequestState == EHttpState::ABORTED ? "举报请求已取消" : "举报请求失败，网络请求异常");
+		return;
+	}
+
 	const int StatusCode = m_pReportScanRequest->StatusCode();
-	if(RequestState != EHttpState::DONE || StatusCode < 200 || StatusCode >= 300)
+	if(StatusCode < 200 || StatusCode >= 300)
 	{
 		char aBuf[128];
 		str_format(aBuf, sizeof(aBuf), "举报请求失败，HTTP 状态码：%d", StatusCode);
@@ -427,26 +439,32 @@ void CMenus::RenderGame(CUIRect MainView)
 	const int LocalTeam = HasLocalInfo ? GameClient()->m_Snap.m_pLocalInfo->m_Team : TEAM_SPECTATORS;
 	const bool Recording = DemoRecorder(RECORDER_MANUAL)->IsRecording();
 	const bool FastPracticeEnabled = GameClient()->m_FastPractice.Enabled();
+	const bool LiveDirectorActive = Client()->QmLiveDirectorActive();
+	const bool ReportDisabledOnAxiom = GameClient()->m_TClient.IsAxiomCommunity();
 
-	const char *pDisconnectButtonLabel = Localize("Disconnect");
-	const char *pDummyButtonLabel = Localize("Connect Dummy");
-	if(Client()->DummyConnecting())
-		pDummyButtonLabel = Localize("Connecting dummy");
-	else if(Client()->DummyConnected())
-		pDummyButtonLabel = Localize("Disconnect Dummy");
-	const char *pEditHudButtonLabel = Localize("Edit HUD");
-	const char *pDemoButtonLabel = Recording ? Localize("Stop record") : Localize("Record demo");
+	const char *pDisconnectButtonLabel = Localize("断开连接");
+	const char *pDummyButtonLabel = nullptr;
+	if(!LiveDirectorActive)
+	{
+		pDummyButtonLabel = Localize("连接分身");
+		if(Client()->DummyConnecting())
+			pDummyButtonLabel = Localize("正在连接分身");
+		else if(Client()->DummyConnected())
+			pDummyButtonLabel = Localize("断开分身");
+	}
+	const char *pEditHudButtonLabel = Localize("编辑 HUD");
+	const char *pDemoButtonLabel = Recording ? Localize("停止录制") : Localize("录制 Demo");
 	char aSaveReplayButtonLabel[64];
-	str_format(aSaveReplayButtonLabel, sizeof(aSaveReplayButtonLabel), Localize("Save last %d min"), g_Config.m_ClEscReplayLengthMinutes);
-	const char *pDemoMarkerButtonLabel = Localize("Mark demo");
+	str_format(aSaveReplayButtonLabel, sizeof(aSaveReplayButtonLabel), Localize("保存最近 %d 分钟"), g_Config.m_ClEscReplayLengthMinutes);
+	const char *pDemoMarkerButtonLabel = Localize("标记 Demo");
 	const char *pReportButtonLabel = "举报";
-	const char *pSpectateButtonLabel = Localize("Spectate");
-	const char *pJoinRedButtonLabel = Localize("Join red");
-	const char *pJoinBlueButtonLabel = Localize("Join blue");
-	const char *pJoinGameButtonLabel = Localize("Join game");
-	const char *pKillButtonLabel = Localize("Kill");
-	const char *pPauseButtonLabel = (!Paused && !Spec) ? Localize("Pause") : Localize("Join game");
-	const char *pFastPracticeLabel = FastPracticeEnabled ? Localize("Stop practice") : Localize("Fast practice");
+	const char *pSpectateButtonLabel = Localize("旁观");
+	const char *pJoinRedButtonLabel = Localize("加入红队");
+	const char *pJoinBlueButtonLabel = Localize("加入蓝队");
+	const char *pJoinGameButtonLabel = Localize("加入游戏");
+	const char *pKillButtonLabel = Localize("自杀");
+	const char *pPauseButtonLabel = (!Paused && !Spec) ? Localize("暂停") : Localize("加入游戏");
+	const char *pFastPracticeLabel = FastPracticeEnabled ? Localize("结束练习") : Localize("快速练习");
 
 	const float SpectateButtonWidth = CalcMenuButtonWidth(pSpectateButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
 	const float JoinRedButtonWidth = CalcMenuButtonWidth(pJoinRedButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
@@ -458,8 +476,8 @@ void CMenus::RenderGame(CUIRect MainView)
 	const float CompactPracticeButtonWidth = CalcMenuButtonWidth("fp", MenuButtonPaddingCompact, PracticeButtonMinWidth);
 	const float DisconnectButtonWidthNormal = CalcMenuButtonWidth(pDisconnectButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
 	const float DisconnectButtonWidthCompact = CalcMenuButtonWidth(pDisconnectButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
-	const float DummyButtonWidthNormal = CalcMenuButtonWidth(pDummyButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
-	const float DummyButtonWidthCompact = CalcMenuButtonWidth(pDummyButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
+	const float DummyButtonWidthNormal = LiveDirectorActive ? 0.0f : CalcMenuButtonWidth(pDummyButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
+	const float DummyButtonWidthCompact = LiveDirectorActive ? 0.0f : CalcMenuButtonWidth(pDummyButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
 	const float EditHudButtonWidthNormal = CalcMenuButtonWidth(pEditHudButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
 	const float EditHudButtonWidthCompact = CalcMenuButtonWidth(pEditHudButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
 	const float DemoButtonWidthNormal = CalcMenuButtonWidth(pDemoButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
@@ -471,8 +489,8 @@ void CMenus::RenderGame(CUIRect MainView)
 	const float ReportButtonWidthNormal = CalcMenuButtonWidth(pReportButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
 	const float ReportButtonWidthCompact = CalcMenuButtonWidth(pReportButtonLabel, MenuButtonPaddingCompact, DynamicButtonMinWidth);
 
-	const bool ShowGameplayButtons = HasLocalInfo && HasGameInfo && !Paused && !Spec;
-	const bool ShowSpectateButton = ShowGameplayButtons && LocalTeam != TEAM_SPECTATORS;
+	const bool ShowGameplayButtons = HasLocalInfo && HasGameInfo && !Paused && !Spec && !LiveDirectorActive;
+	const bool ShowSpectateButton = ShowGameplayButtons && LocalTeam != TEAM_SPECTATORS && !FastPracticeEnabled;
 	const bool ShowJoinRedButton = ShowGameplayButtons && IsTeamPlay && LocalTeam != TEAM_RED;
 	const bool ShowJoinBlueButton = ShowGameplayButtons && IsTeamPlay && LocalTeam != TEAM_BLUE;
 	const bool ShowJoinGameButton = ShowGameplayButtons && !IsTeamPlay && LocalTeam != TEAM_GAME;
@@ -482,9 +500,9 @@ void CMenus::RenderGame(CUIRect MainView)
 	const bool ShowAutoCameraButton = HasLocalInfo && (LocalTeam == TEAM_SPECTATORS || Paused || Spec);
 
 	const float UtilityButtonWidthNormal =
-		DisconnectButtonWidthNormal + DummyButtonWidthNormal + EditHudButtonWidthNormal + DemoButtonWidthNormal + SaveReplayButtonWidthNormal + DemoMarkerButtonWidthNormal + ReportButtonWidthNormal + UtilityButtonSpacingNormal * 6.0f;
+		DisconnectButtonWidthNormal + (LiveDirectorActive ? 0.0f : DummyButtonWidthNormal + UtilityButtonSpacingNormal) + EditHudButtonWidthNormal + DemoButtonWidthNormal + SaveReplayButtonWidthNormal + DemoMarkerButtonWidthNormal + ReportButtonWidthNormal + UtilityButtonSpacingNormal * 5.0f;
 	const float UtilityButtonWidthCompact =
-		DisconnectButtonWidthCompact + DummyButtonWidthCompact + EditHudButtonWidthCompact + DemoButtonWidthCompact + SaveReplayButtonWidthCompact + DemoMarkerButtonWidthCompact + ReportButtonWidthCompact + UtilityButtonSpacingCompact * 6.0f;
+		DisconnectButtonWidthCompact + (LiveDirectorActive ? 0.0f : DummyButtonWidthCompact + UtilityButtonSpacingCompact) + EditHudButtonWidthCompact + DemoButtonWidthCompact + SaveReplayButtonWidthCompact + DemoMarkerButtonWidthCompact + ReportButtonWidthCompact + UtilityButtonSpacingCompact * 5.0f;
 	const float PrimaryButtonBarWidth = maximum(0.0f, MainView.w - 20.0f);
 
 	auto CalcPrimaryButtonsWidth = [&](bool IncludeTeamplayDDRaceButtons) {
@@ -512,7 +530,7 @@ void CMenus::RenderGame(CUIRect MainView)
 
 	bool UseCompactUtilityButtons = false;
 	bool UseSecondaryUtilityButtonBar = false;
-	bool ShowDDRaceButtons = !IsTeamPlay;
+	bool ShowDDRaceButtons;
 	if(g_Config.m_ClTouchControls)
 	{
 		ShowDDRaceButtons = MainView.w > 855.0f;
@@ -585,7 +603,7 @@ void CMenus::RenderGame(CUIRect MainView)
 
 	UtilityButtonBar.VSplitRight(DisconnectButtonWidth, &UtilityButtonBar, &Button);
 	static CButtonContainer s_DisconnectButton;
-	if(DoButton_Menu(&s_DisconnectButton, Localize("Disconnect"), 0, &Button))
+	if(DoButton_Menu(&s_DisconnectButton, Localize("断开连接"), 0, &Button))
 	{
 		if((GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0) ||
 			GameClient()->m_TouchControls.HasEditingChanges() ||
@@ -594,7 +612,7 @@ void CMenus::RenderGame(CUIRect MainView)
 			char aBuf[256] = {'\0'};
 			if(GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0)
 			{
-				str_copy(aBuf, Localize("Are you sure that you want to disconnect?"));
+				str_copy(aBuf, Localize("确定要断开连接吗？"));
 			}
 			if(GameClient()->m_TouchControls.HasEditingChanges() ||
 				GameClient()->m_Menus.m_MenusIngameTouchControls.UnsavedChanges())
@@ -603,56 +621,60 @@ void CMenus::RenderGame(CUIRect MainView)
 				{
 					str_append(aBuf, "\n\n");
 				}
-				str_append(aBuf, Localize("There's an unsaved change in the touch controls editor, you might want to save it."));
+				str_append(aBuf, Localize("触控控件编辑器里还有未保存的修改，建议先保存。"));
 			}
-			PopupConfirm(Localize("Disconnect"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnect);
+			PopupConfirm(Localize("断开连接"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnect);
 		}
 		else
 		{
 			Client()->Disconnect();
 			RefreshBrowserTab(true);
+			return;
 		}
 	}
 
 	UtilityButtonBar.VSplitRight(UtilityButtonSpacing, &UtilityButtonBar, nullptr);
-	UtilityButtonBar.VSplitRight(DummyButtonWidth, &UtilityButtonBar, &Button);
+	if(!LiveDirectorActive)
+	{
+		UtilityButtonBar.VSplitRight(DummyButtonWidth, &UtilityButtonBar, &Button);
 
-	static CButtonContainer s_DummyButton;
-	if(!Client()->DummyAllowed())
-	{
-		DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
-		GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("Dummy is not allowed on this server"));
-	}
-	else if(Client()->DummyConnectingDelayed())
-	{
-		DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
-		GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("Please wait…"));
-	}
-	else if(Client()->DummyConnecting())
-	{
-		DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
-	}
-	else if(DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 0, &Button))
-	{
-		if(!Client()->DummyConnected())
+		static CButtonContainer s_DummyButton;
+		if(!Client()->DummyAllowed())
 		{
-			Client()->DummyConnect();
+			DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
+			GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("此服务器不允许使用分身"));
 		}
-		else
+		else if(Client()->DummyConnectingDelayed())
 		{
-			if(GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0)
+			DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
+			GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("请稍候…"));
+		}
+		else if(Client()->DummyConnecting())
+		{
+			DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
+		}
+		else if(DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 0, &Button))
+		{
+			if(!Client()->DummyConnected())
 			{
-				PopupConfirm(Localize("Disconnect Dummy"), Localize("Are you sure that you want to disconnect your dummy?"), Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnectDummy);
+				Client()->DummyConnect();
 			}
 			else
 			{
-				Client()->DummyDisconnect(nullptr);
-				SetActive(false);
+				if(GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0)
+				{
+					PopupConfirm(Localize("断开分身"), Localize("确定要断开你的分身吗？"), Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnectDummy);
+				}
+				else
+				{
+					Client()->DummyDisconnect(nullptr);
+					SetActive(false);
+				}
 			}
 		}
-	}
 
-	UtilityButtonBar.VSplitRight(UtilityButtonSpacing, &UtilityButtonBar, nullptr);
+		UtilityButtonBar.VSplitRight(UtilityButtonSpacing, &UtilityButtonBar, nullptr);
+	}
 	UtilityButtonBar.VSplitRight(EditHudButtonWidth, &UtilityButtonBar, &Button);
 	static CButtonContainer s_EditHudButton;
 	if(DoButton_Menu(&s_EditHudButton, pEditHudButtonLabel, 0, &Button))
@@ -700,6 +722,11 @@ void CMenus::RenderGame(CUIRect MainView)
 		DoButton_Menu(&s_ReportButton, pReportButtonLabel, 1, &Button);
 		GameClient()->m_Tooltips.DoToolTip(&s_ReportButton, &Button, "正在扫描当前服务器");
 	}
+	else if(ReportDisabledOnAxiom)
+	{
+		DoButton_Menu(&s_ReportButton, pReportButtonLabel, 1, &Button);
+		GameClient()->m_Tooltips.DoToolTip(&s_ReportButton, &Button, "Axiom 服务器内不可使用举报功能");
+	}
 	else if(DoButton_Menu(&s_ReportButton, pReportButtonLabel, 0, &Button))
 	{
 		StartReportScan();
@@ -707,7 +734,7 @@ void CMenus::RenderGame(CUIRect MainView)
 
 	if(GameClient()->m_Snap.m_pLocalInfo && GameClient()->m_Snap.m_pGameInfoObj && !Paused && !Spec)
 	{
-		if(GameClient()->m_Snap.m_pLocalInfo->m_Team != TEAM_SPECTATORS)
+		if(ShowSpectateButton)
 		{
 			ButtonBar.VSplitLeft(SpectateButtonWidth, &Button, &ButtonBar);
 			ButtonBar.VSplitLeft(5.0f, nullptr, &ButtonBar);
@@ -815,7 +842,9 @@ void CMenus::RenderGame(CUIRect MainView)
 				const char *pFastPracticeButtonLabel = UseCompactLabel ? "fp" : pFastPracticeLabel;
 				if(DoButton_Menu(&s_FastPracticeButton, pFastPracticeButtonLabel, FastPracticeEnabled ? 1 : 0, &Button))
 				{
-					Console()->ExecuteLine("fast_practice_toggle", IConsole::CLIENT_ID_UNSPECIFIED);
+					SetActive(false);
+					GameClient()->m_FastPractice.Toggle(true);
+					return;
 				}
 			}
 		}
@@ -968,6 +997,8 @@ void CMenus::RenderGame(CUIRect MainView)
 void CMenus::PopupConfirmDisconnect()
 {
 	Client()->Disconnect();
+	Ui()->SetActiveItem(nullptr);
+	RefreshBrowserTab(true);
 }
 
 void CMenus::PopupConfirmDisconnectDummy()
@@ -1437,7 +1468,9 @@ void CMenus::RenderServerInfo(CUIRect MainView)
 				str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d)", Localize("Teams"), pTeamMode, Localize("maximum", "Team size"), Config()->m_SvMaxTeamSize);
 		}
 		else
+		{
 			str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Teams"), pTeamMode);
+		}
 		GameInfo.HSplitTop(FontSizeBody, &Label, &GameInfo);
 		Ui()->DoLabel(&Label, aBuf, FontSizeBody, TEXTALIGN_ML);
 	}
@@ -1766,7 +1799,7 @@ void CMenus::RenderServerControl(CUIRect MainView)
 		s_ControlPage = EServerControlTab::KICKVOTE;
 
 	static CButtonContainer s_Button2;
-	if(DoButton_MenuTab(&s_Button2, Localize("Move player to spectators"), s_ControlPage == EServerControlTab::SPECVOTE, &TabBar, IGraphics::CORNER_NONE))
+	if(DoButton_MenuTab(&s_Button2, Localize("移动玩家到旁观者"), s_ControlPage == EServerControlTab::SPECVOTE, &TabBar, IGraphics::CORNER_NONE))
 		s_ControlPage = EServerControlTab::SPECVOTE;
 
 	if(!s_ControlPageTransitionInitialized)
@@ -2038,7 +2071,7 @@ void CMenus::RenderUnfinishedMaps(CUIRect MainView)
 		Localize("Fun"),
 		Localize("Event"),
 		Localize("Insane"),
-		Localize("Dummy"),
+		Localize("分身"),
 	};
 	const char *apTypeKeys[] = {
 		"Novice",
@@ -2215,8 +2248,6 @@ void CMenus::RenderUnfinishedMaps(CUIRect MainView)
 
 void CMenus::RenderInGameNetwork(CUIRect MainView)
 {
-	MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
-
 	CUIRect TabBar, Button;
 	MainView.HSplitTop(24.0f, &TabBar, &MainView);
 
@@ -2227,7 +2258,7 @@ void CMenus::RenderInGameNetwork(CUIRect MainView)
 
 	TabBar.VSplitLeft(75.0f, &Button, &TabBar);
 	static CButtonContainer s_InternetButton;
-	if(DoButton_MenuTab(&s_InternetButton, FONT_ICON_EARTH_AMERICAS, g_Config.m_UiPage == PAGE_INTERNET, &Button, IGraphics::CORNER_NONE))
+	if(DoMenuTabV2(&s_InternetButton, FONT_ICON_EARTH_AMERICAS, g_Config.m_UiPage == PAGE_INTERNET, &Button, IGraphics::CORNER_NONE))
 	{
 		NewPage = PAGE_INTERNET;
 	}
@@ -2235,7 +2266,7 @@ void CMenus::RenderInGameNetwork(CUIRect MainView)
 
 	TabBar.VSplitLeft(75.0f, &Button, &TabBar);
 	static CButtonContainer s_LanButton;
-	if(DoButton_MenuTab(&s_LanButton, FONT_ICON_NETWORK_WIRED, g_Config.m_UiPage == PAGE_LAN, &Button, IGraphics::CORNER_NONE))
+	if(DoMenuTabV2(&s_LanButton, FONT_ICON_NETWORK_WIRED, g_Config.m_UiPage == PAGE_LAN, &Button, IGraphics::CORNER_NONE))
 	{
 		NewPage = PAGE_LAN;
 	}
@@ -2243,7 +2274,7 @@ void CMenus::RenderInGameNetwork(CUIRect MainView)
 
 	TabBar.VSplitLeft(75.0f, &Button, &TabBar);
 	static CButtonContainer s_FavoritesButton;
-	if(DoButton_MenuTab(&s_FavoritesButton, FONT_ICON_STAR, g_Config.m_UiPage == PAGE_FAVORITES, &Button, IGraphics::CORNER_NONE))
+	if(DoMenuTabV2(&s_FavoritesButton, FONT_ICON_STAR, g_Config.m_UiPage == PAGE_FAVORITES, &Button, IGraphics::CORNER_NONE))
 	{
 		NewPage = PAGE_FAVORITES;
 	}
@@ -2253,7 +2284,7 @@ void CMenus::RenderInGameNetwork(CUIRect MainView)
 	TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 	TabBar.VSplitLeft(75.0f, &Button, &TabBar);
 	static CButtonContainer s_FavoriteMapsButton;
-	if(DoButton_MenuTab(&s_FavoriteMapsButton, "🔖", g_Config.m_UiPage == PAGE_FAVORITE_MAPS, &Button, IGraphics::CORNER_NONE))
+	if(DoMenuTabV2(&s_FavoriteMapsButton, "🔖", g_Config.m_UiPage == PAGE_FAVORITE_MAPS, &Button, IGraphics::CORNER_NONE))
 	{
 		NewPage = PAGE_FAVORITE_MAPS;
 	}
@@ -2269,7 +2300,7 @@ void CMenus::RenderInGameNetwork(CUIRect MainView)
 	{
 		TabBar.VSplitLeft(75.0f, &Button, &TabBar);
 		const int Page = PAGE_FAVORITE_COMMUNITY_1 + FavoriteCommunityIndex;
-		if(DoButton_MenuTab(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], FONT_ICON_ELLIPSIS, g_Config.m_UiPage == Page, &Button, IGraphics::CORNER_NONE, nullptr, nullptr, nullptr, nullptr, 10.0f, m_CommunityIcons.Find(pCommunity->Id())))
+		if(DoMenuTabV2(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], FONT_ICON_ELLIPSIS, g_Config.m_UiPage == Page, &Button, IGraphics::CORNER_NONE, nullptr, nullptr, nullptr, m_CommunityIcons.Find(pCommunity->Id())))
 		{
 			NewPage = Page;
 		}
@@ -2288,7 +2319,8 @@ void CMenus::RenderInGameNetwork(CUIRect MainView)
 		SetMenuPage(NewPage);
 	}
 
-	RenderServerbrowser(MainView);
+	MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
+	RenderServerbrowser(MainView, false);
 }
 
 // ghost stuff

@@ -620,7 +620,7 @@ void CSpectator::OnRender()
 		if(IsFriend)
 		{
 			TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
-			ColorRGBA FriendIconColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageFriendColor));
+			ColorRGBA FriendIconColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageFriendHeartColor));
 			FriendIconColor.a *= NameAlpha;
 			TextRender()->TextColor(FriendIconColor);
 			TextRender()->Text(IconX, IconY, IconSize, FontIcons::FONT_ICON_HEART, 220.0f);
@@ -666,8 +666,27 @@ void CSpectator::Spectate(int SpectatorId)
 		return;
 	}
 
-	if(GameClient()->m_Snap.m_SpecInfo.m_SpectatorId == SpectatorId)
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Client()->QmLiveObserverActive())
+	{
+		GameClient()->SetLiveObserverSpectatorId(SpectatorId);
 		return;
+	}
+	const bool LiveCompatDirector = Client()->QmLiveCompatDirectorActive();
+#else
+	const bool LiveCompatDirector = false;
+#endif
+
+	if(GameClient()->m_FastPractice.ConsumeSpectatorCommand())
+		return;
+
+	if(GameClient()->m_Snap.m_SpecInfo.m_SpectatorId == SpectatorId && !LiveCompatDirector)
+		return;
+
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(LiveCompatDirector)
+		GameClient()->SetLiveObserverSpectatorId(SpectatorId);
+#endif
 
 	if(Client()->IsSixup())
 	{

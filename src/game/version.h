@@ -18,13 +18,17 @@ extern const char *GIT_SHORTREV_HASH;
 #define GAME_NETVERSION "0.6 626fce9a778df4d4"
 #define GAME_NETVERSION7 "0.7 802f1be60a05665f"
 
-// TClient
-#ifndef TCLIENT_VERSION
-#define TCLIENT_VERSION "2.43.0"
+// QmClient
+#ifndef QMCLIENT_VERSION
+#define QMCLIENT_VERSION "2.63.7"
 #endif
 
 // custom
+#if defined(CONF_QM_LIVE_CLIENT)
+#define CLIENT_NAME "QmLiveClient"
+#else
 #define CLIENT_NAME "QmClient"
-#define CLIENT_RELEASE_VERSION TCLIENT_VERSION
+#endif
+#define CLIENT_RELEASE_VERSION QMCLIENT_VERSION
 
 #endif

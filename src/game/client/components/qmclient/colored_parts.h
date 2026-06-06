@@ -1,5 +1,5 @@
-#ifndef GAME_CLIENT_COMPONENTS_TCLIENT_COLORED_PARTS_H
-#define GAME_CLIENT_COMPONENTS_TCLIENT_COLORED_PARTS_H
+#ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_COLORED_PARTS_H
+#define GAME_CLIENT_COMPONENTS_QMCLIENT_COLORED_PARTS_H
 
 #include <base/color.h>
 #include <base/str.h>
@@ -101,7 +101,7 @@ public:
 			str_copy(aBuf, pMarkerStart + 2, std::min<int>(sizeof(aBuf), pMarkerEnd - pMarkerStart - 2 + 1));
 			const auto Color = CConsole::ColorParse(aBuf, 0.0f);
 			if(Color.has_value())
-				m_vColors.push_back({static_cast<int>(pWrite - m_pBuffer), color_cast<ColorRGBA>(*Color)});
+				m_vColors.emplace_back(static_cast<int>(pWrite - m_pBuffer), color_cast<ColorRGBA>(*Color));
 
 			// Skip over marker
 			pRead = pMarkerEnd + 2;

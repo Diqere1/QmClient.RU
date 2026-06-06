@@ -6,6 +6,7 @@
 
 #include <engine/external/json-parser/json.h>
 #include <engine/shared/config.h>
+#include <engine/shared/json.h>
 #include <engine/storage.h>
 
 #include <game/version.h>
@@ -338,6 +339,11 @@ bool CHttpRequest::ConfigureHandle(void *pHandle)
 		break;
 	case REQUEST::POST:
 	case REQUEST::POST_JSON:
+		if(m_pBody == nullptr)
+		{
+			log_error("http", "failed to allocate request body for: %s", m_aUrl);
+			return false;
+		}
 		if(m_Type == REQUEST::POST_JSON)
 		{
 			Header("Content-Type: application/json");
@@ -406,7 +412,12 @@ size_t CHttpRequest::OnData(char *pData, size_t DataSize)
 {
 	// Need to check for the maximum response size here as curl can only
 	// guarantee it if the server sets a Content-Length header.
-	if(m_MaxResponseSize >= 0 && m_ResponseLength + DataSize > (uint64_t)m_MaxResponseSize)
+	if(DataSize > std::numeric_limits<uint64_t>::max() - m_ResponseLength)
+	{
+		return 0;
+	}
+	const uint64_t NewResponseLength = m_ResponseLength + DataSize;
+	if(m_MaxResponseSize >= 0 && NewResponseLength > (uint64_t)m_MaxResponseSize)
 	{
 		return 0;
 	}
@@ -422,14 +433,28 @@ size_t CHttpRequest::OnData(char *pData, size_t DataSize)
 
 	if(m_WriteToMemory)
 	{
-		size_t NewBufferSize = maximum((size_t)1024, m_BufferSize);
-		while(m_ResponseLength + DataSize > NewBufferSize)
+		if(NewResponseLength > std::numeric_limits<size_t>::max())
 		{
+			return 0;
+		}
+		size_t NewBufferSize = maximum((size_t)1024, m_BufferSize);
+		while((size_t)NewResponseLength > NewBufferSize)
+		{
+			if(NewBufferSize > std::numeric_limits<size_t>::max() / 2)
+			{
+				NewBufferSize = (size_t)NewResponseLength;
+				break;
+			}
 			NewBufferSize *= 2;
 		}
 		if(NewBufferSize != m_BufferSize)
 		{
-			m_pBuffer = (unsigned char *)realloc(m_pBuffer, NewBufferSize);
+			unsigned char *pNewBuffer = (unsigned char *)realloc(m_pBuffer, NewBufferSize);
+			if(pNewBuffer == nullptr)
+			{
+				return 0;
+			}
+			m_pBuffer = pNewBuffer;
 			m_BufferSize = NewBufferSize;
 		}
 		mem_copy(m_pBuffer + m_ResponseLength, pData, DataSize);
@@ -438,7 +463,7 @@ size_t CHttpRequest::OnData(char *pData, size_t DataSize)
 	{
 		Result = io_write(m_File, pData, DataSize);
 	}
-	m_ResponseLength += DataSize;
+	m_ResponseLength = NewResponseLength;
 	return Result;
 }
 
@@ -643,7 +668,7 @@ json_value *CHttpRequest::ResultJson() const
 	unsigned char *pResult;
 	size_t ResultLength;
 	Result(&pResult, &ResultLength);
-	return json_parse((char *)pResult, ResultLength);
+	return JsonParse((char *)pResult, ResultLength);
 }
 
 const SHA256_DIGEST &CHttpRequest::ResultSha256() const

@@ -7,6 +7,7 @@
 #include "message.h"
 
 #include <base/hash.h>
+#include <base/types.h>
 
 #include <engine/client/enums.h>
 #include <engine/demo.h>
@@ -16,6 +17,7 @@
 #include <generated/protocol.h>
 #include <generated/protocol7.h>
 
+#include <chrono>
 #include <functional>
 #include <optional>
 
@@ -107,6 +109,7 @@ protected:
 	float m_GlobalTime = 0.0f;
 	float m_RenderFrameTime = 0.0001f;
 	float m_FrameTimeAverage = 0.0001f;
+	uint64_t m_PerfFrame = 0;
 
 	TLoadingCallback m_LoadingCallback = nullptr;
 
@@ -166,6 +169,7 @@ public:
 	float LocalTime() const { return m_LocalTime; }
 	float GlobalTime() const { return m_GlobalTime; }
 	float FrameTimeAverage() const { return m_FrameTimeAverage; }
+	uint64_t PerfFrame() const { return m_PerfFrame; }
 
 	// actions
 	virtual void Connect(const char *pAddress, const char *pPassword = nullptr) = 0;
@@ -204,7 +208,7 @@ public:
 	virtual void EnterGame(int Conn) = 0;
 
 	//
-	virtual const NETADDR &ServerAddress() const = 0;
+	virtual const NETADDR *ServerAddress() const = 0;
 	virtual int ConnectNetTypes() const = 0;
 	virtual const char *ConnectAddressString() const = 0;
 	virtual const char *MapDownloadName() const = 0;
@@ -228,6 +232,9 @@ public:
 	// server info
 	virtual void GetServerInfo(class CServerInfo *pServerInfo) const = 0;
 	virtual bool ServerCapAnyPlayerFlag() const = 0;
+	virtual bool QmLiveObserverActive() const = 0;
+	virtual bool QmLiveDirectorActive() const = 0;
+	virtual bool QmLiveCompatDirectorActive() const = 0;
 
 	enum class EPredictionMarginState
 	{
@@ -239,6 +246,14 @@ public:
 	virtual int GetPredictionTime() = 0;
 	virtual int GetPredictionTick() = 0;
 	virtual EPredictionMarginState PredictionMarginState() const = 0;
+	virtual float SnapshotLatencyMs() const = 0;
+	virtual float PredictionLatencyMs() const = 0;
+	virtual float PredictionMarginMs() const = 0;
+	virtual float PredictionJitterMs() const = 0;
+	virtual float GameTimeMarginMs() const = 0;
+	virtual bool IsGameConnectionAlive() const = 0;
+	virtual void NetStatsSnapshot(NETSTATS &Prev, NETSTATS &Current, std::chrono::nanoseconds &LastUpdate) const = 0;
+	virtual int PendingResendCount() const = 0;
 
 	// snapshot interface
 
@@ -377,6 +392,7 @@ protected:
 public:
 	// TClient
 	virtual bool CheckNewInput() = 0;
+	virtual bool IsFastInputActive() const = 0;
 	virtual void SetConnectInfo(const NETADDR *pAddress) = 0;
 
 	virtual void OnConsoleInit() = 0;
@@ -394,6 +410,7 @@ public:
 	virtual void OnScreenshotTaken(class CImageInfo &&Image) = 0;
 	virtual void OnConnected() = 0;
 	virtual void OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dummy) = 0;
+	virtual void OnClientBrandsMessage(CUnpacker *pUnpacker) = 0;
 	virtual bool OnDemoPlaybackMessage(int MsgId, CUnpacker *pUnpacker) = 0;
 	virtual void ResetDemoPlaybackState() = 0;
 	virtual void OnPredict() = 0;
@@ -432,6 +449,7 @@ public:
 	virtual void InitializeLanguage() = 0;
 
 	virtual void ForceUpdateConsoleRemoteCompletionSuggestions() = 0;
+	virtual void RenderQmMonitoringHud(float GraphX, float GraphSpacing) = 0;
 };
 
 extern IGameClient *CreateGameClient();

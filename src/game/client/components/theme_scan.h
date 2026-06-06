@@ -26,10 +26,10 @@ inline std::string ThemeIconPathFromName(const char *pName)
 		str_truncate(aTmp, sizeof(aTmp), aBaseName, pExt - aBaseName);
 		str_copy(aBaseName, aTmp, sizeof(aBaseName));
 	}
-	else if(const char *pExt = FindBackgroundFileExtension(aBaseName))
+	else if(const char *pBackgroundExt = FindBackgroundFileExtension(aBaseName))
 	{
 		char aTmp[IO_MAX_PATH_LENGTH];
-		str_truncate(aTmp, sizeof(aTmp), aBaseName, str_length(aBaseName) - str_length(pExt));
+		str_truncate(aTmp, sizeof(aTmp), aBaseName, str_length(aBaseName) - str_length(pBackgroundExt));
 		str_copy(aBaseName, aTmp, sizeof(aBaseName));
 	}
 

@@ -14,7 +14,7 @@
 #include <engine/textrender.h>
 
 #include <game/client/component.h>
-
+#include <game/client/components/qmclient/modes.h>
 
 #include <deque>
 #include <set>
@@ -29,22 +29,22 @@ class IJob;
 struct SPlayerStats
 {
 	// 存活时长统计
-	int m_TotalAliveTime = 0;      // 总存活时间（tick）
-	int m_MaxAliveTime = 0;        // 最大存活时间（tick）
-	int m_AliveCount = 0;          // 存活次数（用于计算平均）
-	int m_CurrentAliveStart = 0;   // 当前存活开始时间（tick）
-	bool m_IsAlive = false;        // 当前是否存活（未被freeze）
-	float m_FreezeX = 0.0f;        // 被冻结时的X位置
-	float m_FreezeY = 0.0f;        // 被冻结时的Y位置
+	int m_TotalAliveTime = 0; // 总存活时间（tick）
+	int m_MaxAliveTime = 0; // 最大存活时间（tick）
+	int m_AliveCount = 0; // 存活次数（用于计算平均）
+	int m_CurrentAliveStart = 0; // 当前存活开始时间（tick）
+	bool m_IsAlive = false; // 当前是否存活（未被freeze）
+	float m_FreezeX = 0.0f; // 被冻结时的X位置
+	float m_FreezeY = 0.0f; // 被冻结时的Y位置
 
 	// 被救/落水统计
-	int m_RescueCount = 0;         // 被救醒次数（被别人解冻）
-	int m_FreezeCount = 0;         // 落水次数（自己被冻结）
+	int m_RescueCount = 0; // 被救醒次数（被别人解冻）
+	int m_FreezeCount = 0; // 落水次数（自己被冻结）
 
 	// 出钩统计
-	int m_HookLeftCount = 0;       // 向左出钩次数
-	int m_HookRightCount = 0;      // 向右出钩次数
-	bool m_WasHooking = false;     // 上一帧是否在出钩
+	int m_HookLeftCount = 0; // 向左出钩次数
+	int m_HookRightCount = 0; // 向右出钩次数
+	bool m_WasHooking = false; // 上一帧是否在出钩
 
 	void Reset()
 	{
@@ -126,11 +126,11 @@ class CTClient : public CComponent
 	float m_FinishTextTimeout = 0.0f;
 	void DoFinishCheck();
 	const char *CurrentCommunityIdForFinishCheck() const;
-	bool IsAxiomCommunity() const;
 	void ResetAxiomAutoLoginState();
 	void UpdateAxiomAutoLogin();
 	void HandleAxiomAutoLoginMessage(const char *pText);
 	void TrySendAxiomLogin();
+	void TrySendAxiomDummyLogin();
 	void StartUpdateDownload();
 	void ResetUpdateExeTask();
 	bool ReplaceClientFromUpdate();
@@ -167,7 +167,7 @@ class CTClient : public CComponent
 		ColorRGBA m_Color = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
 	};
 	static constexpr int FREEZE_WAKEUP_POPUP_MAX = 8;
-	static constexpr int TEXT_POPUP_TEXTURE_MAX = 5;
+	static constexpr int TEXT_POPUP_TEXTURE_MAX = 1;
 	struct STextPopupCache
 	{
 		STextContainerIndex m_TextContainerIndex;
@@ -219,6 +219,7 @@ class CTClient : public CComponent
 	bool m_aGoresMapProgressValid[NUM_DUMMIES] = {false, false};
 	float m_aGoresMapProgress[NUM_DUMMIES] = {0.0f, 0.0f};
 	bool IsGoresGameMode() const;
+	bool IsGoresMapProgressMap() const;
 	bool IsGoresModuleEnabled() const;
 	bool HasBlockingGoresWeapon() const;
 	void UpdateGoresWeaponCycle();
@@ -254,10 +255,21 @@ class CTClient : public CComponent
 	void MaybeSaveMapNotes();
 
 	// 本地存档列表
+	struct SLocalSaveEntry
+	{
+		std::string m_Time;
+		std::string m_Players;
+		std::string m_Map;
+		std::string m_Code;
+	};
+	char m_aLastLocalSaveHintMap[128] = "";
+	bool LoadLocalSaveEntries(std::vector<SLocalSaveEntry> &vEntries, bool *pFileExists = nullptr) const;
+	bool RemoveLocalSaveByCode(const char *pCode);
+	void MaybeShowLocalSaveJoinHint();
 	static void ConSaveList(IConsole::IResult *pResult, void *pUserData);
 
 	// 复读功能
-	char m_aLastChatMessage[2048] = "";  // 最新一条公屏消息
+	char m_aLastChatMessage[2048] = ""; // 最新一条公屏消息
 	int64_t m_LastRepeatTime = 0; // 上次发送复读时间
 	int64_t m_LastRepeatKeyPressTime = 0; // 上次按下复读按键时间
 	bool m_RepeatKeyDown = false; // 仅在按下沿计次，避免长按触发双击
@@ -265,10 +277,11 @@ class CTClient : public CComponent
 	static void ConRepeat(IConsole::IResult *pResult, void *pUserData);
 
 	// Swap倒计时提示
-	bool m_SwapCountdownActive = false;
-	int m_SwapCountdownStartTick = 0;
-	void StartSwapCountdown();
-	void ClearSwapCountdown();
+	bool m_aSwapCountdownActive[NUM_DUMMIES] = {false, false};
+	int m_aSwapCountdownStartTick[NUM_DUMMIES] = {0, 0};
+	char m_aaSwapCountdownRequester[NUM_DUMMIES][MAX_NAME_LENGTH] = {{0}, {0}};
+	void StartSwapCountdown(int Dummy, const char *pRequester);
+	void ClearSwapCountdown(int Dummy = -1);
 
 	// 好友上线提醒
 	struct SFriendOnlineState
@@ -291,6 +304,7 @@ class CTClient : public CComponent
 	void CheckFriendOnline();
 	// 好友进图自动打招呼
 	std::unordered_set<std::string> m_FriendEnterOnline;
+	bool m_aFriendEnterClientActive[MAX_CLIENTS] = {};
 	int m_FriendEnterPrevEnabled = -1;
 	int m_FriendEnterPrevIgnoreClan = -1;
 	bool m_FriendEnterInitialized = false;
@@ -321,26 +335,26 @@ public:
 	bool HasFreezeWakeupPopups() const;
 	void RenderFreezeWakeupPopups();
 
-	std::shared_ptr<CHttpRequest> m_pTClientInfoTask = nullptr;
+	std::shared_ptr<CHttpRequest> m_pQmClientUpdateInfoTask = nullptr;
 	std::shared_ptr<CHttpRequest> m_pUpdateExeTask = nullptr;
-	void FetchTClientInfo();
-	void FinishTClientInfo();
-	void ResetTClientInfoTask();
-	bool NeedUpdate();
-	void RequestUpdateCheckAndUpdate();
-	bool IsUpdateChecking() const { return m_pTClientInfoTask && !m_pTClientInfoTask->Done(); }
+	void FetchQmClientUpdateInfo();
+	void FinishQmClientUpdateInfo();
+	void ResetQmClientUpdateInfoTask();
+	bool NeedQmClientUpdate();
+	void RequestQmClientUpdateCheckAndUpdate();
+	bool IsUpdateChecking() const { return m_pQmClientUpdateInfoTask && !m_pQmClientUpdateInfoTask->Done(); }
 	bool IsUpdateDownloading() const { return m_pUpdateExeTask && !m_pUpdateExeTask->Done(); }
 
-	void RenderMiniVoteHud();
+	void RenderMiniVoteHud(bool HudEditorPreview = false);
 	void RenderCenterLines();
 	void RenderCtfFlag(vec2 Pos, float Alpha);
 
 	bool ChatDoSpecId(const char *pInput);
-	bool InfoTaskDone() { return m_pTClientInfoTask && m_pTClientInfoTask->State() == EHttpState::DONE; }
-	bool m_FetchedTClientInfo = false;
-	bool m_AutoUpdateAfterCheck = false;
+	bool InfoTaskDone() const { return m_pQmClientUpdateInfoTask && m_pQmClientUpdateInfoTask->State() == EHttpState::DONE; }
+	bool m_FetchedQmClientUpdateInfo = false;
+	bool m_QmClientAutoUpdateAfterCheck = false;
 	char m_aUpdateExeTmp[64] = "";
-	char m_aVersionStr[32] = "0";
+	char m_aQmClientLatestVersionStr[32] = "0";
 
 	Regex m_RegexChatIgnore;
 
@@ -349,8 +363,10 @@ public:
 	void ResetPlayerStats(int Dummy = -1); // -1 = 重置所有
 
 	// Swap倒计时公开接口
-	bool HasSwapCountdown() const { return m_SwapCountdownActive; }
-	int GetSwapCountdownStartTick() const { return m_SwapCountdownStartTick; }
+	void HandleSwapCountdownMessage(const char *pText, int Dummy);
+	bool HasSwapCountdown(int Dummy = -1) const;
+	int GetSwapCountdownStartTick(int Dummy = -1) const;
+	const char *GetSwapCountdownRequester(int Dummy) const;
 
 	// 收藏地图公开接口
 	bool IsFavoriteMap(const char *pMapName) const;
@@ -362,8 +378,10 @@ public:
 	void UpdateMapCategoryCache(const char *pMapName, const char *pCategoryKey);
 	const char *GetMapNote(const char *pMapName) const;
 	void SetMapNote(const char *pMapName, const char *pNote);
+	bool TryRemoveLocalSaveForLoadCommand(const char *pLine);
 	bool IsGoresMapProgressEnabled() const;
-	bool ShouldHideGoresGuides() const;
+	bool ShouldHideGoresGuides(bool ManualGuideVisible = false) const;
+	bool IsAxiomCommunity() const;
 	bool HasGoresMapProgress(int Dummy = 0) const
 	{
 		const int Idx = Dummy < 0 ? 0 : (Dummy >= NUM_DUMMIES ? NUM_DUMMIES - 1 : Dummy);
@@ -376,63 +394,37 @@ public:
 	}
 
 	// Focus Mode (Zen Mode)
-	struct SFocusHudConfigSnapshot
-	{
-		int m_ClShowhud = 1;
-		int m_ClShowhudHealthAmmo = 1;
-		int m_ClShowhudScore = 1;
-		int m_ClShowhudTimer = 1;
-		int m_ClShowhudTimeCpDiff = 1;
-		int m_ClShowLocalTimeAlways = 0;
-		int m_ClSpecCursor = 1;
-		int m_ClShowVotesAfterVoting = 1;
-		int m_ClShowIds = 0;
-		int m_ClShowhudDDRace = 1;
-		int m_ClShowhudJumpsIndicator = 1;
-		int m_ClShowhudSpectatorCount = 1;
-		int m_ClShowhudSpectator = 1;
-		int m_ClShowhudDummyActions = 1;
-		int m_ClShowhudKeyStatusReset = 1;
-		int m_ClShowhudKeyStatusHammer = 1;
-		int m_ClShowhudKeyStatusControl = 1;
-		int m_ClShowhudKeyStatusSync = 1;
-		int m_ClShowhudPlayerPosition = 1;
-		int m_ClShowhudPlayerSpeed = 1;
-		int m_ClShowhudPlayerAngle = 1;
-		int m_ClShowFreezeBars = 1;
-		int m_TcStatusBar = 0;
-		int m_TcNotifyWhenLast = 0;
-		int m_QmDummyMiniView = 0;
-		int m_QmPlayerStatsMapProgress = 0;
-		int m_QmSmtcShowHud = 1;
-		int m_QmInputOverlay = 0;
-	};
-
 	bool m_FocusModeStateKnown = false;
 	bool m_PrevFocusModeActive = false;
-	bool m_FocusHudOverridden = false;
-	bool m_FocusUiOverlayOverridden = false;
-	bool m_FocusNamesOverridden = false;
-	SFocusHudConfigSnapshot m_SavedHudConfig;
-	int m_SavedClNamePlates = 1;
-	int m_SavedClNamePlatesOwn = 1;
+	SQmFocusConfigOverrideState m_FocusHudOverrideState;
+	SQmFocusConfigOverrideState m_FocusNamePlatesOverrideState;
+	SQmFocusConfigOverrideState m_FocusNamePlatesOwnOverrideState;
+	SQmFocusConfigOverrideState m_FocusNameplateCoordsOverrideState;
+	SQmFocusConfigOverrideState m_FocusNameplateCoordsOwnOverrideState;
+	SQmFocusConfigOverrideState m_FocusNameplateCoordXOverrideState;
+	SQmFocusConfigOverrideState m_FocusNameplateCoordYOverrideState;
+	SQmFocusConfigOverrideState m_FocusDirectionOverrideState;
+	SQmFocusConfigOverrideState m_FocusVideoHudOverrideState;
+	SQmFocusConfigOverrideState m_FocusVideoDirectionOverrideState;
 	void ApplyFocusModeEffects();
 
 	// Gores FastInput Link
 	bool m_GoresModeStateKnown = false;
 	bool m_PrevGoresModeActive = false;
-	int m_PrevTcFastInput = 0;
-	int m_PrevTcFastInputOthers = 0;
-	int m_PrevQmGoresFastInput = 0;
-	int m_PrevQmGoresFastInputOthers = 0;
+	bool m_GoresAutoMapKnown = false;
+	unsigned m_GoresAutoMapToken = 0;
+	bool IsFastInputActive() const;
+	bool IsFastInputOthersActive() const;
 	bool m_AxiomAutoLoginAnnounced = false;
 	bool m_AxiomAutoLoginSucceeded = false;
 	bool m_AxiomAutoLoginWaitingReply = false;
 	int m_AxiomAutoLoginAttempts = 0;
 	int64_t m_AxiomAutoLoginNextTryTick = 0;
 	char m_aAxiomAutoLoginServer[NETADDR_MAXSTRSIZE] = "";
-	void ApplyGoresFastInputLink();
-
+	bool m_AxiomDummyAutoLoginSent = false;
+	bool m_AxiomDummyWasConnected = false;
+	char m_aAxiomDummyAutoLoginServer[NETADDR_MAXSTRSIZE] = "";
+	void ApplyGoresFastInputLink(bool AutoMapCheck = false);
 };
 
 #endif

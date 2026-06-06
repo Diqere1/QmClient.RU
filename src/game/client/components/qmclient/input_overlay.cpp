@@ -7,41 +7,41 @@
 
 #include <engine/graphics.h>
 #include <engine/keys.h>
-#include <engine/storage.h>
 #include <engine/shared/config.h>
 #include <engine/shared/json.h>
+#include <engine/storage.h>
 
 #include <game/client/gameclient.h>
 #include <game/client/ui.h>
 
 #include <algorithm>
-#include <ctime>
 #include <cctype>
 #include <cmath>
+#include <ctime>
 
 namespace
 {
-static constexpr const char *CONFIGURATION_FILENAME = "input_overlay.json";
+	static constexpr const char *CONFIGURATION_FILENAME = "input_overlay.json";
 
-static ColorRGBA ApplyOpacity(ColorRGBA Color, float Opacity)
-{
-	Color.a *= Opacity;
-	return Color;
-}
+	static ColorRGBA ApplyOpacity(ColorRGBA Color, float Opacity)
+	{
+		Color.a *= Opacity;
+		return Color;
+	}
 
-static ColorRGBA RainbowColor(float Hue, float Alpha)
-{
-	ColorRGBA Col = color_cast<ColorRGBA>(ColorHSLA(std::fmod(Hue, 1.0f), 1.0f, 0.5f));
-	Col.a = Alpha;
-	return Col;
-}
+	static ColorRGBA RainbowColor(float Hue, float Alpha)
+	{
+		ColorRGBA Col = color_cast<ColorRGBA>(ColorHSLA(std::fmod(Hue, 1.0f), 1.0f, 0.5f));
+		Col.a = Alpha;
+		return Col;
+	}
 
-bool DemoInputKeyIsPressed(const CGameClient::SDemoInputPlaybackState *pState, int Key)
-{
-	if(pState == nullptr || Key < KEY_FIRST || Key >= KEY_LAST)
-		return false;
-	return (pState->m_aKeyStates[Key >> 3] & (1U << (Key & 7))) != 0;
-}
+	bool DemoInputKeyIsPressed(const CGameClient::SDemoInputPlaybackState *pState, int Key)
+	{
+		if(pState == nullptr || Key < KEY_FIRST || Key >= KEY_LAST)
+			return false;
+		return (pState->m_aKeyStates[Key >> 3] & (1U << (Key & 7))) != 0;
+	}
 
 } // namespace
 
@@ -205,7 +205,9 @@ void CInputOverlay::OnRender()
 			}
 			const float Age = m_Time - m_aWheelLastTime[Index];
 			if(Age <= WheelHoldTime)
+			{
 				m_aWheelAlpha[Index] = 1.0f;
+			}
 			else
 			{
 				m_aWheelAlpha[Index] = 0.0f;
@@ -236,7 +238,9 @@ void CInputOverlay::OnRender()
 				}
 				const float Age = m_Time - m_aWheelLastTime[i];
 				if(Age <= WheelHoldTime)
+				{
 					m_aWheelAlpha[i] = 1.0f;
+				}
 				else
 				{
 					m_aWheelAlpha[i] = 0.0f;
@@ -280,8 +284,8 @@ void CInputOverlay::OnRender()
 					continue;
 
 				const bool IsPressable = Element.m_InputKind == EObsInputKind::KEY ||
-					Element.m_InputKind == EObsInputKind::MOUSE ||
-					Element.m_InputKind == EObsInputKind::WHEEL;
+							 Element.m_InputKind == EObsInputKind::MOUSE ||
+							 Element.m_InputKind == EObsInputKind::WHEEL;
 				float WheelAlpha = 1.0f;
 				if(Element.m_InputKind == EObsInputKind::WHEEL)
 				{
@@ -511,7 +515,7 @@ bool CInputOverlay::ParseConfiguration(const void *pFileData, unsigned FileLengt
 	json_settings JsonSettings{};
 	JsonSettings.settings = json_enable_comments;
 	char aError[256];
-	json_value *pJson = json_parse_ex(&JsonSettings, static_cast<const json_char *>(pFileData), FileLength, aError);
+	json_value *pJson = JsonParseEx(&JsonSettings, static_cast<const json_char *>(pFileData), FileLength, aError);
 	if(pJson == nullptr)
 	{
 		log_error("input_overlay", "Failed to parse configuration (invalid json): '%s'", aError);
@@ -615,7 +619,7 @@ bool CInputOverlay::ParseConfiguration(const void *pFileData, unsigned FileLengt
 			json_settings LayoutSettings{};
 			LayoutSettings.settings = json_enable_comments;
 			char aLayoutError[256];
-			json_value *pLayoutJson = json_parse_ex(&LayoutSettings, static_cast<const json_char *>(pLayoutData), LayoutLength, aLayoutError);
+			json_value *pLayoutJson = JsonParseEx(&LayoutSettings, static_cast<const json_char *>(pLayoutData), LayoutLength, aLayoutError);
 			free(pLayoutData);
 			if(pLayoutJson == nullptr)
 			{
@@ -688,7 +692,7 @@ bool CInputOverlay::ParseConfiguration(const void *pFileData, unsigned FileLengt
 		json_settings LayoutSettings{};
 		LayoutSettings.settings = json_enable_comments;
 		char aLayoutError[256];
-		json_value *pLayoutJson = json_parse_ex(&LayoutSettings, static_cast<const json_char *>(pLayoutData), LayoutLength, aLayoutError);
+		json_value *pLayoutJson = JsonParseEx(&LayoutSettings, static_cast<const json_char *>(pLayoutData), LayoutLength, aLayoutError);
 		free(pLayoutData);
 		if(pLayoutJson == nullptr)
 		{
@@ -737,9 +741,9 @@ bool CInputOverlay::ParseConfiguration(const void *pFileData, unsigned FileLengt
 	const json_value &OverlayWidthProbe = Root["overlay_width"];
 	const json_value &DefaultWidthProbe = Root["default_width"];
 	const bool LooksLikeObs = OverlayWidthProbe.type == json_integer || OverlayWidthProbe.type == json_double ||
-		DefaultWidthProbe.type == json_integer || DefaultWidthProbe.type == json_double ||
-		(ElementsProbe.type == json_array && ElementsProbe.u.array.length > 0 &&
-			ElementsProbe[0].type == json_object && ElementsProbe[0]["mapping"].type == json_array && ElementsProbe[0]["pos"].type == json_array);
+				  DefaultWidthProbe.type == json_integer || DefaultWidthProbe.type == json_double ||
+				  (ElementsProbe.type == json_array && ElementsProbe.u.array.length > 0 &&
+					  ElementsProbe[0].type == json_object && ElementsProbe[0]["mapping"].type == json_array && ElementsProbe[0]["pos"].type == json_array);
 	if(LooksLikeObs)
 	{
 		SObsLayout Layout;
@@ -1544,8 +1548,8 @@ int CInputOverlay::DetectObsPressedOffset(const CImageInfo &Image, const std::ve
 				const ColorRGBA Base = Image.PixelColor(X, Y);
 				if(Base.a <= AlphaThreshold)
 					continue;
-				OutPositions.push_back(vec2(X, Y));
-				OutColors.push_back(Base);
+				OutPositions.emplace_back(X, Y);
+				OutColors.emplace_back(Base);
 			}
 		}
 	};
@@ -1603,9 +1607,9 @@ int CInputOverlay::DetectObsPressedOffset(const CImageInfo &Image, const std::ve
 			++OpaqueCount;
 			const ColorRGBA Base = SampleColors[i];
 			const float Diff = (std::fabs(Base.r - Other.r) +
-						std::fabs(Base.g - Other.g) +
-						std::fabs(Base.b - Other.b)) /
-					       3.0f;
+						   std::fabs(Base.g - Other.g) +
+						   std::fabs(Base.b - Other.b)) /
+					   3.0f;
 			ColorDiffSum += Diff;
 			++ColorSamples;
 		}

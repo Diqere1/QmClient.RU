@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include <base/system.h>
+
 #include <engine/shared/config.h>
 
 #include <gtest/gtest.h>
@@ -22,14 +23,17 @@ enum class ELlmProvider
 // 模拟 GetEffectiveConcurrency 逻辑
 static int GetEffectiveConcurrency(int ConfigValue, const char *pBackend, int Provider)
 {
-	// 如果用户手动设置（不等于默认值 1），使用用户值
-	if(ConfigValue != 1)
+	// 如果用户手动设置（非 0），使用用户值；0 表示自动模式
+	if(ConfigValue != 0)
 		return ConfigValue;
 
 	// 根据后端类型提供智能默认值
 	if(str_comp_nocase(pBackend, "llm") == 0)
 	{
-		ELlmProvider ProviderEnum = static_cast<ELlmProvider>(Provider);
+		constexpr int PROVIDER_MIN = static_cast<int>(ELlmProvider::ZHIPU_AI);
+		constexpr int PROVIDER_MAX = static_cast<int>(ELlmProvider::CUSTOM);
+		int ProviderValue = std::clamp(Provider, PROVIDER_MIN, PROVIDER_MAX);
+		ELlmProvider ProviderEnum = static_cast<ELlmProvider>(ProviderValue);
 		switch(ProviderEnum)
 		{
 		case ELlmProvider::ZHIPU_AI:
@@ -39,7 +43,7 @@ static int GetEffectiveConcurrency(int ConfigValue, const char *pBackend, int Pr
 			return 2; // OpenAI 默认 2（成本考虑）
 		case ELlmProvider::CUSTOM:
 		default:
-			return 1; // 自定义使用默认值
+			return g_Config.m_QmTranslateLlmConcurrencyDefault; // 自定义使用配置默认值
 		}
 	}
 	else if(str_comp_nocase(pBackend, "tencentcloud") == 0)
@@ -65,28 +69,28 @@ TEST(TranslateIntegration, ConcurrencySmartDefaults)
 	// 测试各种后端的智能默认值（用户未手动设置时）
 
 	// LLM 后端 - ZhipuAI
-	EXPECT_EQ(GetEffectiveConcurrency(1, "llm", 0), 3);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", 0), 3);
 
 	// LLM 后端 - DeepSeek
-	EXPECT_EQ(GetEffectiveConcurrency(1, "llm", 1), 3);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", 1), 3);
 
 	// LLM 后端 - OpenAI
-	EXPECT_EQ(GetEffectiveConcurrency(1, "llm", 2), 2);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", 2), 2);
 
 	// LLM 后端 - Custom
-	EXPECT_EQ(GetEffectiveConcurrency(1, "llm", 3), 1);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", 3), g_Config.m_QmTranslateLlmConcurrencyDefault);
 
 	// TencentCloud
-	EXPECT_EQ(GetEffectiveConcurrency(1, "tencentcloud", 0), 5);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "tencentcloud", 0), 5);
 
 	// LibreTranslate
-	EXPECT_EQ(GetEffectiveConcurrency(1, "libretranslate", 0), 2);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "libretranslate", 0), 2);
 
 	// FTAPI
-	EXPECT_EQ(GetEffectiveConcurrency(1, "ftapi", 0), 1);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "ftapi", 0), 1);
 
 	// 未知后端
-	EXPECT_EQ(GetEffectiveConcurrency(1, "unknown", 0), 3);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "unknown", 0), 3);
 }
 
 // 测试手动设置优先
@@ -101,13 +105,13 @@ TEST(TranslateIntegration, ConcurrencyManualOverride)
 	// 用户设置为 10
 	EXPECT_EQ(GetEffectiveConcurrency(10, "llm", 0), 10);
 
-	// 用户设置为 1（等于默认值，使用智能默认）
-	EXPECT_EQ(GetEffectiveConcurrency(1, "llm", 0), 3); // 使用智能默认
+	// 用户设置为 1（手动覆盖为 1）
+	EXPECT_EQ(GetEffectiveConcurrency(1, "llm", 0), 1);
 
-	// 用户设置为 0（边界情况）
-	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", 0), 0);
+	// 用户设置为 0（自动模式）
+	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", 0), 3);
 
-	// 用户设置为负数（边界情况，实际代码中应该有 clamp）
+	// 用户设置为负数时，当前实现仍视为手动覆盖并原样返回
 	EXPECT_EQ(GetEffectiveConcurrency(-1, "llm", 0), -1);
 }
 
@@ -132,7 +136,7 @@ TEST(TranslateIntegration, ConcurrencyByBackend)
 
 	for(const auto &TestCase : aTestCases)
 	{
-		int Concurrency = GetEffectiveConcurrency(1, TestCase.pBackend, 0);
+		int Concurrency = GetEffectiveConcurrency(0, TestCase.pBackend, 0);
 		EXPECT_EQ(Concurrency, TestCase.ExpectedDefault)
 			<< "Backend: " << TestCase.pBackend << ", Reason: " << TestCase.pReason;
 	}
@@ -144,10 +148,9 @@ TEST(TranslateIntegration, FtapiProtection)
 	// FTAPI 是公共服务，需要特殊保护防止过载
 
 	// 默认并发应该是 1
-	EXPECT_EQ(GetEffectiveConcurrency(1, "ftapi", 0), 1);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "ftapi", 0), 1);
 
-	// 即使手动设置，也应该有合理的上限检查
-	// 这里测试的是逻辑，实际代码中应该有 clamp
+	// 即使手动设置，当前实现也会直接按手动覆盖值返回
 
 	// FTAPI 自动翻译应该默认关闭
 	// 模拟配置检查
@@ -181,6 +184,19 @@ TEST(TranslateIntegration, ProviderValueRange)
 	EXPECT_EQ(std::clamp(InvalidHigh, PROVIDER_MIN, PROVIDER_MAX), PROVIDER_MAX);
 }
 
+TEST(TranslateIntegration, CustomProviderUsesConfiguredDefault)
+{
+	const int OldDefaultConcurrency = g_Config.m_QmTranslateLlmConcurrencyDefault;
+	g_Config.m_QmTranslateLlmConcurrencyDefault = 4;
+
+	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", static_cast<int>(ELlmProvider::CUSTOM)), 4);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", -1), 3);
+	EXPECT_EQ(GetEffectiveConcurrency(0, "llm", 99), 4);
+
+	g_Config.m_QmTranslateLlmConcurrencyDefault = OldDefaultConcurrency;
+	EXPECT_EQ(g_Config.m_QmTranslateLlmConcurrencyDefault, OldDefaultConcurrency);
+}
+
 // 测试配置变量集成
 TEST(TranslateIntegration, ConfigVariablesIntegration)
 {
@@ -189,8 +205,8 @@ TEST(TranslateIntegration, ConfigVariablesIntegration)
 	// Provider 默认应该是 0 (ZhipuAI)
 	EXPECT_EQ(CConfig::ms_QmTranslateLlmProvider, 0);
 
-	// 并发默认值应该是 1（表示使用智能默认）
-	EXPECT_EQ(CConfig::ms_QmTranslateLlmConcurrency, 1);
+	// 并发默认值应该是 0（表示使用自动模式）
+	EXPECT_EQ(CConfig::ms_QmTranslateLlmConcurrency, 0);
 
 	// 测试配置变量可读写
 	const int OldConcurrency = g_Config.m_QmTranslateLlmConcurrency;

@@ -5,6 +5,7 @@
 
 #include <base/color.h>
 #include <base/math.h>
+#include <base/system.h>
 
 #include <engine/client/enums.h>
 #include <engine/demo.h>
@@ -20,6 +21,7 @@
 #include <game/client/components/effects.h>
 #include <game/client/components/flow.h>
 #include <game/client/components/qmclient/jelly_tee.h>
+#include <game/client/components/qmclient/modes.h>
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
@@ -32,6 +34,7 @@
 #include <game/client/prediction/entities/character.h>
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 
 static float CalculateHandAngle(vec2 Dir, float AngleOffset)
@@ -66,6 +69,10 @@ static int LocalDummyIndexForClient(const CGameClient *pGameClient, int ClientId
 	}
 	return -1;
 }
+
+constexpr int QM_WEAPON_SWITCH_ANIM_SCOPE_OWN = 0;
+constexpr int QM_WEAPON_SWITCH_ANIM_SCOPE_LOCAL = 1;
+constexpr int QM_WEAPON_SWITCH_ANIM_SCOPE_ALL = 2;
 
 static bool HasQmJellyHammerImpact(const CGameClient *pGameClient, int ClientId)
 {
@@ -245,12 +252,11 @@ void CPlayers::RenderHookCollLine(
 	const CNetObj_Character *pPlayerChar,
 	int ClientId)
 {
-	const bool HideFocusOverheadIndicators = g_Config.m_QmFocusMode != 0 &&
-		g_Config.m_QmFocusModeHideOverheadIndicators != 0;
-	if(HideFocusOverheadIndicators)
+	if(ShouldHideFocusGuideLines(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideGuideLines != 0))
 		return;
 
-	if(GameClient()->m_TClient.ShouldHideGoresGuides())
+	const bool ManualHookCollVisible = GameClient()->m_Controls.m_aShowHookColl[g_Config.m_ClDummy] != 0;
+	if(GameClient()->m_TClient.ShouldHideGoresGuides(ManualHookCollVisible))
 		return;
 
 	// TClient
@@ -351,9 +357,13 @@ void CPlayers::RenderHookCollLine(
 				vLineSegments.emplace_back(StartPos, aIntersections[1]);
 		}
 		else if(NumIntersections == 1)
+		{
 			vLineSegments.emplace_back(StartPos, aIntersections[0]);
+		}
 		else
+		{
 			vLineSegments.emplace_back(StartPos, HitPos);
+		}
 	};
 
 	// simulate the hook into the future
@@ -489,7 +499,9 @@ void CPlayers::RenderHookCollLine(
 	// Render hook coll line
 	const int HookCollSize = Local ? g_Config.m_ClHookCollSize : g_Config.m_ClHookCollSizeOther;
 
-	float Alpha = GameClient()->IsOtherTeam(ClientId) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
+	float Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+	if(Alpha >= 1.0f && GameClient()->IsOtherTeam(ClientId))
+		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 	Alpha *= (float)g_Config.m_ClHookCollAlpha / 100;
 	if(ClientId >= 0 && GameClient()->m_FastPractice.Enabled() && !GameClient()->m_Snap.m_SpecInfo.m_Active && !GameClient()->m_FastPractice.IsPracticeParticipant(ClientId))
 		Alpha = std::min(Alpha, 0.5f);
@@ -554,231 +566,7 @@ void CPlayers::RenderWeaponTrajectory(
 	const CNetObj_Character *pPlayerChar,
 	int ClientId)
 {
-	const bool HideFocusOverheadIndicators = g_Config.m_QmFocusMode != 0 &&
-		g_Config.m_QmFocusModeHideOverheadIndicators != 0;
-	if(HideFocusOverheadIndicators)
-		return;
-
-	if(GameClient()->m_TClient.ShouldHideGoresGuides())
-		return;
-
-	if(ClientId < 0 || !g_Config.m_QmWeaponTrajectory || !GameClient()->m_Controls.m_aShowWeaponTrajectory[g_Config.m_ClDummy])
-		return;
-
-	const int Weapon = pPlayerChar->m_Weapon;
-	if(Weapon != WEAPON_GRENADE && Weapon != WEAPON_SHOTGUN && Weapon != WEAPON_LASER)
-		return;
-
-	float Intra = GameClient()->m_aClients[ClientId].m_IsPredicted ? Client()->PredIntraGameTick(g_Config.m_ClDummy) : Client()->IntraGameTick(g_Config.m_ClDummy);
-	const float Angle = GetPlayerTargetAngle(pPrevChar, pPlayerChar, ClientId, Intra);
-	const vec2 Direction = direction(Angle);
-	if(length(Direction) < 0.0001f)
-		return;
-
-	const vec2 Position = GameClient()->m_aClients[ClientId].m_RenderPos;
-	int TuneZone = 0;
-	if(Client()->State() == IClient::STATE_ONLINE && GameClient()->m_GameWorld.m_WorldConfig.m_UseTuneZones)
-		TuneZone = Collision()->IsTune(Collision()->GetMapIndex(Position));
-	const CTuningParams *pTuning = GameClient()->GetTuning(TuneZone);
-
-	auto FindBlockingTee = [&](const vec2 &From, const vec2 &To, vec2 &OutPos) -> bool {
-		const float SelfIgnoreDistance = CCharacterCore::PhysicalSize() * 0.5f;
-		float ClosestDistance = distance(From, To) + 1.0f;
-		bool Found = false;
-		const CGameClient::CClientData &ShooterData = GameClient()->m_aClients[ClientId];
-		for(int i = 0; i < MAX_CLIENTS; ++i)
-		{
-			const CGameClient::CClientData &ClientData = GameClient()->m_aClients[i];
-			if(!ClientData.m_Active || ClientData.m_Team == TEAM_SPECTATORS)
-				continue;
-			if(!GameClient()->m_Snap.m_aCharacters[i].m_Active)
-				continue;
-			const bool IsOneSuper = ClientData.m_Super || ShooterData.m_Super;
-			const bool IsOneSolo = ClientData.m_Solo || ShooterData.m_Solo;
-			if(!IsOneSuper && (!GameClient()->m_Teams.SameTeam(i, ClientId) || IsOneSolo))
-				continue;
-
-			vec2 ClosestPoint;
-			const vec2 TeePos = ClientData.m_RenderPos;
-			if(closest_point_on_line(From, To, TeePos, ClosestPoint))
-			{
-				if(distance(TeePos, ClosestPoint) < CCharacterCore::PhysicalSize())
-				{
-					const float Dist = distance(From, ClosestPoint);
-					if(i == ClientId && Dist <= SelfIgnoreDistance)
-						continue;
-					if(Dist < ClosestDistance)
-					{
-						ClosestDistance = Dist;
-						OutPos = ClosestPoint;
-						Found = true;
-					}
-				}
-			}
-		}
-		return Found;
-	};
-
-	if(Weapon == WEAPON_GRENADE)
-	{
-		const vec2 StartPos = Position + Direction * (CCharacterCore::PhysicalSize() * 0.75f);
-		float Curvature = pTuning->m_GrenadeCurvature;
-		float Speed = pTuning->m_GrenadeSpeed;
-		float Lifetime = pTuning->m_GrenadeLifetime * 10.0f;//辅助线长度
-
-		constexpr int PointCount = 180;
-		std::vector<vec2> vPoints;
-		vPoints.reserve(PointCount);
-		vec2 LandingPos = StartPos;
-
-		vec2 PrevPos = StartPos;
-		for(int i = 0; i < PointCount; ++i)
-		{
-			const float U = PointCount > 1 ? (float)i / (float)(PointCount - 1) : 0.0f;
-			const float T = std::pow(U, 2.0f);
-			vec2 Pos = CalcPos(StartPos, Direction, Curvature, Speed, Lifetime * T);
-			if(i > 0)
-			{
-				vec2 ColPos, BeforePos;
-				if(Collision()->IntersectLine(PrevPos, Pos, &ColPos, &BeforePos))
-				{
-					vPoints.push_back(ColPos);
-					LandingPos = ColPos;
-					break;
-				}
-			}
-			vPoints.push_back(Pos);
-			LandingPos = Pos;
-			PrevPos = Pos;
-		}
-
-		if(vPoints.empty())
-			return;
-
-		Graphics()->TextureClear();
-		Graphics()->QuadsBegin();
-		const ColorRGBA BaseColor(1.0f, 0.6f, 0.2f, 1.0f);
-		const float StartSize = 4.0f;
-		for(size_t i = 0; i < vPoints.size(); ++i)
-		{
-			const float T = vPoints.size() > 1 ? (float)i / (float)(vPoints.size() - 1) : 0.0f;
-			const float Fade = 1.0f - T;
-			if(Fade <= 0.0f)
-				continue;
-			float Size = StartSize * Fade;
-			if(Size < 0.5f)
-				Size = 0.5f;
-
-			ColorRGBA Color = BaseColor;
-			Color.a = 0.8f * Fade;
-			Graphics()->SetColor(Color);
-			Graphics()->DrawCircle(vPoints[i].x, vPoints[i].y, Size, 12);
-		}
-		Graphics()->QuadsEnd();
-
-		const IGraphics::CTextureHandle &GrenadeCursor = GameClient()->m_GameSkin.m_SpriteWeaponGrenadeCursor;
-		if(GrenadeCursor.IsValid())
-		{
-			float CursorSpriteScaleX, CursorSpriteScaleY;
-			Graphics()->GetSpriteScale(g_pData->m_Weapons.m_aId[WEAPON_GRENADE].m_pSpriteCursor, CursorSpriteScaleX, CursorSpriteScaleY);
-
-			float CursorScale = (float)g_Config.m_TcCursorScale / 100.0f;
-			CursorScale = std::clamp(CursorScale, 0.3f, 3.0f);
-			const float CursorSize = 64.0f * CursorScale * 0.8f;
-			IGraphics::CQuadItem CursorQuad(
-				LandingPos.x,
-				LandingPos.y,
-				CursorSize * CursorSpriteScaleX,
-				CursorSize * CursorSpriteScaleY);
-
-			Graphics()->TextureSet(GrenadeCursor);
-			Graphics()->QuadsBegin();
-			Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.9f);
-			Graphics()->QuadsDraw(&CursorQuad, 1);
-			Graphics()->QuadsEnd();
-		}
-		return;
-	}
-
-	float Energy = pTuning->m_LaserReach;
-	if(GameClient()->m_GameWorld.m_WorldConfig.m_IsFNG && Energy < 10.0f)
-		Energy = 800.0f;
-
-	std::vector<IGraphics::CLineItem> vLineSegments;
-	vLineSegments.reserve(pTuning->m_LaserBounceNum + 2);
-
-	vec2 From = Position;
-	vec2 Dir = Direction;
-	bool ZeroEnergyBounceInLastTick = false;
-	int Bounces = 0;
-
-	while(Energy > 0.0f)
-	{
-		vec2 To = From + Dir * Energy;
-		vec2 ColTile;
-		vec2 HitPos;
-		int Res = Collision()->IntersectLineTeleWeapon(From, To, &ColTile, &HitPos);
-		vec2 SegmentEnd = Res ? HitPos : To;
-		vec2 TeeHitPos;
-		if(FindBlockingTee(From, SegmentEnd, TeeHitPos))
-		{
-			vLineSegments.emplace_back(From, TeeHitPos);
-			break;
-		}
-		if(!Res)
-		{
-			vLineSegments.emplace_back(From, To);
-			break;
-		}
-
-		vLineSegments.emplace_back(From, SegmentEnd);
-
-		vec2 TempPos = SegmentEnd;
-		vec2 TempDir = Dir * 4.0f;
-		int SavedTile = 0;
-		if(Res == -1)
-		{
-			SavedTile = Collision()->GetTile(round_to_int(ColTile.x), round_to_int(ColTile.y));
-			Collision()->SetCollisionAt(round_to_int(ColTile.x), round_to_int(ColTile.y), TILE_SOLID);
-		}
-		Collision()->MovePoint(&TempPos, &TempDir, 1.0f, nullptr);
-		if(Res == -1)
-		{
-			Collision()->SetCollisionAt(round_to_int(ColTile.x), round_to_int(ColTile.y), SavedTile);
-		}
-
-		const float Distance = distance(From, TempPos);
-		if(Distance == 0.0f && ZeroEnergyBounceInLastTick)
-			break;
-
-		Energy -= Distance + pTuning->m_LaserBounceCost;
-		ZeroEnergyBounceInLastTick = Distance == 0.0f;
-		if(Energy <= 0.0f)
-			break;
-
-		Bounces++;
-		if(Bounces > pTuning->m_LaserBounceNum)
-			break;
-
-		if(length(TempDir) < 0.0001f)
-			break;
-
-		Dir = normalize(TempDir);
-		From = TempPos;
-	}
-
-	if(vLineSegments.empty())
-		return;
-
-	const unsigned int ColorValue = Weapon == WEAPON_SHOTGUN ? g_Config.m_ClLaserShotgunOutlineColor : g_Config.m_ClLaserRifleOutlineColor;
-	ColorRGBA LineColor = color_cast<ColorRGBA>(ColorHSLA(ColorValue));
-	LineColor.a = 0.6f;
-
-	Graphics()->TextureClear();
-	Graphics()->LinesBegin();
-	Graphics()->SetColor(LineColor);
-	Graphics()->LinesDraw(vLineSegments.data(), vLineSegments.size());
-	Graphics()->LinesEnd();
+	GameClient()->m_QmWeaponTrajectory.Render(pPrevChar, pPlayerChar, ClientId);
 }
 
 void CPlayers::RenderHook(
@@ -809,7 +597,9 @@ void CPlayers::RenderHook(
 		Intra = GameClient()->m_aClients[ClientId].m_IsPredicted ? Client()->PredIntraGameTick(g_Config.m_ClDummy) : Client()->IntraGameTick(g_Config.m_ClDummy);
 
 	bool OtherTeam = GameClient()->IsOtherTeam(ClientId);
-	float Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
+	float Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+	if(Alpha >= 1.0f)
+		Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
 	if(ClientId == -2) // ghost
 		Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
 	if(ClientId >= 0 && GameClient()->m_FastPractice.Enabled() && !GameClient()->m_Snap.m_SpecInfo.m_Active && !GameClient()->m_FastPractice.IsPracticeParticipant(ClientId))
@@ -840,7 +630,9 @@ void CPlayers::RenderHook(
 		}
 	}
 	else
+	{
 		HookPos = mix(vec2(Prev.m_HookX, Prev.m_HookY), vec2(Player.m_HookX, Player.m_HookY), Intra);
+	}
 
 	float d = distance(Pos, HookPos);
 	vec2 Dir = normalize(Pos - HookPos);
@@ -863,9 +655,9 @@ void CPlayers::RenderHook(
 	++QuadOffset;
 	static IGraphics::SRenderSpriteInfo s_aHookChainRenderInfo[1024];
 	int HookChainCount = 0;
-	for(float f = 24; f < d && HookChainCount < 1024; f += 24, ++HookChainCount)
+	for(int Chain = 1; Chain * 24 < d && HookChainCount < 1024; ++Chain, ++HookChainCount)
 	{
-		vec2 p = HookPos + Dir * f;
+		vec2 p = HookPos + Dir * (float)(Chain * 24);
 		s_aHookChainRenderInfo[HookChainCount].m_Pos[0] = p.x;
 		s_aHookChainRenderInfo[HookChainCount].m_Pos[1] = p.y;
 		s_aHookChainRenderInfo[HookChainCount].m_Scale = 1;
@@ -905,10 +697,14 @@ void CPlayers::RenderPlayer(
 	RenderTools()->m_LocalTeeRender = Local; // TClient
 
 	float Alpha = 1.0f;
-	if(OtherTeam || ClientId < 0)
-		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
-	else if(g_Config.m_TcShowOthersGhosts && !Local && !Spec)
-		Alpha = g_Config.m_TcPredGhostsAlpha / 100.0f;
+	Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+	if(Alpha >= 1.0f)
+	{
+		if(OtherTeam || ClientId < 0)
+			Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
+		else if(g_Config.m_TcShowOthersGhosts && !Local && !Spec)
+			Alpha = g_Config.m_TcPredGhostsAlpha / 100.0f;
+	}
 
 	if(!OtherTeam && g_Config.m_TcShowOthersGhosts && !Local && g_Config.m_TcUnpredOthersInFreeze && Client()->m_IsLocalFrozen && !Spec)
 		Alpha = 1.0f;
@@ -1041,7 +837,9 @@ void CPlayers::RenderPlayer(
 	State.Set(&g_pData->m_aAnimations[ANIM_BASE], 0.0f);
 
 	if(InAir)
+	{
 		State.Add(&g_pData->m_aAnimations[ANIM_INAIR], 0.0f, 1.0f); // TODO: some sort of time here
+	}
 	else if(Stationary)
 	{
 		if(Inactive)
@@ -1050,7 +848,9 @@ void CPlayers::RenderPlayer(
 			RenderInfo.m_FeetFlipped = true;
 		}
 		else
+		{
 			State.Add(&g_pData->m_aAnimations[ANIM_IDLE], 0.0f, 1.0f); // TODO: some sort of time here
+		}
 	}
 	else if(!WantOtherDir)
 	{
@@ -1090,6 +890,32 @@ void CPlayers::RenderPlayer(
 			float Recoil = 0.0f;
 			vec2 WeaponPosition;
 			bool IsSit = Inactive && !InAir && Stationary;
+			vec2 WeaponSwitchOffset = vec2(0.0f, 0.0f);
+			float WeaponSwitchAngle = 0.0f;
+			const bool WeaponSwitchAnimEnabled = g_Config.m_QmWeaponSwitchAnim && ShouldRenderWeaponSwitchAnim(ClientId);
+			if(ClientId >= 0 && ClientId < MAX_CLIENTS)
+			{
+				if(m_aWeaponSwitchLastWeapons[ClientId] != Player.m_Weapon)
+				{
+					if(WeaponSwitchAnimEnabled && m_aWeaponSwitchLastWeapons[ClientId] != -1)
+						m_aWeaponSwitchStartTimes[ClientId] = Client()->LocalTime();
+					m_aWeaponSwitchLastWeapons[ClientId] = Player.m_Weapon;
+				}
+
+				if(WeaponSwitchAnimEnabled)
+				{
+					constexpr float SwitchAnimDuration = 0.3f;
+					const float TimeSinceSwitch = (float)(Client()->LocalTime() - m_aWeaponSwitchStartTimes[ClientId]);
+					if(TimeSinceSwitch >= 0.0f && TimeSinceSwitch < SwitchAnimDuration)
+					{
+						const float Progress = TimeSinceSwitch / SwitchAnimDuration;
+						const float InvProgress = 1.0f - Progress;
+						const float Ease = 1.0f - InvProgress * InvProgress * InvProgress;
+						WeaponSwitchOffset += mix(Direction * 40.0f, vec2(0.0f, 0.0f), Ease);
+						WeaponSwitchAngle += (1.0f - Ease) * pi * 2.0f;
+					}
+				}
+			}
 
 			if(Player.m_Weapon == WEAPON_HAMMER)
 			{
@@ -1110,14 +936,16 @@ void CPlayers::RenderPlayer(
 					if(!Inactive || LastAttackTime * HammerAnimationTimeScale < 1.0f)
 					{
 						if(Direction.x < 0)
-							Graphics()->QuadsSetRotation(-pi / 2 - State.GetAttach()->m_Angle * pi * 2);
+							Graphics()->QuadsSetRotation(-pi / 2 - State.GetAttach()->m_Angle * pi * 2 + WeaponSwitchAngle);
 						else
-							Graphics()->QuadsSetRotation(-pi / 2 + State.GetAttach()->m_Angle * pi * 2);
+							Graphics()->QuadsSetRotation(-pi / 2 + State.GetAttach()->m_Angle * pi * 2 + WeaponSwitchAngle);
 					}
 					else
-						Graphics()->QuadsSetRotation(Direction.x < 0 ? 100.0f : 500.0f);
+					{
+						Graphics()->QuadsSetRotation((Direction.x < 0 ? 100.0f : 500.0f) + WeaponSwitchAngle);
+					}
 
-					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
+					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x + WeaponSwitchOffset.x, WeaponPosition.y + WeaponSwitchOffset.y);
 					break;
 				}
 				case 1:
@@ -1135,9 +963,10 @@ void CPlayers::RenderPlayer(
 					QuadsRotation += Angle;
 					if(Direction.x < 0.0f)
 						QuadsRotation += pi;
+					QuadsRotation += WeaponSwitchAngle;
 
 					Graphics()->QuadsSetRotation(QuadsRotation);
-					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
+					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x + WeaponSwitchOffset.x, WeaponPosition.y + WeaponSwitchOffset.y);
 					break;
 				}
 				case 2:
@@ -1151,8 +980,8 @@ void CPlayers::RenderPlayer(
 					if(IsSit)
 						WeaponPosition.y += 3.0f;
 
-					Graphics()->QuadsSetRotation(Angle + 2 * pi);
-					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
+					Graphics()->QuadsSetRotation(Angle + 2 * pi + WeaponSwitchAngle);
+					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x + WeaponSwitchOffset.x, WeaponPosition.y + WeaponSwitchOffset.y);
 					RenderHand(&RenderInfo,
 						Position + Direction * g_pData->m_Weapons.m_aId[WEAPON_GUN].m_Offsetx - Direction * Recoil * 10.0f + vec2(0.0f, g_pData->m_Weapons.m_aId[WEAPON_GUN].m_Offsety),
 						Direction, -3 * pi / 4, vec2(-15, 4), Alpha);
@@ -1167,6 +996,7 @@ void CPlayers::RenderPlayer(
 				WeaponPosition.y += g_pData->m_Weapons.m_aId[CurrentWeapon].m_Offsety;
 				if(IsSit)
 					WeaponPosition.y += 3.0f;
+				WeaponPosition += WeaponSwitchOffset;
 
 				if(Direction.x < 0.0f)
 				{
@@ -1184,7 +1014,9 @@ void CPlayers::RenderPlayer(
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 
 				// HADOKEN
-				if(AttackTime <= 1.0f / 6.0f && g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
+				if(!ShouldHideFocusMuzzleEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMuzzleEffects != 0) &&
+					AttackTime <= 1.0f / 6.0f &&
+					g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
 				{
 					int IteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
 					static int s_LastIteX = IteX;
@@ -1244,8 +1076,53 @@ void CPlayers::RenderPlayer(
 					WeaponPosition.y += 3.0f;
 				if(Player.m_Weapon == WEAPON_GUN && g_Config.m_ClOldGunPosition)
 					WeaponPosition.y -= 8;
-				Graphics()->QuadsSetRotation(State.GetAttach()->m_Angle * pi * 2 + Angle);
+				WeaponPosition += WeaponSwitchOffset;
+				Graphics()->QuadsSetRotation(State.GetAttach()->m_Angle * pi * 2 + Angle + WeaponSwitchAngle);
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
+			}
+
+			if(!ShouldHideFocusMuzzleEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMuzzleEffects != 0) &&
+				(Player.m_Weapon == WEAPON_GUN || Player.m_Weapon == WEAPON_SHOTGUN) &&
+				g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
+			{
+				float AlphaMuzzle = 0.0f;
+				if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
+				{
+					float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
+					AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
+				}
+				if(AlphaMuzzle > 0.0f)
+				{
+					int MuzzleIteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
+					static int s_LastMuzzleIteX = MuzzleIteX;
+					if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
+					{
+						const IDemoPlayer::CInfo *pInfo = DemoPlayer()->BaseInfo();
+						if(pInfo->m_Paused)
+							MuzzleIteX = s_LastMuzzleIteX;
+						else
+							s_LastMuzzleIteX = MuzzleIteX;
+					}
+					else
+					{
+						if(GameClient()->m_Snap.m_pGameInfoObj && GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_PAUSED)
+							MuzzleIteX = s_LastMuzzleIteX;
+						else
+							s_LastMuzzleIteX = MuzzleIteX;
+					}
+					if(g_pData->m_Weapons.m_aId[CurrentWeapon].m_aSpriteMuzzles[MuzzleIteX])
+					{
+						float OffsetY = -g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsety;
+						int MuzzleQuadOffset = MuzzleIteX * 2 + (Direction.x < 0.0f ? 1 : 0);
+						if(Direction.x < 0.0f)
+							OffsetY = -OffsetY;
+
+						vec2 DirectionY(-Direction.y, Direction.x);
+						vec2 MuzzlePos = WeaponPosition + Direction * g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsetx + DirectionY * OffsetY;
+						Graphics()->TextureSet(GameClient()->m_GameSkin.m_aaSpriteWeaponsMuzzles[CurrentWeapon][MuzzleIteX]);
+						Graphics()->RenderQuadContainerAsSprite(m_aWeaponSpriteMuzzleQuadContainerIndex[CurrentWeapon], MuzzleQuadOffset, MuzzlePos.x, MuzzlePos.y);
+					}
+				}
 			}
 		}
 	}
@@ -1263,7 +1140,10 @@ void CPlayers::RenderPlayer(
 		RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, ShadowPosition, 0.5f, JellyDeform.m_BodyScale, JellyDeform.m_FeetScale, JellyDeform.m_BodyAngle, JellyDeform.m_FeetAngle); // render ghost
 	}
 
-	RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, Position, Alpha, JellyDeform.m_BodyScale, JellyDeform.m_FeetScale, JellyDeform.m_BodyAngle, JellyDeform.m_FeetAngle);
+	const std::chrono::nanoseconds Now = time_get_nanoseconds();
+	const CTeeRenderInfo *pPreviousSkinInfo = ClientId >= 0 ? GameClient()->m_aClients[ClientId].SkinChangePreviousRenderInfo(Now) : nullptr;
+	const float SkinTransitionProgress = ClientId >= 0 ? GameClient()->m_aClients[ClientId].SkinChangeTransitionProgress(Now) : 1.0f;
+	RenderTools()->RenderTeeWithSkinChangeTransition(&State, pPreviousSkinInfo, &RenderInfo, Player.m_Emote, Direction, Position, SkinTransitionProgress, Alpha, JellyDeform.m_BodyScale, JellyDeform.m_FeetScale, JellyDeform.m_BodyAngle, JellyDeform.m_FeetAngle);
 
 	float TeeAnimScale, TeeBaseSize;
 	CRenderTools::GetRenderTeeAnimScaleAndBaseSize(&RenderInfo, TeeAnimScale, TeeBaseSize);
@@ -1279,7 +1159,7 @@ void CPlayers::RenderPlayer(
 			GameClient()->m_Effects.SparkleTrail(BodyPos, Alpha);
 	}
 
-		if(ClientId < 0)
+	if(ClientId < 0)
 		return;
 
 	int QuadOffsetToEmoticon = NUM_WEAPONS * 2 + 4;
@@ -1365,10 +1245,14 @@ void CPlayers::RenderPlayerGhost(
 
 	bool FrozenSwappingHide = (GameClient()->m_aClients[ClientId].m_FreezeEnd > 0) && g_Config.m_TcHideFrozenGhosts && g_Config.m_TcSwapGhosts;
 
-	if(OtherTeam || ClientId < 0)
-		Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
-	else
-		Alpha = g_Config.m_TcUnpredGhostsAlpha / 100.0f;
+	Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+	if(Alpha >= 1.0f)
+	{
+		if(OtherTeam || ClientId < 0)
+			Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
+		else
+			Alpha = g_Config.m_TcUnpredGhostsAlpha / 100.0f;
+	}
 
 	if(!OtherTeam && FrozenSwappingHide)
 		Alpha = 1.0f;
@@ -1490,7 +1374,9 @@ void CPlayers::RenderPlayerGhost(
 	State.Set(&g_pData->m_aAnimations[ANIM_BASE], 0);
 
 	if(InAir)
+	{
 		State.Add(&g_pData->m_aAnimations[ANIM_INAIR], 0, 1.0f);
+	}
 	else if(Stationary)
 	{
 		if(Inactive)
@@ -1499,7 +1385,9 @@ void CPlayers::RenderPlayerGhost(
 			RenderInfo.m_FeetFlipped = true;
 		}
 		else
+		{
 			State.Add(&g_pData->m_aAnimations[ANIM_IDLE], 0, 1.0f);
+		}
 	}
 	else if(!WantOtherDir)
 	{
@@ -1567,7 +1455,9 @@ void CPlayers::RenderPlayerGhost(
 							Graphics()->QuadsSetRotation(-pi / 2 + State.GetAttach()->m_Angle * pi * 2);
 					}
 					else
+					{
 						Graphics()->QuadsSetRotation(Direction.x < 0 ? 100.0f : 500.0f);
+					}
 
 					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 					break;
@@ -1636,7 +1526,9 @@ void CPlayers::RenderPlayerGhost(
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 
 				// HADOKEN
-				if(AttackTime <= 1.0f / 6.0f && g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
+				if(!ShouldHideFocusMuzzleEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMuzzleEffects != 0) &&
+					AttackTime <= 1.0f / 6.0f &&
+					g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
 				{
 					int IteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
 					static int s_LastIteX = IteX;
@@ -1699,6 +1591,50 @@ void CPlayers::RenderPlayerGhost(
 				Graphics()->QuadsSetRotation(State.GetAttach()->m_Angle * pi * 2 + Angle);
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 			}
+
+			if(!ShouldHideFocusMuzzleEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMuzzleEffects != 0) &&
+				(Player.m_Weapon == WEAPON_GUN || Player.m_Weapon == WEAPON_SHOTGUN) &&
+				g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
+			{
+				float AlphaMuzzle = 0.0f;
+				if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
+				{
+					float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
+					AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
+				}
+				if(AlphaMuzzle > 0.0f)
+				{
+					int MuzzleIteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
+					static int s_LastMuzzleIteX = MuzzleIteX;
+					if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
+					{
+						const IDemoPlayer::CInfo *pInfo = DemoPlayer()->BaseInfo();
+						if(pInfo->m_Paused)
+							MuzzleIteX = s_LastMuzzleIteX;
+						else
+							s_LastMuzzleIteX = MuzzleIteX;
+					}
+					else
+					{
+						if(GameClient()->m_Snap.m_pGameInfoObj && GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_PAUSED)
+							MuzzleIteX = s_LastMuzzleIteX;
+						else
+							s_LastMuzzleIteX = MuzzleIteX;
+					}
+					if(g_pData->m_Weapons.m_aId[CurrentWeapon].m_aSpriteMuzzles[MuzzleIteX])
+					{
+						float OffsetY = -g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsety;
+						int MuzzleQuadOffset = MuzzleIteX * 2 + (Direction.x < 0.0f ? 1 : 0);
+						if(Direction.x < 0.0f)
+							OffsetY = -OffsetY;
+
+						vec2 DirectionY(-Direction.y, Direction.x);
+						vec2 MuzzlePos = WeaponPosition + Direction * g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsetx + DirectionY * OffsetY;
+						Graphics()->TextureSet(GameClient()->m_GameSkin.m_aaSpriteWeaponsMuzzles[CurrentWeapon][MuzzleIteX]);
+						Graphics()->RenderQuadContainerAsSprite(m_aWeaponSpriteMuzzleQuadContainerIndex[CurrentWeapon], MuzzleQuadOffset, MuzzlePos.x, MuzzlePos.y);
+					}
+				}
+			}
 		}
 	}
 
@@ -1742,6 +1678,24 @@ inline bool CPlayers::IsPlayerInfoAvailable(int ClientId) const
 	       GameClient()->m_Snap.m_apPlayerInfos[ClientId] != nullptr;
 }
 
+bool CPlayers::ShouldRenderWeaponSwitchAnim(int ClientId) const
+{
+	if(ClientId < 0)
+		return false;
+
+	switch(std::clamp(g_Config.m_QmWeaponSwitchAnimScope, QM_WEAPON_SWITCH_ANIM_SCOPE_OWN, QM_WEAPON_SWITCH_ANIM_SCOPE_ALL))
+	{
+	case QM_WEAPON_SWITCH_ANIM_SCOPE_OWN:
+		return ClientId == GameClient()->m_Snap.m_LocalClientId;
+	case QM_WEAPON_SWITCH_ANIM_SCOPE_LOCAL:
+		return GameClient()->IsLocalClientId(ClientId);
+	case QM_WEAPON_SWITCH_ANIM_SCOPE_ALL:
+		return true;
+	default:
+		return false;
+	}
+}
+
 void CPlayers::OnRender()
 {
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
@@ -1772,7 +1726,7 @@ void CPlayers::OnRender()
 
 			Frozen = Predicted.m_FreezeEnd != 0 || Predicted.m_LiveFrozen;
 			// TClient
-			if(g_Config.m_TcFastInput && GameClient()->Predict())
+			if(GameClient()->TClientComponent().IsFastInputActive() && GameClient()->Predict())
 			{
 				const CCharacterCore &RegularPredicted = ClientData.m_RegularPredicted;
 				Frozen = RegularPredicted.m_FreezeEnd != 0 || RegularPredicted.m_LiveFrozen;
@@ -1861,7 +1815,9 @@ void CPlayers::OnRender()
 		}
 
 		const int ClientId = Client.ClientId();
-		float Alpha = (GameClient()->IsOtherTeam(ClientId) || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.f : 1.f;
+		float Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+		if(Alpha >= 1.0f)
+			Alpha = (GameClient()->IsOtherTeam(ClientId) || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.f : 1.f;
 		if(ClientId == -2) // ghost
 		{
 			Alpha = g_Config.m_ClRaceGhostAlpha / 100.f;
@@ -1936,8 +1892,15 @@ void CPlayers::CreateSpectatorTeeRenderInfo()
 	m_pSpectatorTeeRenderInfo = GameClient()->CreateManagedTeeRenderInfo(SpectatorTeeRenderInfo, SpectatorSkinDescriptor);
 }
 
+void CPlayers::OnReset()
+{
+	std::fill(std::begin(m_aWeaponSwitchLastWeapons), std::end(m_aWeaponSwitchLastWeapons), -1);
+	std::fill(std::begin(m_aWeaponSwitchStartTimes), std::end(m_aWeaponSwitchStartTimes), 0.0);
+}
+
 void CPlayers::OnInit()
 {
+	OnReset();
 	m_WeaponEmoteQuadContainerIndex = Graphics()->CreateQuadContainer(false);
 
 	Graphics()->SetColor(1.f, 1.f, 1.f, 1.f);
@@ -1984,7 +1947,9 @@ void CPlayers::OnInit()
 					Graphics()->GetSpriteScaleImpl(96, 64, ScaleX, ScaleY);
 				}
 				else
+				{
 					Graphics()->GetSpriteScale(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n], ScaleX, ScaleY);
+				}
 			}
 
 			float SWidth = (g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleX) * (4.0f / 3.0f);

@@ -75,12 +75,14 @@ protected:
 
 	bool IsNewApi() override { return true; }
 
-	void UseProgram(CGLSLTWProgram *pProgram);
+	// OpenGL 3 后端需要用同名 helper 替换基类的非虚实现，避免在热路径里改名扩散。
+	void UseProgram(CGLSLTWProgram *pProgram); // NOLINT(bugprone-derived-method-shadowing-base-method)
 	void UploadStreamBufferData(EPrimitiveType PrimitiveType, const void *pVertices, size_t VertSize, unsigned int PrimitiveCount, bool AsTex3D = false);
 	void RenderText(const CCommandBuffer::SState &State, int DrawNum, int TextTextureIndex, int TextOutlineTextureIndex, int TextureSize, const ColorRGBA &TextColor, const ColorRGBA &TextOutlineColor);
 
-	void TextureUpdate(int Slot, int X, int Y, int Width, int Height, int GLFormat, uint8_t *pTexData);
-	void TextureCreate(int Slot, int Width, int Height, int GLFormat, int GLStoreFormat, int Flags, uint8_t *pTexData);
+	// These names intentionally match the base API so the OpenGL 3 backend can override the call sites without broader renaming.
+	void TextureUpdate(int Slot, int X, int Y, int Width, int Height, int GLFormat, uint8_t *pTexData); // NOLINT(bugprone-derived-method-shadowing-base-method)
+	void TextureCreate(int Slot, int Width, int Height, int GLFormat, int GLStoreFormat, int Flags, uint8_t *pTexData); // NOLINT(bugprone-derived-method-shadowing-base-method)
 
 	bool Cmd_Init(const SCommand_Init *pCommand) override;
 	void Cmd_Shutdown(const SCommand_Shutdown *pCommand) override;
@@ -93,6 +95,7 @@ protected:
 	void Cmd_Clear(const CCommandBuffer::SCommand_Clear *pCommand) override;
 	void Cmd_Render(const CCommandBuffer::SCommand_Render *pCommand) override;
 	void Cmd_RenderTex3D(const CCommandBuffer::SCommand_RenderTex3D *pCommand) override;
+	void Cmd_RenderTarget_Draw(const CCommandBuffer::SCommand_RenderTarget_Draw *pCommand) override;
 
 	void Cmd_CreateBufferObject(const CCommandBuffer::SCommand_CreateBufferObject *pCommand) override;
 	void Cmd_RecreateBufferObject(const CCommandBuffer::SCommand_RecreateBufferObject *pCommand) override;

@@ -18,12 +18,14 @@ using namespace std::chrono_literals;
 
 const char *CRaceDemo::ms_pRaceDemoDir = "demos/auto/race";
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CDemoItem
 {
 	char m_aName[128];
 	int m_Time;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CDemoListParam
 {
 	const CRaceDemo *m_pThis;
@@ -190,8 +192,10 @@ void CRaceDemo::StopRecord(int Time)
 
 			Storage()->RenameFile(m_aTmpFilename, aNewFilename, IStorage::TYPE_SAVE);
 		}
-		else // no new record
+		else
+		{ // no new record
 			Storage()->RemoveFile(m_aTmpFilename, IStorage::TYPE_SAVE);
+		}
 
 		m_aTmpFilename[0] = '\0';
 	}
@@ -202,6 +206,7 @@ void CRaceDemo::StopRecord(int Time)
 	m_RecordStopTick = -1;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SRaceDemoFetchUser
 {
 	CRaceDemo *m_pThis;
@@ -234,7 +239,9 @@ int CRaceDemo::RaceDemolistFetchCallback(const CFsFileInfo *pInfo, int IsDir, in
 			return 0;
 	}
 	else if(pTEnd[0])
+	{
 		return 0;
+	}
 
 	Item.m_Time = CRaceHelper::TimeFromSecondsStr(pTime);
 	if(Item.m_Time > 0)

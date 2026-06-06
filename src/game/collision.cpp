@@ -228,11 +228,23 @@ void CCollision::FillAntibot(CAntibotMapData *pMapData) const
 		return;
 	}
 
-	pMapData->m_pTiles = (unsigned char *)malloc((size_t)m_Width * m_Height);
+	if((size_t)m_Width > std::numeric_limits<size_t>::max() / (size_t)m_Height)
+	{
+		pMapData->m_pTiles = nullptr;
+		return;
+	}
+	const size_t TileCount = (size_t)m_Width * (size_t)m_Height;
+	if(TileCount > (size_t)std::numeric_limits<int>::max())
+	{
+		pMapData->m_pTiles = nullptr;
+		return;
+	}
+
+	pMapData->m_pTiles = (unsigned char *)malloc(TileCount);
 	if(!pMapData->m_pTiles)
 		return;
 
-	for(int i = 0; i < m_Width * m_Height; i++)
+	for(size_t i = 0; i < TileCount; i++)
 	{
 		pMapData->m_pTiles[i] = 0;
 		if(m_pTiles[i].m_Index >= TILE_SOLID && m_pTiles[i].m_Index <= TILE_NOLASER)
@@ -942,13 +954,13 @@ bool CCollision::TileExistsNext(int Index) const
 		return true;
 	if((m_pTiles[TileBelow].m_Index == TILE_STOP && m_pTiles[TileBelow].m_Flags == ROTATION_0) || (m_pTiles[TileAbove].m_Index == TILE_STOP && m_pTiles[TileAbove].m_Flags == ROTATION_180))
 		return true;
-	if(m_pTiles[TileOnTheRight].m_Index == TILE_STOPA || m_pTiles[TileOnTheLeft].m_Index == TILE_STOPA || ((m_pTiles[TileOnTheRight].m_Index == TILE_STOPS || m_pTiles[TileOnTheLeft].m_Index == TILE_STOPS)))
+	if(m_pTiles[TileOnTheRight].m_Index == TILE_STOPA || m_pTiles[TileOnTheLeft].m_Index == TILE_STOPA || (m_pTiles[TileOnTheRight].m_Index == TILE_STOPS || m_pTiles[TileOnTheLeft].m_Index == TILE_STOPS))
 		return true;
 	if(m_pTiles[TileBelow].m_Index == TILE_STOPA || m_pTiles[TileAbove].m_Index == TILE_STOPA || ((m_pTiles[TileBelow].m_Index == TILE_STOPS || m_pTiles[TileAbove].m_Index == TILE_STOPS) && m_pTiles[TileBelow].m_Flags | ROTATION_180 | ROTATION_0))
 		return true;
 	if(m_pFront)
 	{
-		if(m_pFront[TileOnTheRight].m_Index == TILE_STOPA || m_pFront[TileOnTheLeft].m_Index == TILE_STOPA || ((m_pFront[TileOnTheRight].m_Index == TILE_STOPS || m_pFront[TileOnTheLeft].m_Index == TILE_STOPS)))
+		if(m_pFront[TileOnTheRight].m_Index == TILE_STOPA || m_pFront[TileOnTheLeft].m_Index == TILE_STOPA || (m_pFront[TileOnTheRight].m_Index == TILE_STOPS || m_pFront[TileOnTheLeft].m_Index == TILE_STOPS))
 			return true;
 		if(m_pFront[TileBelow].m_Index == TILE_STOPA || m_pFront[TileAbove].m_Index == TILE_STOPA || ((m_pFront[TileBelow].m_Index == TILE_STOPS || m_pFront[TileAbove].m_Index == TILE_STOPS) && m_pFront[TileBelow].m_Flags | ROTATION_180 | ROTATION_0))
 			return true;
@@ -959,7 +971,7 @@ bool CCollision::TileExistsNext(int Index) const
 	}
 	if(m_pDoor)
 	{
-		if(m_pDoor[TileOnTheRight].m_Index == TILE_STOPA || m_pDoor[TileOnTheLeft].m_Index == TILE_STOPA || ((m_pDoor[TileOnTheRight].m_Index == TILE_STOPS || m_pDoor[TileOnTheLeft].m_Index == TILE_STOPS)))
+		if(m_pDoor[TileOnTheRight].m_Index == TILE_STOPA || m_pDoor[TileOnTheLeft].m_Index == TILE_STOPA || (m_pDoor[TileOnTheRight].m_Index == TILE_STOPS || m_pDoor[TileOnTheLeft].m_Index == TILE_STOPS))
 			return true;
 		if(m_pDoor[TileBelow].m_Index == TILE_STOPA || m_pDoor[TileAbove].m_Index == TILE_STOPA || ((m_pDoor[TileBelow].m_Index == TILE_STOPS || m_pDoor[TileAbove].m_Index == TILE_STOPS) && m_pDoor[TileBelow].m_Flags | ROTATION_180 | ROTATION_0))
 			return true;
@@ -1006,7 +1018,9 @@ std::vector<int> CCollision::GetMapIndices(vec2 PrevPos, vec2 Pos, unsigned MaxI
 			return vIndices;
 		}
 		else
+		{
 			return vIndices;
+		}
 	}
 	else
 	{

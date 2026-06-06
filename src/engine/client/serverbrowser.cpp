@@ -28,34 +28,39 @@
 #include <set>
 #include <vector>
 
-class CSortWrap
+namespace
 {
-	typedef bool (CServerBrowser::*SortFunc)(int, int) const;
-	SortFunc m_pfnSort;
-	CServerBrowser *m_pThis;
 
-public:
-	CSortWrap(CServerBrowser *pServer, SortFunc Func) :
-		m_pfnSort(Func), m_pThis(pServer) {}
-	bool operator()(int a, int b) { return (g_Config.m_BrSortOrder ? (m_pThis->*m_pfnSort)(b, a) : (m_pThis->*m_pfnSort)(a, b)); }
-};
+	class CSortWrap
+	{
+		typedef bool (CServerBrowser::*SortFunc)(int, int) const;
+		SortFunc m_pfnSort;
+		CServerBrowser *m_pThis;
 
-static bool MatchesPart(const char *a, const char *b)
-{
-	return str_utf8_find_nocase(a, b) != nullptr;
-}
+	public:
+		CSortWrap(CServerBrowser *pServer, SortFunc Func) :
+			m_pfnSort(Func), m_pThis(pServer) {}
+		bool operator()(int a, int b) { return (g_Config.m_BrSortOrder ? (m_pThis->*m_pfnSort)(b, a) : (m_pThis->*m_pfnSort)(a, b)); }
+	};
 
-static bool MatchesExactly(const char *a, const char *b)
-{
-	return str_comp(a, &b[1]) == 0;
-}
+	bool MatchesPart(const char *a, const char *b)
+	{
+		return str_utf8_find_nocase(a, b) != nullptr;
+	}
 
-static NETADDR CommunityAddressKey(const NETADDR &Addr)
-{
-	NETADDR AddressKey = Addr;
-	AddressKey.type &= ~NETTYPE_TW7;
-	return AddressKey;
-}
+	bool MatchesExactly(const char *a, const char *b)
+	{
+		return str_comp(a, &b[1]) == 0;
+	}
+
+	NETADDR CommunityAddressKey(const NETADDR &Addr)
+	{
+		NETADDR AddressKey = Addr;
+		AddressKey.type &= ~NETTYPE_TW7;
+		return AddressKey;
+	}
+
+} // namespace
 
 CServerBrowser::CServerBrowser() :
 	m_CommunityCache(this),
@@ -448,21 +453,37 @@ void CServerBrowser::Filter()
 		bool Filtered = false;
 
 		if(g_Config.m_BrFilterEmpty && Info.m_NumFilteredPlayers == 0)
+		{
 			Filtered = true;
+		}
 		else if(g_Config.m_BrFilterFull && Players(Info) == Max(Info))
+		{
 			Filtered = true;
+		}
 		else if(g_Config.m_BrFilterPw && Info.m_Flags & SERVER_FLAG_PASSWORD)
+		{
 			Filtered = true;
+		}
 		else if(g_Config.m_BrFilterServerAddress[0] && !str_find_nocase(Info.m_aAddress, g_Config.m_BrFilterServerAddress))
+		{
 			Filtered = true;
+		}
 		else if(g_Config.m_BrFilterGametypeStrict && g_Config.m_BrFilterGametype[0] && str_comp_nocase(Info.m_aGameType, g_Config.m_BrFilterGametype))
+		{
 			Filtered = true;
+		}
 		else if(!g_Config.m_BrFilterGametypeStrict && g_Config.m_BrFilterGametype[0] && !str_utf8_find_nocase(Info.m_aGameType, g_Config.m_BrFilterGametype))
+		{
 			Filtered = true;
+		}
 		else if(g_Config.m_BrFilterUnfinishedMap && Info.m_HasRank == CServerInfo::RANK_RANKED)
+		{
 			Filtered = true;
+		}
 		else if(g_Config.m_BrFilterLogin && Info.m_RequiresLogin)
+		{
 			Filtered = true;
+		}
 		else
 		{
 			if(!Communities().empty())
@@ -1412,7 +1433,7 @@ void CServerBrowser::LoadDDNetInfoJson()
 	json_value_free(m_pDDNetInfo);
 	json_settings JsonSettings{};
 	char aError[256];
-	m_pDDNetInfo = json_parse_ex(&JsonSettings, static_cast<json_char *>(pBuf), Length, aError);
+	m_pDDNetInfo = JsonParseEx(&JsonSettings, static_cast<json_char *>(pBuf), Length, aError);
 	free(pBuf);
 
 	if(m_pDDNetInfo == nullptr)
@@ -1463,6 +1484,11 @@ bool CServerBrowser::ParseCommunityServers(CCommunity *pCommunity, const json_va
 		if(Types.u.object.length == 0)
 			continue;
 
+		if(str_has_cc(Name.u.string.ptr))
+		{
+			log_error("serverbrowser", "invalid community country name (ServerIndex=%u)", ServerIndex);
+			return false;
+		}
 		pCommunity->m_vCountries.emplace_back(Name.u.string.ptr, FlagId.u.integer);
 		CCommunityCountry *pCountry = &pCommunity->m_vCountries.back();
 
@@ -1583,18 +1609,18 @@ void CServerBrowser::LoadDDNetServers()
 		// Backward compatibility.
 		if(pFinishes->type == json_none)
 		{
-			if(str_comp(Id, COMMUNITY_DDNET) == 0)
+			if(str_comp(Id, COMMUNITY_DDNET) == 0 && m_pDDNetInfo != nullptr)
 			{
 				pFinishes = &(*m_pDDNetInfo)["maps"];
 			}
 		}
 		if(pServers->type == json_none)
 		{
-			if(str_comp(Id, COMMUNITY_DDNET) == 0)
+			if(str_comp(Id, COMMUNITY_DDNET) == 0 && m_pDDNetInfo != nullptr)
 			{
 				pServers = &(*m_pDDNetInfo)["servers"];
 			}
-			else if(str_comp(Id, "kog") == 0)
+			else if(str_comp(Id, "kog") == 0 && m_pDDNetInfo != nullptr)
 			{
 				pServers = &(*m_pDDNetInfo)["servers-kog"];
 			}

@@ -1,14 +1,16 @@
-#ifndef GAME_CLIENT_COMPONENTS_RCLIENT_VOICE_H
-#define GAME_CLIENT_COMPONENTS_RCLIENT_VOICE_H
+#ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_CORE_H
+#define GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_CORE_H
+
+#include "voice_utils.h"
 
 #include <base/lock.h>
 #include <base/system.h>
 #include <base/types.h>
 #include <base/vmath.h>
 
-#include <SDL_audio.h>
-
 #include <engine/shared/protocol.h>
+
+#include <SDL_audio.h>
 
 #include <array>
 #include <atomic>
@@ -54,9 +56,12 @@ private:
 struct SRClientVoiceConfigSnapshot
 {
 	int m_QmVoiceFilterEnable = 0;
+	int m_QmVoiceAgcEnable = 0;
+	int m_QmVoiceBitrateProfile = 0;
 	int m_QmVoiceProtocolVersion = 0;
 	int m_QmVoiceNoiseSuppressEnable = 0;
 	int m_QmVoiceNoiseSuppressStrength = 0;
+	int m_QmVoicePttReleaseDelayMs = 0;
 	int m_QmVoiceCompThreshold = 0;
 	int m_QmVoiceCompRatio = 0;
 	int m_QmVoiceCompAttackMs = 0;
@@ -124,6 +129,8 @@ class CRClientVoice
 		float m_LossEwma = 0.0f;
 		uint16_t m_NextSeq = 0;
 		bool m_HasNextSeq = false;
+		bool m_HasMinQueuedSeq = false;
+		uint16_t m_MinQueuedSeq = 0;
 		float m_LastGainLeft = 1.0f;
 		float m_LastGainRight = 1.0f;
 		int64_t m_LastRecvTime = 0;
@@ -169,11 +176,14 @@ class CRClientVoice
 #endif
 	char m_aInputDeviceName[128] = {0};
 	char m_aOutputDeviceName[128] = {0};
+	char m_aResolvedInputDeviceName[128] = {0};
+	char m_aResolvedOutputDeviceName[128] = {0};
 	int64_t m_LastAudioRetryAttempt = 0;
 	bool m_OutputStereo = true;
+	bool m_AudioPausedForInactive = false;
 	bool m_LogDeviceChange = false;
-	bool m_CaptureUnavailable = false;
-	bool m_OutputUnavailable = false;
+	std::atomic<bool> m_CaptureUnavailable = false;
+	std::atomic<bool> m_OutputUnavailable = false;
 #if defined(CONF_PLATFORM_ANDROID)
 	bool m_AndroidRecordPermissionKnown = false;
 	bool m_AndroidRecordPermissionGranted = false;
@@ -181,22 +191,35 @@ class CRClientVoice
 	float m_HpfPrevIn = 0.0f;
 	float m_HpfPrevOut = 0.0f;
 	float m_CompEnv = 0.0f;
+	float m_AgcGain = 1.0f;
 	float m_NsNoiseFloor = 0.0f;
 	float m_NsGain = 1.0f;
 	DenoiseState *m_pNoiseSuppress = nullptr;
+	bool m_NoiseSuppressFallbackLogged = false;
 	std::atomic<int> m_OutputChannels = 0;
 
 	OpusEncoder *m_pEncoder = nullptr;
-	int m_EncBitrate = 24000;
+	int m_EncBitrate = 36000;
 	int m_EncLossPerc = 0;
 	bool m_EncFec = false;
+	int m_EncComplexity = 8;
 	int64_t m_LastEncUpdate = 0;
 	std::atomic<int> m_PingMs = -1;
 	std::atomic<float> m_MicLevel = 0.0f;
+	std::atomic<int64_t> m_LastTxPacketTime = 0;
+	std::atomic<int64_t> m_LastRxPacketTime = 0;
+	std::atomic<int64_t> m_LastMediaRxPacketTime = 0;
+	std::atomic<bool> m_CaptureReady = false;
+	std::atomic<bool> m_OutputReady = false;
+	std::atomic<bool> m_EncoderReady = false;
+	std::atomic<bool> m_SocketReady = false;
+	// Connection runtime state: last successful transport activity and keepalive.
 	int64_t m_LastPingSentTime = 0;
 	uint16_t m_LastPingSeq = 0;
 	std::unique_ptr<std::array<SVoicePeer, MAX_CLIENTS>> m_pPeers;
+	std::vector<int32_t> m_MixBuffer;
 	std::array<std::atomic<int64_t>, MAX_CLIENTS> m_aLastHeard = {};
+	// Room/peer runtime state: "who is present / speaking" for the current token.
 	std::array<std::atomic<int64_t>, MAX_CLIENTS> m_aRoomMemberSeen = {};
 	std::array<std::atomic<float>, MAX_CLIENTS> m_aSpeakerLevel = {};
 	std::atomic<uint32_t> m_RoomMemberTokenHash = 0;
@@ -218,8 +241,16 @@ class CRClientVoice
 	int m_TxPackets = 0;
 	int64_t m_RxLastLog = 0;
 	int m_RxPackets = 0;
+	int m_RxDropAddr = 0;
+	int m_RxDropHeader = 0;
+	int m_RxDropVersion = 0;
+	int m_RxDropType = 0;
 	int m_RxDropContext = 0;
+	int m_RxDropGroup = 0;
+	int m_RxDropSender = 0;
+	int m_RxDropPayload = 0;
 	int m_RxDropRadius = 0;
+	int64_t m_DebugStateLastLog = 0;
 
 	std::thread m_Worker;
 	std::atomic<bool> m_WorkerStop = false;
@@ -232,6 +263,13 @@ class CRClientVoice
 
 	mutable CLock m_ConfigMutex;
 	SRClientVoiceConfigSnapshot m_ConfigSnapshot = {};
+	mutable CLock m_RequestedAudioDeviceConfigMutex;
+	mutable CLock m_DeviceRouteMutex;
+	mutable CLock m_DiagnosticLogMutex;
+	// Main thread owns desired audio selection. Worker threads only consume the
+	// latched copy through GetRequestedAudioDeviceConfig() and never read live
+	// g_Config audio-device fields directly.
+	VoiceUtils::SVoiceAudioDeviceConfig m_RequestedAudioDeviceConfigMain = {};
 
 	mutable CLock m_SnapshotMutex;
 	int m_LocalClientIdSnap = -1;
@@ -246,13 +284,24 @@ class CRClientVoice
 	std::array<uint8_t, MAX_CLIENTS> m_aClientSpecSnap = {};
 
 	bool EnsureSocket();
-	bool EnsureAudio();
+	bool EnsureAudio() NO_THREAD_SAFETY_ANALYSIS;
 	void UpdateServerAddrConfig();
 	void ResolveServerAddr();
 	bool UpdateContext();
 	void UpdateClientSnapshot(bool Force = false);
 	void UpdateConfigSnapshot(bool Force = false);
 	void GetConfigSnapshot(SRClientVoiceConfigSnapshot &Out) const;
+	void BuildRequestedAudioDeviceConfig(VoiceUtils::SVoiceAudioDeviceConfig &Out) const;
+	void SetRequestedAudioDeviceConfig(const VoiceUtils::SVoiceAudioDeviceConfig &Config) NO_THREAD_SAFETY_ANALYSIS;
+	void GetRequestedAudioDeviceConfig(VoiceUtils::SVoiceAudioDeviceConfig &Out) const NO_THREAD_SAFETY_ANALYSIS;
+	bool RememberDiagnosticLogMessage(char *pField, size_t FieldSize, const char *pMessage) NO_THREAD_SAFETY_ANALYSIS;
+	void LogDiagnosticErrorOnce(char *pField, size_t FieldSize, const char *pMessage) NO_THREAD_SAFETY_ANALYSIS;
+	void ClearDiagnosticLogMessage(char *pField) NO_THREAD_SAFETY_ANALYSIS;
+	void CopyDiagnosticLogMessage(const char *pField, char *pBuf, size_t BufSize) const NO_THREAD_SAFETY_ANALYSIS;
+	bool HasConnectionRuntimeState() const;
+	bool HasPeerRuntimeState(uint32_t RoomTokenHash) const;
+	void ResetRuntimeState(uint32_t Flags, uint32_t RoomTokenHash) NO_THREAD_SAFETY_ANALYSIS;
+	void ResetTransmitState(bool ClearQueuedCapture) NO_THREAD_SAFETY_ANALYSIS;
 	void ProcessCapture() NO_THREAD_SAFETY_ANALYSIS;
 	void ProcessIncoming() NO_THREAD_SAFETY_ANALYSIS;
 	void DecodeJitter();
@@ -262,29 +311,32 @@ class CRClientVoice
 	void MixAudio(int16_t *pOut, int Samples, int OutputChannels);
 	void ClearPeerFrames();
 	void ResetPeer(SVoicePeer &Peer);
+	bool FindMinLiveQueuedSeq(const SVoicePeer &Peer, uint16_t &OutSeq) const;
+	bool SeedPeerNextSeq(SVoicePeer &Peer);
 	static void SDLAudioCallback(void *pUserData, Uint8 *pStream, int Len);
 	const char *FindDeviceName(bool Capture, const char *pDesired) const;
 	void StartWorker();
 	void StopWorker();
-	void WorkerLoop();
+	void WorkerLoop() NO_THREAD_SAFETY_ANALYSIS;
 
 public:
 	void SetInterfaces(CGameClient *pGameClient, IClient *pClient, IConsole *pConsole);
 	bool Init();
 	void Init(CGameClient *pGameClient, IClient *pClient, IConsole *pConsole);
-	void Shutdown();
+	void Shutdown() NO_THREAD_SAFETY_ANALYSIS;
 	void OnShutdown();
 	void OnFrame();
-	void OnRender();
+	void OnRender() NO_THREAD_SAFETY_ANALYSIS;
 	void RenderSpeakerOverlay();
 	void SetPttActive(bool Active);
 	void ListDevices();
 	void ExportOverlayState(CVoiceOverlayState &Overlay) const;
+	void ExportUiStatus(VoiceUtils::SVoiceUiStatus &Out) const NO_THREAD_SAFETY_ANALYSIS;
 	int PingMs() const { return m_PingMs.load(); }
 	float MicLevel() const { return m_MicLevel.load(); }
 	bool IsSpeaking() const { return m_TxWasActive.load(); }
-	bool IsCaptureUnavailable() const { return m_CaptureUnavailable; }
-	bool IsOutputUnavailable() const { return m_OutputUnavailable; }
+	bool IsCaptureUnavailable() const { return m_CaptureUnavailable.load(); }
+	bool IsOutputUnavailable() const { return m_OutputUnavailable.load(); }
 };
 
-#endif // GAME_CLIENT_COMPONENTS_RCLIENT_VOICE_H
+#endif // GAME_CLIENT_COMPONENTS_QMCLIENT_VOICE_CORE_H

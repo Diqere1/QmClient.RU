@@ -1,5 +1,8 @@
 #include "trails.h"
 
+#include <base/log.h>
+#include <base/math.h>
+
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 
@@ -7,6 +10,16 @@
 #include <game/client/components/effects.h>
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
+
+namespace
+{
+constexpr int TRAIL_HISTORY_SIZE = 200;
+
+int TrailHistoryIndex(int Tick)
+{
+	return ((Tick % TRAIL_HISTORY_SIZE) + TRAIL_HISTORY_SIZE) % TRAIL_HISTORY_SIZE;
+}
+} // namespace
 
 bool CTrails::ShouldPredictPlayer(int ClientId)
 {
@@ -25,7 +38,7 @@ void CTrails::ClearAllHistory()
 }
 void CTrails::ClearHistory(int ClientId)
 {
-	for(int i = 0; i < 200; ++i)
+	for(int i = 0; i < TRAIL_HISTORY_SIZE; ++i)
 		m_History[ClientId][i] = {{}, -1};
 	m_HistoryValid[ClientId] = false;
 }
@@ -46,7 +59,7 @@ void CTrails::OnRender()
 	Graphics()->GetScreen(&ScreenX0, &ScreenY0, &ScreenX1, &ScreenY1);
 	const auto IsVisibleOnScreen = [&](vec2 Pos, float Margin) {
 		return Pos.x >= ScreenX0 - Margin && Pos.x <= ScreenX1 + Margin &&
-			Pos.y >= ScreenY0 - Margin && Pos.y <= ScreenY1 + Margin;
+		       Pos.y >= ScreenY0 - Margin && Pos.y <= ScreenY1 + Margin;
 	};
 
 	// TClient: Foot particles - render falling particles behind tee
@@ -71,7 +84,8 @@ void CTrails::OnRender()
 			vec2 Direction = direction(Angle);
 
 			float Alpha = 1.0f;
-			if(GameClient()->IsOtherTeam(ClientId))
+			Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+			if(Alpha >= 1.0f && GameClient()->IsOtherTeam(ClientId))
 				Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 
 			GameClient()->m_Effects.FootTrail(Position, Direction, Alpha);
@@ -87,7 +101,7 @@ void CTrails::OnRender()
 
 			if(!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
 				continue;
-			
+
 			if(IsLocalClient)
 				continue; // Remote rendering is only for other players.
 
@@ -105,7 +119,8 @@ void CTrails::OnRender()
 			vec2 Direction = direction(Angle);
 
 			float Alpha = 1.0f;
-			if(GameClient()->IsOtherTeam(ClientId))
+			Alpha = GameClient()->LiveObserverClientAlpha(ClientId);
+			if(Alpha >= 1.0f && GameClient()->IsOtherTeam(ClientId))
 				Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
 
 			// Render foot trail for recognized Q1menG client
@@ -137,7 +152,9 @@ void CTrails::OnRender()
 			continue;
 		}
 		else
+		{
 			m_HistoryValid[ClientId] = true;
+		}
 
 		CTeeRenderInfo TeeInfo = GameClient()->m_aClients[ClientId].m_RenderInfo;
 
@@ -168,7 +185,7 @@ void CTrails::OnRender()
 
 		const vec2 CurServerPos = vec2(GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur.m_X, GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur.m_Y);
 		const vec2 PrevServerPos = vec2(GameClient()->m_Snap.m_aCharacters[ClientId].m_Prev.m_X, GameClient()->m_Snap.m_aCharacters[ClientId].m_Prev.m_Y);
-		m_History[ClientId][GameTick % 200] = {
+		m_History[ClientId][TrailHistoryIndex(GameTick)] = {
 			mix(PrevServerPos, CurServerPos, IntraTick),
 			GameTick,
 		};
@@ -187,7 +204,15 @@ void CTrails::OnRender()
 		// Taken from players.cpp
 		if(ClientId == -2)
 			Alpha *= g_Config.m_ClRaceGhostAlpha / 100.0f;
-		else if(ClientId < 0 || GameClient()->IsOtherTeam(ClientId))
+		else if(ClientId >= 0)
+		{
+			const float LiveObserverAlpha = GameClient()->LiveObserverClientAlpha(ClientId);
+			if(LiveObserverAlpha < 1.0f)
+				Alpha *= LiveObserverAlpha;
+			else if(GameClient()->IsOtherTeam(ClientId))
+				Alpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		}
+		else
 			Alpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
 
 		int TrailLength = g_Config.m_TcTeeTrailLength;
@@ -207,19 +232,20 @@ void CTrails::OnRender()
 		{
 			CTrailPart Part;
 			int PosTick = StartTick - i;
+			const int HistoryIndex = TrailHistoryIndex(PosTick);
 			if(PredictPlayer)
 			{
-				if(GameClient()->m_aClients[ClientId].m_aPredTick[PosTick % 200] != PosTick)
+				if(GameClient()->m_aClients[ClientId].m_aPredTick[HistoryIndex] != PosTick)
 					continue;
-				Part.m_Pos = GameClient()->m_aClients[ClientId].m_aPredPos[PosTick % 200];
+				Part.m_Pos = GameClient()->m_aClients[ClientId].m_aPredPos[HistoryIndex];
 				if(i == TrailLength - 1)
 					TrailFull = true;
 			}
 			else
 			{
-				if(m_History[ClientId][PosTick % 200].m_Tick != PosTick)
+				if(m_History[ClientId][HistoryIndex].m_Tick != PosTick)
 					continue;
-				Part.m_Pos = m_History[ClientId][PosTick % 200].m_Pos;
+				Part.m_Pos = m_History[ClientId][HistoryIndex].m_Pos;
 				if(i == TrailLength - 2 || i == TrailLength - 3)
 					TrailFull = true;
 			}
@@ -291,9 +317,25 @@ void CTrails::OnRender()
 				Part.m_Col = color_cast<ColorRGBA>(ColorHSLA(65280 * ((int)(Speed * Speed / 12.5f) + 1)).UnclampLighting(ColorHSLA::DARKEST_LGT));
 				break;
 			}
+			case COLORMODE_RANDOM:
+			{
+				const unsigned Seed = (unsigned)ClientId * 0x45d9f3bu + (unsigned)Part.m_Tick * 0x119de1f3u;
+				const float Hue = (Seed & 0xffff) / 65535.0f;
+				const float Lightness = 0.45f + ((Seed >> 16) & 0xff) / 255.0f * 0.25f;
+				Part.m_Col = color_cast<ColorRGBA>(ColorHSLA(Hue, 1.0f, Lightness));
+				break;
+			}
 			default:
-				dbg_assert(false, "Invalid value for g_Config.m_TcTeeTrailColorMode");
-				dbg_break();
+			{
+				static int s_LastInvalidColorMode = 0;
+				if(s_LastInvalidColorMode != g_Config.m_TcTeeTrailColorMode)
+				{
+					s_LastInvalidColorMode = g_Config.m_TcTeeTrailColorMode;
+					log_warn("trail", "Invalid tee trail color mode %d, falling back to solid color", g_Config.m_TcTeeTrailColorMode);
+				}
+				Part.m_Col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_TcTeeTrailColor));
+				break;
+			}
 			}
 
 			Part.m_Col.a = Alpha;
@@ -326,7 +368,9 @@ void CTrails::OnRender()
 				PrevPos = Pos - Direction;
 			}
 			else
+			{
 				PrevPos = s_Trail[i - 1].m_Pos;
+			}
 
 			if(i == (int)s_Trail.size() - 1)
 			{
@@ -334,7 +378,9 @@ void CTrails::OnRender()
 				NextPos = Pos + Direction;
 			}
 			else
+			{
 				NextPos = s_Trail[i + 1].m_Pos;
+			}
 
 			vec2 NextDirection = normalize(NextPos - Pos);
 			vec2 PrevDirection = normalize(Pos - PrevPos);

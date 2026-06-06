@@ -150,7 +150,7 @@ class CUIElement
 {
 	friend class CUi;
 
-	CUi *m_pUI;
+	CUi *m_pUI = nullptr;
 
 	CUIElement(CUi *pUI, int RequestedRectCount) { Init(pUI, RequestedRectCount); }
 
@@ -192,6 +192,11 @@ protected:
 
 public:
 	CUIElement() = default;
+	CUIElement(const CUIElement &) = delete;
+	CUIElement &operator=(const CUIElement &) = delete;
+	CUIElement(CUIElement &&) = delete;
+	CUIElement &operator=(CUIElement &&) = delete;
+	~CUIElement();
 
 	void Init(CUi *pUI, int RequestedRectCount);
 
@@ -204,6 +209,8 @@ public:
 	{
 		return !m_vUIRects.empty();
 	}
+
+	bool IsRegistered() const { return m_pUI != nullptr; }
 
 	void InitRects(int RequestedRectCount);
 };
@@ -366,6 +373,7 @@ public:
 
 private:
 	bool m_Enabled;
+	int m_RenderOnlyDepth = 0;
 
 	const void *m_pHotItem = nullptr;
 	const void *m_pActiveItem = nullptr;
@@ -489,12 +497,20 @@ public:
 	CUIElement *GetNewUIElement(int RequestedRectCount);
 
 	void AddUIElement(CUIElement *pElement);
+	void RemoveUIElement(CUIElement *pElement);
 	void OnElementsReset();
 	void OnWindowResize();
 	void OnCursorMove(float X, float Y);
 
 	void SetEnabled(bool Enabled) { m_Enabled = Enabled; }
 	bool Enabled() const { return m_Enabled; }
+	void BeginRenderOnly() { ++m_RenderOnlyDepth; }
+	void EndRenderOnly()
+	{
+		dbg_assert(m_RenderOnlyDepth > 0, "render-only UI scope underflow");
+		--m_RenderOnlyDepth;
+	}
+	bool RenderOnly() const { return m_RenderOnlyDepth > 0; }
 	void Update(vec2 MouseWorldPos = vec2(-1.0f, -1.0f));
 	void DebugRender(float X, float Y);
 
@@ -525,9 +541,16 @@ public:
 	}
 	void DisableMouseLock() { m_MouseLock = false; }
 
-	void SetHotItem(const void *pId) { m_pBecomingHotItem = pId; }
+	void SetHotItem(const void *pId)
+	{
+		if(RenderOnly())
+			return;
+		m_pBecomingHotItem = pId;
+	}
 	void SetActiveItem(const void *pId)
 	{
+		if(RenderOnly())
+			return;
 		m_ActiveItemValid = true;
 		m_pActiveItem = pId;
 		if(pId)
@@ -570,7 +593,7 @@ public:
 
 	bool MouseInside(const CUIRect *pRect) const;
 	bool MouseInsideClip() const { return !IsClipped() || MouseInside(ClipArea()); }
-	bool MouseHovered(const CUIRect *pRect) const { return MouseInside(pRect) && MouseInsideClip(); }
+	bool MouseHovered(const CUIRect *pRect) const { return !RenderOnly() && MouseInside(pRect) && MouseInsideClip(); }
 	void ConvertMouseMove(float *pX, float *pY, IInput::ECursorType CursorType) const;
 	void UpdateTouchState(CTouchState &State) const;
 	void ResetMouseSlow() { m_MouseSlow = false; }
@@ -604,7 +627,7 @@ public:
 	CLabelResult DoLabel_AutoLineSize(const char *pText, float FontSize, int Align, CUIRect *pRect, float LineSize, const SLabelProperties &LabelProps = {}) const;
 
 	void DoLabel(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps = {}, int StrLen = -1, const CTextCursor *pReadCursor = nullptr) const;
-	void DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps = {}, int StrLen = -1, const CTextCursor *pReadCursor = nullptr) const;
+	void DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps = {}, int StrLen = -1, const CTextCursor *pReadCursor = nullptr, bool Render = true) const;
 
 	/**
 	 * Creates an input field.

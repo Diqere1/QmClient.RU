@@ -413,9 +413,17 @@ private:
 		const size_t NewTextureSize = m_TextureDimension * m_TextureDimension;
 		uint8_t *pTmpTextFillData = static_cast<uint8_t *>(malloc(NewTextureSize));
 		uint8_t *pTmpTextOutlineData = static_cast<uint8_t *>(malloc(NewTextureSize));
+		if(pTmpTextFillData == nullptr || pTmpTextOutlineData == nullptr)
+		{
+			free(pTmpTextFillData);
+			free(pTmpTextOutlineData);
+			log_error("textrender", "Failed to allocate text texture upload buffers.");
+			return;
+		}
 		mem_copy(pTmpTextFillData, m_apTextureData[FONT_TEXTURE_FILL], NewTextureSize);
 		mem_copy(pTmpTextOutlineData, m_apTextureData[FONT_TEXTURE_OUTLINE], NewTextureSize);
-		Graphics()->LoadTextTextures(m_TextureDimension, m_TextureDimension, m_aTextures[FONT_TEXTURE_FILL], m_aTextures[FONT_TEXTURE_OUTLINE], pTmpTextFillData, pTmpTextOutlineData);
+		if(!Graphics()->LoadTextTextures(m_TextureDimension, m_TextureDimension, m_aTextures[FONT_TEXTURE_FILL], m_aTextures[FONT_TEXTURE_OUTLINE], pTmpTextFillData, pTmpTextOutlineData))
+			log_error("textrender", "Failed to create text textures.");
 	}
 
 	void UnloadTextures()
@@ -572,6 +580,13 @@ private:
 			const size_t GlyphDataSize = (size_t)Width * Height * sizeof(uint8_t);
 			uint8_t *pGlyphDataFill = static_cast<uint8_t *>(malloc(GlyphDataSize));
 			uint8_t *pGlyphDataOutline = static_cast<uint8_t *>(malloc(GlyphDataSize));
+			if(pGlyphDataFill == nullptr || pGlyphDataOutline == nullptr)
+			{
+				free(pGlyphDataFill);
+				free(pGlyphDataOutline);
+				log_debug("textrender", "Failed to allocate glyph data. Chr=%d GlyphIndex=%u", Glyph.m_Chr, Glyph.m_GlyphIndex);
+				return false;
+			}
 			mem_zero(pGlyphDataFill, GlyphDataSize);
 			for(unsigned py = 0; py < pBitmap->rows; ++py)
 			{
@@ -1296,7 +1311,7 @@ public:
 		// parse json data
 		json_settings JsonSettings{};
 		char aError[256];
-		json_value *pJsonData = json_parse_ex(&JsonSettings, static_cast<const json_char *>(pFileData), JsonFileSize, aError);
+		json_value *pJsonData = JsonParseEx(&JsonSettings, static_cast<const json_char *>(pFileData), JsonFileSize, aError);
 		free(pFileData);
 		if(pJsonData == nullptr)
 		{
@@ -1473,6 +1488,7 @@ public:
 		Cursor.m_FontSize = FontSize;
 		Cursor.m_Flags = Flags;
 		Cursor.m_LineWidth = LineWidth;
+		Cursor.m_CalculateVisualBoundingBox = TextSizeProps.m_pVisualTop != nullptr || TextSizeProps.m_pVisualBottom != nullptr;
 		TextEx(&Cursor, pText, StrLength);
 		if(TextSizeProps.m_pHeight != nullptr)
 			*TextSizeProps.m_pHeight = Cursor.Height();
@@ -1480,6 +1496,10 @@ public:
 			*TextSizeProps.m_pAlignedFontSize = Cursor.m_AlignedFontSize;
 		if(TextSizeProps.m_pMaxCharacterHeightInLine != nullptr)
 			*TextSizeProps.m_pMaxCharacterHeightInLine = Cursor.m_MaxCharacterHeight;
+		if(TextSizeProps.m_pVisualTop != nullptr)
+			*TextSizeProps.m_pVisualTop = Cursor.m_HasVisualBoundingBox ? Cursor.m_VisualTop - Cursor.m_StartY : 0.0f;
+		if(TextSizeProps.m_pVisualBottom != nullptr)
+			*TextSizeProps.m_pVisualBottom = Cursor.m_HasVisualBoundingBox ? Cursor.m_VisualBottom - Cursor.m_StartY : Cursor.Height();
 		if(TextSizeProps.m_pLineCount != nullptr)
 			*TextSizeProps.m_pLineCount = Cursor.m_LineCount;
 		return Cursor.m_LongestLineWidth;
@@ -1724,11 +1744,81 @@ public:
 				SelectionUsedCase = true;
 			}
 		};
+		const auto &&CheckLineEnd = [&](vec2 CursorPos, float LineEndX, float LineY) -> bool {
+			return CursorPos.x >= LineEndX &&
+			       CursorPos.y >= LineY - pCursor->m_AlignedFontSize &&
+			       CursorPos.y < LineY + pCursor->m_AlignedLineSpacing;
+		};
+		const auto &&CheckSelectionStartAtLineEnd = [&](vec2 CursorPos, int &SelectionChar, bool &SelectionUsedCase, float LineEndX, float CharY) {
+			if(!SelectionStarted && !SelectionUsedCase &&
+				CheckLineEnd(CursorPos, LineEndX, CharY))
+			{
+				SelectionChar = pCursor->m_GlyphCount;
+				SelectionStarted = !SelectionStarted;
+				SelectionUsedCase = true;
+			}
+		};
 
 		float LastSelX = DrawX;
 		float LastSelWidth = 0;
 		float LastCharX = DrawX;
 		float LastCharWidth = 0;
+
+		IGraphics::CQuadItem aCursorQuads[2];
+		bool HasCursor = false;
+
+		const auto &&SetCursorQuad = [&](float CursorX, float CursorY) {
+			HasCursor = true;
+			aCursorQuads[0] = IGraphics::CQuadItem(CursorX - CursorOuterInnerDiff, CursorY, CursorOuterWidth, pCursor->m_AlignedFontSize);
+			aCursorQuads[1] = IGraphics::CQuadItem(CursorX, CursorY + CursorOuterInnerDiff, CursorInnerWidth, pCursor->m_AlignedFontSize - CursorOuterInnerDiff * 2);
+			pCursor->m_CursorRenderedPosition = vec2(CursorX, CursorY);
+		};
+		const auto &&CheckCursorAtCharacter = [&](float CursorX, float CursorY) {
+			if(pCursor->m_CursorMode != TEXT_CURSOR_CURSOR_MODE_NONE && pCursor->m_GlyphCount == pCursor->m_CursorCharacter)
+				SetCursorQuad(CursorX, CursorY);
+		};
+		const auto &&CheckSelectionSetAtCharacter = [&]() {
+			if(pCursor->m_CalculateSelectionMode != TEXT_CURSOR_SELECTION_MODE_SET)
+				return;
+			if(pCursor->m_GlyphCount == pCursor->m_SelectionStart)
+			{
+				SelectionStarted = !SelectionStarted;
+				SelectionStartChar = pCursor->m_GlyphCount;
+				SelectionUsedPress = true;
+			}
+			if(pCursor->m_GlyphCount == pCursor->m_SelectionEnd)
+			{
+				SelectionStarted = !SelectionStarted;
+				SelectionEndChar = pCursor->m_GlyphCount;
+				SelectionUsedRelease = true;
+			}
+		};
+		const auto &&CheckCalculatedLineEnd = [&]() {
+			const float LineEndY = DrawY + pCursor->m_AlignedFontSize;
+			if(pCursor->m_CursorMode == TEXT_CURSOR_CURSOR_MODE_CALCULATE && pCursor->m_CursorCharacter == -1 &&
+				CheckLineEnd(pCursor->m_ReleaseMouse, LastCharX + LastCharWidth / 2.0f, LineEndY))
+			{
+				pCursor->m_CursorCharacter = pCursor->m_GlyphCount;
+			}
+			if(pCursor->m_CalculateSelectionMode == TEXT_CURSOR_SELECTION_MODE_CALCULATE)
+			{
+				const float LineEndX = LastCharX + LastCharWidth / 2.0f;
+				CheckSelectionStartAtLineEnd(pCursor->m_PressMouse, SelectionStartChar, SelectionUsedPress, LineEndX, LineEndY);
+				CheckSelectionStartAtLineEnd(pCursor->m_ReleaseMouse, SelectionEndChar, SelectionUsedRelease, LineEndX, LineEndY);
+				if(SelectionStarted && !SelectionUsedRelease && CheckLineEnd(pCursor->m_ReleaseMouse, LineEndX, LineEndY))
+				{
+					SelectionEndChar = pCursor->m_GlyphCount;
+					SelectionStarted = !SelectionStarted;
+					SelectionUsedRelease = true;
+				}
+				if(SelectionStarted && !SelectionUsedPress && CheckLineEnd(pCursor->m_PressMouse, LineEndX, LineEndY))
+				{
+					SelectionStartChar = pCursor->m_GlyphCount;
+					SelectionStarted = !SelectionStarted;
+					SelectionUsedPress = true;
+				}
+			}
+		};
 
 		// Returns true if line was started
 		const auto &&StartNewLine = [&]() {
@@ -1759,9 +1849,6 @@ public:
 			if(pCursor->m_CursorMode == TEXT_CURSOR_CURSOR_MODE_CALCULATE)
 				pCursor->m_CursorCharacter = -1;
 		}
-
-		IGraphics::CQuadItem aCursorQuads[2];
-		bool HasCursor = false;
 
 		const SGlyph *pLastGlyph = nullptr;
 		bool GotNewLineLast = false;
@@ -1829,8 +1916,12 @@ public:
 				{
 					if((pCursor->m_Flags & TEXTFLAG_DISALLOW_NEWLINE) == 0)
 					{
+						CheckCalculatedLineEnd();
+						CheckSelectionSetAtCharacter();
+						CheckCursorAtCharacter(LastSelX + LastSelWidth, DrawY);
 						if(StartNewLine())
 						{
+							++pCursor->m_GlyphCount;
 							pLastGlyph = nullptr;
 							continue;
 						}
@@ -1911,6 +2002,24 @@ public:
 					const float TmpY = (DrawY + pCursor->m_AlignedFontSize);
 					const float CharX = (DrawX + CharKerning) + BearingX;
 					const float CharY = TmpY - BearingY;
+					if(pCursor->m_CalculateVisualBoundingBox && pGlyph->m_CharHeight > 0.0f)
+					{
+						const float FillTopOffset = ((pGlyph->m_Height - pGlyph->m_CharHeight) * 0.5f) * Scale * pCursor->m_AlignedFontSize;
+						const float FillHeight = pGlyph->m_CharHeight * Scale * pCursor->m_AlignedFontSize;
+						const float CharTop = CharY - CharHeight + FillTopOffset;
+						const float CharBottom = CharTop + FillHeight;
+						if(!pCursor->m_HasVisualBoundingBox)
+						{
+							pCursor->m_HasVisualBoundingBox = true;
+							pCursor->m_VisualTop = CharTop;
+							pCursor->m_VisualBottom = CharBottom;
+						}
+						else
+						{
+							pCursor->m_VisualTop = minimum(pCursor->m_VisualTop, CharTop);
+							pCursor->m_VisualBottom = maximum(pCursor->m_VisualBottom, CharBottom);
+						}
+					}
 
 					// Check if we have any color split
 					ColorRGBA Color = m_Color;
@@ -2002,29 +2111,12 @@ public:
 					}
 					if(pCursor->m_CalculateSelectionMode == TEXT_CURSOR_SELECTION_MODE_SET)
 					{
-						if(pCursor->m_GlyphCount == pCursor->m_SelectionStart)
-						{
-							SelectionStarted = !SelectionStarted;
-							SelectionStartChar = pCursor->m_GlyphCount;
-							SelectionUsedPress = true;
-						}
-						if(pCursor->m_GlyphCount == pCursor->m_SelectionEnd)
-						{
-							SelectionStarted = !SelectionStarted;
-							SelectionEndChar = pCursor->m_GlyphCount;
-							SelectionUsedRelease = true;
-						}
+						CheckSelectionSetAtCharacter();
 					}
 
 					if(pCursor->m_CursorMode != TEXT_CURSOR_CURSOR_MODE_NONE)
 					{
-						if(pCursor->m_GlyphCount == pCursor->m_CursorCharacter)
-						{
-							HasCursor = true;
-							aCursorQuads[0] = IGraphics::CQuadItem(SelX - CursorOuterInnerDiff, DrawY, CursorOuterWidth, pCursor->m_AlignedFontSize);
-							aCursorQuads[1] = IGraphics::CQuadItem(SelX, DrawY + CursorOuterInnerDiff, CursorInnerWidth, pCursor->m_AlignedFontSize - CursorOuterInnerDiff * 2);
-							pCursor->m_CursorRenderedPosition = vec2(SelX, DrawY);
-						}
+						CheckCursorAtCharacter(SelX, DrawY);
 					}
 
 					pCursor->m_MaxCharacterHeight = maximum(pCursor->m_MaxCharacterHeight, CharHeight + BearingY);
@@ -2103,18 +2195,7 @@ public:
 		}
 		else if(pCursor->m_CalculateSelectionMode == TEXT_CURSOR_SELECTION_MODE_SET)
 		{
-			if(pCursor->m_GlyphCount == pCursor->m_SelectionStart)
-			{
-				SelectionStarted = !SelectionStarted;
-				SelectionStartChar = pCursor->m_GlyphCount;
-				SelectionUsedPress = true;
-			}
-			if(pCursor->m_GlyphCount == pCursor->m_SelectionEnd)
-			{
-				SelectionStarted = !SelectionStarted;
-				SelectionEndChar = pCursor->m_GlyphCount;
-				SelectionUsedRelease = true;
-			}
+			CheckSelectionSetAtCharacter();
 		}
 
 		if(pCursor->m_CursorMode != TEXT_CURSOR_CURSOR_MODE_NONE)
@@ -2124,13 +2205,7 @@ public:
 				pCursor->m_CursorCharacter = pCursor->m_GlyphCount;
 			}
 
-			if(pCursor->m_GlyphCount == pCursor->m_CursorCharacter)
-			{
-				HasCursor = true;
-				aCursorQuads[0] = IGraphics::CQuadItem((LastSelX + LastSelWidth) - CursorOuterInnerDiff, DrawY, CursorOuterWidth, pCursor->m_AlignedFontSize);
-				aCursorQuads[1] = IGraphics::CQuadItem((LastSelX + LastSelWidth), DrawY + CursorOuterInnerDiff, CursorInnerWidth, pCursor->m_AlignedFontSize - CursorOuterInnerDiff * 2);
-				pCursor->m_CursorRenderedPosition = vec2(LastSelX + LastSelWidth, DrawY);
-			}
+			CheckCursorAtCharacter(LastSelX + LastSelWidth, DrawY);
 		}
 
 		const bool HasSelection = !vSelectionQuads.empty() && SelectionUsedPress && SelectionUsedRelease;

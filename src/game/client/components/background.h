@@ -8,16 +8,31 @@
 
 #include <game/client/components/maplayers.h>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdint>
+#include <deque>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 #if defined(CONF_VIDEORECORDER)
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVFormatContext;
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVCodecContext;
+// NOLINTNEXTLINE(readability-identifier-naming)
+struct AVIOContext;
 struct SwsContext;
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVFrame;
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVPacket;
+#endif
+#if defined(CONF_FAMILY_WINDOWS) && defined(CONF_VIDEORECORDER)
+// NOLINTNEXTLINE(cppcoreguidelines-virtual-class-destructor)
+struct IMFSourceReader;
 #endif
 
 class CLayers;
@@ -25,10 +40,25 @@ class CMapImages;
 // Special value to use background of current map
 #define CURRENT_MAP "%current%"
 
+#if defined(CONF_VIDEORECORDER)
+inline constexpr std::array<const char *, 10> BACKGROUND_IMAGE_EXTENSIONS = {
+	".png",
+	".webp",
+	".jpg",
+	".jpeg",
+	".jfif",
+	".bmp",
+	".tga",
+	".tif",
+	".tiff",
+	".gif",
+};
+#else
 inline constexpr std::array<const char *, 2> BACKGROUND_IMAGE_EXTENSIONS = {
 	".png",
 	".webp",
 };
+#endif
 
 inline constexpr std::array<const char *, 4> BACKGROUND_VIDEO_EXTENSIONS = {
 	".mp4",
@@ -41,12 +71,9 @@ inline bool IsBackgroundImageExtension(const char *pName)
 {
 	if(pName == nullptr)
 		return false;
-	for(const char *pExtension : BACKGROUND_IMAGE_EXTENSIONS)
-	{
-		if(str_endswith_nocase(pName, pExtension))
-			return true;
-	}
-	return false;
+	return std::any_of(BACKGROUND_IMAGE_EXTENSIONS.begin(), BACKGROUND_IMAGE_EXTENSIONS.end(), [pName](const char *pExtension) {
+		return str_endswith_nocase(pName, pExtension);
+	});
 }
 
 inline const char *FindBackgroundFileExtension(const char *pName)
@@ -72,12 +99,9 @@ inline bool IsBackgroundVideoExtension(const char *pName)
 {
 	if(pName == nullptr)
 		return false;
-	for(const char *pExtension : BACKGROUND_VIDEO_EXTENSIONS)
-	{
-		if(str_endswith_nocase(pName, pExtension))
-			return true;
-	}
-	return false;
+	return std::any_of(BACKGROUND_VIDEO_EXTENSIONS.begin(), BACKGROUND_VIDEO_EXTENSIONS.end(), [pName](const char *pExtension) {
+		return str_endswith_nocase(pName, pExtension);
+	});
 }
 
 inline void NormalizeBackgroundEntitiesValue(const char *pValue, char *pOut, int OutSize)
@@ -208,6 +232,11 @@ inline bool ShouldCommitBackgroundEntitiesInputOnBlur(bool WasActiveBeforeEditBo
 	return BuildBackgroundEntitiesCommitValueFromInput(pInputValue, pCurrentConfigValue, aPendingValue, sizeof(aPendingValue));
 }
 
+class IStorage;
+
+bool LoadBackgroundImageData(const void *pData, unsigned DataSize, const char *pContextName, CImageInfo &Image);
+bool LoadBackgroundImageFile(IStorage *pStorage, const char *pPath, CImageInfo &Image);
+
 class CBackgroundEngineMap : public CMap
 {
 	MACRO_INTERFACE("background_enginemap")
@@ -225,6 +254,8 @@ protected:
 #if defined(CONF_VIDEORECORDER)
 	AVFormatContext *m_pVideoFormatContext = nullptr;
 	AVCodecContext *m_pVideoCodecContext = nullptr;
+	AVIOContext *m_pVideoIoContext = nullptr;
+	IOHANDLE m_VideoFile = nullptr;
 	SwsContext *m_pVideoSwsContext = nullptr;
 	AVFrame *m_pVideoFrame = nullptr;
 	AVFrame *m_pVideoRgbaFrame = nullptr;
@@ -234,9 +265,27 @@ protected:
 	double m_VideoDuration = 0.0;
 	double m_VideoLastFrameTime = -1.0;
 	double m_VideoFrameInterval = 1.0 / 30.0;
+	int64_t m_VideoLastUploadTime = 0;
 	int m_VideoWidth = 0;
 	int m_VideoHeight = 0;
 	std::vector<uint8_t> m_vVideoFrameBuffer;
+#endif
+#if defined(CONF_FAMILY_WINDOWS) && defined(CONF_VIDEORECORDER)
+	struct SMfVideoFrame
+	{
+		std::vector<uint8_t> m_vData;
+	};
+
+	IMFSourceReader *m_pMfSourceReader = nullptr;
+	std::thread m_MfVideoThread;
+	std::mutex m_MfVideoFrameMutex;
+	std::deque<SMfVideoFrame> m_vMfVideoQueuedFrames;
+	std::vector<std::vector<uint8_t>> m_vMfVideoFreeFrameBuffers;
+	std::atomic<bool> m_MfVideoThreadRunning{false};
+	std::atomic<bool> m_MfVideoThreadStop{false};
+	int64_t m_MfVideoLastUploadTime = 0;
+	bool m_MfVideoBackground = false;
+	bool m_MfStarted = false;
 #endif
 
 	//to avoid memory leak when switching to %current%
@@ -253,9 +302,16 @@ protected:
 	bool RenderBackgroundTexture();
 	IGraphics::CTextureHandle ActiveBackgroundTexture() const { return m_BackgroundTexture; }
 #if defined(CONF_VIDEORECORDER)
-	bool DecodeNextVideoFrame();
+	bool DecodeNextVideoFrame(bool StoreRgbaFrame = true);
 	bool RestartVideoBackground();
 	bool UploadVideoFrame();
+#endif
+#if defined(CONF_FAMILY_WINDOWS) && defined(CONF_VIDEORECORDER)
+	bool LoadMediaFoundationVideoBackground(const char *pPath);
+	bool DecodeNextMediaFoundationVideoFrame(double TargetFrameTime, std::vector<uint8_t> &vFrameBuffer);
+	bool RestartMediaFoundationVideoBackground();
+	void StopMediaFoundationVideoThread();
+	void MediaFoundationVideoThreadFunc();
 #endif
 
 public:
@@ -267,6 +323,8 @@ public:
 	void OnShutdown() override;
 	void OnMapLoad() override;
 	void OnRender() override;
+	// 返回是否已渲染背景，调用方需要区别于 CMapLayers::RenderCustom() 的 void 接口。
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	bool RenderCustom(const vec2 &Center, float Zoom);
 
 	void LoadBackground();

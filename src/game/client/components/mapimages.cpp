@@ -16,6 +16,11 @@
 #include <game/localization.h>
 #include <game/mapitems.h>
 
+static bool ImageDataSizeValid(const CImageInfo &Image, size_t &DataSize)
+{
+	return Image.DataSize(DataSize) && DataSize != 0;
+}
+
 CMapImages::CMapImages()
 {
 	m_Count = 0;
@@ -33,7 +38,9 @@ void CMapImages::OnInit()
 	InitOverlayTextures();
 
 	if(str_comp(g_Config.m_ClAssetsEntities, "default") == 0)
+	{
 		str_copy(m_aEntitiesPath, "editor/entities_clear");
+	}
 	else
 	{
 		str_format(m_aEntitiesPath, sizeof(m_aEntitiesPath), "assets/entities/%s", g_Config.m_ClAssetsEntities);
@@ -152,7 +159,9 @@ void CMapImages::OnMapLoadImpl(class CLayers *pLayers, IMap *pMap)
 			ImageInfo.m_Height = pImg->m_Height;
 			ImageInfo.m_Format = CImageInfo::FORMAT_RGBA;
 			ImageInfo.m_pData = static_cast<uint8_t *>(pMap->GetData(pImg->m_ImageData));
-			if(ImageInfo.m_pData && (size_t)pMap->GetDataSize(pImg->m_ImageData) >= ImageInfo.DataSize())
+			size_t ImageDataSize = 0;
+			const int FileDataSize = pMap->GetDataSize(pImg->m_ImageData);
+			if(ImageInfo.m_pData && FileDataSize >= 0 && ImageInfo.DataSize(ImageDataSize) && (size_t)FileDataSize >= ImageDataSize)
 			{
 				char aTexName[IO_MAX_PATH_LENGTH];
 				str_format(aTexName, sizeof(aTexName), "embedded: %s", pName);
@@ -288,7 +297,20 @@ IGraphics::CTextureHandle CMapImages::GetEntities(EMapImageEntityLayerType Entit
 			BuildImageInfo.m_Width = ImgInfo.m_Width;
 			BuildImageInfo.m_Height = ImgInfo.m_Height;
 			BuildImageInfo.m_Format = ImgInfo.m_Format;
-			BuildImageInfo.m_pData = static_cast<uint8_t *>(malloc(BuildImageInfo.DataSize()));
+			size_t BuildImageDataSize = 0;
+			if(!ImageDataSizeValid(BuildImageInfo, BuildImageDataSize))
+			{
+				ImgInfo.Free();
+				log_error("mapimages", "Failed to build entity textures: invalid image size.");
+				return m_aaEntitiesTextures[(EntitiesModType * 2) + (int)EntitiesAreMasked][EntityLayerType];
+			}
+			BuildImageInfo.m_pData = static_cast<uint8_t *>(malloc(BuildImageDataSize));
+			if(BuildImageInfo.m_pData == nullptr)
+			{
+				ImgInfo.Free();
+				log_error("mapimages", "Failed to build entity textures: allocation failed.");
+				return m_aaEntitiesTextures[(EntitiesModType * 2) + (int)EntitiesAreMasked][EntityLayerType];
+			}
 			const size_t CopyWidth = ImgInfo.m_Width / 16;
 			const size_t CopyHeight = ImgInfo.m_Height / 16;
 
@@ -298,7 +320,7 @@ IGraphics::CTextureHandle CMapImages::GetEntities(EMapImageEntityLayerType Entit
 				dbg_assert(!m_aaEntitiesTextures[(EntitiesModType * 2) + (int)EntitiesAreMasked][LayerType].IsValid(), "entities texture already loaded when it should not be");
 
 				// set everything transparent
-				mem_zero(BuildImageInfo.m_pData, BuildImageInfo.DataSize());
+				mem_zero(BuildImageInfo.m_pData, BuildImageDataSize);
 
 				for(int i = 0; i < 256; ++i)
 				{
@@ -356,7 +378,9 @@ IGraphics::CTextureHandle CMapImages::GetOverlayCenter()
 void CMapImages::ChangeEntitiesPath(const char *pPath)
 {
 	if(str_comp(pPath, "default") == 0)
+	{
 		str_copy(m_aEntitiesPath, "editor/entities_clear");
+	}
 	else
 	{
 		str_format(m_aEntitiesPath, sizeof(m_aEntitiesPath), "assets/entities/%s", pPath);
@@ -419,7 +443,12 @@ IGraphics::CTextureHandle CMapImages::UploadEntityLayerText(int TextureSize, int
 	TextImage.m_Width = 1024;
 	TextImage.m_Height = 1024;
 	TextImage.m_Format = CImageInfo::FORMAT_RGBA;
-	TextImage.m_pData = static_cast<uint8_t *>(calloc(TextImage.DataSize(), sizeof(uint8_t)));
+	size_t TextImageDataSize = 0;
+	if(!ImageDataSizeValid(TextImage, TextImageDataSize))
+		return IGraphics::CTextureHandle();
+	TextImage.m_pData = static_cast<uint8_t *>(calloc(TextImageDataSize, sizeof(uint8_t)));
+	if(TextImage.m_pData == nullptr)
+		return IGraphics::CTextureHandle();
 
 	UpdateEntityLayerText(TextImage, TextureSize, MaxWidth, YOffset, 0);
 	UpdateEntityLayerText(TextImage, TextureSize, MaxWidth, YOffset, 1);

@@ -15,6 +15,8 @@
 #include <engine/client/backend/backend_base.h>
 #include <engine/client/graphics_defines.h>
 
+#include <limits>
+
 class CGLSLTWProgram;
 class CGLSLPrimitiveProgram;
 class CGLSLTileProgram;
@@ -51,6 +53,18 @@ protected:
 	std::vector<CTexture> m_vTextures;
 	std::atomic<uint64_t> *m_pTextureMemoryUsage;
 
+	struct SOpenGLRenderTarget
+	{
+		TWGLuint m_Framebuffer = 0;
+		TWGLuint m_Texture = 0;
+		int m_Width = 0;
+		int m_Height = 0;
+	};
+	std::vector<SOpenGLRenderTarget> m_vRenderTargets;
+	TWGLint m_aRenderTargetPreviousViewport[4] = {0, 0, 0, 0};
+	TWGLint m_RenderTargetPreviousFramebuffer = 0;
+	bool m_bRenderTargetActive = false;
+
 	uint32_t m_CanvasWidth = 0;
 	uint32_t m_CanvasHeight = 0;
 
@@ -82,6 +96,27 @@ protected:
 	bool GetPresentedImageData(uint32_t &Width, uint32_t &Height, CImageInfo::EImageFormat &Format, std::vector<uint8_t> &vDstData) override;
 
 	static size_t GLFormatToPixelSize(int GLFormat);
+	static bool TextureBufferSize(size_t Width, size_t Height, size_t PixelSize, size_t &BufferSize)
+	{
+		if(Width == 0 || Height == 0 || PixelSize == 0)
+		{
+			BufferSize = 0;
+			return false;
+		}
+		if(Width > std::numeric_limits<size_t>::max() / Height)
+		{
+			BufferSize = 0;
+			return false;
+		}
+		const size_t PixelCount = Width * Height;
+		if(PixelCount > std::numeric_limits<size_t>::max() / PixelSize)
+		{
+			BufferSize = 0;
+			return false;
+		}
+		BufferSize = PixelCount * PixelSize;
+		return true;
+	}
 
 	void TextureUpdate(int Slot, int X, int Y, int Width, int Height, int GLFormat, uint8_t *pTexData);
 	void TextureCreate(int Slot, int Width, int Height, int GLFormat, int GLStoreFormat, int Flags, uint8_t *pTexData);
@@ -97,6 +132,12 @@ protected:
 	virtual void Cmd_Clear(const CCommandBuffer::SCommand_Clear *pCommand);
 	virtual void Cmd_Render(const CCommandBuffer::SCommand_Render *pCommand);
 	virtual void Cmd_RenderTex3D(const CCommandBuffer::SCommand_RenderTex3D *pCommand) { dbg_assert_failed("Call of unsupported Cmd_RenderTex3D"); }
+	virtual void Cmd_RenderTarget_Create(const CCommandBuffer::SCommand_RenderTarget_Create *pCommand);
+	virtual void Cmd_RenderTarget_Destroy(const CCommandBuffer::SCommand_RenderTarget_Destroy *pCommand);
+	virtual void Cmd_RenderTarget_Begin(const CCommandBuffer::SCommand_RenderTarget_Begin *pCommand);
+	virtual void Cmd_RenderTarget_End(const CCommandBuffer::SCommand_RenderTarget_End *pCommand);
+	virtual void Cmd_RenderTarget_Draw(const CCommandBuffer::SCommand_RenderTarget_Draw *pCommand);
+	virtual void Cmd_RenderTarget_Readback(const CCommandBuffer::SCommand_RenderTarget_Readback *pCommand);
 	virtual void Cmd_ReadPixel(const CCommandBuffer::SCommand_TrySwapAndReadPixel *pCommand);
 	virtual void Cmd_Screenshot(const CCommandBuffer::SCommand_TrySwapAndScreenshot *pCommand);
 

@@ -14,6 +14,8 @@
 #include <game/gamecore.h>
 #include <game/mapitems_ex.h>
 
+#include <limits>
+
 // compatibility with old sound layers
 class CSoundSourceDeprecated
 {
@@ -27,6 +29,33 @@ public:
 	int m_SoundEnv;
 	int m_SoundEnvOffset;
 };
+
+static bool CheckedDatafileSize(size_t DataSize)
+{
+	return DataSize <= (size_t)std::numeric_limits<int>::max();
+}
+
+static bool CheckedDatafileArraySize(size_t Count, size_t ItemSize, size_t &DataSize)
+{
+	if(ItemSize != 0 && Count > std::numeric_limits<size_t>::max() / ItemSize)
+	{
+		DataSize = 0;
+		return false;
+	}
+	DataSize = Count * ItemSize;
+	return CheckedDatafileSize(DataSize);
+}
+
+static bool CheckedTileLayerCount(int Width, int Height, size_t &TileCount)
+{
+	if(Width <= 0 || Height <= 0 || (size_t)Width > std::numeric_limits<size_t>::max() / (size_t)Height)
+	{
+		TileCount = 0;
+		return false;
+	}
+	TileCount = (size_t)Width * (size_t)Height;
+	return true;
+}
 
 void CDataFileWriterFinishJob::Run()
 {
@@ -81,17 +110,33 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 		Item.m_Settings = -1;
 		if(!m_vSettings.empty())
 		{
-			int Size = 0;
+			size_t Size = 0;
 			for(const auto &Setting : m_vSettings)
 			{
-				Size += str_length(Setting.m_aCommand) + 1;
+				const size_t Length = str_length(Setting.m_aCommand) + 1;
+				if(Size > std::numeric_limits<size_t>::max() - Length)
+				{
+					ErrorHandler("错误：无法保存，因为地图设置数据过大。");
+					return false;
+				}
+				Size += Length;
+			}
+			if(Size == 0 || !CheckedDatafileSize(Size))
+			{
+				ErrorHandler("错误：无法保存，因为地图设置数据过大。");
+				return false;
 			}
 
-			char *pSettings = (char *)malloc(maximum(Size, 1));
+			char *pSettings = (char *)malloc(Size);
+			if(pSettings == nullptr)
+			{
+				ErrorHandler("错误：无法为地图设置分配内存。");
+				return false;
+			}
 			char *pNext = pSettings;
 			for(const auto &Setting : m_vSettings)
 			{
-				int Length = str_length(Setting.m_aCommand) + 1;
+				const size_t Length = str_length(Setting.m_aCommand) + 1;
 				mem_copy(pNext, Setting.m_aCommand, Length);
 				pNext += Length;
 			}
@@ -125,7 +170,15 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 		else
 		{
 			dbg_assert(pImg->m_Format == CImageInfo::FORMAT_RGBA, "Embedded images must be in RGBA format");
-			Item.m_ImageData = Writer.AddData(pImg->DataSize(), pImg->m_pData);
+			size_t ImageDataSize = 0;
+			if(pImg->m_pData == nullptr || !pImg->DataSize(ImageDataSize) || ImageDataSize == 0 || !CheckedDatafileSize(ImageDataSize))
+			{
+				char aError[IO_MAX_PATH_LENGTH + 128];
+				str_format(aError, sizeof(aError), "错误：无法保存，因为图像“%s”的数据无效或过大。", pImg->m_aName);
+				ErrorHandler(aError);
+				return false;
+			}
+			Item.m_ImageData = Writer.AddData(ImageDataSize, pImg->m_pData);
 		}
 		Writer.AddItem(MAPITEMTYPE_IMAGE, i, sizeof(Item), &Item);
 	}
@@ -140,6 +193,13 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 
 		Item.m_External = 0;
 		Item.m_SoundName = Writer.AddDataString(pSound->m_aName);
+		if(pSound->m_pData == nullptr || pSound->m_DataSize == 0 || !CheckedDatafileSize(pSound->m_DataSize))
+		{
+			char aError[IO_MAX_PATH_LENGTH + 128];
+			str_format(aError, sizeof(aError), "错误：无法保存，因为声音“%s”的数据无效或过大。", pSound->m_aName);
+			ErrorHandler(aError);
+			return false;
+		}
 		Item.m_SoundData = Writer.AddData(pSound->m_DataSize, pSound->m_pData);
 		// Value is not read in new versions, but we still need to write it for compatibility with old versions.
 		Item.m_SoundDataSize = pSound->m_DataSize;
@@ -215,26 +275,71 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 				Item.m_Switch = -1;
 				Item.m_Tune = -1;
 
+				size_t TileCount = 0;
+				size_t TileDataSize = 0;
+				if(!CheckedTileLayerCount(pLayerTiles->m_Width, pLayerTiles->m_Height, TileCount) || !CheckedDatafileArraySize(TileCount, sizeof(CTile), TileDataSize))
+				{
+					ErrorHandler("错误：无法保存，因为图块层尺寸无效或过大。");
+					return false;
+				}
 				if(Item.m_Flags && !(pLayerTiles->m_HasGame))
 				{
-					CTile *pEmptyTiles = (CTile *)calloc((size_t)pLayerTiles->m_Width * pLayerTiles->m_Height, sizeof(CTile));
-					mem_zero(pEmptyTiles, (size_t)pLayerTiles->m_Width * pLayerTiles->m_Height * sizeof(CTile));
-					Item.m_Data = Writer.AddData((size_t)pLayerTiles->m_Width * pLayerTiles->m_Height * sizeof(CTile), pEmptyTiles);
+					CTile *pEmptyTiles = (CTile *)calloc(TileCount, sizeof(CTile));
+					if(pEmptyTiles == nullptr)
+					{
+						ErrorHandler("错误：无法为图块层分配临时内存。");
+						return false;
+					}
+					Item.m_Data = Writer.AddData(TileDataSize, pEmptyTiles);
 					free(pEmptyTiles);
 
 					if(pLayerTiles->m_HasTele)
-						Item.m_Tele = Writer.AddData((size_t)pLayerTiles->m_Width * pLayerTiles->m_Height * sizeof(CTeleTile), std::static_pointer_cast<CLayerTele>(pLayerTiles)->m_pTeleTile);
+					{
+						size_t DataSize = 0;
+						if(!CheckedDatafileArraySize(TileCount, sizeof(CTeleTile), DataSize))
+						{
+							ErrorHandler("错误：无法保存，因为传送层数据过大。");
+							return false;
+						}
+						Item.m_Tele = Writer.AddData(DataSize, std::static_pointer_cast<CLayerTele>(pLayerTiles)->m_pTeleTile);
+					}
 					else if(pLayerTiles->m_HasSpeedup)
-						Item.m_Speedup = Writer.AddData((size_t)pLayerTiles->m_Width * pLayerTiles->m_Height * sizeof(CSpeedupTile), std::static_pointer_cast<CLayerSpeedup>(pLayerTiles)->m_pSpeedupTile);
+					{
+						size_t DataSize = 0;
+						if(!CheckedDatafileArraySize(TileCount, sizeof(CSpeedupTile), DataSize))
+						{
+							ErrorHandler("错误：无法保存，因为加速层数据过大。");
+							return false;
+						}
+						Item.m_Speedup = Writer.AddData(DataSize, std::static_pointer_cast<CLayerSpeedup>(pLayerTiles)->m_pSpeedupTile);
+					}
 					else if(pLayerTiles->m_HasFront)
-						Item.m_Front = Writer.AddData((size_t)pLayerTiles->m_Width * pLayerTiles->m_Height * sizeof(CTile), pLayerTiles->m_pTiles);
+						Item.m_Front = Writer.AddData(TileDataSize, pLayerTiles->m_pTiles);
 					else if(pLayerTiles->m_HasSwitch)
-						Item.m_Switch = Writer.AddData((size_t)pLayerTiles->m_Width * pLayerTiles->m_Height * sizeof(CSwitchTile), std::static_pointer_cast<CLayerSwitch>(pLayerTiles)->m_pSwitchTile);
+					{
+						size_t DataSize = 0;
+						if(!CheckedDatafileArraySize(TileCount, sizeof(CSwitchTile), DataSize))
+						{
+							ErrorHandler("错误：无法保存，因为开关层数据过大。");
+							return false;
+						}
+						Item.m_Switch = Writer.AddData(DataSize, std::static_pointer_cast<CLayerSwitch>(pLayerTiles)->m_pSwitchTile);
+					}
 					else if(pLayerTiles->m_HasTune)
-						Item.m_Tune = Writer.AddData((size_t)pLayerTiles->m_Width * pLayerTiles->m_Height * sizeof(CTuneTile), std::static_pointer_cast<CLayerTune>(pLayerTiles)->m_pTuneTile);
+					{
+						size_t DataSize = 0;
+						if(!CheckedDatafileArraySize(TileCount, sizeof(CTuneTile), DataSize))
+						{
+							ErrorHandler("错误：无法保存，因为调校层数据过大。");
+							return false;
+						}
+						Item.m_Tune = Writer.AddData(DataSize, std::static_pointer_cast<CLayerTune>(pLayerTiles)->m_pTuneTile);
+					}
 				}
 				else
-					Item.m_Data = Writer.AddData((size_t)pLayerTiles->m_Width * pLayerTiles->m_Height * sizeof(CTile), pLayerTiles->m_pTiles);
+				{
+					Item.m_Data = Writer.AddData(TileDataSize, pLayerTiles->m_pTiles);
+				}
 
 				// save layer name
 				StrToInts(Item.m_aName, std::size(Item.m_aName), pLayerTiles->m_aName);
@@ -275,8 +380,14 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 				if(!pLayerQuads->m_vQuads.empty())
 				{
 					// add the data
+					size_t DataSize = 0;
+					if(!CheckedDatafileArraySize(pLayerQuads->m_vQuads.size(), sizeof(CQuad), DataSize) || pLayerQuads->m_vQuads.size() > (size_t)std::numeric_limits<int>::max())
+					{
+						ErrorHandler("错误：无法保存，因为四边形层数据过大。");
+						return false;
+					}
 					Item.m_NumQuads = pLayerQuads->m_vQuads.size();
-					Item.m_Data = Writer.AddDataSwapped(pLayerQuads->m_vQuads.size() * sizeof(CQuad), pLayerQuads->m_vQuads.data());
+					Item.m_Data = Writer.AddDataSwapped(DataSize, pLayerQuads->m_vQuads.data());
 				}
 				else
 				{
@@ -307,8 +418,14 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 				if(!pLayerSounds->m_vSources.empty())
 				{
 					// add the data
+					size_t DataSize = 0;
+					if(!CheckedDatafileArraySize(pLayerSounds->m_vSources.size(), sizeof(CSoundSource), DataSize) || pLayerSounds->m_vSources.size() > (size_t)std::numeric_limits<int>::max())
+					{
+						ErrorHandler("错误：无法保存，因为声音层数据过大。");
+						return false;
+					}
 					Item.m_NumSources = pLayerSounds->m_vSources.size();
-					Item.m_Data = Writer.AddDataSwapped(pLayerSounds->m_vSources.size() * sizeof(CSoundSource), pLayerSounds->m_vSources.data());
+					Item.m_Data = Writer.AddDataSwapped(DataSize, pLayerSounds->m_vSources.data());
 				}
 				else
 				{
@@ -338,6 +455,12 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 	int PointCount = 0;
 	for(size_t e = 0; e < m_vpEnvelopes.size(); e++)
 	{
+		if(m_vpEnvelopes[e]->m_vPoints.size() > (size_t)std::numeric_limits<int>::max() ||
+			PointCount > std::numeric_limits<int>::max() - (int)m_vpEnvelopes[e]->m_vPoints.size())
+		{
+			ErrorHandler("错误：无法保存，因为包络点数量过多。");
+			return false;
+		}
 		CMapItemEnvelope Item;
 		Item.m_Version = 2;
 		Item.m_Channels = m_vpEnvelopes[e]->GetChannels();
@@ -367,10 +490,36 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 			break;
 	}
 
+	size_t EnvPointDataSize = 0;
+	if(!CheckedDatafileArraySize((size_t)PointCount, sizeof(CEnvPoint), EnvPointDataSize))
+	{
+		ErrorHandler("错误：无法保存，因为包络点数据过大。");
+		return false;
+	}
 	CEnvPoint *pPoints = (CEnvPoint *)calloc(maximum(PointCount, 1), sizeof(CEnvPoint));
+	if(pPoints == nullptr)
+	{
+		ErrorHandler("错误：无法为包络点分配内存。");
+		return false;
+	}
 	CEnvPointBezier *pPointsBezier = nullptr;
 	if(BezierUsed)
+	{
+		size_t EnvPointBezierDataSize = 0;
+		if(!CheckedDatafileArraySize((size_t)PointCount, sizeof(CEnvPointBezier), EnvPointBezierDataSize))
+		{
+			free(pPoints);
+			ErrorHandler("错误：无法保存，因为贝塞尔包络点数据过大。");
+			return false;
+		}
 		pPointsBezier = (CEnvPointBezier *)calloc(maximum(PointCount, 1), sizeof(CEnvPointBezier));
+		if(pPointsBezier == nullptr)
+		{
+			free(pPoints);
+			ErrorHandler("错误：无法为贝塞尔包络点分配内存。");
+			return false;
+		}
+	}
 	PointCount = 0;
 
 	for(const auto &pEnvelope : m_vpEnvelopes)
@@ -397,12 +546,19 @@ bool CEditorMap::Save(const char *pFilename, const std::function<void(const char
 		}
 	}
 
-	Writer.AddItem(MAPITEMTYPE_ENVPOINTS, 0, sizeof(CEnvPoint) * PointCount, pPoints);
+	Writer.AddItem(MAPITEMTYPE_ENVPOINTS, 0, EnvPointDataSize, pPoints);
 	free(pPoints);
 
 	if(pPointsBezier != nullptr)
 	{
-		Writer.AddItem(MAPITEMTYPE_ENVPOINTS_BEZIER, 0, sizeof(CEnvPointBezier) * PointCount, pPointsBezier);
+		size_t EnvPointBezierDataSize = 0;
+		if(!CheckedDatafileArraySize((size_t)PointCount, sizeof(CEnvPointBezier), EnvPointBezierDataSize))
+		{
+			free(pPointsBezier);
+			ErrorHandler("错误：无法保存，因为贝塞尔包络点数据过大。");
+			return false;
+		}
+		Writer.AddItem(MAPITEMTYPE_ENVPOINTS_BEZIER, 0, EnvPointBezierDataSize, pPointsBezier);
 		free(pPointsBezier);
 	}
 
@@ -553,7 +709,12 @@ bool CEditorMap::Load(const char *pFilename, int StorageType, const std::functio
 					pImg->m_Height = ImgInfo.m_Height;
 					pImg->m_Format = ImgInfo.m_Format;
 					pImg->m_pData = ImgInfo.m_pData;
-					ConvertToRgba(*pImg);
+					if(!ConvertToRgba(*pImg) && (pImg->m_pData == nullptr || pImg->m_Format != CImageInfo::FORMAT_RGBA))
+					{
+						str_format(aBuf, sizeof(aBuf), "错误：无法转换外部图像“%s”。", pImg->m_aName);
+						ErrorHandler(aBuf);
+						continue;
+					}
 
 					int TextureLoadFlag = m_pEditor->Graphics()->Uses2DTextureArrays() ? IGraphics::TEXLOAD_TO_2D_ARRAY_TEXTURE : IGraphics::TEXLOAD_TO_3D_TEXTURE;
 					if(pImg->m_Width % 16 != 0 || pImg->m_Height % 16 != 0)
@@ -575,13 +736,40 @@ bool CEditorMap::Load(const char *pFilename, int StorageType, const std::functio
 
 				// copy image data
 				void *pData = DataFile.GetData(pItem->m_ImageData);
-				const size_t DataSize = pImg->DataSize();
-				pImg->m_pData = static_cast<uint8_t *>(malloc(DataSize));
-				mem_copy(pImg->m_pData, pData, DataSize);
-				int TextureLoadFlag = m_pEditor->Graphics()->Uses2DTextureArrays() ? IGraphics::TEXLOAD_TO_2D_ARRAY_TEXTURE : IGraphics::TEXLOAD_TO_3D_TEXTURE;
-				if(pImg->m_Width % 16 != 0 || pImg->m_Height % 16 != 0)
-					TextureLoadFlag = 0;
-				pImg->m_Texture = m_pEditor->Graphics()->LoadTextureRaw(*pImg, TextureLoadFlag, pImg->m_aName);
+				size_t DataSize = 0;
+				const int FileDataSize = DataFile.GetDataSize(pItem->m_ImageData);
+				if(pData == nullptr || FileDataSize <= 0 || !pImg->DataSize(DataSize) || (size_t)FileDataSize < DataSize)
+				{
+					char aBuf[IO_MAX_PATH_LENGTH];
+					str_format(aBuf, sizeof(aBuf), "错误：无法读取嵌入图像“%s”。", pImg->m_aName);
+					ErrorHandler(aBuf);
+					pImg->m_External = 1;
+					pImg->m_Width = 0;
+					pImg->m_Height = 0;
+					pImg->m_Format = CImageInfo::FORMAT_UNDEFINED;
+				}
+				else
+				{
+					pImg->m_pData = static_cast<uint8_t *>(malloc(DataSize));
+					if(pImg->m_pData == nullptr)
+					{
+						char aBuf[IO_MAX_PATH_LENGTH];
+						str_format(aBuf, sizeof(aBuf), "错误：无法为嵌入图像“%s”分配内存。", pImg->m_aName);
+						ErrorHandler(aBuf);
+						pImg->m_External = 1;
+						pImg->m_Width = 0;
+						pImg->m_Height = 0;
+						pImg->m_Format = CImageInfo::FORMAT_UNDEFINED;
+					}
+					else
+					{
+						mem_copy(pImg->m_pData, pData, DataSize);
+						int TextureLoadFlag = m_pEditor->Graphics()->Uses2DTextureArrays() ? IGraphics::TEXLOAD_TO_2D_ARRAY_TEXTURE : IGraphics::TEXLOAD_TO_3D_TEXTURE;
+						if(pImg->m_Width % 16 != 0 || pImg->m_Height % 16 != 0)
+							TextureLoadFlag = 0;
+						pImg->m_Texture = m_pEditor->Graphics()->LoadTextureRaw(*pImg, TextureLoadFlag, pImg->m_aName);
+					}
+				}
 			}
 
 			// load auto mapper file
@@ -634,11 +822,31 @@ bool CEditorMap::Load(const char *pFilename, int StorageType, const std::functio
 			}
 			else
 			{
-				pSound->m_DataSize = DataFile.GetDataSize(pItem->m_SoundData);
 				void *pData = DataFile.GetData(pItem->m_SoundData);
-				pSound->m_pData = malloc(pSound->m_DataSize);
-				mem_copy(pSound->m_pData, pData, pSound->m_DataSize);
-				pSound->m_SoundId = m_pEditor->Sound()->LoadOpusFromMem(pSound->m_pData, pSound->m_DataSize, true, pSound->m_aName);
+				const int SoundDataSize = DataFile.GetDataSize(pItem->m_SoundData);
+				if(pData == nullptr || SoundDataSize <= 0)
+				{
+					char aBuf[IO_MAX_PATH_LENGTH];
+					str_format(aBuf, sizeof(aBuf), "错误：无法读取嵌入声音“%s”。", pSound->m_aName);
+					ErrorHandler(aBuf);
+				}
+				else
+				{
+					pSound->m_DataSize = SoundDataSize;
+					pSound->m_pData = malloc(pSound->m_DataSize);
+					if(pSound->m_pData == nullptr)
+					{
+						char aBuf[IO_MAX_PATH_LENGTH];
+						str_format(aBuf, sizeof(aBuf), "错误：无法为嵌入声音“%s”分配内存。", pSound->m_aName);
+						ErrorHandler(aBuf);
+						pSound->m_DataSize = 0;
+					}
+					else
+					{
+						mem_copy(pSound->m_pData, pData, pSound->m_DataSize);
+						pSound->m_SoundId = m_pEditor->Sound()->LoadOpusFromMem(pSound->m_pData, pSound->m_DataSize, true, pSound->m_aName);
+					}
+				}
 			}
 
 			m_vpSounds.push_back(pSound);

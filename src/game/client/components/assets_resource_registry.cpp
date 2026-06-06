@@ -7,64 +7,64 @@
 
 namespace
 {
-constexpr std::string_view ENTITY_BG_WORKSHOP_PREFIX = "entity_bg/";
-constexpr std::string_view ENTITY_BG_INSTALL_PREFIX = "assets/entity_bg/";
-constexpr std::string_view ENTITY_BG_MAP_SUFFIX = ".map";
-constexpr const char *ENTITY_BG_WORKSHOP_FOLDER_LABEL = "entity_bg (Workshop)";
+	constexpr std::string_view ENTITY_BG_WORKSHOP_PREFIX = "entity_bg/";
+	constexpr std::string_view ENTITY_BG_INSTALL_PREFIX = "assets/entity_bg/";
+	constexpr std::string_view ENTITY_BG_MAP_SUFFIX = ".map";
+	constexpr const char *ENTITY_BG_WORKSHOP_FOLDER_LABEL = "entity_bg (Workshop)";
 
-constexpr const char *s_apWorkshopHudAliases[] = {
-	"HUD",
-	"界面（HUD）",
-};
+	constexpr const char *s_apWorkshopHudAliases[] = {
+		"HUD",
+		"界面（HUD）",
+	};
 
-constexpr const char *s_apWorkshopEntitiesAliases[] = {
-	"实体层",
-	"实体（Entities）",
-	"实体（ENTITIES）",
-};
+	constexpr const char *s_apWorkshopEntitiesAliases[] = {
+		"实体层",
+		"实体（Entities）",
+		"实体（ENTITIES）",
+	};
 
-constexpr const char *s_apWorkshopGameAliases[] = {
-	"游戏",
-	"游戏（Game）",
-	"游戏（GAME）",
-};
+	constexpr const char *s_apWorkshopGameAliases[] = {
+		"游戏",
+		"游戏（Game）",
+		"游戏（GAME）",
+	};
 
-constexpr const char *s_apWorkshopEmoticonsAliases[] = {
-	"表情",
-	"表情（Emoticons）",
-	"表情（EMOTICONS）",
-};
+	constexpr const char *s_apWorkshopEmoticonsAliases[] = {
+		"表情",
+		"表情（Emoticons）",
+		"表情（EMOTICONS）",
+	};
 
-constexpr const char *s_apWorkshopParticlesAliases[] = {
-	"粒子",
-	"粒子（Particles）",
-	"粒子（PARTICLES）",
-};
+	constexpr const char *s_apWorkshopParticlesAliases[] = {
+		"粒子",
+		"粒子（Particles）",
+		"粒子（PARTICLES）",
+	};
 
-constexpr const char *s_apWorkshopMouseAliases[] = {
-	"Mouse",
-	"鼠标",
-};
+	constexpr const char *s_apWorkshopMouseAliases[] = {
+		"Mouse",
+		"鼠标",
+	};
 
-constexpr const char *s_apWorkshopArrowAliases[] = {
-	"Arrow",
-	"方向键",
-};
+	constexpr const char *s_apWorkshopArrowAliases[] = {
+		"Arrow",
+		"方向键",
+	};
 
-constexpr const char *s_apWorkshopStrongWeakAliases[] = {
-	"Strong Weak Hook",
-	"强弱钩",
-};
+	constexpr const char *s_apWorkshopStrongWeakAliases[] = {
+		"Strong Weak Hook",
+		"强弱钩",
+	};
 
-constexpr const char *s_apWorkshopEntityBgAliases[] = {
-	"Entity Background Image",
-	"实体层背景图",
-};
+	constexpr const char *s_apWorkshopEntityBgAliases[] = {
+		"Entity Background Image",
+		"实体层背景图",
+	};
 
-constexpr const char *s_apWorkshopExtrasAliases[] = {
-	"Extras",
-	"其他",
-};
+	constexpr const char *s_apWorkshopExtrasAliases[] = {
+		"Extras",
+		"其他",
+	};
 }
 
 static EEntityBgHierarchyEntrySource ResolveEntityBgAssetSource(const std::string &AssetName, const std::unordered_map<std::string, EEntityBgHierarchyEntrySource> *pAssetSources);
@@ -106,6 +106,22 @@ bool HasEntityBgWorkshopFolder(const std::vector<std::string> &vAssetNames, cons
 	return std::any_of(vAssetNames.begin(), vAssetNames.end(), [pAssetSources](const std::string &AssetName) {
 		return ResolveEntityBgAssetSource(AssetName, pAssetSources) == EEntityBgHierarchyEntrySource::WORKSHOP;
 	});
+}
+
+bool IsEntityBgWorkshopRootEntry(const SEntityBgHierarchyEntry &Entry)
+{
+	return Entry.m_IsDirectory &&
+		Entry.m_Source == EEntityBgHierarchyEntrySource::WORKSHOP &&
+		str_comp(Entry.m_aName, "entity_bg") == 0;
+}
+
+EEntityBgHierarchyEntrySource MergeEntityBgHierarchyEntrySource(EEntityBgHierarchyEntrySource Existing, EEntityBgHierarchyEntrySource Incoming)
+{
+	if(Existing == EEntityBgHierarchyEntrySource::WORKSHOP || Incoming == EEntityBgHierarchyEntrySource::WORKSHOP)
+		return EEntityBgHierarchyEntrySource::WORKSHOP;
+	if(Existing == EEntityBgHierarchyEntrySource::LOCAL || Incoming == EEntityBgHierarchyEntrySource::LOCAL)
+		return EEntityBgHierarchyEntrySource::LOCAL;
+	return Incoming;
 }
 
 bool IsProtectedDefaultAsset(std::string_view AssetName)
@@ -156,16 +172,17 @@ void EnsureDefaultAssetVisible(std::vector<std::string> &vAssetNames)
 		vAssetNames.emplace_back("default");
 
 	std::sort(vAssetNames.begin(), vAssetNames.end(), [](const std::string &LeftName, const std::string &RightName) {
+		// NOLINTNEXTLINE(clang-analyzer-cplusplus.Move)
 		return AssetResourceNameLess(LeftName, RightName);
 	});
 }
 
 std::string RebuildEntityBgWorkshopLocalName(std::string_view InstallPath)
 {
-	std::string NormalizedPath(InstallPath);
-	std::replace(NormalizedPath.begin(), NormalizedPath.end(), '\\', '/');
+	std::string Path(InstallPath);
+	std::replace(Path.begin(), Path.end(), '\\', '/');
 
-	std::string_view PathView(NormalizedPath);
+	std::string_view PathView(Path);
 	if(!PathView.starts_with(ENTITY_BG_INSTALL_PREFIX) || !PathView.ends_with(ENTITY_BG_MAP_SUFFIX))
 		return "";
 
@@ -288,6 +305,11 @@ bool EntityBgHierarchyEntryLess(const SEntityBgHierarchyEntry &Left, const SEnti
 	const bool RightIsParent = str_comp(Right.m_aName, "..") == 0;
 	if(LeftIsParent != RightIsParent)
 		return LeftIsParent;
+
+	const bool LeftIsWorkshopRoot = IsEntityBgWorkshopRootEntry(Left);
+	const bool RightIsWorkshopRoot = IsEntityBgWorkshopRootEntry(Right);
+	if(LeftIsWorkshopRoot != RightIsWorkshopRoot)
+		return LeftIsWorkshopRoot;
 
 	if(Left.m_IsDirectory != Right.m_IsDirectory)
 		return Left.m_IsDirectory;
@@ -425,7 +447,7 @@ std::vector<SEntityBgHierarchyEntry> BuildEntityBgHierarchyEntries(const std::ve
 		{
 			const std::string ChildDisplayName(Remainder.substr(0, SlashPos));
 			const std::string ChildLogicalPath = MatchFolder.empty() ? std::string(Remainder.substr(0, SlashPos)) :
-				std::string(MatchFolder) + "/" + std::string(Remainder.substr(0, SlashPos));
+										   std::string(MatchFolder) + "/" + std::string(Remainder.substr(0, SlashPos));
 			const std::string ChildPath = IsWorkshopFolder ? std::string(ENTITY_BG_WORKSHOP_PREFIX) + ChildLogicalPath : ChildLogicalPath;
 			AddEntry(ChildPath.c_str(), ChildDisplayName.c_str(), true, Source);
 		}

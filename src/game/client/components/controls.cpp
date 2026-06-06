@@ -60,6 +60,7 @@ void CControls::OnPlayerDeath()
 		AmmoCount = 0;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CInputState
 {
 	CControls *m_pControls;
@@ -89,6 +90,7 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	*pVariable &= INPUT_STATE_MASK;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CInputSet
 {
 	CControls *m_pControls;
@@ -270,7 +272,9 @@ int CControls::SnapInput(int *pData)
 			m_aMousePosOnAction[g_Config.m_ClDummy] = vec2(0.0f, 0.0f);
 		}
 		else
+		{
 			Pos = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+		}
 
 		m_FastInputHookAction = false;
 		m_FastInputFireAction = false;
@@ -290,9 +294,10 @@ int CControls::SnapInput(int *pData)
 		m_aInputData[g_Config.m_ClDummy].m_Direction = m_aInputDirectionRight[g_Config.m_ClDummy] - m_aInputDirectionLeft[g_Config.m_ClDummy];
 
 		CNetObj_PlayerInput *pDummyInput = &GameClient()->m_DummyInput;
+		const bool QmManualDummyInput = GameClient()->QmCommandRouter()->HasManualDummyInput();
 
 		// dummy copy moves
-		if(g_Config.m_ClDummyCopyMoves)
+		if(g_Config.m_ClDummyCopyMoves && !QmManualDummyInput)
 		{
 			// Don't copy any input to dummy when spectating others
 			if(!GameClient()->m_Snap.m_SpecInfo.m_Active || GameClient()->m_Snap.m_SpecInfo.m_SpectatorId < 0)
@@ -315,7 +320,7 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[!g_Config.m_ClDummy] = *pDummyInput;
 		}
 
-		if(g_Config.m_ClDummyControl)
+		if(g_Config.m_ClDummyControl && !QmManualDummyInput)
 		{
 			pDummyInput->m_Jump = g_Config.m_ClDummyJump;
 

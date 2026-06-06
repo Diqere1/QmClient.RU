@@ -1,13 +1,18 @@
 #include "test.h"
 
-#include <game/client/QmUi/QmAnim.h>
+#include <engine/shared/config.h>
 
+#include <game/client/QmUi/QmAnim.h>
+#include <game/client/QmUi/QmAnimCurves.h>
+
+#include <cmath>
 #include <gtest/gtest.h>
 
 namespace
 {
 void AdvanceFor(CUiV2AnimationRuntime &Runtime, float Seconds)
 {
+	g_Config.m_QmUiMotionLevel = 2;
 	const float Dt = 1.0f / 60.0f;
 	int Steps = static_cast<int>(Seconds / Dt) + 1;
 	for(int i = 0; i < Steps; ++i)
@@ -16,6 +21,7 @@ void AdvanceFor(CUiV2AnimationRuntime &Runtime, float Seconds)
 
 SUiAnimRequest MakeRequest(uint64_t NodeKey, EUiAnimProperty Property, float Target, float DurationSec, int Priority, EUiAnimInterruptPolicy Interrupt, uint32_t TrackId)
 {
+	g_Config.m_QmUiMotionLevel = 2;
 	SUiAnimRequest Request;
 	Request.m_NodeKey = NodeKey;
 	Request.m_Property = Property;
@@ -167,4 +173,179 @@ TEST(UiV2Anim, ZeroDurationCompletesImmediately)
 	EXPECT_EQ(Event.m_NodeKey, 10u);
 	EXPECT_EQ(Event.m_Property, EUiAnimProperty::ALPHA);
 	EXPECT_FALSE(Runtime.PollCompletedEvent(Event));
+}
+
+namespace
+{
+SUiAnimRequest MakeSpringRequest(uint64_t NodeKey, EUiAnimProperty Property, float Target, uint32_t TrackId)
+{
+	g_Config.m_QmUiMotionLevel = 2;
+	SUiAnimRequest Request;
+	Request.m_NodeKey = NodeKey;
+	Request.m_Property = Property;
+	Request.m_Target = Target;
+	Request.m_Transition.m_Driver = EUiAnimDriver::SPRING;
+	Request.m_Transition.m_Interrupt = EUiAnimInterruptPolicy::REPLACE;
+	Request.m_TrackId = TrackId;
+	return Request;
+}
+}
+
+TEST(UiV2AnimSpring, ConvergesToTarget)
+{
+	CUiV2AnimationRuntime Runtime;
+	Runtime.SetValue(101, EUiAnimProperty::ALPHA, 0.0f);
+
+	EXPECT_TRUE(Runtime.RequestAnimation(MakeSpringRequest(101, EUiAnimProperty::ALPHA, 1.0f, 81)));
+	AdvanceFor(Runtime, 2.0f);
+	EXPECT_NEAR(Runtime.GetValue(101, EUiAnimProperty::ALPHA), 1.0f, 0.02f);
+	EXPECT_FALSE(Runtime.HasActiveAnimation(101, EUiAnimProperty::ALPHA));
+}
+
+TEST(UiV2AnimSpring, AutoCompletesAndEmitsEvent)
+{
+	CUiV2AnimationRuntime Runtime;
+	Runtime.SetValue(102, EUiAnimProperty::ALPHA, 0.0f);
+
+	EXPECT_TRUE(Runtime.RequestAnimation(MakeSpringRequest(102, EUiAnimProperty::ALPHA, 1.0f, 82)));
+	AdvanceFor(Runtime, 2.0f);
+
+	SUiAnimCompleteEvent Event;
+	ASSERT_TRUE(Runtime.PollCompletedEvent(Event));
+	EXPECT_EQ(Event.m_TrackId, 82u);
+	EXPECT_EQ(Event.m_NodeKey, 102u);
+	EXPECT_EQ(Event.m_Property, EUiAnimProperty::ALPHA);
+	EXPECT_EQ(Runtime.ActiveTrackCount(), 0);
+}
+
+TEST(UiV2AnimSpring, ZeroDtSpringStaysPut)
+{
+	CUiV2AnimationRuntime Runtime;
+	Runtime.SetValue(103, EUiAnimProperty::ALPHA, 0.0f);
+
+	EXPECT_TRUE(Runtime.RequestAnimation(MakeSpringRequest(103, EUiAnimProperty::ALPHA, 1.0f, 83)));
+	const float Before = Runtime.GetValue(103, EUiAnimProperty::ALPHA);
+	Runtime.Advance(0.0f);
+	const float After = Runtime.GetValue(103, EUiAnimProperty::ALPHA);
+	EXPECT_NEAR(Before, After, 1e-6f);
+	EXPECT_TRUE(Runtime.HasActiveAnimation(103, EUiAnimProperty::ALPHA));
+}
+
+TEST(UiV2AnimSpring, ClampedDtNoExplosion)
+{
+	CUiV2AnimationRuntime Runtime;
+	Runtime.SetValue(104, EUiAnimProperty::POS_X, 0.0f);
+
+	EXPECT_TRUE(Runtime.RequestAnimation(MakeSpringRequest(104, EUiAnimProperty::POS_X, 100.0f, 84)));
+
+	Runtime.Advance(1.0f);
+	const float After = Runtime.GetValue(104, EUiAnimProperty::POS_X);
+
+	EXPECT_GE(After, 0.0f);
+	EXPECT_LE(After, 150.0f);
+}
+
+TEST(UiV2AnimSpring, MergeTargetPreservesVelocity)
+{
+	CUiV2AnimationRuntime Runtime;
+	Runtime.SetValue(301, EUiAnimProperty::POS_X, 0.0f);
+
+	EXPECT_TRUE(Runtime.RequestAnimation(MakeSpringRequest(301, EUiAnimProperty::POS_X, 100.0f, 121)));
+
+	AdvanceFor(Runtime, 0.15f);
+	const float Before = Runtime.GetValue(301, EUiAnimProperty::POS_X);
+	EXPECT_GT(Before, 0.0f);
+	EXPECT_LT(Before, 100.0f);
+
+	SUiAnimRequest MergeReq = MakeSpringRequest(301, EUiAnimProperty::POS_X, -100.0f, 122);
+	MergeReq.m_Transition.m_Interrupt = EUiAnimInterruptPolicy::MERGE_TARGET;
+	EXPECT_TRUE(Runtime.RequestAnimation(MergeReq));
+
+	EXPECT_NEAR(Before, Runtime.GetValue(301, EUiAnimProperty::POS_X), 1e-3f);
+
+	AdvanceFor(Runtime, 3.0f);
+	EXPECT_NEAR(Runtime.GetValue(301, EUiAnimProperty::POS_X), -100.0f, 0.5f);
+	EXPECT_FALSE(Runtime.HasActiveAnimation(301, EUiAnimProperty::POS_X));
+}
+
+namespace
+{
+SUiAnimRequest MakeTweenRequest(uint64_t NodeKey, EUiAnimProperty Property, float Target, float DurationSec, EEasing Easing, uint32_t TrackId)
+{
+	g_Config.m_QmUiMotionLevel = 2;
+	SUiAnimRequest Request;
+	Request.m_NodeKey = NodeKey;
+	Request.m_Property = Property;
+	Request.m_Target = Target;
+	Request.m_Transition.m_DurationSec = DurationSec;
+	Request.m_Transition.m_Easing = Easing;
+	Request.m_Transition.m_Interrupt = EUiAnimInterruptPolicy::REPLACE;
+	Request.m_TrackId = TrackId;
+	return Request;
+}
+}
+
+TEST(UiV2AnimEasing, OutBackOvershoots)
+{
+	CUiV2AnimationRuntime Runtime;
+	Runtime.SetValue(201, EUiAnimProperty::ALPHA, 0.0f);
+	EXPECT_TRUE(Runtime.RequestAnimation(MakeTweenRequest(201, EUiAnimProperty::ALPHA, 1.0f, 1.0f, EEasing::EASE_OUT_BACK, 91)));
+
+	AdvanceFor(Runtime, 0.7f);
+	EXPECT_GT(Runtime.GetValue(201, EUiAnimProperty::ALPHA), 1.0f);
+
+	AdvanceFor(Runtime, 0.5f);
+	EXPECT_NEAR(Runtime.GetValue(201, EUiAnimProperty::ALPHA), 1.0f, 1e-3f);
+}
+
+TEST(UiV2AnimEasing, CubicBezierMatchesReference)
+{
+	CUiV2AnimationRuntime Runtime;
+	Runtime.SetValue(202, EUiAnimProperty::ALPHA, 0.0f);
+	SUiAnimRequest Request = MakeTweenRequest(202, EUiAnimProperty::ALPHA, 1.0f, 1.0f, EEasing::CUBIC_BEZIER, 92);
+	Request.m_Transition.m_Bezier = {0.2f, 0.0f, 0.0f, 1.0f};
+	EXPECT_TRUE(Runtime.RequestAnimation(Request));
+
+	AdvanceFor(Runtime, 0.25f);
+	const float At25 = Runtime.GetValue(202, EUiAnimProperty::ALPHA);
+	EXPECT_GT(At25, 0.55f);
+	EXPECT_LT(At25, 0.75f);
+
+	AdvanceFor(Runtime, 0.25f);
+	const float At50 = Runtime.GetValue(202, EUiAnimProperty::ALPHA);
+	EXPECT_GT(At50, 0.82f);
+	EXPECT_LT(At50, 0.95f);
+
+	AdvanceFor(Runtime, 0.25f);
+	const float At75 = Runtime.GetValue(202, EUiAnimProperty::ALPHA);
+	EXPECT_GT(At75, 0.93f);
+	EXPECT_LT(At75, 1.0f);
+}
+
+TEST(UiV2AnimEasing, NewEnumsRoundTrip)
+{
+	const EEasing aEasings[] = {EEasing::EASE_OUT_QUART, EEasing::EASE_OUT_BACK, EEasing::EASE_IN_OUT_CUBIC};
+	uint32_t NextTrackId = 100;
+	for(EEasing Easing : aEasings)
+	{
+		CUiV2AnimationRuntime Runtime;
+		Runtime.SetValue(1, EUiAnimProperty::ALPHA, 0.0f);
+		EXPECT_TRUE(Runtime.RequestAnimation(MakeTweenRequest(1, EUiAnimProperty::ALPHA, 1.0f, 1.0f, Easing, NextTrackId++)));
+
+		EXPECT_NEAR(Runtime.GetValue(1, EUiAnimProperty::ALPHA), 0.0f, 1e-3f);
+
+		AdvanceFor(Runtime, 1.5f);
+		EXPECT_NEAR(Runtime.GetValue(1, EUiAnimProperty::ALPHA), 1.0f, 1e-3f);
+	}
+}
+
+TEST(UiV2AnimEasing, CurvePresetsExposed)
+{
+	EXPECT_EQ(ui_curve::STANDARD.m_Easing, EEasing::EASE_IN_OUT_CUBIC);
+	EXPECT_EQ(ui_curve::EMPHASIZED.m_Easing, EEasing::CUBIC_BEZIER);
+	EXPECT_NEAR(ui_curve::EMPHASIZED.m_Bezier.m_X1, 0.2f, 1e-6f);
+	EXPECT_NEAR(ui_curve::EMPHASIZED.m_Bezier.m_Y2, 1.0f, 1e-6f);
+	EXPECT_EQ(ui_curve::BOUNCE_OUT.m_Easing, EEasing::EASE_OUT_BACK);
+	EXPECT_NEAR(ui_spring::SNAPPY.m_Stiffness, 280.0f, 1e-6f);
+	EXPECT_NEAR(ui_spring::GENTLE.m_Damping, 14.0f, 1e-6f);
 }

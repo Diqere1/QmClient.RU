@@ -915,12 +915,16 @@ bool CDemoPlayer::ExtractMap(class IStorage *pStorage)
 {
 	unsigned char *pMapData = GetMapData(pStorage);
 	if(!pMapData)
+	{
 		return false;
+	}
 
 	// handle sha256
 	SHA256_DIGEST Sha256 = SHA256_ZEROED;
 	if(m_Info.m_Header.m_Version >= gs_Sha256Version)
+	{
 		Sha256 = m_MapInfo.m_Sha256;
+	}
 	else
 	{
 		Sha256 = sha256(pMapData, m_MapInfo.m_Size);
@@ -1382,51 +1386,60 @@ bool CDemoPlayer::GetDemoInfo(IStorage *pStorage, IConsole *pConsole, const char
 	return true;
 }
 
-class CDemoRecordingListener : public CDemoPlayer::IListener
+namespace
 {
-public:
-	CDemoRecorder *m_pDemoRecorder;
-	CDemoPlayer *m_pDemoPlayer;
-	bool m_Stop;
-	int m_StartTick;
-	int m_EndTick;
-	int m_TickOffset;
-	int m_LastRecordedTick;
-	bool m_NeedsKeyframe;
 
-	void OnDemoPlayerSnapshot(void *pData, int Size) override
+	class CDemoRecordingListener : public CDemoPlayer::IListener
 	{
-		const CDemoPlayer::CPlaybackInfo *pInfo = m_pDemoPlayer->Info();
+	public:
+		CDemoRecorder *m_pDemoRecorder;
+		CDemoPlayer *m_pDemoPlayer;
+		bool m_Stop;
+		int m_StartTick;
+		int m_EndTick;
+		int m_TickOffset;
+		int m_LastRecordedTick;
+		bool m_NeedsKeyframe;
 
-		if(m_EndTick != -1 && pInfo->m_Info.m_CurrentTick > m_EndTick)
-			m_Stop = true;
-		else if(m_StartTick == -1 || pInfo->m_Info.m_CurrentTick >= m_StartTick)
+		void OnDemoPlayerSnapshot(void *pData, int Size) override
 		{
-			const int OutputTick = pInfo->m_Info.m_CurrentTick + m_TickOffset;
-			m_pDemoRecorder->RecordSnapshot(OutputTick, pData, Size, m_NeedsKeyframe);
-			m_LastRecordedTick = OutputTick;
-			m_NeedsKeyframe = false;
-		}
-	}
+			const CDemoPlayer::CPlaybackInfo *pInfo = m_pDemoPlayer->Info();
 
-	void OnDemoPlayerMessage(void *pData, int Size) override
-	{
-		const CDemoPlayer::CPlaybackInfo *pInfo = m_pDemoPlayer->Info();
-
-		if(m_EndTick != -1 && pInfo->m_Info.m_CurrentTick > m_EndTick)
-			m_Stop = true;
-		else if(m_StartTick == -1 || pInfo->m_Info.m_CurrentTick >= m_StartTick)
-		{
-			const int OutputTick = pInfo->m_Info.m_CurrentTick + m_TickOffset;
-			if(OutputTick != m_LastRecordedTick)
+			if(m_EndTick != -1 && pInfo->m_Info.m_CurrentTick > m_EndTick)
 			{
-				m_pDemoRecorder->RecordTickMarker(OutputTick);
-				m_LastRecordedTick = OutputTick;
+				m_Stop = true;
 			}
-			m_pDemoRecorder->RecordMessage(pData, Size);
+			else if(m_StartTick == -1 || pInfo->m_Info.m_CurrentTick >= m_StartTick)
+			{
+				const int OutputTick = pInfo->m_Info.m_CurrentTick + m_TickOffset;
+				m_pDemoRecorder->RecordSnapshot(OutputTick, pData, Size, m_NeedsKeyframe);
+				m_LastRecordedTick = OutputTick;
+				m_NeedsKeyframe = false;
+			}
 		}
-	}
-};
+
+		void OnDemoPlayerMessage(void *pData, int Size) override
+		{
+			const CDemoPlayer::CPlaybackInfo *pInfo = m_pDemoPlayer->Info();
+
+			if(m_EndTick != -1 && pInfo->m_Info.m_CurrentTick > m_EndTick)
+			{
+				m_Stop = true;
+			}
+			else if(m_StartTick == -1 || pInfo->m_Info.m_CurrentTick >= m_StartTick)
+			{
+				const int OutputTick = pInfo->m_Info.m_CurrentTick + m_TickOffset;
+				if(OutputTick != m_LastRecordedTick)
+				{
+					m_pDemoRecorder->RecordTickMarker(OutputTick);
+					m_LastRecordedTick = OutputTick;
+				}
+				m_pDemoRecorder->RecordMessage(pData, Size);
+			}
+		}
+	};
+
+} // namespace
 
 void CDemoEditor::Init(class CSnapshotDelta *pSnapshotDelta, class IConsole *pConsole, class IStorage *pStorage)
 {

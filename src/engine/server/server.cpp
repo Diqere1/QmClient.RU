@@ -36,6 +36,7 @@
 #include <engine/shared/protocol.h>
 #include <engine/shared/protocol7.h>
 #include <engine/shared/protocol_ex.h>
+#include <engine/shared/client_brand.h>
 #include <engine/shared/rust_version.h>
 #include <engine/shared/snapshot.h>
 #include <engine/storage.h>
@@ -45,6 +46,7 @@
 #include <zlib.h>
 
 #include <chrono>
+#include <cinttypes>
 #include <vector>
 
 using namespace std::chrono_literals;
@@ -220,22 +222,38 @@ void CServer::CClient::Reset()
 	m_Snapshots.PurgeAll();
 	m_LastAckedSnapshot = -1;
 	m_LastInputTick = -1;
+	m_LastKcpInputSize = 0;
+	m_LastKcpInputTick = -1;
+	mem_zero(m_aLastKcpInput, sizeof(m_aLastKcpInput));
 	m_SnapRate = CClient::SNAPRATE_INIT;
 	m_Score = -1;
 	m_NextMapChunk = 0;
 	m_Flags = 0;
 	m_RedirectDropTime = 0;
+	m_KcpCapable = false;
+	m_KcpNegotiated = false;
+	m_KcpConv = 0;
+	m_KcpNegotiatedTime = 0;
+	m_CapabilitiesSent = false;
+	m_ClientBrand = EClientBrand::NONE;
+	m_QmLiveObserver = false;
+	m_IsLiveObserver = false;
+	m_QmLiveCapabilities = 0;
 }
 
 CServer::CServer()
 {
 	m_pConfig = &g_Config;
 	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		m_aClients[i].m_pPersistentData = nullptr;
 		m_aDemoRecorder[i] = CDemoRecorder(&m_SnapshotDelta, true);
+	}
 	m_aDemoRecorder[RECORDER_MANUAL] = CDemoRecorder(&m_SnapshotDelta, false);
 	m_aDemoRecorder[RECORDER_AUTO] = CDemoRecorder(&m_SnapshotDelta, false);
 
 	m_pGameServer = nullptr;
+	m_pPersistentData = nullptr;
 
 	m_CurrentGameTick = MIN_TICK;
 	m_RunServer = UNINITIALIZED;
@@ -460,7 +478,8 @@ bool CServer::WouldClientClanChange(int ClientId, const char *pClanRequest)
 
 void CServer::SetClientName(int ClientId, const char *pName)
 {
-	SetClientNameImpl(ClientId, pName, true);
+	if(SetClientNameImpl(ClientId, pName, true))
+		SendClientBrandsToKnownClients();
 }
 
 void CServer::SetClientClan(int ClientId, const char *pClan)
@@ -535,7 +554,7 @@ void CServer::ReconnectClient(int ClientId)
 	CMsgPacker Msg(NETMSG_RECONNECT, true);
 	SendMsg(&Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH, ClientId);
 
-	if(m_aClients[ClientId].m_State >= CClient::STATE_READY)
+	if(m_aClients[ClientId].m_State >= CClient::STATE_READY && !m_aClients[ClientId].m_IsLiveObserver)
 	{
 		GameServer()->OnClientDrop(ClientId, "reconnect");
 	}
@@ -565,7 +584,7 @@ void CServer::RedirectClient(int ClientId, int Port)
 	Msg.AddInt(Port);
 	SendMsg(&Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH, ClientId);
 
-	if(m_aClients[ClientId].m_State >= CClient::STATE_READY)
+	if(m_aClients[ClientId].m_State >= CClient::STATE_READY && !m_aClients[ClientId].m_IsLiveObserver)
 	{
 		GameServer()->OnClientDrop(ClientId, "redirect");
 	}
@@ -786,6 +805,11 @@ bool CServer::ClientIngame(int ClientId) const
 	return ClientId >= 0 && ClientId < MAX_CLIENTS && m_aClients[ClientId].m_State == CServer::CClient::STATE_INGAME;
 }
 
+bool CServer::ClientIsQmLiveObserver(int ClientId) const
+{
+	return ClientId >= 0 && ClientId < MAX_CLIENTS && m_aClients[ClientId].m_State != CServer::CClient::STATE_EMPTY && m_aClients[ClientId].m_IsLiveObserver;
+}
+
 int CServer::Port() const
 {
 	return m_NetServer.Address().port;
@@ -801,7 +825,7 @@ int CServer::ClientCount() const
 	int ClientCount = 0;
 	for(const auto &Client : m_aClients)
 	{
-		if(Client.m_State != CClient::STATE_EMPTY)
+		if(Client.m_State != CClient::STATE_EMPTY && !Client.m_IsLiveObserver)
 		{
 			ClientCount++;
 		}
@@ -962,7 +986,7 @@ int CServer::SendMsg(CMsgPacker *pMsg, int Flags, int ClientId)
 		}
 
 		// write message to demo recorders
-		if(!(Flags & MSGFLAG_NORECORD))
+		if(!(Flags & MSGFLAG_NORECORD) && !m_aClients[ClientId].m_IsLiveObserver)
 		{
 			if(m_aDemoRecorder[ClientId].IsRecording())
 				m_aDemoRecorder[ClientId].RecordMessage(Pack.Data(), Pack.Size());
@@ -1023,7 +1047,8 @@ void CServer::DoSnapshot()
 	for(int i = 0; i < MaxClients(); i++)
 	{
 		// client must be ingame to receive snapshots
-		if(m_aClients[i].m_State != CClient::STATE_INGAME)
+		const bool LiveObserver = m_aClients[i].m_State == CClient::STATE_LIVE_OBSERVER && m_aClients[i].m_IsLiveObserver;
+		if(m_aClients[i].m_State != CClient::STATE_INGAME && !LiveObserver)
 			continue;
 
 		// this client is trying to recover, don't spam snapshots
@@ -1042,14 +1067,14 @@ void CServer::DoSnapshot()
 			m_SnapshotBuilder.Init(m_aClients[i].m_Sixup);
 
 			// only snap events on global ticks
-			GameServer()->OnSnap(i, IsGlobalSnap);
+			GameServer()->OnSnap(LiveObserver ? SERVER_DEMO_CLIENT : i, IsGlobalSnap);
 
 			// finish snapshot
 			char aData[CSnapshot::MAX_SIZE];
 			CSnapshot *pData = (CSnapshot *)aData; // Fix compiler warning for strict-aliasing
 			int SnapshotSize = m_SnapshotBuilder.Finish(pData);
 
-			if(m_aDemoRecorder[i].IsRecording())
+			if(!LiveObserver && m_aDemoRecorder[i].IsRecording())
 			{
 				// write snapshot
 				m_aDemoRecorder[i].RecordSnapshot(Tick(), aData, SnapshotSize);
@@ -1087,6 +1112,12 @@ void CServer::DoSnapshot()
 
 			if(DeltaSize)
 			{
+				const SNetTransportStats TransportStats = m_NetServer.ClientTransportStats(i);
+				if(m_NetServer.IsKcpActive(i) && TransportStats.m_SendQueueDepth >= NET_KCP_SOFT_PENDING_SEGMENTS)
+				{
+					m_aClients[i].m_SnapRate = CClient::SNAPRATE_RECOVER;
+				}
+
 				// compress it
 				const int MaxSize = MAX_SNAPSHOT_PACKSIZE;
 
@@ -1150,6 +1181,7 @@ int CServer::ClientRejoinCallback(int ClientId, void *pUser)
 	pThis->m_aClients[ClientId].m_GotDDNetVersionPacket = false;
 	pThis->m_aClients[ClientId].m_DDNetVersionSettled = false;
 
+	pThis->m_NetServer.DeactivateKcp(ClientId);
 	pThis->m_aClients[ClientId].Reset();
 
 	pThis->GameServer()->TeehistorianRecordPlayerRejoin(ClientId);
@@ -1182,6 +1214,7 @@ int CServer::NewClientNoAuthCallback(int ClientId, void *pUser)
 	pThis->m_aClients[ClientId].m_DDNetVersion = VERSION_NONE;
 	pThis->m_aClients[ClientId].m_GotDDNetVersionPacket = false;
 	pThis->m_aClients[ClientId].m_DDNetVersionSettled = false;
+	pThis->m_NetServer.DeactivateKcp(ClientId);
 	pThis->m_aClients[ClientId].Reset();
 
 	pThis->GameServer()->TeehistorianRecordPlayerJoin(ClientId, false);
@@ -1285,7 +1318,7 @@ int CServer::DelClientCallback(int ClientId, const char *pReason, void *pUser)
 #endif
 
 	// notify the mod about the drop
-	if(pThis->m_aClients[ClientId].m_State >= CClient::STATE_READY)
+	if(pThis->m_aClients[ClientId].m_State >= CClient::STATE_READY && !pThis->m_aClients[ClientId].m_IsLiveObserver)
 		pThis->GameServer()->OnClientDrop(ClientId, pReason);
 
 	pThis->m_aClients[ClientId].m_State = CClient::STATE_EMPTY;
@@ -1301,12 +1334,17 @@ int CServer::DelClientCallback(int ClientId, const char *pReason, void *pUser)
 	pThis->m_aClients[ClientId].m_TrafficSince = 0;
 	pThis->m_aClients[ClientId].m_ShowIps = false;
 	pThis->m_aClients[ClientId].m_DebugDummy = false;
+	pThis->m_aClients[ClientId].m_QmLiveObserver = false;
+	pThis->m_aClients[ClientId].m_IsLiveObserver = false;
+	pThis->m_aClients[ClientId].m_QmLiveCapabilities = 0;
 	pThis->m_aClients[ClientId].m_ForceHighBandwidthOnSpectate = false;
+	pThis->m_aClients[ClientId].m_ClientBrand = EClientBrand::NONE;
 	pThis->m_aPrevStates[ClientId] = CClient::STATE_EMPTY;
 	pThis->m_aClients[ClientId].m_Snapshots.PurgeAll();
 	pThis->m_aClients[ClientId].m_Sixup = false;
 	pThis->m_aClients[ClientId].m_RedirectDropTime = 0;
 	pThis->m_aClients[ClientId].m_HasPersistentData = false;
+	pThis->SendClientBrandsToKnownClients();
 
 	pThis->GameServer()->TeehistorianRecordPlayerDrop(ClientId, pReason);
 	pThis->Antibot()->OnEngineClientDrop(ClientId, pReason);
@@ -1333,10 +1371,142 @@ void CServer::GetMapInfo(char *pMapName, int MapNameSize, int *pMapSize, SHA256_
 
 void CServer::SendCapabilities(int ClientId)
 {
+	if(m_aClients[ClientId].m_CapabilitiesSent)
+		return;
+
 	CMsgPacker Msg(NETMSG_CAPABILITIES, true);
-	Msg.AddInt(SERVERCAP_CURVERSION); // version
-	Msg.AddInt(SERVERCAPFLAG_DDNET | SERVERCAPFLAG_CHATTIMEOUTCODE | SERVERCAPFLAG_ANYPLAYERFLAG | SERVERCAPFLAG_PINGEX | SERVERCAPFLAG_ALLOWDUMMY | SERVERCAPFLAG_SYNCWEAPONINPUT); // flags
+	int Flags = SERVERCAPFLAG_DDNET | SERVERCAPFLAG_CHATTIMEOUTCODE | SERVERCAPFLAG_ANYPLAYERFLAG | SERVERCAPFLAG_PINGEX | SERVERCAPFLAG_ALLOWDUMMY | SERVERCAPFLAG_SYNCWEAPONINPUT;
+	int Version = SERVERCAP_CURVERSION;
+	if(Config()->m_SvKcp)
+	{
+		Flags |= SERVERCAPFLAG_KCP;
+	}
+#if defined(CONF_QM_LIVE_SERVER)
+	if(Config()->m_SvQmLiveObserver)
+	{
+		Flags |= QmLiveCapabilities();
+		Version = SERVERCAP_LIVEVERSION;
+	}
+#endif
+	Msg.AddInt(Version); // version
+	Msg.AddInt(Flags); // flags
 	SendMsg(&Msg, MSGFLAG_VITAL, ClientId);
+	m_aClients[ClientId].m_CapabilitiesSent = true;
+}
+
+bool CServer::CanReceiveClientBrands(int ClientId) const
+{
+	return ClientId >= 0 && ClientId < MAX_CLIENTS &&
+	       m_aClients[ClientId].m_State >= CClient::STATE_READY &&
+	       m_aClients[ClientId].m_ClientBrand != EClientBrand::NONE &&
+	       !m_aClients[ClientId].m_IsLiveObserver;
+}
+
+void CServer::SendClientBrands(int ClientId)
+{
+	if(!CanReceiveClientBrands(ClientId))
+		return;
+
+	int NumEntries = 0;
+	for(int OtherId = 0; OtherId < MAX_CLIENTS; ++OtherId)
+	{
+		if(m_aClients[OtherId].m_State == CClient::STATE_INGAME && m_aClients[OtherId].m_ClientBrand != EClientBrand::NONE && !m_aClients[OtherId].m_IsLiveObserver)
+			++NumEntries;
+	}
+
+	CMsgPacker Msg(NETMSG_CLIENT_BRANDS, true);
+	Msg.AddInt(CLIENT_BRANDS_PROTOCOL_VERSION);
+	Msg.AddInt(NumEntries);
+	for(int OtherId = 0; OtherId < MAX_CLIENTS; ++OtherId)
+	{
+		if(m_aClients[OtherId].m_State != CClient::STATE_INGAME || m_aClients[OtherId].m_ClientBrand == EClientBrand::NONE || m_aClients[OtherId].m_IsLiveObserver)
+			continue;
+
+		Msg.AddString(m_aClients[OtherId].m_aName, MAX_NAME_LENGTH);
+		Msg.AddInt(static_cast<int>(m_aClients[OtherId].m_ClientBrand));
+	}
+	SendMsg(&Msg, MSGFLAG_VITAL, ClientId);
+}
+
+void CServer::SendClientBrandsToKnownClients()
+{
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+		SendClientBrands(ClientId);
+}
+
+void CServer::UpdateClientBrand(int ClientId, const char *pVersionString)
+{
+	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
+		return;
+
+	const EClientBrand ClientBrand = ClientBrandFromVersionString(pVersionString);
+	if(m_aClients[ClientId].m_ClientBrand == ClientBrand)
+		return;
+
+	m_aClients[ClientId].m_ClientBrand = ClientBrand;
+	SendClientBrandsToKnownClients();
+}
+
+int CServer::QmLiveCapabilities() const
+{
+#if defined(CONF_QM_LIVE_SERVER)
+	return SERVERCAP_LIVE_OBSERVER | SERVERCAP_LIVE_DIRECTOR;
+#else
+	return 0;
+#endif
+}
+
+int CServer::NumQmLiveObservers() const
+{
+	int NumObservers = 0;
+	for(int ClientId = 0; ClientId < MaxClients(); ++ClientId)
+	{
+		if(m_aClients[ClientId].m_IsLiveObserver)
+			NumObservers++;
+	}
+	return NumObservers;
+}
+
+void CServer::SendQmLiveObserverAccept(int ClientId)
+{
+	CMsgPacker Msg(NETMSG_QM_LIVE_OBSERVER_ACCEPT, true);
+	Msg.AddInt(QmLiveCapabilities());
+	SendMsg(&Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH | MSGFLAG_NORECORD, ClientId);
+}
+
+void CServer::SendQmLiveObserverDeny(int ClientId, EQmLiveDenyReason Reason)
+{
+	CMsgPacker Msg(NETMSG_QM_LIVE_OBSERVER_DENY, true);
+	Msg.AddInt(static_cast<int>(Reason));
+	Msg.AddString(QmLiveDenyReasonString(Reason), 0);
+	SendMsg(&Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH | MSGFLAG_NORECORD, ClientId);
+}
+
+void CServer::SendKcpFallback(int ClientId, const char *pReason)
+{
+	CMsgPacker Msg(NETMSG_KCP_FALLBACK, true);
+	Msg.AddString(pReason, 0);
+	SendMsg(&Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH, ClientId);
+}
+
+void CServer::SendKcpFallbackLegacy(int ClientId, const char *pReason)
+{
+	if(ClientId < 0 || ClientId >= MaxClients())
+		return;
+
+	CMsgPacker Msg(NETMSG_KCP_FALLBACK, true);
+	Msg.AddString(pReason, 0);
+	CPacker Pack;
+	if(!RepackMsg(&Msg, Pack, m_aClients[ClientId].m_Sixup))
+		return;
+
+	CNetChunk Packet;
+	mem_zero(&Packet, sizeof(Packet));
+	Packet.m_ClientId = ClientId;
+	Packet.m_pData = Pack.Data();
+	Packet.m_DataSize = Pack.Size();
+	Packet.m_Flags = NETSENDFLAG_FLUSH;
+	m_NetServer.SendLegacyBypass(&Packet);
 }
 
 void CServer::SendMap(int ClientId)
@@ -1665,6 +1835,12 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 	{
 		return;
 	}
+	if(Config()->m_SvKcpDebug && Msg >= OFFSET_UUID)
+	{
+		char aBuf[256];
+		str_format(aBuf, sizeof(aBuf), "extended message cid=%d msg=%d sys=%d", ClientId, Msg, Sys);
+		Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "server", aBuf);
+	}
 
 	if(m_aClients[ClientId].m_Sixup && (Msg = MsgFromSixup(Msg, Sys)) < 0)
 	{
@@ -1698,7 +1874,124 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 	if(Sys)
 	{
 		// system message
-		if(Msg == NETMSG_CLIENTVER)
+		if(Msg == NETMSG_KCP_CAPABLE)
+		{
+			if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) == 0 || m_aClients[ClientId].m_State < CClient::STATE_PREAUTH)
+			{
+				return;
+			}
+
+			const int Version = Unpacker.GetInt();
+			const int MaxPacketSize = Unpacker.GetInt();
+			const int MaxPayloadSize = Unpacker.GetInt();
+			Unpacker.GetInt(); // dummy connection marker, reserved for per-client fallback.
+			if(Unpacker.Error() || Version != 1 || MaxPacketSize < NET_MAX_PACKETSIZE || MaxPayloadSize < NET_MAX_PAYLOAD)
+			{
+				SendKcpFallback(ClientId, "unsupported kcp capability");
+				return;
+			}
+
+			m_aClients[ClientId].m_KcpCapable = true;
+			if(m_aClients[ClientId].m_KcpNegotiated && m_NetServer.IsKcpActive(ClientId))
+			{
+				return;
+			}
+			if(!Config()->m_SvKcp)
+			{
+				m_NetServer.DeactivateKcp(ClientId);
+				m_aClients[ClientId].m_KcpNegotiated = false;
+				m_aClients[ClientId].m_KcpConv = 0;
+				SendKcpFallback(ClientId, "server kcp disabled");
+				return;
+			}
+
+			uint32_t Conv = (uint32_t)m_aClients[ClientId].m_KcpConv;
+			if(!m_aClients[ClientId].m_KcpNegotiated || Conv == 0)
+			{
+				Conv = m_NetServer.NewKcpConv();
+			}
+			if(Conv == 0)
+			{
+				SendKcpFallback(ClientId, "server kcp session id exhausted");
+				return;
+			}
+			CMsgPacker Msgp(NETMSG_KCP_ACCEPT, true);
+			Msgp.AddInt(1);
+			Msgp.AddInt((int)Conv);
+			if(m_NetServer.IsKcpActive(ClientId))
+			{
+				if(m_aClients[ClientId].m_KcpConv == (int)Conv)
+				{
+					return;
+				}
+				m_NetServer.DeactivateKcp(ClientId);
+			}
+			if(!m_NetServer.IsKcpPending(ClientId))
+			{
+				m_NetServer.PrepareKcpUpgrade(ClientId, Conv);
+			}
+			SendMsg(&Msgp, MSGFLAG_VITAL | MSGFLAG_FLUSH, ClientId);
+
+			m_aClients[ClientId].m_KcpNegotiated = true;
+			m_aClients[ClientId].m_KcpConv = (int)Conv;
+			m_aClients[ClientId].m_KcpNegotiatedTime = time_get();
+
+			if(Config()->m_SvKcpDebug)
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "kcp capability accepted. cid=%d conv=%u addr=<{%s}>", ClientId, Conv, ClientAddrString(ClientId, true));
+				Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "server", aBuf);
+			}
+		}
+		else if(Msg == NETMSG_QM_LIVE_OBSERVER_REQUEST)
+		{
+			if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) == 0 ||
+				(m_aClients[ClientId].m_State != CClient::STATE_PREAUTH && m_aClients[ClientId].m_State != CClient::STATE_AUTH))
+			{
+				return;
+			}
+
+			const int Version = Unpacker.GetInt();
+			const int Capabilities = Unpacker.GetInt();
+			if(Unpacker.Error())
+			{
+				return;
+			}
+
+#if defined(CONF_QM_LIVE_SERVER)
+			if(Version != QM_LIVE_OBSERVER_PROTOCOL_VERSION)
+			{
+				SendQmLiveObserverDeny(ClientId, EQmLiveDenyReason::VERSION_MISMATCH);
+				return;
+			}
+			if(m_aClients[ClientId].m_Sixup)
+			{
+				SendQmLiveObserverDeny(ClientId, EQmLiveDenyReason::UNSUPPORTED);
+				return;
+			}
+			if(!Config()->m_SvQmLiveObserver)
+			{
+				SendQmLiveObserverDeny(ClientId, EQmLiveDenyReason::DISABLED);
+				return;
+			}
+			if(NumQmLiveObservers() >= Config()->m_SvQmLiveMaxObservers)
+			{
+				SendQmLiveObserverDeny(ClientId, EQmLiveDenyReason::FULL);
+				return;
+			}
+
+			m_aClients[ClientId].m_QmLiveObserver = true;
+			m_aClients[ClientId].m_IsLiveObserver = true;
+			m_aClients[ClientId].m_QmLiveCapabilities = Capabilities;
+			SendQmLiveObserverAccept(ClientId);
+#else
+			(void)Version;
+			(void)Capabilities;
+			SendQmLiveObserverDeny(ClientId, EQmLiveDenyReason::UNSUPPORTED);
+			m_NetServer.Drop(ClientId, QmLiveDenyReasonString(EQmLiveDenyReason::UNSUPPORTED));
+#endif
+		}
+		else if(Msg == NETMSG_CLIENTVER)
 		{
 			if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && m_aClients[ClientId].m_State == CClient::STATE_PREAUTH)
 			{
@@ -1715,6 +2008,8 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 				m_aClients[ClientId].m_DDNetVersionSettled = true;
 				m_aClients[ClientId].m_GotDDNetVersionPacket = true;
 				m_aClients[ClientId].m_State = CClient::STATE_AUTH;
+				UpdateClientBrand(ClientId, pDDNetVersionStr);
+				SendCapabilities(ClientId);
 			}
 		}
 		else if(Msg == NETMSG_INFO)
@@ -1750,7 +2045,7 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 				int NumConnectedClients = 0;
 				for(int i = 0; i < MaxClients(); ++i)
 				{
-					if(m_aClients[i].m_State != CClient::STATE_EMPTY)
+					if(m_aClients[i].m_State != CClient::STATE_EMPTY && !m_aClients[i].m_IsLiveObserver)
 					{
 						NumConnectedClients++;
 					}
@@ -1808,6 +2103,17 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 		{
 			if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && (m_aClients[ClientId].m_State == CClient::STATE_CONNECTING))
 			{
+				if(m_aClients[ClientId].m_IsLiveObserver)
+				{
+					char aBuf[256];
+					str_format(aBuf, sizeof(aBuf), "live observer is ready. ClientId=%d addr=<{%s}>", ClientId, ClientAddrString(ClientId, true));
+					Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "server", aBuf);
+					m_aClients[ClientId].m_State = CClient::STATE_LIVE_OBSERVER;
+					SendConnectionReady(ClientId);
+					GameServer()->OnLiveObserverEnter(ClientId);
+					return;
+				}
+
 				char aBuf[256];
 				str_format(aBuf, sizeof(aBuf), "player is ready. ClientId=%d addr=<{%s}> secure=%s", ClientId, ClientAddrString(ClientId, true), m_NetServer.HasSecurityToken(ClientId) ? "yes" : "no");
 				Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "server", aBuf);
@@ -1826,8 +2132,28 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 		}
 		else if(Msg == NETMSG_ENTERGAME)
 		{
+			if(m_aClients[ClientId].m_IsLiveObserver)
+				return;
+
 			if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && m_aClients[ClientId].m_State == CClient::STATE_READY && GameServer()->IsClientReady(ClientId))
 			{
+				if(m_aClients[ClientId].m_KcpNegotiated && !m_NetServer.IsKcpActive(ClientId))
+				{
+					if(m_NetServer.IsKcpPending(ClientId))
+					{
+						return;
+					}
+					else
+					{
+						m_aClients[ClientId].m_KcpNegotiated = false;
+						m_aClients[ClientId].m_KcpConv = 0;
+					}
+				}
+				if(Config()->m_SvKcpRequired && !m_aClients[ClientId].m_KcpNegotiated)
+				{
+					m_NetServer.Drop(ClientId, "KCP transport required");
+					return;
+				}
 				char aBuf[256];
 				str_format(aBuf, sizeof(aBuf), "player has entered the game. ClientId=%d addr=<{%s}> sixup=%d", ClientId, ClientAddrString(ClientId, true), IsSixup(ClientId));
 				Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
@@ -1843,6 +2169,7 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 					SendMsg(&ServerInfoMessage, MSGFLAG_VITAL | MSGFLAG_FLUSH, ClientId);
 				}
 				GameServer()->OnClientEnter(ClientId);
+				SendClientBrandsToKnownClients();
 			}
 		}
 		else if(Msg == NETMSG_INPUT)
@@ -1850,10 +2177,14 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 			const int LastAckedSnapshot = Unpacker.GetInt();
 			int IntendedTick = Unpacker.GetInt();
 			int Size = Unpacker.GetInt();
-			if(Unpacker.Error() || Size / 4 > MAX_INPUT_SIZE || IntendedTick < MIN_TICK || IntendedTick >= MAX_TICK)
+			if(Unpacker.Error() || Size < 0 || Size % (int)sizeof(int) != 0 || Size / (int)sizeof(int) > MAX_INPUT_SIZE || IntendedTick < MIN_TICK || IntendedTick >= MAX_TICK)
 			{
 				return;
 			}
+			if(m_aClients[ClientId].m_IsLiveObserver && Size != 0)
+				return;
+
+			const int OriginalIntendedTick = IntendedTick;
 
 			m_aClients[ClientId].m_LastAckedSnapshot = LastAckedSnapshot;
 			if(m_aClients[ClientId].m_LastAckedSnapshot > 0)
@@ -1877,6 +2208,10 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 
 			m_aClients[ClientId].m_LastInputTick = IntendedTick;
 
+			// Live observers only use zero-size input messages as snapshot acks and timing probes.
+			if(m_aClients[ClientId].m_IsLiveObserver)
+				return;
+
 			CClient::CInput *pInput = &m_aClients[ClientId].m_aInputs[m_aClients[ClientId].m_CurrentInput];
 
 			if(IntendedTick <= Tick())
@@ -1891,6 +2226,20 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 			if(Unpacker.Error())
 			{
 				return;
+			}
+
+			if(m_NetServer.IsKcpActive(ClientId) &&
+				OriginalIntendedTick == m_aClients[ClientId].m_LastKcpInputTick &&
+				Size == m_aClients[ClientId].m_LastKcpInputSize &&
+				mem_comp(pInput->m_aData, m_aClients[ClientId].m_aLastKcpInput, Size) == 0)
+			{
+				return;
+			}
+			if(m_NetServer.IsKcpActive(ClientId))
+			{
+				m_aClients[ClientId].m_LastKcpInputTick = OriginalIntendedTick;
+				m_aClients[ClientId].m_LastKcpInputSize = Size;
+				mem_copy(m_aClients[ClientId].m_aLastKcpInput, pInput->m_aData, Size);
 			}
 
 			if(g_Config.m_SvPreInput)
@@ -1959,7 +2308,7 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 			}
 			else if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && IsRconAuthed(ClientId))
 			{
-				if(GameServer()->PlayerExists(ClientId))
+				if(GameServer()->PlayerExists(ClientId) || m_aClients[ClientId].m_IsLiveObserver)
 				{
 					char aBuf[256];
 					str_format(aBuf, sizeof(aBuf), "ClientId=%d rcon='%s'", ClientId, pCmd);
@@ -2122,7 +2471,7 @@ void CServer::ProcessClientPacket(CNetChunk *pPacket)
 			}
 		}
 	}
-	else if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && m_aClients[ClientId].m_State >= CClient::STATE_READY)
+	else if((pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && m_aClients[ClientId].m_State >= CClient::STATE_READY && !m_aClients[ClientId].m_IsLiveObserver)
 	{
 		// game message
 		GameServer()->OnMessage(Msg, &Unpacker, ClientId);
@@ -2562,7 +2911,7 @@ void CServer::FillAntibot(CAntibotRoundData *pData)
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ClientId++)
 	{
 		CAntibotPlayerData *pPlayer = &pData->m_aPlayers[ClientId];
-		if(m_aClients[ClientId].m_State == CServer::CClient::STATE_EMPTY)
+		if(m_aClients[ClientId].m_State == CServer::CClient::STATE_EMPTY || m_aClients[ClientId].m_IsLiveObserver)
 		{
 			pPlayer->m_aAddress[0] = '\0';
 		}
@@ -2658,6 +3007,14 @@ void CServer::UpdateRegisterServerInfo()
 
 	JsonWriter.WriteAttribute("requires_login");
 	JsonWriter.WriteBoolValue(false);
+
+#if defined(CONF_QM_LIVE_SERVER)
+	JsonWriter.WriteAttribute("qm_live_server");
+	JsonWriter.WriteBoolValue(Config()->m_SvQmLiveObserver != 0);
+
+	JsonWriter.WriteAttribute("qm_live_caps");
+	JsonWriter.WriteIntValue(Config()->m_SvQmLiveObserver ? QmLiveCapabilities() : 0);
+#endif
 
 	{
 		bool FoundFlags = false;
@@ -2763,6 +3120,46 @@ void CServer::PumpNetwork(bool PacketWaiting)
 {
 	CNetChunk Packet;
 	SECURITY_TOKEN ResponseToken;
+	const bool PrintKcpStats = Config()->m_SvKcpStats &&
+		(m_KcpLastStatsTime == 0 || time_get() - m_KcpLastStatsTime >= time_freq() * 5);
+
+	for(int ClientId = 0; ClientId < MaxClients(); ++ClientId)
+	{
+		if(!Config()->m_SvKcp && m_NetServer.IsKcpActive(ClientId))
+		{
+			SendKcpFallback(ClientId, "server kcp disabled");
+			SendKcpFallbackLegacy(ClientId, "server kcp disabled");
+			m_NetServer.DeactivateKcp(ClientId);
+			m_aClients[ClientId].m_KcpNegotiated = false;
+			m_aClients[ClientId].m_KcpConv = 0;
+		}
+		else if(m_NetServer.IsKcpActive(ClientId))
+		{
+			const SNetTransportStats Stats = m_NetServer.ClientTransportStats(ClientId);
+			if(Stats.m_SendQueueDepth >= NET_KCP_MAX_PENDING_SEGMENTS)
+			{
+				SendKcpFallback(ClientId, "server kcp queue full");
+				SendKcpFallbackLegacy(ClientId, "server kcp queue full");
+				m_NetServer.DeactivateKcp(ClientId);
+				m_aClients[ClientId].m_KcpNegotiated = false;
+				m_aClients[ClientId].m_KcpConv = 0;
+			}
+		}
+		if(PrintKcpStats && m_aClients[ClientId].m_State != CClient::STATE_EMPTY)
+		{
+			char aBuf[512];
+			const SNetTransportStats Stats = m_NetServer.ClientTransportStats(ClientId);
+			str_format(aBuf, sizeof(aBuf),
+				"id=%d transport=%s rtt=%d loss=%.1f%% resend=%d jitter=%d snap_delay=%d send_q=%d recv_q=%d bw_down=%d bw_up=%d sessions=%d",
+				ClientId, m_NetServer.ClientTransportName(ClientId), Stats.m_RttMs,
+				Stats.m_LossPermille / 10.0f, Stats.m_ResendCount, Stats.m_JitterMs,
+				m_aClients[ClientId].m_Latency, Stats.m_SendQueueDepth, Stats.m_RecvQueueDepth,
+				Stats.m_BandwidthDown, Stats.m_BandwidthUp, Stats.m_SessionCount);
+			Console()->Print(IConsole::OUTPUT_LEVEL_ADDINFO, "kcp_stats", aBuf);
+		}
+	}
+	if(PrintKcpStats)
+		m_KcpLastStatsTime = time_get();
 
 	m_NetServer.Update();
 
@@ -3044,13 +3441,36 @@ int CServer::Run()
 
 	{
 		int Size = GameServer()->PersistentClientDataSize();
+		if(Size <= 0)
+		{
+			log_error("server", "invalid persistent client data size %d", Size);
+			return -1;
+		}
 		for(auto &Client : m_aClients)
 		{
 			Client.m_HasPersistentData = false;
+			free(Client.m_pPersistentData);
 			Client.m_pPersistentData = malloc(Size);
+			if(Client.m_pPersistentData == nullptr)
+			{
+				log_error("server", "failed to allocate persistent client data");
+				return -1;
+			}
 		}
 	}
-	m_pPersistentData = malloc(GameServer()->PersistentDataSize());
+	const int PersistentDataSize = GameServer()->PersistentDataSize();
+	if(PersistentDataSize <= 0)
+	{
+		log_error("server", "invalid persistent server data size %d", PersistentDataSize);
+		return -1;
+	}
+	free(m_pPersistentData);
+	m_pPersistentData = malloc(PersistentDataSize);
+	if(m_pPersistentData == nullptr)
+	{
+		log_error("server", "failed to allocate persistent server data");
+		return -1;
+	}
 
 	// load map
 	if(!LoadMap(Config()->m_SvMap))
@@ -3200,8 +3620,14 @@ int CServer::Run()
 
 						SendMap(ClientId);
 						bool HasPersistentData = m_aClients[ClientId].m_HasPersistentData;
+						bool QmLiveObserver = m_aClients[ClientId].m_QmLiveObserver;
+						bool IsLiveObserver = m_aClients[ClientId].m_IsLiveObserver;
+						int QmLiveCapabilities = m_aClients[ClientId].m_QmLiveCapabilities;
 						m_aClients[ClientId].Reset();
 						m_aClients[ClientId].m_HasPersistentData = HasPersistentData;
+						m_aClients[ClientId].m_QmLiveObserver = QmLiveObserver;
+						m_aClients[ClientId].m_IsLiveObserver = IsLiveObserver;
+						m_aClients[ClientId].m_QmLiveCapabilities = QmLiveCapabilities;
 						m_aClients[ClientId].m_State = CClient::STATE_CONNECTING;
 					}
 
@@ -3215,6 +3641,8 @@ int CServer::Run()
 					{
 						CClient &Client = m_aClients[ClientId];
 						if(Client.m_State < CClient::STATE_PREAUTH)
+							continue;
+						if(Client.m_IsLiveObserver)
 							continue;
 
 						// When doing a map change, a new Teehistorian file is created. For players that are already
@@ -3538,6 +3966,47 @@ void CServer::ConStatus(IConsole::IResult *pResult, void *pUser)
 		{
 			str_format(aBuf, sizeof(aBuf), "id=%d addr=<{%s}> connecting", i, pThis->ClientAddrString(i, true));
 		}
+		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+	}
+}
+
+void CServer::ConKcpStatus(IConsole::IResult *pResult, void *pUser)
+{
+	char aBuf[1024];
+	CServer *pThis = static_cast<CServer *>(pUser);
+	const char *pName = pResult->NumArguments() == 1 ? pResult->GetString(0) : "";
+
+	str_format(aBuf, sizeof(aBuf), "kcp enabled=%d required=%d sessions=%d fake_queue=%d fake_dropped=%" PRIu64 " fake_delayed=%" PRIu64,
+		g_Config.m_SvKcp, g_Config.m_SvKcpRequired, pThis->m_NetServer.KcpSessionCount(),
+		pThis->m_NetServer.FakeNetQueueDepth(), pThis->m_NetServer.FakeNetDroppedPackets(), pThis->m_NetServer.FakeNetDelayedPackets());
+	pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
+
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ClientId++)
+	{
+		if(pThis->m_aClients[ClientId].m_State == CClient::STATE_EMPTY)
+			continue;
+		if(pThis->m_aClients[ClientId].m_KcpNegotiated && !pThis->m_NetServer.IsKcpActive(ClientId))
+		{
+			if(!pThis->m_NetServer.IsKcpPending(ClientId))
+			{
+				pThis->m_aClients[ClientId].m_KcpNegotiated = false;
+				pThis->m_aClients[ClientId].m_KcpConv = 0;
+			}
+		}
+
+		if(!str_utf8_find_nocase(pThis->m_aClients[ClientId].m_aName, pName))
+			continue;
+
+		const SNetTransportStats Stats = pThis->m_NetServer.ClientTransportStats(ClientId);
+		const int SnapshotDelayMs = pThis->m_aClients[ClientId].m_Latency;
+		str_format(aBuf, sizeof(aBuf),
+			"id=%d transport=%s kcp_capable=%d kcp_negotiated=%d conv=%d rtt=%d loss=%.1f%% resend=%d jitter=%d snap_delay=%d send_q=%d recv_q=%d bw_down=%d bw_up=%d session_count=%d",
+			ClientId, pThis->m_NetServer.ClientTransportName(ClientId),
+			pThis->m_aClients[ClientId].m_KcpCapable, pThis->m_aClients[ClientId].m_KcpNegotiated,
+			pThis->m_aClients[ClientId].m_KcpConv, Stats.m_RttMs,
+			Stats.m_LossPermille / 10.0f, Stats.m_ResendCount, Stats.m_JitterMs,
+			SnapshotDelayMs, Stats.m_SendQueueDepth, Stats.m_RecvQueueDepth,
+			Stats.m_BandwidthDown, Stats.m_BandwidthUp, Stats.m_SessionCount);
 		pThis->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "server", aBuf);
 	}
 }
@@ -4371,6 +4840,7 @@ void CServer::RegisterCommands()
 
 	Console()->Register("record", "?s[file]", CFGFLAG_SERVER | CFGFLAG_STORE, ConRecord, this, "Record to a file");
 	Console()->Register("stoprecord", "", CFGFLAG_SERVER, ConStopRecord, this, "Stop recording");
+	Console()->Register("kcp_status", "?r[name]", CFGFLAG_SERVER, ConKcpStatus, this, "List KCP/legacy transport status and weak-network simulation metrics");
 
 	Console()->Register("reload", "", CFGFLAG_SERVER, ConMapReload, this, "Reload the map");
 
@@ -4588,6 +5058,7 @@ bool CServer::SetTimedOut(int ClientId, int OrigId)
 	m_NetServer.ResumeOldConnection(ClientId, OrigId);
 
 	m_aClients[ClientId].m_Sixup = m_aClients[OrigId].m_Sixup;
+	const EClientBrand OrigClientBrand = m_aClients[OrigId].m_ClientBrand;
 
 	DelClientCallback(OrigId, "Timeout Protection used", this);
 	m_aClients[ClientId].m_AuthKey = -1;
@@ -4595,6 +5066,8 @@ bool CServer::SetTimedOut(int ClientId, int OrigId)
 	m_aClients[ClientId].m_DDNetVersion = m_aClients[OrigId].m_DDNetVersion;
 	m_aClients[ClientId].m_GotDDNetVersionPacket = m_aClients[OrigId].m_GotDDNetVersionPacket;
 	m_aClients[ClientId].m_DDNetVersionSettled = m_aClients[OrigId].m_DDNetVersionSettled;
+	m_aClients[ClientId].m_ClientBrand = OrigClientBrand;
+	SendClientBrandsToKnownClients();
 	return true;
 }
 
