@@ -578,6 +578,8 @@ void CMenus::RenderSettingsQmClientOverview(CUIRect MainView)
 
 void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 {
+	const bool UseNewUi = g_Config.m_QmNewUi != 0;
+
 	// feat-003 dogfood: when dbg_qm_ui_dogfood is on, take over the QmClient
 	// settings panel and render the widget gallery. First visible verification
 	// of feat-002 (animation runtime) + feat-003 (tokens + 11 widgets).
@@ -735,7 +737,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage)
 			LogQmPerfStage("tabbar", StageTimer.ElapsedMs(), false, aTabExtra);
 		}
 
-		MainView.HSplitTop(Margin, nullptr, &MainView);
+		if(UseNewUi)
+			MainView.HSplitTop(Margin, nullptr, &MainView);
 
 		if(!s_QmTabTransitionInitialized)
 		{

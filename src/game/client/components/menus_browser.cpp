@@ -3696,16 +3696,28 @@ void CMenus::RenderServerbrowser(CUIRect MainView, bool DrawBackground)
 
 	(void)DrawBackground;
 	const bool UseNewUi = g_Config.m_QmNewUi != 0;
+	if(g_Config.m_UiPage == PAGE_FAVORITE_MAPS)
+	{
+		if(UseNewUi)
+		{
+			CUIRect View = MainView;
+			View.Margin(6.0f, &View);
+			RenderServerbrowserFavoriteMaps(View);
+		}
+		else
+		{
+			RenderServerbrowserFavoriteMaps(MainView);
+		}
+		return;
+	}
+
 	CUIRect View = MainView;
 	if(UseNewUi)
 		View.Margin(6.0f, &View);
 	else
-		View.Margin(std::clamp(View.w * 0.008f, 4.0f, 8.0f), &View);
-
-	if(g_Config.m_UiPage == PAGE_FAVORITE_MAPS)
 	{
-		RenderServerbrowserFavoriteMaps(View);
-		return;
+		View.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
+		View.Margin(10.0f, &View);
 	}
 
 	CUIRect ServerListBase, StatusBox, ToolBoxBase, TabBar;

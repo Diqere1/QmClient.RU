@@ -12,6 +12,7 @@
 #include <engine/graphics.h>
 #include <engine/input.h>
 #include <engine/keys.h>
+#include <engine/shared/qm_ime_policy.h>
 #include <engine/shared/config.h>
 
 #include <game/client/components/qmclient/perf_logging.h>
@@ -118,7 +119,7 @@ CInput::CInput()
 void CInput::Init()
 {
 	SDL_SetHint(SDL_HINT_IME_INTERNAL_EDITING, "0");
-	SDL_SetHint(SDL_HINT_IME_SHOW_UI, "0");
+	SDL_SetHint(SDL_HINT_IME_SHOW_UI, QmImeShouldUseSystemCandidateUi() ? "1" : "0");
 #ifdef SDL_HINT_IME_SUPPORT_EXTENDED_TEXT
 	SDL_SetHint(SDL_HINT_IME_SUPPORT_EXTENDED_TEXT, "1");
 #endif

@@ -6,6 +6,7 @@
 #include "lineinput.h"
 
 #include <engine/input.h>
+#include <engine/shared/qm_ime_policy.h>
 #include <engine/shared/config.h>
 
 #include <algorithm>
@@ -138,7 +139,16 @@ SQmImePopupState CQmImeManager::BuildPopupState() const
 
 void CQmImeManager::RenderCandidatePopup()
 {
-	if(g_Config.m_QmNewIme == 0)
+	const EQmImeCandidateRenderAction RenderAction = QmImeComputeCandidateRenderAction(QmImeShouldRenderCustomCandidateUi(), g_Config.m_QmNewIme);
+
+	if(RenderAction == EQmImeCandidateRenderAction::VALIDATE_ONLY)
+	{
+		CLineInput::ValidateActiveInputRenderedThisFrame();
+		m_CandidatePopup.Reset();
+		return;
+	}
+
+	if(RenderAction == EQmImeCandidateRenderAction::LEGACY)
 	{
 		m_CandidatePopup.Reset();
 		CLineInput::RenderLegacyCandidates();
