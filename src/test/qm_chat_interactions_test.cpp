@@ -18,6 +18,14 @@ TEST(QmChatInteractions, ScrollbarValueToBacklogLine)
 	EXPECT_EQ(CChat::ScrollbarValueToBacklogLine(0.5f, 12), 6);
 }
 
+TEST(QmChatInteractions, BacklogLineToScrollbarValue)
+{
+	EXPECT_FLOAT_EQ(CChat::BacklogLineToScrollbarValue(0, 12), 1.0f);
+	EXPECT_FLOAT_EQ(CChat::BacklogLineToScrollbarValue(12, 12), 0.0f);
+	EXPECT_FLOAT_EQ(CChat::BacklogLineToScrollbarValue(6, 12), 0.5f);
+	EXPECT_FLOAT_EQ(CChat::BacklogLineToScrollbarValue(20, 12), 0.0f);
+}
+
 TEST(QmChatInteractions, ClickDragThreshold)
 {
 	EXPECT_TRUE(CChat::IsCopyClickDrag(vec2(10.0f, 10.0f), vec2(12.0f, 12.0f)));

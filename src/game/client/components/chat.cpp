@@ -44,6 +44,7 @@ enum
 
 static constexpr float CHAT_SCROLLBAR_WIDTH = 5.0f;
 static constexpr float CHAT_SCROLLBAR_MARGIN = 2.0f;
+static constexpr float CHAT_SCROLLBAR_ALPHA_SCALE = 0.70f;
 
 static int BlockWordsSeparatorLength(const char *pStr)
 {
@@ -2552,7 +2553,7 @@ void CChat::OnRender()
 		const float VisibleRatio = std::clamp(VisibleLineCapacity / (float)maximum(TotalVisibleLines, 1), 0.08f, 1.0f);
 		ScrollbarHandleH = std::clamp(ScrollbarRect.h * VisibleRatio, 12.0f, ScrollbarRect.h);
 		const float TrackRange = maximum(1.0f, ScrollbarRect.h - ScrollbarHandleH);
-		ScrollbarHandleY = ScrollbarRect.y + TrackRange * (m_BacklogCurLine / (float)maximum(MaxScroll, 1));
+		ScrollbarHandleY = ScrollbarRect.y + TrackRange * BacklogLineToScrollbarValue(m_BacklogCurLine, MaxScroll);
 		const vec2 MousePos = GetChatMousePos();
 		const bool InsideRail =
 			MousePos.x >= ScrollbarRect.x &&
@@ -2576,13 +2577,13 @@ void CChat::OnRender()
 		{
 			const float HandleTop = std::clamp(MousePos.y - m_ScrollbarDragOffset, ScrollbarRect.y, ScrollbarRect.y + TrackRange);
 			const float RelativeTop = (HandleTop - ScrollbarRect.y) / TrackRange;
-			const int NewBacklogCurLine = ScrollbarValueToBacklogLine(1.0f - RelativeTop, MaxScroll);
+			const int NewBacklogCurLine = ScrollbarValueToBacklogLine(RelativeTop, MaxScroll);
 			if(NewBacklogCurLine != m_BacklogCurLine)
 			{
 				m_BacklogCurLine = NewBacklogCurLine;
 				RebuildChat();
 			}
-			ScrollbarHandleY = ScrollbarRect.y + TrackRange * (m_BacklogCurLine / (float)maximum(MaxScroll, 1));
+			ScrollbarHandleY = ScrollbarRect.y + TrackRange * BacklogLineToScrollbarValue(m_BacklogCurLine, MaxScroll);
 		}
 	}
 	else
@@ -2737,8 +2738,8 @@ void CChat::OnRender()
 	if(ShowChatScrollbar)
 	{
 		Graphics()->TextureClear();
-		Graphics()->DrawRect(ScrollbarRect.x, ScrollbarRect.y, ScrollbarRect.w, ScrollbarRect.h, ColorRGBA(1.0f, 1.0f, 1.0f, 0.18f), IGraphics::CORNER_ALL, ScrollbarRect.w * 0.5f);
-		const ColorRGBA HandleColor = m_ScrollbarDragging ? ColorRGBA(0.85f, 0.85f, 0.85f, 0.95f) : ColorRGBA(0.62f, 0.62f, 0.62f, 0.82f);
+		Graphics()->DrawRect(ScrollbarRect.x, ScrollbarRect.y, ScrollbarRect.w, ScrollbarRect.h, ColorRGBA(1.0f, 1.0f, 1.0f, 0.18f * CHAT_SCROLLBAR_ALPHA_SCALE), IGraphics::CORNER_ALL, ScrollbarRect.w * 0.5f);
+		const ColorRGBA HandleColor = m_ScrollbarDragging ? ColorRGBA(0.85f, 0.85f, 0.85f, 0.95f * CHAT_SCROLLBAR_ALPHA_SCALE) : ColorRGBA(0.62f, 0.62f, 0.62f, 0.82f * CHAT_SCROLLBAR_ALPHA_SCALE);
 		Graphics()->DrawRect(ScrollbarRect.x, ScrollbarHandleY, ScrollbarRect.w, ScrollbarHandleH, HandleColor, IGraphics::CORNER_ALL, ScrollbarRect.w * 0.5f);
 		ExtendBounds(ScrollbarRect.x, ScrollbarRect.y, ScrollbarRect.w, ScrollbarRect.h);
 	}

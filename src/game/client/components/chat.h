@@ -290,6 +290,12 @@ public:
 		const float ClampedValue = std::clamp(Value, 0.0f, 1.0f);
 		return std::clamp((int)std::round((1.0f - ClampedValue) * MaxScroll), 0, MaxScroll);
 	}
+	static float BacklogLineToScrollbarValue(int Line, int MaxScroll)
+	{
+		if(MaxScroll <= 0)
+			return 1.0f;
+		return 1.0f - std::clamp(Line, 0, MaxScroll) / (float)MaxScroll;
+	}
 	static bool IsCopyClickDrag(vec2 Press, vec2 Release)
 	{
 		return length(Release - Press) <= 5.0f;
