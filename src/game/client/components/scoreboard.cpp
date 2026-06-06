@@ -105,10 +105,19 @@ ColorRGBA ClientBrandScoreboardColor(EClientBrand Brand, float Alpha)
 	return ColorRGBA(1.0f, 1.0f, 1.0f, Alpha);
 }
 
+ColorRGBA ScoreboardUiColor()
+{
+	return color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
+}
+
 float ScoreboardUiAlpha(float AlphaScale)
 {
-	const ColorRGBA UiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
-	return std::clamp(UiColor.a * AlphaScale, 0.0f, 1.0f);
+	return ui_token::color::UiColorAccent(ScoreboardUiColor(), AlphaScale).a;
+}
+
+ColorRGBA ScoreboardUiColorSurface(float AlphaScale, float ColorScale = 0.16f)
+{
+	return ui_token::color::UiColorSurface(ScoreboardUiColor(), AlphaScale, ColorScale);
 }
 
 ColorRGBA ScoreboardWithUiAlpha(ColorRGBA Color, float AlphaScale)
@@ -119,7 +128,7 @@ ColorRGBA ScoreboardWithUiAlpha(ColorRGBA Color, float AlphaScale)
 
 ColorRGBA ScoreboardGlassSurface(float AlphaScale)
 {
-	return ui_token::color::SURFACE_GLASS.WithAlpha(ScoreboardUiAlpha(AlphaScale));
+	return ScoreboardUiColorSurface(AlphaScale);
 }
 }
 
@@ -350,7 +359,7 @@ void CScoreboard::RenderTitle(CUIRect TitleBar, int Team, const char *pTitle)
 void CScoreboard::RenderGoals(CUIRect Goals)
 {
 	const float ContentAlpha = m_AnimContentAlpha;
-	Goals.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f), ContentAlpha), IGraphics::CORNER_ALL, 7.5f);
+	Goals.Draw(ScoreboardUiColorSurface(ContentAlpha), IGraphics::CORNER_ALL, 7.5f);
 	Goals.VMargin(5.0f, &Goals);
 
 	const float FontSize = 10.0f;
@@ -406,14 +415,14 @@ void CScoreboard::RenderSpectators(CUIRect Spectators)
 	}
 
 	const float CornerRadius = 7.5f;
-	SpectatorPanel.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f), ContentAlpha), IGraphics::CORNER_ALL, CornerRadius);
+	SpectatorPanel.Draw(ScoreboardUiColorSurface(ContentAlpha), IGraphics::CORNER_ALL, CornerRadius);
 	CUIRect SpectatorList = SpectatorPanel;
 	SpectatorList.Margin(5.0f, &SpectatorList);
 
 	CUIRect MediaControls;
 	if(ShowMediaControls)
 	{
-		MediaPanel.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f), ContentAlpha), IGraphics::CORNER_ALL, CornerRadius);
+		MediaPanel.Draw(ScoreboardUiColorSurface(ContentAlpha), IGraphics::CORNER_ALL, CornerRadius);
 		MediaControls = MediaPanel;
 		MediaControls.Margin(5.0f, &MediaControls);
 	}
@@ -832,7 +841,7 @@ void CScoreboard::RenderSoundMuteBar(CUIRect ScoreboardRect)
 	InfoRect.x = std::clamp(InfoRect.x, ScreenMargin, pScreen->w - InfoRect.w - ScreenMargin);
 	InfoRect.y = std::clamp(InfoRect.y, ScreenMargin, pScreen->h - InfoRect.h - ScreenMargin);
 
-	InfoRect.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f), InfoAlpha * ContentAlpha), IGraphics::CORNER_ALL, 6.0f);
+	InfoRect.Draw(ScoreboardUiColorSurface(InfoAlpha * ContentAlpha, 0.18f), IGraphics::CORNER_ALL, 6.0f);
 
 	CUIRect InfoContent = InfoRect;
 	InfoContent.Margin(Padding, &InfoContent);
@@ -1366,7 +1375,7 @@ void CScoreboard::RenderRecordingNotification(float x)
 	const float FontSize = 10.0f;
 
 	CUIRect Rect = {x, 0.0f, TextRender()->TextWidth(FontSize, aBuf) + 30.0f, 25.0f};
-	Rect.Draw(ScoreboardWithUiAlpha(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), ContentAlpha), IGraphics::CORNER_B, 7.5f);
+	Rect.Draw(ScoreboardUiColorSurface(ContentAlpha), IGraphics::CORNER_B, 7.5f);
 	CUIRect Circle;
 	CUIRect TextRect;
 	{
@@ -1481,8 +1490,7 @@ void CScoreboard::OnRender()
 	else
 		pSortLabel = TimeScore ? Localize("Current: Time") : Localize("Current: Score");
 	const float SortButtonWidth = TextRender()->TextWidth(SortButtonFontSize, pSortLabel) + 18.0f;
-	const ColorRGBA SortButtonBaseColor = g_Config.m_QmScoreboardSortMode ? ColorRGBA(0.25f, 0.55f, 0.8f, 0.6f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f);
-	const ColorRGBA SortButtonColor = ScoreboardWithUiAlpha(SortButtonBaseColor, m_AnimContentAlpha);
+	const ColorRGBA SortButtonColor = g_Config.m_QmScoreboardSortMode ? ScoreboardWithUiAlpha(ColorRGBA(0.25f, 0.55f, 0.8f, 0.6f), m_AnimContentAlpha) : ScoreboardUiColorSurface(m_AnimContentAlpha, 0.18f);
 	auto &&DoSortButton = [&](CUIRect Rect) {
 		Rect.VMargin(4.0f, &Rect);
 		Rect.HMargin(6.0f, &Rect);
