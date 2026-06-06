@@ -165,14 +165,6 @@ namespace
 	constexpr float MENU_TAB_DEFAULT_W_OFFSET = 0.0f;
 	constexpr float MENU_TAB_DEFAULT_H_OFFSET = 3.0f;
 	constexpr float MENU_TAB_ANIM_EPSILON = 0.0001f;
-	constexpr float MENU_MENUBAR_HEIGHT = 34.0f;
-	constexpr float MENU_MENUBAR_NEW_UI_SCALE = 0.70f;
-
-	float MenuMenubarHeight()
-	{
-		return g_Config.m_QmNewUi != 0 ? MENU_MENUBAR_HEIGHT * MENU_MENUBAR_NEW_UI_SCALE : MENU_MENUBAR_HEIGHT;
-	}
-
 	bool PerfDebugEnabled()
 	{
 		return QmPerfEnabled();
@@ -2468,7 +2460,7 @@ void CMenus::Render()
 		else
 		{
 			CUIRect TabBar, MainView;
-			Screen.HSplitTop(MenuMenubarHeight(), &TabBar, &MainView);
+			Screen.HSplitTop(34.0f, &TabBar, &MainView);
 			const bool UseNewUi = g_Config.m_QmNewUi != 0;
 			if(UseNewUi)
 				MainView.HSplitTop(10.0f, nullptr, &MainView);
@@ -2564,7 +2556,7 @@ void CMenus::Render()
 		else
 		{
 			CUIRect TabBar, MainView;
-			Screen.HSplitTop(MenuMenubarHeight(), &TabBar, &MainView);
+			Screen.HSplitTop(34.0f, &TabBar, &MainView);
 			const bool UseNewUi = g_Config.m_QmNewUi != 0;
 			if(UseNewUi)
 				MainView.HSplitTop(10.0f, nullptr, &MainView);

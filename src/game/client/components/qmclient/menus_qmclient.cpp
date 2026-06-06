@@ -2057,9 +2057,15 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage, boo
 		DrawDragOutline(CardRect);
 	};
 
-	std::vector<SQmModuleCardInfo> ModuleCards;
-	std::vector<const SQmModuleCardInfo *> LeftCards;
-	std::vector<const SQmModuleCardInfo *> RightCards;
+	static std::vector<SQmModuleCardInfo> s_vModuleCards;
+	static std::vector<const SQmModuleCardInfo *> s_vLeftCards;
+	static std::vector<const SQmModuleCardInfo *> s_vRightCards;
+	std::vector<SQmModuleCardInfo> &ModuleCards = s_vModuleCards;
+	std::vector<const SQmModuleCardInfo *> &LeftCards = s_vLeftCards;
+	std::vector<const SQmModuleCardInfo *> &RightCards = s_vRightCards;
+	ModuleCards.clear();
+	LeftCards.clear();
+	RightCards.clear();
 	ModuleCards.reserve(s_aQmModuleLayout.size());
 	LeftCards.reserve(s_aQmModuleLayout.size());
 	RightCards.reserve(s_aQmModuleLayout.size());
@@ -2792,12 +2798,24 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage, boo
 		return true;
 	};
 
-	std::vector<const SQmModuleEntry *> VisibleLeftModules;
-	std::vector<const SQmModuleEntry *> VisibleRightModules;
-	std::vector<const SQmModuleEntry *> VisibleFullModules;
-	std::vector<const SQmModuleEntry *> SearchVisibleModules;
-	std::vector<const SQmModuleEntry *> SearchLeftModules;
-	std::vector<const SQmModuleEntry *> SearchRightModules;
+	static std::vector<const SQmModuleEntry *> s_vVisibleLeftModules;
+	static std::vector<const SQmModuleEntry *> s_vVisibleRightModules;
+	static std::vector<const SQmModuleEntry *> s_vVisibleFullModules;
+	static std::vector<const SQmModuleEntry *> s_vSearchVisibleModules;
+	static std::vector<const SQmModuleEntry *> s_vSearchLeftModules;
+	static std::vector<const SQmModuleEntry *> s_vSearchRightModules;
+	std::vector<const SQmModuleEntry *> &VisibleLeftModules = s_vVisibleLeftModules;
+	std::vector<const SQmModuleEntry *> &VisibleRightModules = s_vVisibleRightModules;
+	std::vector<const SQmModuleEntry *> &VisibleFullModules = s_vVisibleFullModules;
+	std::vector<const SQmModuleEntry *> &SearchVisibleModules = s_vSearchVisibleModules;
+	std::vector<const SQmModuleEntry *> &SearchLeftModules = s_vSearchLeftModules;
+	std::vector<const SQmModuleEntry *> &SearchRightModules = s_vSearchRightModules;
+	VisibleLeftModules.clear();
+	VisibleRightModules.clear();
+	VisibleFullModules.clear();
+	SearchVisibleModules.clear();
+	SearchLeftModules.clear();
+	SearchRightModules.clear();
 	static std::shared_ptr<CQmFunctionSnapshotJob> s_pQmFunctionSnapshotJob;
 	static std::shared_ptr<SQmFunctionSnapshotResult> s_pQmFunctionSnapshotResult;
 	static uint64_t s_QmFunctionSnapshotPendingSignature = 0;
@@ -6915,20 +6933,30 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage, boo
 			TargetColumn = EQmModuleColumn::Right;
 
 		const auto &Cards = (TargetColumn == EQmModuleColumn::Left) ? LeftCards : RightCards;
-		std::vector<const SQmModuleCardInfo *> FilteredCards;
-		FilteredCards.reserve(Cards.size());
+		int InsertIndex = 0;
+		int FilteredCardsSize = 0;
+		const SQmModuleCardInfo *pFirstFilteredCard = nullptr;
+		const SQmModuleCardInfo *pLastFilteredCard = nullptr;
+		const SQmModuleCardInfo *pPrevInsertCard = nullptr;
+		const SQmModuleCardInfo *pNextInsertCard = nullptr;
 		for(const auto *pCard : Cards)
 		{
-			if(pCard->m_pModule != s_DragState.m_pDragging)
-				FilteredCards.push_back(pCard);
-		}
-
-		int InsertIndex = 0;
-		for(const auto *pCard : FilteredCards)
-		{
+			if(pCard->m_pModule == s_DragState.m_pDragging)
+				continue;
+			if(pFirstFilteredCard == nullptr)
+				pFirstFilteredCard = pCard;
+			pLastFilteredCard = pCard;
 			const float MidY = pCard->m_Rect.y + pCard->m_Rect.h * 0.5f;
 			if(MouseY > MidY)
+			{
 				++InsertIndex;
+				pPrevInsertCard = pCard;
+			}
+			else if(pNextInsertCard == nullptr)
+			{
+				pNextInsertCard = pCard;
+			}
+			++FilteredCardsSize;
 		}
 
 		const float ColumnTop = (TargetColumn == EQmModuleColumn::Left) ? LeftColumnTop : RightColumnTop;
@@ -6943,30 +6971,27 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage, boo
 		}
 		const float EffectiveMouseY = std::clamp(MouseY, ClipTop, ClipBottom);
 		float LineY = ColumnTop;
-		if(FilteredCards.empty())
+		if(FilteredCardsSize == 0)
 		{
 			LineY = ColumnTop + LgCardSpacing * 0.5f;
 		}
 		else if(InsertIndex <= 0)
 		{
-			LineY = FilteredCards.front()->m_Rect.y - LgCardSpacing * 0.5f;
+			LineY = pFirstFilteredCard->m_Rect.y - LgCardSpacing * 0.5f;
 			LineY = maximum(LineY, ColumnTop);
 		}
-		else if(InsertIndex >= (int)FilteredCards.size())
+		else if(InsertIndex >= FilteredCardsSize)
 		{
-			const SQmModuleCardInfo *pLast = FilteredCards.back();
-			LineY = pLast->m_Rect.y + pLast->m_Rect.h + LgCardSpacing * 0.5f;
+			LineY = pLastFilteredCard->m_Rect.y + pLastFilteredCard->m_Rect.h + LgCardSpacing * 0.5f;
 		}
 		else
 		{
-			const SQmModuleCardInfo *pPrev = FilteredCards[InsertIndex - 1];
-			const SQmModuleCardInfo *pNext = FilteredCards[InsertIndex];
-			LineY = (pPrev->m_Rect.y + pPrev->m_Rect.h + pNext->m_Rect.y) * 0.5f;
+			LineY = (pPrevInsertCard->m_Rect.y + pPrevInsertCard->m_Rect.h + pNextInsertCard->m_Rect.y) * 0.5f;
 		}
 		const float MinLineY = ColumnTop;
 		const float MaxLineY = maximum(MinLineY, ClipBottom - DropPreviewThickness * 0.5f);
 		LineY = std::clamp(LineY, MinLineY, MaxLineY);
-		if(FilteredCards.empty())
+		if(FilteredCardsSize == 0)
 		{
 			LineY = std::clamp(EffectiveMouseY, MinLineY, MaxLineY);
 		}
@@ -6974,7 +6999,7 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage, boo
 		{
 			LineY = std::clamp(minimum(LineY, EffectiveMouseY), MinLineY, MaxLineY);
 		}
-		else if(InsertIndex >= (int)FilteredCards.size())
+		else if(InsertIndex >= FilteredCardsSize)
 		{
 			LineY = std::clamp(maximum(LineY, EffectiveMouseY), MinLineY, MaxLineY);
 		}
@@ -6987,8 +7012,8 @@ void CMenus::RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage, boo
 		LineRect.h = DropPreviewThickness;
 
 		s_DropPreview.m_pDragged = s_DragState.m_pDragging;
-		s_DropPreview.m_pPrevVisible = InsertIndex > 0 ? FilteredCards[InsertIndex - 1]->m_pModule : nullptr;
-		s_DropPreview.m_pNextVisible = InsertIndex < (int)FilteredCards.size() ? FilteredCards[InsertIndex]->m_pModule : nullptr;
+		s_DropPreview.m_pPrevVisible = InsertIndex > 0 ? pPrevInsertCard->m_pModule : nullptr;
+		s_DropPreview.m_pNextVisible = InsertIndex < FilteredCardsSize ? pNextInsertCard->m_pModule : nullptr;
 		s_DropPreview.m_TargetColumn = TargetColumn;
 		s_DropPreview.m_InsertIndex = InsertIndex;
 		s_DropPreview.m_Active = true;
