@@ -14,10 +14,10 @@ AUTH_ADD_PRESENT_REGEX = re.compile(r"(^|\W)auth_add($|\W)")
 
 def hash_password(password):
     salt = os.urandom(8)
-    h = hashlib.md5()
-    h.update(password.encode())
-    h.update(salt)
-    return h.hexdigest(), binascii.hexlify(salt).decode("ascii")
+    digest_input = password.encode() + salt
+    # auth_add_p consumes the DDNet legacy MD5(password || salt) format.
+    # codeql[py/weak-sensitive-data-hashing]
+    return hashlib.md5(digest_input).hexdigest(), binascii.hexlify(salt).decode("ascii")
 
 
 def auth_add_p_line(username, level, pwhash, salt):
