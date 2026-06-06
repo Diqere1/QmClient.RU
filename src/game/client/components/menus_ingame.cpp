@@ -442,7 +442,7 @@ void CMenus::RenderGame(CUIRect MainView)
 	const bool LiveDirectorActive = Client()->QmLiveDirectorActive();
 	const bool ReportDisabledOnAxiom = GameClient()->m_TClient.IsAxiomCommunity();
 
-	const char *pDisconnectButtonLabel = Localize("Disconnect");
+	const char *pDisconnectButtonLabel = Localize("断开连接");
 	const char *pDummyButtonLabel = nullptr;
 	if(!LiveDirectorActive)
 	{
@@ -452,19 +452,19 @@ void CMenus::RenderGame(CUIRect MainView)
 		else if(Client()->DummyConnected())
 			pDummyButtonLabel = Localize("断开分身");
 	}
-	const char *pEditHudButtonLabel = Localize("Edit HUD");
-	const char *pDemoButtonLabel = Recording ? Localize("Stop record") : Localize("Record demo");
+	const char *pEditHudButtonLabel = Localize("编辑 HUD");
+	const char *pDemoButtonLabel = Recording ? Localize("停止录制") : Localize("录制 Demo");
 	char aSaveReplayButtonLabel[64];
-	str_format(aSaveReplayButtonLabel, sizeof(aSaveReplayButtonLabel), Localize("Save last %d min"), g_Config.m_ClEscReplayLengthMinutes);
-	const char *pDemoMarkerButtonLabel = Localize("Mark demo");
+	str_format(aSaveReplayButtonLabel, sizeof(aSaveReplayButtonLabel), Localize("保存最近 %d 分钟"), g_Config.m_ClEscReplayLengthMinutes);
+	const char *pDemoMarkerButtonLabel = Localize("标记 Demo");
 	const char *pReportButtonLabel = "举报";
 	const char *pSpectateButtonLabel = Localize("旁观");
-	const char *pJoinRedButtonLabel = Localize("Join red");
-	const char *pJoinBlueButtonLabel = Localize("Join blue");
-	const char *pJoinGameButtonLabel = Localize("Join game");
-	const char *pKillButtonLabel = Localize("Kill");
-	const char *pPauseButtonLabel = (!Paused && !Spec) ? Localize("Pause") : Localize("Join game");
-	const char *pFastPracticeLabel = FastPracticeEnabled ? Localize("Stop practice") : Localize("Fast practice");
+	const char *pJoinRedButtonLabel = Localize("加入红队");
+	const char *pJoinBlueButtonLabel = Localize("加入蓝队");
+	const char *pJoinGameButtonLabel = Localize("加入游戏");
+	const char *pKillButtonLabel = Localize("自杀");
+	const char *pPauseButtonLabel = (!Paused && !Spec) ? Localize("暂停") : Localize("加入游戏");
+	const char *pFastPracticeLabel = FastPracticeEnabled ? Localize("结束练习") : Localize("快速练习");
 
 	const float SpectateButtonWidth = CalcMenuButtonWidth(pSpectateButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
 	const float JoinRedButtonWidth = CalcMenuButtonWidth(pJoinRedButtonLabel, MenuButtonPaddingNormal, DynamicButtonMinWidth);
@@ -530,7 +530,7 @@ void CMenus::RenderGame(CUIRect MainView)
 
 	bool UseCompactUtilityButtons = false;
 	bool UseSecondaryUtilityButtonBar = false;
-	bool ShowDDRaceButtons = !IsTeamPlay;
+	bool ShowDDRaceButtons;
 	if(g_Config.m_ClTouchControls)
 	{
 		ShowDDRaceButtons = MainView.w > 855.0f;
@@ -603,7 +603,7 @@ void CMenus::RenderGame(CUIRect MainView)
 
 	UtilityButtonBar.VSplitRight(DisconnectButtonWidth, &UtilityButtonBar, &Button);
 	static CButtonContainer s_DisconnectButton;
-	if(DoButton_Menu(&s_DisconnectButton, Localize("Disconnect"), 0, &Button))
+	if(DoButton_Menu(&s_DisconnectButton, Localize("断开连接"), 0, &Button))
 	{
 		if((GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0) ||
 			GameClient()->m_TouchControls.HasEditingChanges() ||
@@ -612,7 +612,7 @@ void CMenus::RenderGame(CUIRect MainView)
 			char aBuf[256] = {'\0'};
 			if(GameClient()->CurrentRaceTime() / 60 >= g_Config.m_ClConfirmDisconnectTime && g_Config.m_ClConfirmDisconnectTime >= 0)
 			{
-				str_copy(aBuf, Localize("Are you sure that you want to disconnect?"));
+				str_copy(aBuf, Localize("确定要断开连接吗？"));
 			}
 			if(GameClient()->m_TouchControls.HasEditingChanges() ||
 				GameClient()->m_Menus.m_MenusIngameTouchControls.UnsavedChanges())
@@ -621,9 +621,9 @@ void CMenus::RenderGame(CUIRect MainView)
 				{
 					str_append(aBuf, "\n\n");
 				}
-				str_append(aBuf, Localize("There's an unsaved change in the touch controls editor, you might want to save it."));
+				str_append(aBuf, Localize("触控控件编辑器里还有未保存的修改，建议先保存。"));
 			}
-			PopupConfirm(Localize("Disconnect"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnect);
+			PopupConfirm(Localize("断开连接"), aBuf, Localize("Yes"), Localize("No"), &CMenus::PopupConfirmDisconnect);
 		}
 		else
 		{
@@ -647,7 +647,7 @@ void CMenus::RenderGame(CUIRect MainView)
 		else if(Client()->DummyConnectingDelayed())
 		{
 			DoButton_Menu(&s_DummyButton, pDummyButtonLabel, 1, &Button);
-			GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("Please wait…"));
+			GameClient()->m_Tooltips.DoToolTip(&s_DummyButton, &Button, Localize("请稍候…"));
 		}
 		else if(Client()->DummyConnecting())
 		{
@@ -1468,7 +1468,9 @@ void CMenus::RenderServerInfo(CUIRect MainView)
 				str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d)", Localize("Teams"), pTeamMode, Localize("maximum", "Team size"), Config()->m_SvMaxTeamSize);
 		}
 		else
+		{
 			str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Teams"), pTeamMode);
+		}
 		GameInfo.HSplitTop(FontSizeBody, &Label, &GameInfo);
 		Ui()->DoLabel(&Label, aBuf, FontSizeBody, TEXTALIGN_ML);
 	}

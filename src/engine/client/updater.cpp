@@ -22,9 +22,9 @@ class CUpdaterFetchTask : public CHttpRequest
 	char m_aBuf2[256];
 	CUpdater *m_pUpdater;
 
+protected:
 	void OnProgress() override;
 
-protected:
 	void OnCompletion(EHttpState State) override;
 
 public:
@@ -461,25 +461,41 @@ void CUpdater::CommitUpdate()
 	bool Success = true;
 
 	for(auto &FileJob : m_FileJobs)
+	{
 		if(FileJob.second)
+		{
 			Success &= MoveFile(FileJob.first.c_str());
+		}
+	}
 
 	if(m_ClientUpdate)
+	{
 		Success &= ReplaceClient();
+	}
 	if(m_ServerUpdate)
+	{
 		Success &= ReplaceServer();
+	}
 
 	if(Success)
 	{
 		for(const auto &[Filename, JobSuccess] : m_FileJobs)
+		{
 			if(!JobSuccess)
+			{
 				m_pStorage->RemoveBinaryFile(Filename.c_str());
+			}
+		}
 	}
 
 	if(!Success)
+	{
 		SetCurrentState(IUpdater::FAIL);
+	}
 	else if(m_pClient->State() == IClient::STATE_ONLINE || m_pClient->EditorHasUnsavedData())
+	{
 		SetCurrentState(IUpdater::NEED_RESTART);
+	}
 	else
 	{
 		m_pClient->Restart();

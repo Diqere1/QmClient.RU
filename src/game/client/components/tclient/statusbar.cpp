@@ -41,11 +41,11 @@ CStatusItem::CStatusItem(std::function<void()> Render, std::function<float()> Wi
 
 int CStatusBar::GetDigitsIndex(const int Value, const int Max)
 {
-	int s_Value = Value;
-	if(s_Value < 0) // Normalize
-		s_Value *= -1;
+	int NormalizedValue = Value;
+	if(NormalizedValue < 0) // Normalize
+		NormalizedValue *= -1;
 
-	int DigitsIndex = static_cast<int>(log10((s_Value ? s_Value : 1)));
+	int DigitsIndex = static_cast<int>(log10((NormalizedValue ? NormalizedValue : 1)));
 
 	if(DigitsIndex > Max)
 		DigitsIndex = Max;
@@ -90,7 +90,9 @@ void CStatusBar::AngleRender()
 		Angle = atan2f(pExtendedData->m_TargetY, pExtendedData->m_TargetX);
 	}
 	else
+	{
 		Angle = pCharacter->m_Angle / 256.0f;
+	}
 	if(Angle < 0)
 		Angle += 2.0f * pi;
 	char aBuf[32];
@@ -154,9 +156,13 @@ void CStatusBar::RaceTimeRender()
 			RaceTime = 0;
 	}
 	else if(GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_RACETIME)
+	{
 		RaceTime = (Client()->GameTick(g_Config.m_ClDummy) + GameClient()->m_Snap.m_pGameInfoObj->m_WarmupTimer) / Client()->GameTickSpeed();
+	}
 	else
+	{
 		RaceTime = (Client()->GameTick(g_Config.m_ClDummy) - GameClient()->m_Snap.m_pGameInfoObj->m_RoundStartTick) / Client()->GameTickSpeed();
+	}
 	m_CurrentRaceTime = RaceTime;
 	char aTimeBuf[64];
 	str_time((int64_t)RaceTime * 100, TIME_DAYS, aTimeBuf, sizeof(aTimeBuf));
@@ -329,13 +335,14 @@ void CStatusBar::ConnectionGradeRender()
 
 float CStatusBar::CpuWidth()
 {
-	return TextRender()->TextWidth(m_FontSize, "100%");
+	return TextRender()->TextWidth(m_FontSize, "100%/100%");
 }
 
 void CStatusBar::CpuRender()
 {
 	char aBuf[32];
-	FormatMetricValue(aBuf, sizeof(aBuf), "%", GameClient()->m_QmMonitoring.Snapshot().m_Performance.m_CpuUsagePct);
+	const SQmPerformanceMetrics &Perf = GameClient()->m_QmMonitoring.Snapshot().m_Performance;
+	FormatCpuRatioValue(aBuf, sizeof(aBuf), Perf.m_CpuUsagePct, Perf.m_TotalCpuUsagePct);
 	TextRender()->Text(m_CursorX, m_CursorY, m_FontSize, aBuf);
 }
 
@@ -457,7 +464,9 @@ void CStatusBar::OnRender()
 		LayoutItem.m_pItem = pItem;
 		LayoutItem.m_IsSpace = str_comp(pItem->m_aName, "Space") == 0;
 		if(LayoutItem.m_IsSpace)
+		{
 			++SpaceCount;
+		}
 		else
 		{
 			LayoutItem.m_ItemWidth = pItem->m_GetWidth();

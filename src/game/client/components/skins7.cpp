@@ -171,6 +171,7 @@ bool CSkins7::IsSpecialSkin(const char *pName)
 	return str_startswith(pName, "x_") != nullptr;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CSkinPartScanData
 {
 public:
@@ -274,13 +275,13 @@ void CSkins7::StartSkinPartLoadJob(int PartType, const char *pName, int DirType)
 
 void CSkins7::ProcessCompletedJobs()
 {
-	auto it = m_PendingSkinPartJobs.begin();
-	while(it != m_PendingSkinPartJobs.end())
+	auto Iter = m_PendingSkinPartJobs.begin();
+	while(Iter != m_PendingSkinPartJobs.end())
 	{
-		auto &pJob = *it;
+		auto &pJob = *Iter;
 		if(!pJob->IsCompleted())
 		{
-			++it;
+			++Iter;
 			continue;
 		}
 
@@ -314,7 +315,7 @@ void CSkins7::ProcessCompletedJobs()
 			}
 		}
 
-		it = m_PendingSkinPartJobs.erase(it);
+		Iter = m_PendingSkinPartJobs.erase(Iter);
 	}
 
 	if(m_PendingSkinPartJobs.empty() && m_Loading)
@@ -324,6 +325,7 @@ void CSkins7::ProcessCompletedJobs()
 	}
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CSkinScanData
 {
 public:
@@ -821,6 +823,7 @@ static void SaveSkinfilePart(CJsonFileWriter &Writer, const char *pPartName, con
 	Writer.EndObject();
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 bool SaveSkinfileFromParts(IStorage *pStorage, const char *pName, const char *pBodyPartName, const char *pMarkingPartName, const char *pDecorationPartName, const char *pHandsPartName, const char *pFeetPartName, const char *pEyesPartName)
 {
 	if(pStorage == nullptr || pName == nullptr || pName[0] == '\0')

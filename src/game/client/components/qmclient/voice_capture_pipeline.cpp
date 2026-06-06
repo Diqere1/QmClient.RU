@@ -40,10 +40,10 @@ namespace
 
 		for(int i = 0; i < Count; i++)
 		{
-			const float x = pSamples[i] / 32768.0f;
-			const float y = Alpha * (PrevOut + x - PrevIn);
-			PrevIn = x;
-			PrevOut = VoiceUtils::SanitizeFloat(y);
+			const float X = pSamples[i] / 32768.0f;
+			const float Y = Alpha * (PrevOut + X - PrevIn);
+			PrevIn = X;
+			PrevOut = VoiceUtils::SanitizeFloat(Y);
 
 			const float AbsY = std::fabs(PrevOut);
 			if(AbsY > Env)
@@ -92,9 +92,13 @@ namespace
 
 		float Target = 1.0f;
 		if(Snr <= Low)
+		{
 			Target = MinGain;
+		}
 		else if(Snr >= High)
+		{
 			Target = 1.0f;
+		}
 		else
 		{
 			const float T = (Snr - Low) / (High - Low);
@@ -198,8 +202,8 @@ namespace
 
 			for(int i = 0; i < FrameSize; i++)
 			{
-				const float y = aOut[i];
-				const int Wet = (int)std::clamp(y, -32768.0f, 32767.0f);
+				const float Y = aOut[i];
+				const int Wet = (int)std::clamp(Y, -32768.0f, 32767.0f);
 				pSamples[Base + i] = (int16_t)Wet;
 			}
 			VoiceUtils::BlendDenoisedFrame(aDry, pSamples + Base, FrameSize, Strength);

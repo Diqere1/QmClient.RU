@@ -28,9 +28,10 @@
 #include <game/client/animstate.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/hud_editor.h>
-#include <game/client/components/qmclient/modes.h>
 #include <game/client/components/qmclient/data_version.h>
 #include <game/client/components/qmclient/keyword_reply_rules.h>
+#include <game/client/components/qmclient/modes.h>
+#include <game/client/components/qmclient/update_version.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/render.h>
@@ -57,8 +58,8 @@
 #include <windows.h>
 #endif
 
-static constexpr const char *TCLIENT_INFO_URL = "http://42.194.185.210:8080/client/version";
-static constexpr const char *TCLIENT_UPDATE_EXE_URL = "https://github.com/wxj881027/QmClient/releases/latest/download/DDNet.exe";
+static constexpr const char *QMCLIENT_INFO_URL = "http://42.194.185.210:8080/client/version";
+static constexpr const char *QMCLIENT_UPDATE_EXE_URL = "https://github.com/wxj881027/QmClient/releases/latest/download/DDNet.exe";
 static constexpr const char *MAP_CATEGORY_CACHE_FILE = "qmclient/map_categories.json";
 static constexpr int64_t MAP_CATEGORY_CACHE_SAVE_DELAY_SEC = 5;
 static constexpr const char *MAP_NOTES_FILE = "qmclient/map_notes.json";
@@ -205,6 +206,7 @@ namespace
 	}
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SKeywordReplyRule
 {
 	std::string m_Keywords;
@@ -440,6 +442,7 @@ static bool IsRewardTileForGoresDistanceField(int TileIndex)
 	return TileIndex == TILE_UNFREEZE || TileIndex == TILE_DUNFREEZE || TileIndex == TILE_LUNFREEZE;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum EGoresCMapValue
 {
 	GORES_CMAP_NORMAL = 0,
@@ -576,7 +579,7 @@ void CTClient::OnInit()
 {
 	TextRender()->SetCustomFace(g_Config.m_TcCustomFont);
 	m_pGraphics = Kernel()->RequestInterface<IEngineGraphics>();
-	FetchTClientInfo();
+	FetchQmClientUpdateInfo();
 
 	// 先在 qmclient/ 目录找，找不到再返回上一级目录找
 	const bool MissingQmClientFolder = !Storage()->FolderExists("qmclient", IStorage::TYPE_ALL);
@@ -602,56 +605,6 @@ void CTClient::OnInit()
 	}
 	LoadMapCategoryCache();
 	LoadMapNotes();
-
-	// 兼容旧版恰分配置：将旧规则并入关键词回复，旧隐式关键词和预设触发词不再保留。
-	{
-		bool MigratedLegacyAutoReply = false;
-		char aMergedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
-		QmKeywordReplyRules::DecodeFromConfig(g_Config.m_QmKeywordReplyRules, aMergedRules, sizeof(aMergedRules));
-
-		if(g_Config.m_QmQiaFenEnabled)
-		{
-			g_Config.m_QmKeywordReplyEnabled = 1;
-			g_Config.m_QmQiaFenEnabled = 0;
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmQiaFenUseDummy)
-		{
-			g_Config.m_QmKeywordReplyUseDummy = 1;
-			g_Config.m_QmQiaFenUseDummy = 0;
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmQiaFenRules[0] != '\0')
-		{
-			if(AppendAutoReplyRuleBlock(aMergedRules, sizeof(aMergedRules), g_Config.m_QmQiaFenRules))
-			{
-				g_Config.m_QmQiaFenRules[0] = '\0';
-				MigratedLegacyAutoReply = true;
-			}
-		}
-
-		if(g_Config.m_QmQiaFenKeywords[0] != '\0')
-		{
-			g_Config.m_QmQiaFenKeywords[0] = '\0';
-			MigratedLegacyAutoReply = true;
-		}
-
-		if(g_Config.m_QmKeywordReplyAutoRename)
-		{
-			char aMigratedRules[sizeof(g_Config.m_QmKeywordReplyRules)];
-			if(MigrateKeywordReplyRulesAutoRenamePreservingLines(aMergedRules, aMigratedRules, sizeof(aMigratedRules)))
-			{
-				str_copy(aMergedRules, aMigratedRules, sizeof(aMergedRules));
-				g_Config.m_QmKeywordReplyAutoRename = 0;
-				MigratedLegacyAutoReply = true;
-			}
-		}
-
-		if(MigratedLegacyAutoReply)
-			QmKeywordReplyRules::EncodeForConfig(aMergedRules, g_Config.m_QmKeywordReplyRules, sizeof(g_Config.m_QmKeywordReplyRules));
-	}
 }
 
 void CTClient::OnShutdown()
@@ -664,7 +617,7 @@ void CTClient::OnShutdown()
 		}
 	};
 
-	AbortTask(m_pTClientInfoTask);
+	AbortTask(m_pQmClientUpdateInfoTask);
 	AbortTask(m_pUpdateExeTask);
 	if(m_MapNotesDirty)
 		SaveMapNotes();
@@ -743,6 +696,7 @@ static int AutoReplySeparatorLength(const char *pStr)
 	return 0;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum class EAutoReplyTokenMode
 {
 	Literal,
@@ -1265,7 +1219,7 @@ void CTClient::TrySendAxiomLogin()
 
 	if(!m_AxiomAutoLoginAnnounced)
 	{
-		GameClient()->Echo(Localize("Attempting Axiom auto login"));
+		GameClient()->Echo(Localize("正在尝试 Axiom 自动登录"));
 		m_AxiomAutoLoginAnnounced = true;
 	}
 }
@@ -1310,7 +1264,7 @@ void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
 		m_AxiomAutoLoginSucceeded = true;
 		m_AxiomAutoLoginWaitingReply = false;
 		m_AxiomAutoLoginNextTryTick = 0;
-		GameClient()->Echo(Localize("Axiom auto login succeeded"));
+		GameClient()->Echo(Localize("Axiom 自动登录成功"));
 	}
 	else if(Failure)
 	{
@@ -1318,12 +1272,12 @@ void CTClient::HandleAxiomAutoLoginMessage(const char *pText)
 		if(m_AxiomAutoLoginAttempts < QMCLIENT_AXIOM_AUTO_LOGIN_MAX_ATTEMPTS)
 		{
 			m_AxiomAutoLoginNextTryTick = time_get() + (int64_t)QMCLIENT_AXIOM_AUTO_LOGIN_RETRY_DELAY_SECONDS * time_freq();
-			GameClient()->Echo(Localize("Axiom auto login failed, retrying"));
+			GameClient()->Echo(Localize("Axiom 自动登录失败，正在重试"));
 		}
 		else
 		{
 			m_AxiomAutoLoginNextTryTick = 0;
-			GameClient()->Echo(Localize("Axiom auto login failed"));
+			GameClient()->Echo(Localize("Axiom 自动登录失败"));
 		}
 	}
 }
@@ -1900,23 +1854,7 @@ void CTClient::RandomFeetColor()
 void CTClient::RandomSkin(void *pUserData)
 {
 	CTClient *pThis = static_cast<CTClient *>(pUserData);
-	const auto &Skins = pThis->GameClient()->m_Skins.SkinList(0).Skins();
-	if(Skins.empty())
-	{
-		return;
-	}
-	const CSkins::CSkinListEntry &Skin = Skins[std::rand() % (int)Skins.size()];
-	str_copy(g_Config.m_ClPlayerSkin, Skin.SkinContainer()->Name());
-	if(Skin.ColorKey().has_value())
-	{
-		const auto &ColorKey = Skin.ColorKey().value();
-		g_Config.m_ClPlayerUseCustomColor = ColorKey.m_UseCustomColor ? 1 : 0;
-		if(ColorKey.m_UseCustomColor)
-		{
-			g_Config.m_ClPlayerColorBody = ColorKey.m_ColorBody;
-			g_Config.m_ClPlayerColorFeet = ColorKey.m_ColorFeet;
-		}
-	}
+	pThis->GameClient()->m_Skins.RandomizeSkin(0);
 }
 
 void CTClient::RandomFlag(void *pUserData)
@@ -2034,34 +1972,34 @@ void CTClient::OnUpdate()
 		SetForcedAspect();
 	}
 
-	if(m_pTClientInfoTask)
+	if(m_pQmClientUpdateInfoTask)
 	{
-		if(m_pTClientInfoTask->Done())
+		if(m_pQmClientUpdateInfoTask->Done())
 		{
-			const bool InfoOk = m_pTClientInfoTask->State() == EHttpState::DONE;
+			const bool InfoOk = m_pQmClientUpdateInfoTask->State() == EHttpState::DONE;
 			if(InfoOk)
 			{
-				FinishTClientInfo();
+				FinishQmClientUpdateInfo();
 			}
-			ResetTClientInfoTask();
+			ResetQmClientUpdateInfoTask();
 
-			if(m_AutoUpdateAfterCheck)
+			if(m_QmClientAutoUpdateAfterCheck)
 			{
-				if(!InfoOk || !m_FetchedTClientInfo)
+				if(!InfoOk || !m_FetchedQmClientUpdateInfo)
 				{
 					Client()->AddWarning(SWarning(Localize("Update"), Localize("Failed to check for updates")));
 				}
-				else if(!NeedUpdate())
+				else if(!NeedQmClientUpdate())
 				{
-					Client()->AddWarning(SWarning(Localize("Update"), Localize("You are already on the latest version")));
+					Client()->AddWarning(SWarning(Localize("更新提示"), Localize("你已经是最新版本")));
 				}
 				else
 				{
 					Client()->AddWarning(SWarning(Localize("更新提示"), Localize("当前版本不是最新版，请前往 QQ 群更新最新版")));
 				}
-				m_AutoUpdateAfterCheck = false;
+				m_QmClientAutoUpdateAfterCheck = false;
 			}
-			else if(g_Config.m_QmShowOutdatedVersionWarning && InfoOk && m_FetchedTClientInfo && NeedUpdate())
+			else if(g_Config.m_QmShowOutdatedVersionWarning && InfoOk && m_FetchedQmClientUpdateInfo && NeedQmClientUpdate())
 			{
 				Client()->AddWarning(SWarning(Localize("更新提示"), Localize("当前版本不是最新版，请前往 QQ 群更新最新版")));
 			}
@@ -3128,19 +3066,19 @@ void CTClient::CheckAutoCloseChatOnUnfreeze()
 	}
 }
 
-bool CTClient::NeedUpdate()
+bool CTClient::NeedQmClientUpdate()
 {
-	return str_comp(m_aVersionStr, "0") != 0;
+	return str_comp(m_aQmClientLatestVersionStr, "0") != 0;
 }
 
-void CTClient::RequestUpdateCheckAndUpdate()
+void CTClient::RequestQmClientUpdateCheckAndUpdate()
 {
-	if((m_pTClientInfoTask && !m_pTClientInfoTask->Done()) || (m_pUpdateExeTask && !m_pUpdateExeTask->Done()))
+	if((m_pQmClientUpdateInfoTask && !m_pQmClientUpdateInfoTask->Done()) || (m_pUpdateExeTask && !m_pUpdateExeTask->Done()))
 		return;
 
-	m_AutoUpdateAfterCheck = true;
-	m_FetchedTClientInfo = false;
-	FetchTClientInfo();
+	m_QmClientAutoUpdateAfterCheck = true;
+	m_FetchedQmClientUpdateInfo = false;
+	FetchQmClientUpdateInfo();
 }
 
 void CTClient::StartUpdateDownload()
@@ -3155,7 +3093,7 @@ void CTClient::StartUpdateDownload()
 
 	ResetUpdateExeTask();
 	IStorage::FormatTmpPath(m_aUpdateExeTmp, sizeof(m_aUpdateExeTmp), PLAT_CLIENT_EXEC);
-	m_pUpdateExeTask = HttpGet(TCLIENT_UPDATE_EXE_URL);
+	m_pUpdateExeTask = HttpGet(QMCLIENT_UPDATE_EXE_URL);
 	m_pUpdateExeTask->Timeout(CTimeout{10000, 0, 500, 10});
 	m_pUpdateExeTask->IpResolve(IPRESOLVE::V4);
 	m_pUpdateExeTask->WriteToFile(Storage(), m_aUpdateExeTmp, -2);
@@ -3186,53 +3124,32 @@ bool CTClient::ReplaceClientFromUpdate()
 	return Success;
 }
 
-void CTClient::ResetTClientInfoTask()
+void CTClient::ResetQmClientUpdateInfoTask()
 {
-	if(m_pTClientInfoTask)
+	if(m_pQmClientUpdateInfoTask)
 	{
-		m_pTClientInfoTask->Abort();
-		m_pTClientInfoTask = NULL;
+		m_pQmClientUpdateInfoTask->Abort();
+		m_pQmClientUpdateInfoTask = NULL;
 	}
 }
 
-void CTClient::FetchTClientInfo()
+void CTClient::FetchQmClientUpdateInfo()
 {
-	if(m_pTClientInfoTask && !m_pTClientInfoTask->Done())
+	if(m_pQmClientUpdateInfoTask && !m_pQmClientUpdateInfoTask->Done())
 		return;
 	char aUrl[256];
-	str_format(aUrl, sizeof(aUrl), "%s?current=%s", TCLIENT_INFO_URL, QMCLIENT_VERSION);
-	m_pTClientInfoTask = HttpGet(aUrl);
-	m_pTClientInfoTask->AllowInsecureProtocol();
-	m_pTClientInfoTask->Timeout(CTimeout{10000, 0, 500, 10});
-	m_pTClientInfoTask->IpResolve(IPRESOLVE::V4);
-	m_pTClientInfoTask->LogProgress(HTTPLOG::FAILURE);
-	Http()->Run(m_pTClientInfoTask);
+	str_format(aUrl, sizeof(aUrl), "%s?current=%s", QMCLIENT_INFO_URL, QMCLIENT_VERSION);
+	m_pQmClientUpdateInfoTask = HttpGet(aUrl);
+	m_pQmClientUpdateInfoTask->AllowInsecureProtocol();
+	m_pQmClientUpdateInfoTask->Timeout(CTimeout{10000, 0, 500, 10});
+	m_pQmClientUpdateInfoTask->IpResolve(IPRESOLVE::V4);
+	m_pQmClientUpdateInfoTask->LogProgress(HTTPLOG::FAILURE);
+	Http()->Run(m_pQmClientUpdateInfoTask);
 }
 
-static void NormalizeTCVersion(const char *pStr, char *pBuf, size_t BufSize)
+void CTClient::FinishQmClientUpdateInfo()
 {
-	if(!pBuf || BufSize == 0)
-		return;
-	pBuf[0] = '\0';
-	if(!pStr)
-		return;
-
-	pStr = str_skip_whitespaces_const(pStr);
-	if(pStr[0] == 'v' || pStr[0] == 'V')
-		pStr++;
-
-	str_copy(pBuf, pStr, BufSize);
-	int End = str_length(pBuf);
-	while(End > 0 && str_isspace(pBuf[End - 1]))
-	{
-		pBuf[End - 1] = '\0';
-		End--;
-	}
-}
-
-void CTClient::FinishTClientInfo()
-{
-	json_value *pJson = m_pTClientInfoTask->ResultJson();
+	json_value *pJson = m_pQmClientUpdateInfoTask->ResultJson();
 	if(!pJson)
 		return;
 	const json_value &Json = *pJson;
@@ -3240,20 +3157,17 @@ void CTClient::FinishTClientInfo()
 
 	if(CurrentVersion.type == json_string)
 	{
-		char aLatestVersionStr[64];
-		NormalizeTCVersion(CurrentVersion, aLatestVersionStr, sizeof(aLatestVersionStr));
-		char aCurVersionStr[64];
-		NormalizeTCVersion(QMCLIENT_VERSION, aCurVersionStr, sizeof(aCurVersionStr));
-		if(aLatestVersionStr[0] != '\0' && str_comp(aLatestVersionStr, aCurVersionStr) != 0)
+		const char *pLatestVersion = json_string_get(&CurrentVersion);
+		if(IsQmClientRemoteVersionNewer(pLatestVersion, QMCLIENT_VERSION))
 		{
-			str_copy(m_aVersionStr, aLatestVersionStr);
+			str_copy(m_aQmClientLatestVersionStr, pLatestVersion, sizeof(m_aQmClientLatestVersionStr));
 		}
 		else
 		{
-			m_aVersionStr[0] = '0';
-			m_aVersionStr[1] = '\0';
+			m_aQmClientLatestVersionStr[0] = '0';
+			m_aQmClientLatestVersionStr[1] = '\0';
 		}
-		m_FetchedTClientInfo = true;
+		m_FetchedQmClientUpdateInfo = true;
 	}
 
 	json_value_free(pJson);
@@ -3281,7 +3195,7 @@ void CTClient::SetForcedAspect()
 
 	if(g_Config.m_QmAspectPreset != 0)
 	{
-		int AspectRatio = g_Config.m_QmAspectRatio;
+		int AspectRatio = 0;
 		switch(g_Config.m_QmAspectPreset)
 		{
 		case 1: AspectRatio = 125; break;
@@ -3688,7 +3602,7 @@ void CTClient::TrackHookDirection(int Dummy)
 	SPlayerStats &Stats = m_aPlayerStats[Dummy];
 
 	// 检测 hook 状态
-	bool IsHooking = Char.m_Cur.m_HookState > 0 && Char.m_Cur.m_HookState != HOOK_RETRACTED;
+	bool IsHooking = Char.m_Cur.m_HookState > 0;
 
 	// 检测开始出钩的瞬间
 	if(IsHooking && !Stats.m_WasHooking)
@@ -4098,6 +4012,9 @@ void CTClient::ApplyFocusModeEffects()
 			ConfigValue = NextValue;
 	};
 	const bool StateWasKnown = m_FocusModeStateKnown;
+	const bool HideFocusHud = ShouldHideFocusHud(FocusActive, g_Config.m_QmFocusModeHideHud != 0);
+	const bool HideFocusNameplates = ShouldHideFocusNameplates(FocusActive, g_Config.m_QmFocusModeHideNameplates != 0);
+	const bool HideFocusDirectionIndicators = ShouldHideFocusDirectionIndicators(FocusActive, g_Config.m_QmFocusModeHideDirectionIndicators != 0);
 	if(!m_FocusModeStateKnown)
 	{
 		m_FocusModeStateKnown = true;
@@ -4114,21 +4031,21 @@ void CTClient::ApplyFocusModeEffects()
 		char aFocusMsg[128];
 		str_format(aFocusMsg, sizeof(aFocusMsg), "%s%s: %s",
 			FocusActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
-			Localize("Focus Mode"),
-			Localize(FocusActive ? "On" : "Off"));
+			Localize("禅模式"),
+			Localize(FocusActive ? "开启" : "关闭"));
 		GameClient()->Echo(aFocusMsg, true);
 	}
 
-	ApplyFocusOverride(m_FocusHudOverrideState, FocusActive && g_Config.m_QmFocusModeHideHud != 0, g_Config.m_ClShowhud, 0);
-	ApplyFocusOverride(m_FocusNamePlatesOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_ClNamePlates, 0);
-	ApplyFocusOverride(m_FocusNamePlatesOwnOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_ClNamePlatesOwn, 0);
-	ApplyFocusOverride(m_FocusNameplateCoordsOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoords, 0);
-	ApplyFocusOverride(m_FocusNameplateCoordsOwnOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordsOwn, 0);
-	ApplyFocusOverride(m_FocusNameplateCoordXOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordX, 0);
-	ApplyFocusOverride(m_FocusNameplateCoordYOverrideState, FocusActive && g_Config.m_QmFocusModeHideNames != 0, g_Config.m_QmNameplateCoordY, 0);
-	ApplyFocusOverride(m_FocusDirectionOverrideState, FocusActive && g_Config.m_QmFocusModeHideDirectionIndicators != 0, g_Config.m_ClShowDirection, 0);
-	ApplyFocusOverride(m_FocusVideoHudOverrideState, FocusActive && g_Config.m_QmFocusModeHideHud != 0, g_Config.m_ClVideoShowhud, 0);
-	ApplyFocusOverride(m_FocusVideoDirectionOverrideState, FocusActive && g_Config.m_QmFocusModeHideDirectionIndicators != 0, g_Config.m_ClVideoShowDirection, 0);
+	ApplyFocusOverride(m_FocusHudOverrideState, HideFocusHud, g_Config.m_ClShowhud, 0);
+	ApplyFocusOverride(m_FocusNamePlatesOverrideState, HideFocusNameplates, g_Config.m_ClNamePlates, 0);
+	ApplyFocusOverride(m_FocusNamePlatesOwnOverrideState, HideFocusNameplates, g_Config.m_ClNamePlatesOwn, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordsOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoords, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordsOwnOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordsOwn, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordXOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordX, 0);
+	ApplyFocusOverride(m_FocusNameplateCoordYOverrideState, HideFocusNameplates, g_Config.m_QmNameplateCoordY, 0);
+	ApplyFocusOverride(m_FocusDirectionOverrideState, HideFocusDirectionIndicators, g_Config.m_ClShowDirection, 0);
+	ApplyFocusOverride(m_FocusVideoHudOverrideState, HideFocusHud, g_Config.m_ClVideoShowhud, 0);
+	ApplyFocusOverride(m_FocusVideoDirectionOverrideState, HideFocusDirectionIndicators, g_Config.m_ClVideoShowDirection, 0);
 	m_PrevFocusModeActive = FocusActive;
 }
 
@@ -4177,8 +4094,8 @@ void CTClient::ApplyGoresFastInputLink(bool AutoMapCheck)
 		char aGoresMsg[128];
 		str_format(aGoresMsg, sizeof(aGoresMsg), "%s%s: %s",
 			GoresActive ? "[[$FF7F7F]]" : "[[$A5FFA5]]",
-			Localize("Gores Mode"),
-			Localize(GoresActive ? "On" : "Off"));
+			Localize("Gores 模式"),
+			Localize(GoresActive ? "开" : "关"));
 		GameClient()->Echo(aGoresMsg, true);
 	}
 
@@ -4509,7 +4426,7 @@ bool CTClient::IsFavoriteMap(const char *pMapName) const
 {
 	if(!pMapName || pMapName[0] == '\0')
 		return false;
-	return m_FavoriteMaps.find(std::string(pMapName)) != m_FavoriteMaps.end();
+	return m_FavoriteMaps.contains(std::string(pMapName));
 }
 
 void CTClient::AddFavoriteMap(const char *pMapName)
@@ -4897,7 +4814,9 @@ static std::array<std::string, 4> ParseLocalSaveCsvFields(const char *pLine)
 				++CharIndex;
 			}
 			else
+			{
 				InQuotes = !InQuotes;
+			}
 		}
 		else if(pLine[CharIndex] == ',' && !InQuotes)
 		{
@@ -4985,7 +4904,8 @@ bool CTClient::RemoveLocalSaveByCode(const char *pCode)
 	{
 		vEntries.erase(std::remove_if(vEntries.begin(), vEntries.end(), [pCode](const SLocalSaveEntry &Entry) {
 			return str_comp(Entry.m_Code.c_str(), pCode) == 0;
-		}), vEntries.end());
+		}),
+			vEntries.end());
 	}
 	if(vEntries.size() == OriginalSize)
 		return false;

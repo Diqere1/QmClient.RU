@@ -1,0 +1,6 @@
+#ifndef GAME_CLIENT_COMPONENTS_QMCLIENT_UPDATE_VERSION_H
+#define GAME_CLIENT_COMPONENTS_QMCLIENT_UPDATE_VERSION_H
+
+bool IsQmClientRemoteVersionNewer(const char *pRemoteVersion, const char *pLocalVersion);
+
+#endif // GAME_CLIENT_COMPONENTS_QMCLIENT_UPDATE_VERSION_H

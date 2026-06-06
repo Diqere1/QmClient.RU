@@ -6,52 +6,57 @@
 
 #define VERSION_PARTS 4
 
-struct SVersion
+namespace
 {
-	int m_aParts[VERSION_PARTS];
 
-	bool operator<=(const SVersion &Other) const
+	struct SVersion
 	{
-		for(int i = 0; i < VERSION_PARTS; i++)
+		int m_aParts[VERSION_PARTS];
+
+		bool operator<=(const SVersion &Other) const
 		{
-			if(m_aParts[i] < Other.m_aParts[i])
-				return true;
-			if(m_aParts[i] > Other.m_aParts[i])
-				return false;
+			for(int i = 0; i < VERSION_PARTS; i++)
+			{
+				if(m_aParts[i] < Other.m_aParts[i])
+					return true;
+				if(m_aParts[i] > Other.m_aParts[i])
+					return false;
+			}
+			return true;
 		}
-		return true;
-	}
-};
+	};
 
-enum EBackendDriverBlockListType
-{
-	BACKEND_DRIVER_BLOCKLIST_TYPE_VERSION = 0,
-	BACKEND_DRIVER_BLOCKLIST_TYPE_VENDOR,
-};
+	enum EBackendDriverBlockListType
+	{
+		BACKEND_DRIVER_BLOCKLIST_TYPE_VERSION = 0,
+		BACKEND_DRIVER_BLOCKLIST_TYPE_VENDOR,
+	};
 
-/* TODO: generalize it more for other drivers / vendors */
-struct SBackEndDriverBlockList
-{
-	EBackendDriverBlockListType m_BlockListType;
+	/* TODO: generalize it more for other drivers / vendors */
+	struct SBackEndDriverBlockList
+	{
+		EBackendDriverBlockListType m_BlockListType;
 
-	SVersion m_VersionMin;
-	SVersion m_VersionMax;
+		SVersion m_VersionMin;
+		SVersion m_VersionMax;
 
-	const char *m_pVendorName;
+		const char *m_pVendorName;
 
-	// the OpenGL version, that is supported
-	int m_AllowedMajor;
-	int m_AllowedMinor;
-	int m_AllowedPatch;
+		// the OpenGL version, that is supported
+		int m_AllowedMajor;
+		int m_AllowedMinor;
+		int m_AllowedPatch;
 
-	const char *m_pReason;
+		const char *m_pReason;
 
-	bool m_DisplayReason;
-	const char *m_pOSName;
-};
+		bool m_DisplayReason;
+		const char *m_pOSName;
+	};
 
-static SBackEndDriverBlockList gs_aBlockList[] = {
-	{BACKEND_DRIVER_BLOCKLIST_TYPE_VENDOR, {26, 20, 100, 7800}, {27, 20, 100, 8853}, "Intel", 2, 0, 0, "This Intel driver version can cause crashes, please update it to a newer version.", false, "windows"}};
+	const SBackEndDriverBlockList gs_aBlockList[] = {
+		{BACKEND_DRIVER_BLOCKLIST_TYPE_VENDOR, {26, 20, 100, 7800}, {27, 20, 100, 8853}, "Intel", 2, 0, 0, "This Intel driver version can cause crashes, please update it to a newer version.", false, "windows"}};
+
+} // namespace
 
 const char *ParseBlocklistDriverVersions(const char *pVendorStr, const char *pVersionStr, int &BlocklistMajor, int &BlocklistMinor, int &BlocklistPatch, bool &RequiresWarning)
 {

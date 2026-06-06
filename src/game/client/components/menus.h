@@ -12,28 +12,30 @@
 #include <engine/friends.h>
 #include <engine/image.h>
 #include <engine/serverbrowser.h>
-#include <engine/storage.h>
 #include <engine/shared/config.h>
 #include <engine/shared/jobs.h>
+#include <engine/storage.h>
 #include <engine/textrender.h>
 
 #include <generated/client_data.h>
 
 #include <game/client/component.h>
+#include <game/client/components/assets_resource_registry.h>
 #include <game/client/components/community_icons.h>
 #include <game/client/components/mapimages.h>
-#include <game/client/components/assets_resource_registry.h>
 #include <game/client/components/menus_ingame_touch_controls.h>
 #include <game/client/components/menus_settings_controls.h>
 #include <game/client/components/menus_start.h>
+#include <game/client/components/section_loader.h>
+#include <game/client/components/settings_resource_jobs.h>
 #include <game/client/components/skins7.h>
 #include <game/client/components/tclient/warlist.h>
 #include <game/client/lineinput.h>
 #include <game/client/ui.h>
 #include <game/voting.h>
 
-#include <chrono>
 #include <array>
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -68,7 +70,7 @@ class CMenus;
 
 namespace NTranslateUiSettings
 {
-void RenderTranslateUiModule(CMenus *pMenus, CUIRect &CardContent, float LineHeight, float BodySize, float LineSpacing);
+	void RenderTranslateUiModule(CMenus *pMenus, CUIRect &CardContent, float LineHeight, float BodySize, float LineSpacing);
 }
 
 class CMenus : public CComponent
@@ -92,6 +94,9 @@ public:
 	// feat-004: modern menu tab. No lift / height-grow; default hover/active
 	// states are tinted by ui_color via the v2 anim runtime.
 	int DoMenuTabV2(CButtonContainer *pButtonContainer, const char *pText, bool Active, const CUIRect *pRect, int Corners = IGraphics::CORNER_T, const ColorRGBA *pCustomDefault = nullptr, const ColorRGBA *pCustomActive = nullptr, const ColorRGBA *pCustomHover = nullptr, const CCommunityIcon *pCommunityIcon = nullptr);
+	ColorRGBA MenuPanelColor(float AlphaScale = 1.0f) const;
+	ColorRGBA MenuPanelElevatedColor(float AlphaScale = 1.0f) const;
+	ColorRGBA SettingsTabbarColor(float AlphaScale = 1.0f) const;
 
 	int DoButton_CheckBox_Common(const void *pId, const char *pText, const char *pBoxText, const CUIRect *pRect, unsigned Flags);
 	int DoButton_CheckBox(const void *pId, const char *pText, int Checked, const CUIRect *pRect);
@@ -137,7 +142,24 @@ public:
 	{
 		ASSET_LOAD_STATE_UNLOADED = 0,
 		ASSET_LOAD_STATE_LOADING,
+		ASSET_LOAD_STATE_MERGING,
 		ASSET_LOAD_STATE_LOADED,
+	};
+
+	struct SSettingsAssetMergeEntry
+	{
+		char m_aName[IO_MAX_PATH_LENGTH];
+		bool m_IsDir = false;
+		EEntityBgHierarchyEntrySource m_Source = EEntityBgHierarchyEntrySource::LOCAL;
+	};
+
+	struct SSettingsAssetPendingMerge
+	{
+		int m_Tab = -1;
+		int m_Generation = 0;
+		size_t m_Cursor = 0;
+		bool m_ListReady = false;
+		std::vector<SSettingsAssetMergeEntry> m_vEntries;
 	};
 
 private:
@@ -154,6 +176,11 @@ private:
 		ASSET_LOAD_STATE_UNLOADED,
 	};
 	std::shared_ptr<IJob> m_apAssetLoadJobs[NUMBER_OF_ASSETS_TABS];
+	SSettingsAssetPendingMerge m_aAssetPendingMerges[NUMBER_OF_ASSETS_TABS];
+	int m_aAssetLoadGenerations[NUMBER_OF_ASSETS_TABS] = {};
+	void PublishSettingsAssetMergeEntries(int Tab, const std::vector<SSettingsAssetMergeEntry> &vEntries);
+	void InvalidateSettingsAssetResourcePlan();
+	int CurrentSettingsAssetsTab() const;
 
 public:
 	struct SCustomItem
@@ -171,12 +198,17 @@ public:
 
 		char m_aName[IO_MAX_PATH_LENGTH];
 		char m_aDisplayName[IO_MAX_PATH_LENGTH] = "";
+		char m_aAuthor[128] = "";
 		std::shared_ptr<IJob> m_pDecodeJob;
 		EPreviewState m_PreviewState = PREVIEW_STATE_UNLOADED;
 		CImageInfo m_PreviewImage;
 		unsigned m_PreviewEpoch = 0;
+		size_t m_PreviewListIndex = 0;
 		size_t m_PreviewBytes = 0;
+		int m_PreviewRequestedTextureSize = 0;
+		size_t m_PreviewResidentBytes = 0;
 		bool m_PreviewResized = false;
+		bool m_PreviewHighPriority = false;
 
 		SCustomItem() = default;
 
@@ -185,11 +217,16 @@ public:
 			m_pDecodeJob(Other.m_pDecodeJob),
 			m_PreviewState(Other.m_PreviewState),
 			m_PreviewEpoch(Other.m_PreviewEpoch),
+			m_PreviewListIndex(Other.m_PreviewListIndex),
 			m_PreviewBytes(Other.m_PreviewBytes),
-			m_PreviewResized(Other.m_PreviewResized)
+			m_PreviewRequestedTextureSize(Other.m_PreviewRequestedTextureSize),
+			m_PreviewResidentBytes(Other.m_PreviewResidentBytes),
+			m_PreviewResized(Other.m_PreviewResized),
+			m_PreviewHighPriority(Other.m_PreviewHighPriority)
 		{
 			str_copy(m_aName, Other.m_aName);
 			str_copy(m_aDisplayName, Other.m_aDisplayName);
+			str_copy(m_aAuthor, Other.m_aAuthor);
 			if(Other.m_PreviewImage.m_pData != nullptr)
 				m_PreviewImage = Other.m_PreviewImage.DeepCopy();
 		}
@@ -202,14 +239,19 @@ public:
 			m_RenderTexture = Other.m_RenderTexture;
 			str_copy(m_aName, Other.m_aName);
 			str_copy(m_aDisplayName, Other.m_aDisplayName);
+			str_copy(m_aAuthor, Other.m_aAuthor);
 			m_pDecodeJob = Other.m_pDecodeJob;
 			m_PreviewState = Other.m_PreviewState;
 			m_PreviewImage.Free();
 			if(Other.m_PreviewImage.m_pData != nullptr)
 				m_PreviewImage = Other.m_PreviewImage.DeepCopy();
 			m_PreviewEpoch = Other.m_PreviewEpoch;
+			m_PreviewListIndex = Other.m_PreviewListIndex;
 			m_PreviewBytes = Other.m_PreviewBytes;
+			m_PreviewRequestedTextureSize = Other.m_PreviewRequestedTextureSize;
+			m_PreviewResidentBytes = Other.m_PreviewResidentBytes;
 			m_PreviewResized = Other.m_PreviewResized;
+			m_PreviewHighPriority = Other.m_PreviewHighPriority;
 			return *this;
 		}
 
@@ -587,14 +629,14 @@ public:
 		return {};
 	}
 
-	inline static int ClampAssetsEditorColorBlendMode(int BlendMode)
+	static int ClampAssetsEditorColorBlendMode(int BlendMode)
 	{
 		if(BlendMode < 0 || BlendMode >= ASSETS_EDITOR_COLOR_BLEND_COUNT)
 			return ASSETS_EDITOR_COLOR_BLEND_MULTIPLY;
 		return BlendMode;
 	}
 
-	inline static const char *AssetsEditorColorBlendModeName(int BlendMode)
+	static const char *AssetsEditorColorBlendModeName(int BlendMode)
 	{
 		switch(ClampAssetsEditorColorBlendMode(BlendMode))
 		{
@@ -605,34 +647,34 @@ public:
 		}
 	}
 
-	inline static ColorRGBA AssetsEditorSlotColorToRgba(unsigned int PackedColor)
+	static ColorRGBA AssetsEditorSlotColorToRgba(unsigned int PackedColor)
 	{
 		return color_cast<ColorRGBA>(ColorHSLA(PackedColor, true));
 	}
 
-	inline static float AssetsEditorClampColorChannel(float Value)
+	static float AssetsEditorClampColorChannel(float Value)
 	{
 		return minimum(maximum(Value, 0.0f), 1.0f);
 	}
 
-	inline static float AssetsEditorColorLuma(const ColorRGBA &Base)
+	static float AssetsEditorColorLuma(const ColorRGBA &Base)
 	{
 		return AssetsEditorClampColorChannel(Base.r * 0.299f + Base.g * 0.587f + Base.b * 0.114f);
 	}
 
-	inline static float AssetsEditorScreenTone(float Luma)
+	static float AssetsEditorScreenTone(float Luma)
 	{
 		return AssetsEditorClampColorChannel(Luma * (1.0f + (1.0f - Luma) * 0.65f));
 	}
 
-	inline static float AssetsEditorOverlayTone(float Luma)
+	static float AssetsEditorOverlayTone(float Luma)
 	{
 		if(Luma <= 0.5f)
 			return AssetsEditorClampColorChannel(2.0f * Luma * Luma);
 		return AssetsEditorClampColorChannel(1.0f - 2.0f * (1.0f - Luma) * (1.0f - Luma));
 	}
 
-	inline static ColorRGBA AssetsEditorRecolorColor(const ColorRGBA &Base, const ColorRGBA &Tint, float Tone, float DetailPreserve)
+	static ColorRGBA AssetsEditorRecolorColor(const ColorRGBA &Base, const ColorRGBA &Tint, float Tone, float DetailPreserve)
 	{
 		const float BaseLuma = AssetsEditorColorLuma(Base);
 		return ColorRGBA(
@@ -642,12 +684,12 @@ public:
 			Base.a);
 	}
 
-	inline static ColorRGBA AssetsEditorMultiplyColor(const ColorRGBA &Base, const ColorRGBA &Tint)
+	static ColorRGBA AssetsEditorMultiplyColor(const ColorRGBA &Base, const ColorRGBA &Tint)
 	{
 		return ColorRGBA(Base.r * Tint.r, Base.g * Tint.g, Base.b * Tint.b, Base.a * Tint.a);
 	}
 
-	inline static ColorRGBA AssetsEditorBlendColor(const ColorRGBA &Base, const ColorRGBA &Tint, int BlendMode)
+	static ColorRGBA AssetsEditorBlendColor(const ColorRGBA &Base, const ColorRGBA &Tint, int BlendMode)
 	{
 		const int ClampedBlendMode = ClampAssetsEditorColorBlendMode(BlendMode);
 		const float BlendStrength = minimum(maximum(Tint.a, 0.0f), 1.0f);
@@ -676,25 +718,25 @@ public:
 			Base.a);
 	}
 
-	inline static bool AssetsEditorHasColorOverride(const ColorRGBA &Tint)
+	static bool AssetsEditorHasColorOverride(const ColorRGBA &Tint)
 	{
 		constexpr float Epsilon = 0.001f;
 		return absolute(Tint.r - 1.0f) > Epsilon ||
-			absolute(Tint.g - 1.0f) > Epsilon ||
-			absolute(Tint.b - 1.0f) > Epsilon ||
-			absolute(Tint.a - 1.0f) > Epsilon;
+		       absolute(Tint.g - 1.0f) > Epsilon ||
+		       absolute(Tint.b - 1.0f) > Epsilon ||
+		       absolute(Tint.a - 1.0f) > Epsilon;
 	}
 
-	inline static bool AssetsEditorSlotNeedsProcessing(const SAssetsEditorPartSlot &Slot, const char *pMainAssetName)
+	static bool AssetsEditorSlotNeedsProcessing(const SAssetsEditorPartSlot &Slot, const char *pMainAssetName)
 	{
 		const char *pResolvedMainAssetName = pMainAssetName != nullptr ? pMainAssetName : "";
 		const bool UsesMainSourceRect = str_comp(Slot.m_aSourceAsset, pResolvedMainAssetName) == 0 &&
-			Slot.m_SrcX == Slot.m_DstX && Slot.m_SrcY == Slot.m_DstY &&
-			Slot.m_SrcW == Slot.m_DstW && Slot.m_SrcH == Slot.m_DstH;
+						Slot.m_SrcX == Slot.m_DstX && Slot.m_SrcY == Slot.m_DstY &&
+						Slot.m_SrcW == Slot.m_DstW && Slot.m_SrcH == Slot.m_DstH;
 		return !UsesMainSourceRect || AssetsEditorHasColorOverride(AssetsEditorSlotColorToRgba(Slot.m_Color));
 	}
 
-	inline static void AssetsEditorApplyColorOverrideToImageRect(CImageInfo &Image, int X, int Y, int W, int H, const ColorRGBA &Tint, int BlendMode)
+	static void AssetsEditorApplyColorOverrideToImageRect(CImageInfo &Image, int X, int Y, int W, int H, const ColorRGBA &Tint, int BlendMode)
 	{
 		if(Image.m_pData == nullptr || Image.m_Format != CImageInfo::FORMAT_RGBA || W <= 0 || H <= 0)
 			return;
@@ -706,7 +748,7 @@ public:
 		if(X < 0 || Y < 0 || X + W > ImageWidth || Y + H > ImageHeight)
 			return;
 
-		uint8_t *pData = static_cast<uint8_t *>(Image.m_pData);
+		uint8_t *pData = Image.m_pData;
 		for(int PosY = Y; PosY < Y + H; ++PosY)
 		{
 			for(int PosX = X; PosX < X + W; ++PosX)
@@ -744,9 +786,9 @@ protected:
 	char m_aEntityBgCurrentFolder[IO_MAX_PATH_LENGTH] = "";
 	bool m_ShowWorkshopAssets = true;
 	std::vector<SCustomExtras> m_vExtrasList;
-	std::deque<SCustomItem *> m_aaCustomPreviewDecodeQueue[NUMBER_OF_ASSETS_TABS];
-	std::deque<SCustomItem *> m_aaCustomPreviewReadyQueue[NUMBER_OF_ASSETS_TABS];
-	std::unordered_set<SCustomItem *> m_aaCustomPreviewReadyQueued[NUMBER_OF_ASSETS_TABS];
+	std::deque<SSettingsAssetPreviewHandle> m_aaCustomPreviewDecodeQueue[NUMBER_OF_ASSETS_TABS];
+	std::deque<SSettingsAssetPreviewHandle> m_aaCustomPreviewReadyQueue[NUMBER_OF_ASSETS_TABS];
+	std::unordered_set<std::string> m_aaCustomPreviewReadyQueued[NUMBER_OF_ASSETS_TABS];
 	unsigned m_aCustomPreviewEpoch[NUMBER_OF_ASSETS_TABS] = {0};
 
 	bool m_IsInit = false;
@@ -871,7 +913,6 @@ private:
 	bool AssetsEditorCopyRectScaledNearest(CImageInfo &Dst, const CImageInfo &Src, int DstX, int DstY, int DstW, int DstH, int SrcX, int SrcY, int SrcW, int SrcH);
 
 protected:
-
 	int m_MenuPage;
 	int m_GamePage;
 	int m_Popup;
@@ -1428,6 +1469,14 @@ protected:
 		bool m_New;
 	};
 	static CUi::EPopupMenuFunctionResult PopupCountrySelection(void *pContext, CUIRect View, bool Active);
+	struct SPopupSettingsCountrySelectionContext
+	{
+		CMenus *m_pMenus;
+		int *m_pCountry;
+		int m_Selection;
+		bool m_New;
+	};
+	static CUi::EPopupMenuFunctionResult PopupSettingsCountrySelection(void *pContext, CUIRect View, bool Active);
 	void RenderServerbrowserInfo(CUIRect View);
 	void RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *pSelectedServer);
 	void RenderServerbrowserFriends(CUIRect View);
@@ -1459,6 +1508,7 @@ protected:
 	void RenderThemeSelection(CUIRect MainView);
 	void RenderSettingsGeneral(CUIRect MainView);
 	void RenderSettingsPlayer(CUIRect MainView);
+	void RenderSettingsTeeIdentity(CUIRect MainView, CUIRect *pFlagButton);
 	void RenderSettingsTee(CUIRect MainView);
 	void RenderSettingsTee7(CUIRect MainView);
 	void RenderSettingsTeeCustom7(CUIRect MainView);
@@ -1546,6 +1596,8 @@ public:
 	bool IsInit() const { return m_IsInit; }
 
 	bool IsActive() const { return m_MenuActive; }
+	bool IsSettingsPageActive() const;
+	SSettingsResourceFrameContext SettingsResourceFrameContext() const { return {m_SettingsScrollActive, false, m_SettingsPostScrollRecoveryFrames, m_SettingsHighPrioritySettled}; }
 	void SetActive(bool Active);
 
 	void OnInterfacesInit(CGameClient *pClient) override;
@@ -1657,6 +1709,7 @@ public:
 	std::array<CUIElement, SETTINGS_LENGTH> m_aSettingsTabLabelElements;
 	std::array<const char *, SETTINGS_LENGTH> m_apSettingsTabs{};
 	int m_QmClientSettingsTab = QMCLIENT_SETTINGS_TAB_VISUAL;
+	int m_TClientSettingsTab = 0;
 	CLineInputBuffered<128> m_aQmClientModuleSearchInputs[NUMBER_OF_QMCLIENT_SETTINGS_TABS];
 	void ClearQmClientSettingsSearchInputs();
 
@@ -1751,8 +1804,65 @@ public:
 	void ForceRefreshLanPage();
 	void SetShowStart(bool ShowStart);
 	void ShowQuitPopup();
+	bool PrewarmSettingsRuntimeCaches(CUIRect MainView);
+	void PrepareSettingsRuntimeWarmupPlan();
+	static int SettingsRuntimeCacheWarmupSteps() { return (int)BuildSettingsPageRuntimeRegistry().m_vPages.size() + 6 + (NUMBER_OF_QMCLIENT_SETTINGS_TABS - 1); }
+	void LoadSettingsRuntimeCacheMetadata();
+	void SaveSettingsRuntimeCacheMetadata();
+	CUIElement &SettingsTextElement(int Page, int Tab, const char *pTextId);
+	void InvalidateSettingsTextPool();
+	void InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason Reason);
+	void FinalizeTeeListDrainPerfSession();
+	void ResetSettingsFrameBudgetForFrame(bool TeeSettingsActive, int TeeSkinGpuUploadsPerFrame = -1)
+	{
+		const SSettingsResourceFrameContext FrameContext = SettingsResourceFrameContext();
+		m_SettingsFrameBudget = SSettingsWarmupFrameBudget{};
+		SettingsApplyActiveTeeSkinFrameBudget(m_SettingsFrameBudget, TeeSettingsActive);
+		if(TeeSettingsActive)
+			m_SettingsFrameBudget.m_MaxGpuUploads = TeeSkinGpuUploadsPerFrame >= 0 ? TeeSkinGpuUploadsPerFrame : SettingsSkinGpuUploadFrameUnits(FrameContext, TeeSettingsActive);
+	}
+	SSettingsWarmupFrameBudget *SettingsFrameBudget() { return &m_SettingsFrameBudget; }
 
 private:
+	struct SSettingsTextPoolEntry
+	{
+		CUIElement m_Element;
+	};
+
+	struct SSettingsGenericSectionCache
+	{
+		CSectionLoader m_Loader;
+		std::string m_SectionName;
+	};
+
+	struct SSettingsPageRuntimeCache
+	{
+		SSettingsPageRuntimeCacheState m_State;
+		IGraphics::CRenderTargetHandle m_RenderTarget;
+		int m_RenderTargetWidth = 0;
+		int m_RenderTargetHeight = 0;
+	};
+
+	SSettingsRuntimeCacheMetadata m_SettingsRuntimeMetadata;
+	SSettingsWarmupStartupPlan m_SettingsStartupWarmupPlan;
+	SSettingsWarmupFrameBudget m_SettingsFrameBudget;
+	size_t m_SettingsStartupWarmupCursor = 0;
+	float m_SettingsTClientCurrentScrollY = 0.0f;
+	bool m_SettingsTClientScrollRestorePending = false;
+	bool m_SettingsPageSwitchActive = false;
+	bool m_SettingsScrollActive = false;
+	int m_SettingsPostScrollRecoveryFrames = 0;
+	bool m_SettingsHighPrioritySettled = false;
+	SSettingsPageRuntimeCache m_aSettingsPageRuntimeCaches[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS];
+	bool m_aSettingsPagePrewarmed[SETTINGS_PAGE_RUNTIME_CACHE_SLOTS] = {};
+	bool m_aSettingsTClientSiblingPrewarmed[6] = {};
+	bool m_aSettingsQmClientSiblingPrewarmed[NUMBER_OF_QMCLIENT_SETTINGS_TABS] = {};
+	int m_SettingsRuntimePrewarmCursor = 0;
+	std::unordered_map<std::string, SSettingsTextPoolEntry> m_SettingsTextPool;
+	std::unordered_map<std::string, std::unique_ptr<SSettingsGenericSectionCache>> m_SettingsGenericSectionCaches;
+	uint64_t m_SettingsTextPoolLanguageHash = 0;
+	uint64_t m_SettingsTextPoolFontHash = 0;
+
 	CCommunityIcons m_CommunityIcons;
 	CMenusIngameTouchControls m_MenusIngameTouchControls;
 	friend CMenusIngameTouchControls;
@@ -1771,8 +1881,43 @@ private:
 	void RenderSettingsAppearance(CUIRect MainView);
 
 	// found in menus_qmclient.cpp
-	void RenderSettingsTClient(CUIRect MainView);
-	void RenderSettingsTClientSettings(CUIRect MainView);
+	void RenderSettingsTClient(CUIRect MainView, bool PrewarmOnly = false);
+	void RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly = false);
+	SSettingsSection BuildTClientThemeCacheSection();
+	SSettingsSection BuildTClientAutoReplyCacheSection();
+	SSettingsSection BuildTClientPetCacheSection();
+	SSettingsSection BuildTClientHudCacheSection();
+	std::vector<SSettingsSection> BuildTClientLeftCacheSections();
+	std::vector<SSettingsSection> BuildTClientRightCacheSections();
+	void DrawTClientCacheSectionBox(CUIRect BoxRect);
+	float RenderTClientCacheSectionFallback(CUIRect &CurrentColumn, float TopMargin, float (CMenus::*pLayoutSection)(CUIRect &, bool));
+	void ConfigureSplitCachedStaticLayer(SSettingsSection &Section, const char *pTitle, std::function<float(CUIRect &)> MeasureSection, std::function<float(CUIRect &)> RenderInteractiveSection, float TopMargin);
+	bool PrepareTClientSettingsRuntimeCacheSection(CUIRect SectionView, const char *pSectionId, CSectionLoader *&pLoader, const char *&pLoaderSectionName, bool ConfigureRuntimeState = true);
+	bool PrepareGenericSettingsRuntimeCacheSection(CUIRect SectionView, int Page, int Tab, const char *pSectionId, CSectionLoader *&pLoader, const char *&pLoaderSectionName, bool ConfigureRuntimeState = true);
+	float LayoutTClientThemeCacheSection(CUIRect &CurrentColumn, bool Render);
+	float RenderTClientThemeInteractiveLayer(CUIRect &CurrentColumn);
+	float LayoutTClientAutoReplyCacheSection(CUIRect &CurrentColumn, bool Render);
+	float RenderTClientAutoReplyInteractiveLayer(CUIRect &CurrentColumn);
+	float LayoutTClientPetCacheSection(CUIRect &CurrentColumn, bool Render);
+	float RenderTClientPetInteractiveLayer(CUIRect &CurrentColumn);
+	float LayoutTClientHudCacheSection(CUIRect &CurrentColumn, bool Render);
+	float RenderTClientHudInteractiveLayer(CUIRect &CurrentColumn);
+	void PrewarmSettingsTClient(CUIRect MainView);
+	bool TClientSettingsSubcachesReady() const;
+	bool PrewarmSettingsTClientRuntimeCacheSibling(CUIRect ContentView);
+	bool PrewarmSettingsQmClientRuntimeCacheSibling(CUIRect ContentView);
+	bool PrewarmSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f, bool ResourcesReady = true);
+	bool DrawSettingsPageRuntimeCache(CUIRect ContentView, int Page, int Tab, float ScrollY = 0.0f);
+	bool ConsumeSettingsFrameBudget(ESettingsWarmupCost Cost, int Page, int Tab, const char *pPageFbo, const char *pSectionFbo);
+	void InvalidateSettingsPageRuntimeCache(int Page, int Tab);
+	void InvalidateTClientSettingsRuntimeCacheSections(ESettingsCacheDirtyReason Reason = ESettingsCacheDirtyReason::CONFIG);
+	bool PrewarmSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
+	bool DrawSettingsSectionRuntimeCache(CUIRect SectionView, int Page, int Tab, const char *pSectionId);
+	void InvalidateSettingsSectionRuntimeCache(int Page, int Tab, const char *pSectionId);
+	void DestroySettingsPageRuntimeCaches();
+	bool PrewarmSettingsPageResources(int Page, int Tab, const CUIRect &ContentView);
+	bool PrewarmSettingsAssetResources();
+	SSettingsPageRuntimeCache *GetSettingsPageRuntimeCache(int Page, int Tab);
 	void RenderSettingsTClientBindWheel(CUIRect MainView);
 	void RenderSettingsTClientChatBinds(CUIRect MainView);
 	void RenderSettingsTClientWarList(CUIRect MainView);
@@ -1781,7 +1926,7 @@ private:
 	void RenderSettingsTClientProfiles(CUIRect MainView);
 	void RenderSettingsTClientConfigs(CUIRect MainView);
 	void RenderSettingsTClientSidebar(CUIRect MainView);
-	void RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage = false);
+	void RenderSettingsQmClient(CUIRect MainView, bool ContributorsPage = false, bool PrewarmOnly = false);
 	void RenderSettingsQmClientOverview(CUIRect MainView);
 	void RenderTeeCute(const CAnimState *pAnim, const CTeeRenderInfo *pInfo, int Emote, vec2 Dir, vec2 Pos, bool CuteEyes, float Alpha = 1.0f);
 

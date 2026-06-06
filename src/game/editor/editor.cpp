@@ -289,6 +289,8 @@ void CEditor::SelectEnvPoint(int Index)
 
 void CEditor::SelectEnvPoint(int Index, int Channel)
 {
+	if(Channel < 0 || Channel >= CEnvPoint::MAX_CHANNELS)
+		return;
 	DeselectEnvPoints();
 	m_vSelectedEnvelopePoints.emplace_back(Index, Channel);
 }
@@ -305,7 +307,10 @@ void CEditor::ToggleEnvPoint(int Index, int Channel)
 		m_vSelectedEnvelopePoints.erase(m_vSelectedEnvelopePoints.begin() + ListIndex);
 	}
 	else
-		m_vSelectedEnvelopePoints.emplace_back(Index, Channel);
+	{
+		if(Channel >= 0 && Channel < CEnvPoint::MAX_CHANNELS)
+			m_vSelectedEnvelopePoints.emplace_back(Index, Channel);
+	}
 }
 
 bool CEditor::IsEnvPointSelected(int Index, int Channel) const
@@ -334,6 +339,8 @@ void CEditor::DeselectEnvPoints()
 
 void CEditor::SelectTangentOutPoint(int Index, int Channel)
 {
+	if(Channel < 0 || Channel >= CEnvPoint::MAX_CHANNELS)
+		return;
 	DeselectEnvPoints();
 	m_SelectedTangentOutPoint = std::pair(Index, Channel);
 }
@@ -345,6 +352,8 @@ bool CEditor::IsTangentOutPointSelected(int Index, int Channel) const
 
 void CEditor::SelectTangentInPoint(int Index, int Channel)
 {
+	if(Channel < 0 || Channel >= CEnvPoint::MAX_CHANNELS)
+		return;
 	DeselectEnvPoints();
 	m_SelectedTangentInPoint = std::pair(Index, Channel);
 }
@@ -380,6 +389,8 @@ std::pair<CFixedTime, int> CEditor::EnvGetSelectedTimeAndValue() const
 	if(IsTangentInSelected())
 	{
 		auto [SelectedIndex, SelectedChannel] = m_SelectedTangentInPoint;
+		if(SelectedIndex < 0 || SelectedIndex >= (int)pEnvelope->m_vPoints.size() || SelectedChannel < 0 || SelectedChannel >= CEnvPoint::MAX_CHANNELS)
+			return {};
 
 		CurrentTime = pEnvelope->m_vPoints[SelectedIndex].m_Time + pEnvelope->m_vPoints[SelectedIndex].m_Bezier.m_aInTangentDeltaX[SelectedChannel];
 		CurrentValue = pEnvelope->m_vPoints[SelectedIndex].m_aValues[SelectedChannel] + pEnvelope->m_vPoints[SelectedIndex].m_Bezier.m_aInTangentDeltaY[SelectedChannel];
@@ -387,13 +398,19 @@ std::pair<CFixedTime, int> CEditor::EnvGetSelectedTimeAndValue() const
 	else if(IsTangentOutSelected())
 	{
 		auto [SelectedIndex, SelectedChannel] = m_SelectedTangentOutPoint;
+		if(SelectedIndex < 0 || SelectedIndex >= (int)pEnvelope->m_vPoints.size() || SelectedChannel < 0 || SelectedChannel >= CEnvPoint::MAX_CHANNELS)
+			return {};
 
 		CurrentTime = pEnvelope->m_vPoints[SelectedIndex].m_Time + pEnvelope->m_vPoints[SelectedIndex].m_Bezier.m_aOutTangentDeltaX[SelectedChannel];
 		CurrentValue = pEnvelope->m_vPoints[SelectedIndex].m_aValues[SelectedChannel] + pEnvelope->m_vPoints[SelectedIndex].m_Bezier.m_aOutTangentDeltaY[SelectedChannel];
 	}
 	else
 	{
+		if(m_vSelectedEnvelopePoints.empty())
+			return {};
 		auto [SelectedIndex, SelectedChannel] = m_vSelectedEnvelopePoints.front();
+		if(SelectedIndex < 0 || SelectedIndex >= (int)pEnvelope->m_vPoints.size() || SelectedChannel < 0 || SelectedChannel >= CEnvPoint::MAX_CHANNELS)
+			return {};
 
 		CurrentTime = pEnvelope->m_vPoints[SelectedIndex].m_Time;
 		CurrentValue = pEnvelope->m_vPoints[SelectedIndex].m_aValues[SelectedChannel];
@@ -1980,7 +1997,9 @@ void CEditor::DoQuad(int LayerIndex, const std::shared_ptr<CLayerQuads> &pLayer,
 		}
 	}
 	else
+	{
 		Graphics()->SetColor(0, 1, 0, 1);
+	}
 
 	IGraphics::CQuadItem QuadItem(CenterX, CenterY, 5.0f * m_MouseWorldScale, 5.0f * m_MouseWorldScale);
 	Graphics()->QuadsDraw(&QuadItem, 1);
@@ -2191,7 +2210,9 @@ void CEditor::DoQuadPoint(int LayerIndex, const std::shared_ptr<CLayerQuads> &pL
 		}
 	}
 	else
+	{
 		Graphics()->SetColor(1, 0, 0, 1);
+	}
 
 	IGraphics::CQuadItem QuadItem(Center.x, Center.y, 5.0f * m_MouseWorldScale, 5.0f * m_MouseWorldScale);
 	Graphics()->QuadsDraw(&QuadItem, 1);
@@ -2256,7 +2277,9 @@ void CEditor::DoQuadKnife(int QuadIndex)
 		MapView()->MapGrid()->SnapToGrid(OnGrid);
 
 		if(IsInTriangle(OnGrid, v[0], v[1], v[2]) || IsInTriangle(OnGrid, v[0], v[3], v[2]))
+		{
 			Point = OnGrid;
+		}
 		else
 		{
 			float MinDistance = -1.f;
@@ -2826,7 +2849,9 @@ void CEditor::DoMapEditor(CUIRect View)
 			Ui()->SetActiveItem(&m_MapEditorId);
 		}
 		else
+		{
 			s_Operation = OP_NONE;
+		}
 
 		if(s_Operation == OP_PAN_WORLD)
 			MapView()->OffsetWorld(-Ui()->MouseDelta() * m_MouseWorldScale);
@@ -2896,7 +2921,9 @@ void CEditor::DoMapEditor(CUIRect View)
 				}
 			}
 			else if(m_pBrush->IsEmpty() && GetSelectedLayerType(0, LAYERTYPE_QUADS) != nullptr)
+			{
 				str_copy(m_aTooltip, "按住鼠标左键拖拽创建画笔。按住 Shift 选择多个四边形。按 R 旋转选中四边形。Ctrl+右键选择图层。");
+			}
 			else if(m_pBrush->IsEmpty())
 			{
 				if(g_Config.m_EdLayerSelector)
@@ -3032,7 +3059,9 @@ void CEditor::DoMapEditor(CUIRect View)
 					Ui()->SetActiveItem(&m_MapEditorId);
 
 					if(m_pBrush->IsEmpty())
+					{
 						s_Operation = OP_BRUSH_GRAB;
+					}
 					else
 					{
 						s_Operation = OP_BRUSH_DRAW;
@@ -3111,7 +3140,9 @@ void CEditor::DoMapEditor(CUIRect View)
 							m_ActiveEnvelopePreview = EEnvelopePreview::ALL;
 
 						if(m_QuadKnifeActive)
+						{
 							DoQuadKnife(m_vSelectedQuads[m_SelectedQuadIndex]);
+						}
 						else
 						{
 							UpdateHotQuadPoint(pLayer.get());
@@ -3731,7 +3762,9 @@ void CEditor::RenderLayers(CUIRect LayersBox)
 			}
 
 			if(m_Map.m_vpGroups[g]->m_vpLayers[i]->m_aName[0])
+			{
 				str_copy(aBuf, m_Map.m_vpGroups[g]->m_vpLayers[i]->m_aName);
+			}
 			else
 			{
 				if(m_Map.m_vpGroups[g]->m_vpLayers[i]->m_Type == LAYERTYPE_TILES)
@@ -3843,7 +3876,9 @@ void CEditor::RenderLayers(CUIRect LayersBox)
 									s_LayerPopupContext.m_vLayerIndices.push_back(LayerIndex);
 								}
 								else
+								{
 									AllTile = false;
+								}
 							}
 
 							// Don't allow editing if all selected layers are not tile layers
@@ -4897,80 +4932,85 @@ static float ClampDelta(float Val, float Delta, float Min, float Max)
 	return Delta;
 }
 
-class CTimeStep
+namespace
 {
-public:
-	template<class T>
-	CTimeStep(T t)
+
+	class CTimeStep
 	{
-		if constexpr(std::is_same_v<T, std::chrono::milliseconds>)
-			m_Unit = ETimeUnit::MILLISECONDS;
-		else if constexpr(std::is_same_v<T, std::chrono::seconds>)
-			m_Unit = ETimeUnit::SECONDS;
-		else
-			m_Unit = ETimeUnit::MINUTES;
-
-		m_Value = t;
-	}
-
-	CTimeStep operator*(int k) const
-	{
-		return CTimeStep(m_Value * k, m_Unit);
-	}
-
-	CTimeStep operator-(const CTimeStep &Other)
-	{
-		return CTimeStep(m_Value - Other.m_Value, m_Unit);
-	}
-
-	void Format(char *pBuffer, size_t BufferSize)
-	{
-		int Milliseconds = m_Value.count() % 1000;
-		int Seconds = std::chrono::duration_cast<std::chrono::seconds>(m_Value).count() % 60;
-		int Minutes = std::chrono::duration_cast<std::chrono::minutes>(m_Value).count();
-
-		switch(m_Unit)
+	public:
+		template<class T>
+		CTimeStep(T t)
 		{
-		case ETimeUnit::MILLISECONDS:
-			if(Minutes != 0)
-				str_format(pBuffer, BufferSize, "%d:%02d.%03d分", Minutes, Seconds, Milliseconds);
-			else if(Seconds != 0)
-				str_format(pBuffer, BufferSize, "%d.%03d秒", Seconds, Milliseconds);
+			if constexpr(std::is_same_v<T, std::chrono::milliseconds>)
+				m_Unit = ETimeUnit::MILLISECONDS;
+			else if constexpr(std::is_same_v<T, std::chrono::seconds>)
+				m_Unit = ETimeUnit::SECONDS;
 			else
-				str_format(pBuffer, BufferSize, "%d毫秒", Milliseconds);
-			break;
-		case ETimeUnit::SECONDS:
-			if(Minutes != 0)
-				str_format(pBuffer, BufferSize, "%d:%02d分", Minutes, Seconds);
-			else
-				str_format(pBuffer, BufferSize, "%d秒", Seconds);
-			break;
-		case ETimeUnit::MINUTES:
-			str_format(pBuffer, BufferSize, "%d分", Minutes);
-			break;
+				m_Unit = ETimeUnit::MINUTES;
+
+			m_Value = t;
 		}
-	}
 
-	float AsSeconds() const
-	{
-		return std::chrono::duration_cast<std::chrono::duration<float>>(m_Value).count();
-	}
+		CTimeStep operator*(int k) const
+		{
+			return CTimeStep(m_Value * k, m_Unit);
+		}
 
-private:
-	enum class ETimeUnit
-	{
-		MILLISECONDS,
-		SECONDS,
-		MINUTES
-	} m_Unit;
-	std::chrono::milliseconds m_Value;
+		CTimeStep operator-(const CTimeStep &Other)
+		{
+			return CTimeStep(m_Value - Other.m_Value, m_Unit);
+		}
 
-	CTimeStep(std::chrono::milliseconds Value, ETimeUnit Unit)
-	{
-		m_Value = Value;
-		m_Unit = Unit;
-	}
-};
+		void Format(char *pBuffer, size_t BufferSize)
+		{
+			int Milliseconds = m_Value.count() % 1000;
+			int Seconds = std::chrono::duration_cast<std::chrono::seconds>(m_Value).count() % 60;
+			int Minutes = std::chrono::duration_cast<std::chrono::minutes>(m_Value).count();
+
+			switch(m_Unit)
+			{
+			case ETimeUnit::MILLISECONDS:
+				if(Minutes != 0)
+					str_format(pBuffer, BufferSize, "%d:%02d.%03d分", Minutes, Seconds, Milliseconds);
+				else if(Seconds != 0)
+					str_format(pBuffer, BufferSize, "%d.%03d秒", Seconds, Milliseconds);
+				else
+					str_format(pBuffer, BufferSize, "%d毫秒", Milliseconds);
+				break;
+			case ETimeUnit::SECONDS:
+				if(Minutes != 0)
+					str_format(pBuffer, BufferSize, "%d:%02d分", Minutes, Seconds);
+				else
+					str_format(pBuffer, BufferSize, "%d秒", Seconds);
+				break;
+			case ETimeUnit::MINUTES:
+				str_format(pBuffer, BufferSize, "%d分", Minutes);
+				break;
+			}
+		}
+
+		float AsSeconds() const
+		{
+			return std::chrono::duration_cast<std::chrono::duration<float>>(m_Value).count();
+		}
+
+	private:
+		enum class ETimeUnit
+		{
+			MILLISECONDS,
+			SECONDS,
+			MINUTES
+		} m_Unit;
+		std::chrono::milliseconds m_Value;
+
+		CTimeStep(std::chrono::milliseconds Value, ETimeUnit Unit)
+		{
+			m_Value = Value;
+			m_Unit = Unit;
+		}
+	};
+
+}
 
 void CEditor::UpdateHotEnvelopePoint(const CUIRect &View, const CEnvelope *pEnvelope, int ActiveChannels)
 {
@@ -5311,7 +5351,9 @@ void CEditor::RenderEnvelopeEditor(CUIRect View)
 		if(m_pContainerPanned == &s_EnvelopeEditorId)
 		{
 			if(!ShouldPan)
+			{
 				m_pContainerPanned = nullptr;
+			}
 			else
 			{
 				m_OffsetEnvelopeX += Ui()->MouseDeltaX() / Graphics()->ScreenWidth() * Ui()->Screen()->w / View.w;
@@ -5865,7 +5907,9 @@ void CEditor::RenderEnvelopeEditor(CUIRect View)
 							m_pUiGotContext = pId;
 						}
 						else
+						{
 							Graphics()->SetColor(aColors[c].r, aColors[c].g, aColors[c].b, 1.0f);
+						}
 
 						IGraphics::CQuadItem QuadItem(Final.x, Final.y, Final.w, Final.h);
 						Graphics()->QuadsDrawTL(&QuadItem, 1);
@@ -6000,7 +6044,9 @@ void CEditor::RenderEnvelopeEditor(CUIRect View)
 								m_pUiGotContext = pId;
 							}
 							else
+							{
 								Graphics()->SetColor(aColors[c].r, aColors[c].g, aColors[c].b, 1.0f);
+							}
 
 							// draw triangle
 							IGraphics::CFreeformItem FreeformItem(Final.x + Final.w / 2.0f, Final.y, Final.x + Final.w / 2.0f, Final.y, Final.x + Final.w, Final.y + Final.h, Final.x, Final.y + Final.h);
@@ -6133,7 +6179,9 @@ void CEditor::RenderEnvelopeEditor(CUIRect View)
 								m_pUiGotContext = pId;
 							}
 							else
+							{
 								Graphics()->SetColor(aColors[c].r, aColors[c].g, aColors[c].b, 1.0f);
+							}
 
 							// draw triangle
 							IGraphics::CFreeformItem FreeformItem(Final.x + Final.w / 2.0f, Final.y, Final.x + Final.w / 2.0f, Final.y, Final.x + Final.w, Final.y + Final.h, Final.x, Final.y + Final.h);
@@ -6916,14 +6964,18 @@ void CEditor::Render()
 		DoEditorDragBar(ToolBox, &DragBar, EDragSide::SIDE_RIGHT, &m_ToolBoxWidth);
 
 		if(m_Mode == MODE_LAYERS)
+		{
 			RenderLayers(ToolBox);
+		}
 		else if(m_Mode == MODE_IMAGES)
 		{
 			RenderImagesList(ToolBox);
 			RenderSelectedImage(View);
 		}
 		else if(m_Mode == MODE_SOUNDS)
+		{
 			RenderSounds(ToolBox);
+		}
 	}
 
 	Ui()->MapScreen();
@@ -7105,7 +7157,9 @@ void CEditor::FreeDynamicPopupMenus()
 			delete pContext;
 		}
 		else
+		{
 			++Iterator;
+		}
 	}
 }
 
@@ -7310,10 +7364,14 @@ void CEditor::RenderGameEntities(const std::shared_ptr<CLayerTiles> &pTiles)
 					VisualSize = 64;
 				}
 				else
+				{
 					continue;
+				}
 			}
 			else
+			{
 				continue;
+			}
 
 			Graphics()->QuadsBegin();
 
@@ -8215,7 +8273,9 @@ void CEditor::AdjustBrushSpecialTiles(bool UseNextFree, int Adjust)
 							pTeleLayer->m_pTeleTile[i].m_Number = NextFreeTeleNumber;
 					}
 					else
+					{
 						AdjustNumber(pTeleLayer->m_pTeleTile[i].m_Number);
+					}
 
 					if(!UseNextFree && Adjust == 0 && IsTeleTileNumberUsedAny(pTeleLayer->m_pTiles[i].m_Index))
 					{

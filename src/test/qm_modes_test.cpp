@@ -53,13 +53,6 @@ TEST(QmGoresMode, UnlinkedFastInputConfigIsNotChanged)
 	EXPECT_FALSE(Changed);
 }
 
-TEST(QmFocusMode, LegacyUiParentNoLongerHidesChildOverlays)
-{
-	EXPECT_FALSE(ShouldHideFocusUiOverlays(true, false));
-	EXPECT_FALSE(ShouldHideFocusUiOverlays(true, true));
-	EXPECT_FALSE(ShouldHideFocusUiOverlays(false, true));
-}
-
 TEST(QmFocusMode, ConfigOverrideRestoresOnlyAutoHiddenValues)
 {
 	SQmFocusConfigOverrideState State;
@@ -91,7 +84,7 @@ TEST(QmFocusMode, ConfigOverrideKeepsUserChangesMadeWhileActive)
 	EXPECT_FALSE(State.m_WasActive);
 }
 
-TEST(QmFocusMode, HudScoreboardAndNamesRequireFocusModeAndTheirOwnToggle)
+TEST(QmFocusMode, HudScoreboardNamesAndNameplatesRequireFocusModeAndTheirOwnToggle)
 {
 	EXPECT_TRUE(ShouldHideFocusHud(true, true));
 	EXPECT_FALSE(ShouldHideFocusHud(true, false));
@@ -104,6 +97,10 @@ TEST(QmFocusMode, HudScoreboardAndNamesRequireFocusModeAndTheirOwnToggle)
 	EXPECT_TRUE(ShouldHideFocusNames(true, true));
 	EXPECT_FALSE(ShouldHideFocusNames(true, false));
 	EXPECT_FALSE(ShouldHideFocusNames(false, true));
+
+	EXPECT_TRUE(ShouldHideFocusNameplates(true, true));
+	EXPECT_FALSE(ShouldHideFocusNameplates(true, false));
+	EXPECT_FALSE(ShouldHideFocusNameplates(false, true));
 }
 
 TEST(QmFocusMode, VisualEffectChildrenDoNotInheritTheLegacyVisualParentToggle)
@@ -120,6 +117,9 @@ TEST(QmFocusMode, VisualEffectChildrenDoNotInheritTheLegacyVisualParentToggle)
 	EXPECT_FALSE(ShouldHideFocusHammerEffects(true, false));
 	EXPECT_TRUE(ShouldHideFocusHammerEffects(true, true));
 	EXPECT_FALSE(ShouldHideFocusHammerEffects(false, true));
+	EXPECT_FALSE(ShouldHideFocusMuzzleEffects(true, false));
+	EXPECT_TRUE(ShouldHideFocusMuzzleEffects(true, true));
+	EXPECT_FALSE(ShouldHideFocusMuzzleEffects(false, true));
 	EXPECT_FALSE(ShouldHideFocusJumpEffects(false, true));
 	EXPECT_FALSE(ShouldHideFocusKillEffects(false, true));
 	EXPECT_FALSE(ShouldHideFocusExplosionEffects(false, true));
@@ -155,6 +155,14 @@ TEST(QmFocusMode, JumpSoundMuteIsIndependentFromJumpVisualEffects)
 	EXPECT_FALSE(ShouldPlayFocusJumpSound(true, true, true));
 	EXPECT_TRUE(ShouldPlayFocusJumpSound(false, true, true));
 	EXPECT_FALSE(ShouldPlayFocusJumpSound(true, false, false));
+}
+
+TEST(QmFocusMode, DeathOrSpawnSoundUsesDeathSoundMuteToggle)
+{
+	EXPECT_TRUE(ShouldPlayFocusDeathOrSpawnSound(true, false, true));
+	EXPECT_FALSE(ShouldPlayFocusDeathOrSpawnSound(true, true, true));
+	EXPECT_TRUE(ShouldPlayFocusDeathOrSpawnSound(false, true, true));
+	EXPECT_FALSE(ShouldPlayFocusDeathOrSpawnSound(true, false, false));
 }
 
 TEST(QmFocusMode, HammerSoundMuteRequiresFocusModeAndHammerSoundToggle)
@@ -198,44 +206,51 @@ TEST(QmFocusMode, UncheckedDirectionAndGuideIndicatorsStayVisibleInFocusMode)
 
 TEST(QmFocusMode, ForceVisibleClientLinesRemainVisibleWhenChatIsHidden)
 {
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, true, true, -2, true));
-	EXPECT_FALSE(ShouldRenderAnyFocusFilteredChat(true, true, true, false));
-	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, true, true));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, true, true, true, -2, true, false));
+	EXPECT_FALSE(ShouldRenderAnyFocusFilteredChat(true, true, true, true, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, true, true, true));
 }
 
 TEST(QmFocusMode, ChatFiltersSeparatePlayerSystemAndEchoMessages)
 {
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(true, false, false, 3, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, -1, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, -2, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(true, false, false, false, 3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, false, -1, false, true));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, false, -1, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, false, false, -2, false, false));
 
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, true, false, -1, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, 3, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, -2, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, true, false, false, -1, false, true));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, false, -1, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, false, 3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, true, false, false, -2, false, false));
 
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, false, true, -2, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, 3, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, -1, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, false, true, false, -1, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, false, -1, false, true));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, false, 3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, true, false, -2, false, false));
+
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, false, false, true, -2, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, false, true, 3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(false, false, false, true, -1, false, false));
 }
 
 TEST(QmFocusMode, UnknownChatLinesFollowSystemMessageVisibility)
 {
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, true, false, -3, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, false, true, -3, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(false, false, true, false, -3, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(true, true, false, true, -3, false, false));
 }
 
 TEST(QmFocusMode, ChatAreaRendersWhenAnyMessageClassIsVisible)
 {
-	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(false, true, true, false));
-	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, false, true, false));
-	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, false, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(false, true, true, true, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, false, true, true, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, false, true, false));
+	EXPECT_TRUE(ShouldRenderAnyFocusFilteredChat(true, true, true, false, false));
 }
 
-TEST(QmFocusMode, ConfigSnapshotIgnoresLegacyVisualParentForChildEffects)
+TEST(QmFocusMode, ConfigSnapshotKeepsExplicitVisualChildrenIndependent)
 {
 	SQmFocusModeConfig Config;
 	Config.m_FocusActive = true;
-	Config.m_LegacyHideEffects = true;
 
 	const SQmFocusModeDecisions Decisions = GetQmFocusModeDecisions(Config);
 	EXPECT_TRUE(Decisions.m_AirJump.m_SpawnParticles);
@@ -244,6 +259,27 @@ TEST(QmFocusMode, ConfigSnapshotIgnoresLegacyVisualParentForChildEffects)
 	EXPECT_FALSE(Decisions.m_HideExplosionEffects);
 	EXPECT_FALSE(Decisions.m_HideFreezeEffects);
 	EXPECT_FALSE(Decisions.m_HideHammerEffects);
+	EXPECT_FALSE(Decisions.m_HideMuzzleEffects);
+
+	Config.m_HideMuzzleEffects = true;
+	EXPECT_TRUE(GetQmFocusModeDecisions(Config).m_HideMuzzleEffects);
+}
+
+TEST(QmFocusMode, ConfigSnapshotSeparatesNameTextFromWholeNameplate)
+{
+	SQmFocusModeConfig Config;
+	Config.m_FocusActive = true;
+	Config.m_HideNames = true;
+
+	SQmFocusModeDecisions Decisions = GetQmFocusModeDecisions(Config);
+	EXPECT_TRUE(Decisions.m_HideNames);
+	EXPECT_FALSE(Decisions.m_HideNameplates);
+
+	Config.m_HideNames = false;
+	Config.m_HideNameplates = true;
+	Decisions = GetQmFocusModeDecisions(Config);
+	EXPECT_FALSE(Decisions.m_HideNames);
+	EXPECT_TRUE(Decisions.m_HideNameplates);
 }
 
 TEST(QmFocusMode, ConfigSnapshotSeparatesChatMessageClasses)
@@ -251,19 +287,23 @@ TEST(QmFocusMode, ConfigSnapshotSeparatesChatMessageClasses)
 	SQmFocusModeConfig Config;
 	Config.m_FocusActive = true;
 	Config.m_HidePlayerMessages = true;
-	Config.m_HideSystemMessages = false;
+	Config.m_HideSystemInfoMessages = false;
+	Config.m_HideSystemPromptMessages = true;
 	Config.m_HideEchoMessages = true;
 	Config.m_HideHud = true;
 	Config.m_HideScoreboard = true;
 	Config.m_HideNames = true;
+	Config.m_HideNameplates = true;
 
 	const SQmFocusModeDecisions Decisions = GetQmFocusModeDecisions(Config);
 	EXPECT_TRUE(Decisions.m_HideHud);
 	EXPECT_TRUE(Decisions.m_HideScoreboard);
 	EXPECT_TRUE(Decisions.m_HideNames);
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemMessages, Decisions.m_HideEchoMessages, 0, false));
-	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemMessages, Decisions.m_HideEchoMessages, -1, false));
-	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemMessages, Decisions.m_HideEchoMessages, -2, false));
+	EXPECT_TRUE(Decisions.m_HideNameplates);
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemInfoMessages, Decisions.m_HideSystemPromptMessages, Decisions.m_HideEchoMessages, 0, false, false));
+	EXPECT_TRUE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemInfoMessages, Decisions.m_HideSystemPromptMessages, Decisions.m_HideEchoMessages, -1, false, true));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemInfoMessages, Decisions.m_HideSystemPromptMessages, Decisions.m_HideEchoMessages, -1, false, false));
+	EXPECT_FALSE(ShouldRenderFocusFilteredChatLine(Decisions.m_HidePlayerMessages, Decisions.m_HideSystemInfoMessages, Decisions.m_HideSystemPromptMessages, Decisions.m_HideEchoMessages, -2, false, false));
 }
 
 TEST(QmFocusMode, ConfigSnapshotMapProgressRequiresStyleAndGoresProgressAndChildToggle)

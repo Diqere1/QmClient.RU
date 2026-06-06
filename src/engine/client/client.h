@@ -259,6 +259,7 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	int64_t m_LiveObserverRequestTime = 0;
 #endif
 
+public:
 	bool ServerCapAnyPlayerFlag() const override { return m_ServerCapabilities.m_AnyPlayerFlag; }
 	bool QmLiveObserverActive() const override
 	{
@@ -285,6 +286,7 @@ class CClient : public IClient, public CDemoPlayer::IListener
 #endif
 	}
 
+private:
 	CServerInfo m_CurrentServerInfo;
 	int64_t m_CurrentServerInfoRequestTime = -1; // >= 0 should request, == -1 got info
 
@@ -337,6 +339,7 @@ class CClient : public IClient, public CDemoPlayer::IListener
 
 	std::shared_ptr<ILogger> m_pFileLogger = nullptr;
 	std::shared_ptr<ILogger> m_pStdoutLogger = nullptr;
+	std::shared_ptr<ILogger> m_pPerfFileLogger = nullptr;
 
 	void UpdateNetStatsSnapshot() const;
 
@@ -644,7 +647,7 @@ public:
 
 	std::optional<int> ShowMessageBox(const IGraphics::CMessageBox &MessageBox) override;
 	void GetGpuInfoString(char (&aGpuInfo)[512]) override;
-	void SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger);
+	void SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger, std::shared_ptr<ILogger> &&pPerfFileLogger);
 };
 
 #endif

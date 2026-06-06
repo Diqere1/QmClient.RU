@@ -2,9 +2,15 @@
 #define GAME_CLIENT_COMPONENTS_ASSETS_PREVIEW_SCALE_H
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string_view>
 
+inline constexpr size_t ASSET_PREVIEW_UPLOAD_MAX_BYTES_PER_FRAME = 1 * 1024 * 1024;
+inline constexpr int ASSET_PREVIEW_MIN_TEXTURE_SIZE = 512;
 inline constexpr int LOCAL_ASSET_PREVIEW_MAX_TEXTURE_SIZE = 4096;
-inline constexpr int WORKSHOP_ASSET_PREVIEW_MAX_TEXTURE_SIZE = 512;
+inline constexpr int WORKSHOP_ASSET_PREVIEW_MAX_TEXTURE_SIZE = 2048;
 inline constexpr int LOCAL_ASSET_PREVIEW_MAX_FILE_SIZE = 64 * 1024 * 1024;
 
 struct SPreviewTargetSize
@@ -12,6 +18,12 @@ struct SPreviewTargetSize
 	int m_Width;
 	int m_Height;
 	bool m_Resized;
+};
+
+struct SWorkshopPreviewDecodeSourcePlan
+{
+	bool m_UseInstallSource;
+	bool m_UseThumbCache;
 };
 
 inline SPreviewTargetSize ComputePreviewTargetSize(int Width, int Height, int MaxTextureSize)
@@ -30,6 +42,109 @@ inline SPreviewTargetSize ComputePreviewTargetSize(int Width, int Height, int Ma
 
 	const int ScaledWidth = std::max(1, (int)((float)Width * MaxTextureSize / Height));
 	return {ScaledWidth, MaxTextureSize, true};
+}
+
+inline size_t PreviewTextureSizeBytesEstimate(int TextureSize)
+{
+	if(TextureSize <= 0)
+		return 0;
+	return (size_t)TextureSize * (size_t)TextureSize * 4u;
+}
+
+inline int PreviewBudgetNextTier(int TextureSize, int MinTextureSize)
+{
+	if(TextureSize <= MinTextureSize)
+		return MinTextureSize;
+	return std::max(MinTextureSize, TextureSize / 2);
+}
+
+inline size_t PreviewBudgetBytes(size_t OverrideMb, int Percent, float GpuBudgetMb)
+{
+	if(OverrideMb > 0)
+		return OverrideMb * 1024ull * 1024ull;
+	if(Percent <= 0 || GpuBudgetMb <= 0.0f)
+		return 0;
+	const float BudgetMb = GpuBudgetMb * std::clamp(Percent, 0, 100) / 100.0f;
+	return (size_t)std::max(BudgetMb, 0.0f) * 1024ull * 1024ull;
+}
+
+inline int ComputePreviewBudgetedTextureSize(int MaxTextureSize, int MinTextureSize, size_t TextureBudgetBytes, size_t CurrentTextureMemoryBytes, size_t ReplacedResidentPreviewBytes)
+{
+	if(MaxTextureSize <= 0)
+		return std::max(MinTextureSize, 0);
+	if(MinTextureSize <= 0)
+		MinTextureSize = MaxTextureSize;
+
+	int TextureSize = std::clamp(MaxTextureSize, MinTextureSize, MaxTextureSize);
+	if(TextureBudgetBytes == 0)
+		return TextureSize;
+
+	while(TextureSize > MinTextureSize)
+	{
+		const size_t BaseTextureBytes = CurrentTextureMemoryBytes > ReplacedResidentPreviewBytes ? CurrentTextureMemoryBytes - ReplacedResidentPreviewBytes : 0;
+		const size_t EstimatedBytes = BaseTextureBytes + PreviewTextureSizeBytesEstimate(TextureSize);
+		if(EstimatedBytes <= TextureBudgetBytes)
+			break;
+		const int NextTextureSize = PreviewBudgetNextTier(TextureSize, MinTextureSize);
+		if(NextTextureSize == TextureSize)
+			break;
+		TextureSize = NextTextureSize;
+	}
+
+	return std::clamp(TextureSize, MinTextureSize, MaxTextureSize);
+}
+
+inline bool WorkshopEntityBgAllowsImageUrlFallback(const char *pCategoryId)
+{
+	return pCategoryId == nullptr || std::string_view(pCategoryId) != "entity_bg";
+}
+
+inline bool WorkshopAssetHasRequiredDownloadUrl(const char *pCategoryId, bool HasDownloadUrl)
+{
+	return HasDownloadUrl || WorkshopEntityBgAllowsImageUrlFallback(pCategoryId);
+}
+
+inline bool WorkshopInstalledAssetUsesInstallPreviewSource(const char *pCategoryId)
+{
+	return pCategoryId == nullptr || std::string_view(pCategoryId) != "entity_bg";
+}
+
+inline bool WorkshopAssetPreviewDecodeUsesInstallSource(const char *pCategoryId, bool Installed)
+{
+	return Installed && WorkshopInstalledAssetUsesInstallPreviewSource(pCategoryId);
+}
+
+inline bool WorkshopAssetCanDecodeInstalledPreview(const char *pCategoryId, bool Installed, bool ThumbCacheFailed)
+{
+	return WorkshopAssetPreviewDecodeUsesInstallSource(pCategoryId, Installed) && !ThumbCacheFailed;
+}
+
+inline bool WorkshopAssetCanDecodeAnyLocalPreview(const char *pCategoryId, bool Installed, bool ThumbCacheFailed, bool HasThumbCache)
+{
+	return WorkshopAssetCanDecodeInstalledPreview(pCategoryId, Installed, ThumbCacheFailed) ||
+		(!ThumbCacheFailed && HasThumbCache);
+}
+
+inline SWorkshopPreviewDecodeSourcePlan BuildWorkshopPreviewDecodeSourcePlan(const char *pCategoryId, bool Installed, bool HasThumbCache)
+{
+	return {
+		WorkshopAssetPreviewDecodeUsesInstallSource(pCategoryId, Installed),
+		HasThumbCache,
+	};
+}
+
+inline bool DetectCorruptEntityBgInstallHeader(const void *pData, size_t DataSize)
+{
+	if(pData == nullptr || DataSize == 0)
+		return false;
+
+	const uint8_t *pBytes = static_cast<const uint8_t *>(pData);
+	const bool IsPng = DataSize >= 8 &&
+		std::memcmp(pBytes, "\x89PNG\r\n\x1a\n", 8) == 0;
+	const bool IsWebp = DataSize >= 12 &&
+		std::memcmp(pBytes, "RIFF", 4) == 0 &&
+		std::memcmp(pBytes + 8, "WEBP", 4) == 0;
+	return IsPng || IsWebp;
 }
 
 #endif

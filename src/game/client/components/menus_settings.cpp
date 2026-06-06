@@ -19,13 +19,14 @@
 
 #include <generated/protocol.h>
 
-#include <game/client/animstate.h>
 #include <game/client/QmUi/QmAnimResolve.h>
 #include <game/client/QmUi/UiContext.h>
 #include <game/client/QmUi/UiTokens.h>
+#include <game/client/animstate.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/menu_background.h>
 #include <game/client/components/message_gradient.h>
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
 #include <game/client/skin.h>
@@ -37,6 +38,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cinttypes>
+#include <cstdint>
 #include <memory>
 #include <numeric>
 #include <set>
@@ -48,9 +51,49 @@ using namespace std::chrono_literals;
 
 namespace
 {
+	void GetSettingsTeePreviewBounds(const CAnimState *pAnim, const CTeeRenderInfo &Info, float &MinX, float &MinY, float &MaxX, float &MaxY)
+	{
+		if(Info.m_aSixup[g_Config.m_ClDummy].PartTexture(protocol7::SKINPART_BODY).IsValid())
+		{
+			MinX = -Info.m_Size * 0.5f;
+			MaxX = Info.m_Size * 0.5f;
+			MinY = -Info.m_Size * 0.5f;
+			MaxY = Info.m_Size * 0.74f;
+			return;
+		}
+
+		float AnimScale, BaseSize;
+		CRenderTools::GetRenderTeeAnimScaleAndBaseSize(&Info, AnimScale, BaseSize);
+		const float AssumedScale = BaseSize / 64.0f;
+		const vec2 BodyPos = vec2(pAnim->GetBody()->m_X, pAnim->GetBody()->m_Y) * AnimScale;
+
+		vec2 BodyOffset;
+		float BodyWidth, BodyHeight;
+		CRenderTools::GetRenderTeeBodySize(pAnim, &Info, BodyOffset, BodyWidth, BodyHeight);
+		MinX = -32.0f * AssumedScale + BodyPos.x + BodyOffset.x;
+		MinY = -32.0f * AssumedScale + BodyPos.y + BodyOffset.y;
+		MaxX = MinX + BodyWidth;
+		MaxY = MinY + BodyHeight;
+
+		const CAnimKeyframe *apFeet[] = {pAnim->GetFrontFoot(), pAnim->GetBackFoot()};
+		for(const CAnimKeyframe *pFoot : apFeet)
+		{
+			const vec2 FootPos = vec2(pFoot->m_X * AnimScale, pFoot->m_Y * AnimScale);
+			vec2 FeetOffset;
+			float FeetWidth, FeetHeight;
+			CRenderTools::GetRenderTeeFeetSize(pAnim, &Info, FeetOffset, FeetWidth, FeetHeight);
+			const float FeetMinX = -32.0f * AssumedScale + FootPos.x + FeetOffset.x;
+			const float FeetMinY = -16.0f * AssumedScale + FootPos.y + FeetOffset.y;
+			MinX = minimum(MinX, FeetMinX);
+			MinY = minimum(MinY, FeetMinY);
+			MaxX = maximum(MaxX, FeetMinX + FeetWidth);
+			MaxY = maximum(MaxY, FeetMinY + FeetHeight);
+		}
+	}
+
 	bool PerfDebugEnabled()
 	{
-		return g_Config.m_QmPerfDebug != 0;
+		return QmPerfEnabled();
 	}
 
 	double PerfDebugThresholdMs()
@@ -58,17 +101,210 @@ namespace
 		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
 	}
 
-	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	void LogPerfStage(IClient *pClient, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 	{
-		if(!PerfDebugEnabled())
-			return;
-		if(!Force && DurationMs < PerfDebugThresholdMs())
+		QmPerfLogStage("perf/menu", pStage, DurationMs, Force, pClient, nullptr, nullptr, pExtra);
+	}
+
+	struct SSettingsPreviewSkinKey
+	{
+		char m_aSkinName[MAX_SKIN_LENGTH] = {};
+		int m_UseCustomColor = 0;
+		int m_ColorBody = 0;
+		int m_ColorFeet = 0;
+
+		bool operator==(const SSettingsPreviewSkinKey &Other) const
+		{
+			return str_comp(m_aSkinName, Other.m_aSkinName) == 0 &&
+			       m_UseCustomColor == Other.m_UseCustomColor &&
+			       m_ColorBody == Other.m_ColorBody &&
+			       m_ColorFeet == Other.m_ColorFeet;
+		}
+	};
+
+	struct SSettingsPreviewSkinTransitionState
+	{
+		SSettingsPreviewSkinKey m_Key;
+		bool m_HasKey = false;
+		CTeeRenderInfo m_LastInfo;
+		CTeeRenderInfo m_PreviousInfo;
+		std::optional<std::chrono::nanoseconds> m_StartTime;
+
+		void Update(const SSettingsPreviewSkinKey &Key, const CTeeRenderInfo &Info, std::chrono::nanoseconds Now)
+		{
+			if(g_Config.m_QmSkinChangeTransitionMs <= 0)
+			{
+				m_PreviousInfo.Reset();
+				m_StartTime.reset();
+			}
+
+			if(m_HasKey && !(m_Key == Key) && m_LastInfo.Valid() && Info.Valid())
+			{
+				m_PreviousInfo = m_LastInfo;
+				m_StartTime = Now;
+			}
+
+			m_Key = Key;
+			m_HasKey = true;
+			m_LastInfo = Info;
+		}
+
+		float Progress(std::chrono::nanoseconds Now) const
+		{
+			if(!m_StartTime.has_value())
+			{
+				return 1.0f;
+			}
+
+			const float ElapsedSeconds = std::chrono::duration<float>(Now - m_StartTime.value()).count();
+			return ResolveSkinChangeTransitionProgress(ElapsedSeconds, g_Config.m_QmSkinChangeTransitionMs);
+		}
+
+		const CTeeRenderInfo *PreviousInfo(std::chrono::nanoseconds Now) const
+		{
+			if(g_Config.m_QmSkinChangeTransitionMs <= 0 || !m_StartTime.has_value() || Progress(Now) >= 1.0f || !m_PreviousInfo.Valid())
+			{
+				return nullptr;
+			}
+
+			return &m_PreviousInfo;
+		}
+	};
+
+	struct STeeListDrainPerfSession
+	{
+		bool m_Active = false;
+		int64_t m_StartNs = 0;
+		uint64_t m_UploadsBase = 0;
+		uint64_t m_LoadsBase = 0;
+		uint64_t m_LastUploads = 0;
+		uint64_t m_LastLoads = 0;
+		int m_LastVisibleReady = -1;
+		int m_LastVisibleTotal = -1;
+		int m_LastRequested = -1;
+		int m_LastPending = -1;
+		int m_LastLoading = -1;
+		int m_LastLoaded = -1;
+		int m_LastAdmittedDelta = 0;
+		int m_LastStartedDelta = 0;
+		bool m_LastBackgroundDrain = false;
+		int m_MaxRequested = 0;
+		int m_MaxPending = 0;
+		int m_MaxLoading = 0;
+		int m_MaxRealInflight = 0;
+		int m_CountFuseLimit = 0;
+		uint64_t m_TotalRequested = 0;
+		uint64_t m_TotalAdmitted = 0;
+		uint64_t m_TotalStarted = 0;
+		int m_NumLoadingWindowWaits = 0;
+		int m_NumGpuBudgetWaits = 0;
+		int m_NumQueueFuseWaits = 0;
+	};
+
+	STeeListDrainPerfSession gs_TeeListDrainPerfSession;
+
+	struct STeeSettingsPageState
+	{
+		bool m_SkinListScrollActiveLastFrame = false;
+		int m_SkinListScrollCooldownFrames = 0;
+		int m_SkinListPostScrollRecoveryFrames = 0;
+		size_t m_BackgroundRequestCursor = 0;
+		int m_LastLoggedVisibleCount = -1;
+		int m_LastLoggedVisibleReadyCount = -1;
+		int m_LastLoggedRecoveryFrames = -1;
+		bool m_LastLoggedScrollActive = false;
+		char m_aLastLoggedFirstVisibleSkin[MAX_SKIN_LENGTH] = "";
+		bool m_TeePageActiveLastFrame = false;
+		bool m_TeeClickActiveLastFrame = false;
+		bool m_TeeScrollInteractionLastFrame = false;
+		bool m_TeeFirstVisibleReadyLogged = false;
+		bool m_TeeAllVisibleReadyLogged = false;
+		bool m_TeeFullListReadyLogged = false;
+		bool m_TeeRefreshInProgress = false;
+		int64_t m_TeeEnterStartNs = 0;
+		int64_t m_TeeRefreshStartNs = 0;
+		int m_LastRequestBudgetActual = 0;
+		ESettingsSkinBackgroundRequestBlockReason m_LastRequestBudgetBlockReason = ESettingsSkinBackgroundRequestBlockReason::NONE;
+	};
+
+	STeeSettingsPageState gs_TeeSettingsPageState;
+
+	void BeginTeeListDrainPerfSession(const CSkins &Skins, int64_t NowNs)
+	{
+		gs_TeeListDrainPerfSession.m_Active = true;
+		gs_TeeListDrainPerfSession.m_StartNs = NowNs;
+		gs_TeeListDrainPerfSession.m_UploadsBase = Skins.SettingsSourceUploadsCompleted();
+		gs_TeeListDrainPerfSession.m_LoadsBase = Skins.SettingsSourceLoadsCompleted();
+		gs_TeeListDrainPerfSession.m_LastUploads = gs_TeeListDrainPerfSession.m_UploadsBase;
+		gs_TeeListDrainPerfSession.m_LastLoads = gs_TeeListDrainPerfSession.m_LoadsBase;
+		gs_TeeListDrainPerfSession.m_LastVisibleReady = -1;
+		gs_TeeListDrainPerfSession.m_LastVisibleTotal = -1;
+		gs_TeeListDrainPerfSession.m_LastRequested = -1;
+		gs_TeeListDrainPerfSession.m_LastPending = -1;
+		gs_TeeListDrainPerfSession.m_LastLoading = -1;
+		gs_TeeListDrainPerfSession.m_LastLoaded = -1;
+		gs_TeeListDrainPerfSession.m_LastAdmittedDelta = 0;
+		gs_TeeListDrainPerfSession.m_LastStartedDelta = 0;
+		gs_TeeListDrainPerfSession.m_LastBackgroundDrain = false;
+		gs_TeeListDrainPerfSession.m_MaxRequested = 0;
+		gs_TeeListDrainPerfSession.m_MaxPending = 0;
+		gs_TeeListDrainPerfSession.m_MaxLoading = 0;
+		gs_TeeListDrainPerfSession.m_MaxRealInflight = 0;
+		gs_TeeListDrainPerfSession.m_CountFuseLimit = 0;
+		gs_TeeListDrainPerfSession.m_TotalRequested = 0;
+		gs_TeeListDrainPerfSession.m_TotalAdmitted = 0;
+		gs_TeeListDrainPerfSession.m_TotalStarted = 0;
+		gs_TeeListDrainPerfSession.m_NumLoadingWindowWaits = 0;
+		gs_TeeListDrainPerfSession.m_NumGpuBudgetWaits = 0;
+		gs_TeeListDrainPerfSession.m_NumQueueFuseWaits = 0;
+	}
+
+	void LogTeeListDrainSummary(IClient *pClient, const CSkins &Skins, const CSkins::CSkinLoadingStats &Stats, bool FullListReady, int64_t NowNs)
+	{
+		if(!gs_TeeListDrainPerfSession.m_Active || (g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0))
 			return;
 
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/menu", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+		const uint64_t UploadsDoneTotal = Skins.SettingsSourceUploadsCompleted() - gs_TeeListDrainPerfSession.m_UploadsBase;
+		const uint64_t LoadedTotal = Skins.SettingsSourceLoadsCompleted() - gs_TeeListDrainPerfSession.m_LoadsBase;
+		const double DurationMs = gs_TeeListDrainPerfSession.m_StartNs > 0 ? (NowNs - gs_TeeListDrainPerfSession.m_StartNs) / 1000000.0 : 0.0;
+		const double DurationSec = DurationMs > 0.0 ? DurationMs / 1000.0 : 0.0;
+		const double UploadsPerSec = DurationSec > 0.0 ? UploadsDoneTotal / DurationSec : 0.0;
+		const double LoadedPerSec = DurationSec > 0.0 ? LoadedTotal / DurationSec : 0.0;
+		const auto &Telemetry = Skins.SettingsSourceAdmissionTelemetry();
+		char aPayload[768];
+		str_format(aPayload, sizeof(aPayload), "event=list_drain_summary dur_ms=%.3f uploads_done_total=%llu loaded_total=%llu uploads_per_sec=%.3f loaded_per_sec=%.3f requested=%d pending=%d loading=%d loaded=%d max_requested=%d max_pending=%d max_loading=%d max_real_inflight=%d count_fuse_limit=%d total_requested=%llu total_admitted=%llu total_started=%llu num_loading_window_waits=%d num_gpu_budget_waits=%d num_queue_fuse_waits=%d full_list_ready=%d final_real_inflight=%d last_wait_reason=%s last_dynamic_decision=%s last_request_budget_block_reason=%s",
+			DurationMs,
+			(unsigned long long)UploadsDoneTotal,
+			(unsigned long long)LoadedTotal,
+			UploadsPerSec,
+			LoadedPerSec,
+			(int)Stats.m_NumBackgroundRequested,
+			(int)Stats.m_NumPending,
+			(int)Stats.m_NumLoading,
+			(int)Stats.m_NumLoaded,
+			gs_TeeListDrainPerfSession.m_MaxRequested,
+			gs_TeeListDrainPerfSession.m_MaxPending,
+			gs_TeeListDrainPerfSession.m_MaxLoading,
+			gs_TeeListDrainPerfSession.m_MaxRealInflight,
+			gs_TeeListDrainPerfSession.m_CountFuseLimit,
+			(unsigned long long)gs_TeeListDrainPerfSession.m_TotalRequested,
+			(unsigned long long)gs_TeeListDrainPerfSession.m_TotalAdmitted,
+			(unsigned long long)gs_TeeListDrainPerfSession.m_TotalStarted,
+			gs_TeeListDrainPerfSession.m_NumLoadingWindowWaits,
+			gs_TeeListDrainPerfSession.m_NumGpuBudgetWaits,
+			gs_TeeListDrainPerfSession.m_NumQueueFuseWaits,
+			FullListReady ? 1 : 0,
+			Telemetry.m_RealInflight,
+			Telemetry.m_aLastWaitReason,
+			Telemetry.m_aDynamicDecision,
+			SettingsSkinBackgroundRequestBlockReasonName(gs_TeeSettingsPageState.m_LastRequestBudgetBlockReason));
+		QmPerfLogPayload("perf/settings-skin-source", aPayload, pClient, "settings:tee");
+		gs_TeeListDrainPerfSession.m_Active = false;
+	}
+
+	void ResetTeeSettingsPageState()
+	{
+		gs_TeeSettingsPageState = {};
 	}
 
 	ColorRGBA SettingsUiColorSurface(float AlphaScale, float ColorScale)
@@ -81,16 +317,16 @@ namespace
 
 bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLabel, unsigned *pBaseColor, char *pGradient, int GradientSize, ColorRGBA DefaultColor, CButtonContainer *pResetButton, CButtonContainer *pAddButton, CButtonContainer *pRemoveButton, unsigned *pColorValues, bool CheckBoxSpacing, int *pCheckBoxValue)
 {
-	constexpr float TOP_LINE_HEIGHT = 24.0f;
-	constexpr float COLOR_LINE_HEIGHT = 27.0f;
-	constexpr float BOTTOM_MARGIN = 2.0f;
-	constexpr float COLOR_BUTTON_SIZE = 24.0f;
-	constexpr float COLOR_BUTTON_SPACING = 5.0f;
-	constexpr float CHANGE_BUTTON_SIZE = 22.0f;
+	constexpr float TopLineHeight = 24.0f;
+	constexpr float ColorLineHeight = 27.0f;
+	constexpr float BottomMargin = 2.0f;
+	constexpr float ColorButtonSize = 24.0f;
+	constexpr float ColorButtonSpacing = 5.0f;
+	constexpr float ChangeButtonSize = 22.0f;
 
 	bool Changed = false;
 	CUIRect Section, Label, TextLabel, ResetButton;
-	pView->HSplitTop(TOP_LINE_HEIGHT, &Section, pView);
+	pView->HSplitTop(TopLineHeight, &Section, pView);
 
 	Section.VSplitRight(60.0f, &Section, &ResetButton);
 	Section.VSplitRight(8.0f, &Section, nullptr);
@@ -132,19 +368,19 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 	}
 
 	CUIRect ColorLine;
-	pView->HSplitTop(COLOR_LINE_HEIGHT, &ColorLine, pView);
+	pView->HSplitTop(ColorLineHeight, &ColorLine, pView);
 	CUIRect ColorArea = ColorLine;
 	if(CheckBoxSpacing)
 		ColorArea.VSplitLeft(ColorLine.h + 5.0f, nullptr, &ColorArea);
-	ColorArea.VSplitRight(CHANGE_BUTTON_SIZE * 2.0f + COLOR_BUTTON_SPACING, &ColorArea, &ColorLine);
+	ColorArea.VSplitRight(ChangeButtonSize * 2.0f + ColorButtonSpacing, &ColorArea, &ColorLine);
 
 	for(int ColorIndex = 0; ColorIndex < NumColors; ++ColorIndex)
 	{
 		CUIRect ColorButton;
-		ColorArea.VSplitLeft(COLOR_BUTTON_SIZE, &ColorButton, &ColorArea);
-		ColorButton.HMargin((ColorButton.h - COLOR_BUTTON_SIZE) / 2.0f, &ColorButton);
+		ColorArea.VSplitLeft(ColorButtonSize, &ColorButton, &ColorArea);
+		ColorButton.HMargin((ColorButton.h - ColorButtonSize) / 2.0f, &ColorButton);
 		if(ColorIndex < NumColors - 1)
-			ColorArea.VSplitLeft(COLOR_BUTTON_SPACING, nullptr, &ColorArea);
+			ColorArea.VSplitLeft(ColorButtonSpacing, nullptr, &ColorArea);
 		const unsigned OldColor = pColorValues[ColorIndex];
 		const ColorHSLA PickedColor = DoButton_ColorPicker(&ColorButton, &pColorValues[ColorIndex], false);
 		pColorValues[ColorIndex] = PickedColor.Pack(false);
@@ -160,11 +396,11 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 	}
 
 	CUIRect RemoveButton, AddButton;
-	ColorLine.VSplitLeft(CHANGE_BUTTON_SIZE, &RemoveButton, &ColorLine);
-	ColorLine.VSplitLeft(COLOR_BUTTON_SPACING, nullptr, &ColorLine);
-	ColorLine.VSplitLeft(CHANGE_BUTTON_SIZE, &AddButton, nullptr);
-	RemoveButton.HMargin((RemoveButton.h - CHANGE_BUTTON_SIZE) / 2.0f, &RemoveButton);
-	AddButton.HMargin((AddButton.h - CHANGE_BUTTON_SIZE) / 2.0f, &AddButton);
+	ColorLine.VSplitLeft(ChangeButtonSize, &RemoveButton, &ColorLine);
+	ColorLine.VSplitLeft(ColorButtonSpacing, nullptr, &ColorLine);
+	ColorLine.VSplitLeft(ChangeButtonSize, &AddButton, nullptr);
+	RemoveButton.HMargin((RemoveButton.h - ChangeButtonSize) / 2.0f, &RemoveButton);
+	AddButton.HMargin((AddButton.h - ChangeButtonSize) / 2.0f, &AddButton);
 	const bool CanRemoveColor = NumColors > CMessageGradient::MIN_COLORS;
 	const bool CanAddColor = NumColors < CMessageGradient::MAX_COLORS;
 	if(DoButton_Menu(pRemoveButton, "-", CanRemoveColor ? 0 : -1, &RemoveButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 4.0f) && CanRemoveColor)
@@ -185,7 +421,7 @@ bool CMenus::DoMessageGradientLine(CChat &Chat, CUIRect *pView, const char *pLab
 		Changed = true;
 	}
 
-	pView->HSplitTop(BOTTOM_MARGIN, nullptr, pView);
+	pView->HSplitTop(BottomMargin, nullptr, pView);
 	if(Changed)
 	{
 		Chat.RebuildChat();
@@ -199,8 +435,6 @@ namespace
 	constexpr size_t MAX_LANGUAGE_CACHE = 128;
 	constexpr float LANGUAGE_ROW_HEIGHT = 28.0f;
 	constexpr float LANGUAGE_FONT_SIZE = 16.0f;
-	constexpr float LANGUAGE_CREDITS_FONT_SIZE = 14.0f;
-	constexpr float LANGUAGE_CREDITS_MARGIN = 10.0f;
 	constexpr float LANGUAGE_SCROLLBAR_WIDTH = 20.0f;
 
 	CScrollRegion gs_LanguageScrollRegion;
@@ -210,41 +444,26 @@ namespace
 	bool gs_LanguageLabelElementsInit = false;
 	float gs_LanguageLabelWidth = -1.0f;
 
-	CScrollRegion gs_CreditsScrollRegion;
-	CUIElement gs_CreditsLabelElement;
-	bool gs_CreditsLabelElementInit = false;
-	float gs_CreditsLineWidth = -1.0f;
-	float gs_CreditsHeight = 0.0f;
-	char gs_aCreditsLanguageFile[IO_MAX_PATH_LENGTH] = {};
 	char gs_aLanguageCacheLanguageFile[IO_MAX_PATH_LENGTH] = {};
-	int gs_SettingsDeferredPage = -1;
-	int gs_SettingsDeferredFrames = 0;
 
 	void EnsureLanguagePageCacheInit(CUi *pUi)
 	{
-		if(!gs_LanguageLabelElementsInit)
+		if(!gs_LanguageLabelElementsInit || !gs_aLanguageLabelElements[0].IsRegistered())
 		{
 			for(CUIElement &LabelElement : gs_aLanguageLabelElements)
 				LabelElement.Init(pUi, 1);
 			gs_LanguageLabelElementsInit = true;
 		}
-
-		if(!gs_CreditsLabelElementInit)
-		{
-			gs_CreditsLabelElement.Init(pUi, 1);
-			gs_CreditsLabelElementInit = true;
-		}
 	}
 
-	void LayoutLanguagePageBaseRects(float MainViewWidth, CUIRect &List, CUIRect &CreditsScroll)
+	void LayoutLanguagePageBaseRects(float MainViewWidth, CUIRect &List)
 	{
 		CUIRect MainView;
 		MainView.x = 0.0f;
 		MainView.y = 0.0f;
 		MainView.w = MainViewWidth;
 		MainView.h = 600.0f;
-		MainView.HSplitBottom(4.0f * LANGUAGE_CREDITS_FONT_SIZE + 2.0f * LANGUAGE_CREDITS_MARGIN + CScrollRegion::HEIGHT_MAGIC_FIX, &List, &CreditsScroll);
-		List.HSplitBottom(5.0f, &List, nullptr);
+		List = MainView;
 	}
 
 	float LanguageListLabelWidth(const CUIRect &ListRect)
@@ -258,73 +477,9 @@ namespace
 		return Label.w;
 	}
 
-	bool LanguageLabelCacheInvalid()
-	{
-		if(g_Localization.Languages().size() > MAX_LANGUAGE_CACHE)
-			return true;
-
-		for(size_t i = 0; i < g_Localization.Languages().size(); ++i)
-		{
-			if(!gs_aLanguageLabelElements[i].Rect(0)->m_UITextContainer.Valid())
-				return true;
-		}
-		return false;
-	}
-
 	bool UseLanguagePageCache()
 	{
 		return g_Localization.Languages().size() <= MAX_LANGUAGE_CACHE;
-	}
-
-	void RebuildLanguageCreditsCache(CUi *pUi, const char *pCreditsText, float CreditsLineWidth)
-	{
-		CUIRect CreditsCacheRect;
-		CreditsCacheRect.x = 0.0f;
-		CreditsCacheRect.y = 0.0f;
-		CreditsCacheRect.w = CreditsLineWidth;
-		CreditsCacheRect.h = 128.0f;
-		SLabelProperties CreditsLabelProps;
-		CreditsLabelProps.m_MaxWidth = CreditsCacheRect.w;
-		pUi->DoLabelStreamed(*gs_CreditsLabelElement.Rect(0), &CreditsCacheRect, pCreditsText, LANGUAGE_CREDITS_FONT_SIZE, TEXTALIGN_TL, CreditsLabelProps);
-		gs_CreditsHeight = gs_CreditsLabelElement.Rect(0)->m_Cursor.Height();
-		gs_CreditsLineWidth = CreditsLineWidth;
-		str_copy(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile, sizeof(gs_aCreditsLanguageFile));
-	}
-
-	bool ShouldDeferSettingsTailSection(const int Page)
-	{
-		return gs_SettingsDeferredPage == Page && gs_SettingsDeferredFrames > 0;
-	}
-
-	int DeferredSettingsTailFrames(const int Page)
-	{
-		return gs_SettingsDeferredPage == Page ? gs_SettingsDeferredFrames : 0;
-	}
-
-	void BeginDeferredSettingsPage(const int Page)
-	{
-		gs_SettingsDeferredPage = Page;
-		switch(Page)
-		{
-		case CMenus::SETTINGS_DDNET:
-			gs_SettingsDeferredFrames = 3;
-			break;
-		case CMenus::SETTINGS_GENERAL:
-		case CMenus::SETTINGS_GRAPHICS:
-		default:
-			gs_SettingsDeferredFrames = 1;
-			break;
-		}
-	}
-
-	void FinishDeferredSettingsFrame(const int Page)
-	{
-		if(gs_SettingsDeferredPage != Page || gs_SettingsDeferredFrames <= 0)
-			return;
-
-		--gs_SettingsDeferredFrames;
-		if(gs_SettingsDeferredFrames <= 0)
-			gs_SettingsDeferredPage = -1;
 	}
 
 	const char *SettingsPageName(const int Page)
@@ -401,16 +556,20 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 	CPerfTimer RenderTimer;
 	char aBuf[128 + IO_MAX_PATH_LENGTH];
 	CUIRect Label, Button, Left, Right, Game, ClientSettings;
-	const bool DeferTailSections = ShouldDeferSettingsTailSection(SETTINGS_GENERAL);
-	MainView.HSplitTop(150.0f, &Game, &ClientSettings);
+	MainView.HSplitTop(190.0f, &Game, &ClientSettings);
 
 	// game
 	{
 		// headline
 		Game.HSplitTop(30.0f, &Label, &Game);
-		Ui()->DoLabel(&Label, Localize("Game"), 20.0f, TEXTALIGN_ML);
+		CUIRect GameLabel, LanguageLabel;
+		Label.VSplitMid(&GameLabel, &LanguageLabel, 20.0f);
+		CUIElement &GameTitleElement = SettingsTextElement(SETTINGS_GENERAL, -1, "game-title");
+		Ui()->DoLabelStreamed(*GameTitleElement.Rect(0), &GameLabel, Localize("Game"), 20.0f, TEXTALIGN_ML);
+		CUIElement &LanguageTitleElement = SettingsTextElement(SETTINGS_GENERAL, -1, "language-title");
+		Ui()->DoLabelStreamed(*LanguageTitleElement.Rect(0), &LanguageLabel, Localize("Language"), 20.0f, TEXTALIGN_ML);
 		Game.HSplitTop(5.0f, nullptr, &Game);
-		Game.VSplitMid(&Left, nullptr, 20.0f);
+		Game.VSplitMid(&Left, &Right, 20.0f);
 
 		// dynamic camera
 		Left.HSplitTop(20.0f, &Button, &Left);
@@ -458,13 +617,17 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 		Left.HSplitTop(20.0f, &Button, &Left);
 		if(DoButton_CheckBox(&g_Config.m_ClAutoswitchWeaponsOutOfAmmo, Localize("Switch weapon when out of ammo"), g_Config.m_ClAutoswitchWeaponsOutOfAmmo, &Button))
 			g_Config.m_ClAutoswitchWeaponsOutOfAmmo ^= 1;
+
+		Right.HSplitTop(5.0f, nullptr, &Right);
+		RenderLanguageSelection(Right);
 	}
 
 	// client
 	{
 		// headline
 		ClientSettings.HSplitTop(30.0f, &Label, &ClientSettings);
-		Ui()->DoLabel(&Label, Localize("Client"), 20.0f, TEXTALIGN_ML);
+		CUIElement &ClientTitleElement = SettingsTextElement(SETTINGS_GENERAL, -1, "client-title");
+		Ui()->DoLabelStreamed(*ClientTitleElement.Rect(0), &Label, Localize("Client"), 20.0f, TEXTALIGN_ML);
 		ClientSettings.HSplitTop(5.0f, nullptr, &ClientSettings);
 		ClientSettings.VSplitMid(&Left, &Right, 20.0f);
 
@@ -529,20 +692,16 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 		}
 		GameClient()->m_Tooltips.DoToolTip(&s_ThemesButtonId, &DirectoryButton, Localize("Open the directory to add custom themes"));
 
-		if(!DeferTailSections)
+		Left.HSplitTop(20.0f, nullptr, &Left);
 		{
-			Left.HSplitTop(20.0f, nullptr, &Left);
-			{
-				CPerfTimer StageTimer;
-				RenderThemeSelection(Left);
-				LogPerfStage("general_theme_selection", StageTimer.ElapsedMs(), false, "page=general");
-			}
+			CPerfTimer StageTimer;
+			RenderThemeSelection(Left);
+			LogPerfStage(Client(), "general_theme_selection", StageTimer.ElapsedMs(), false, "page=general");
 		}
 
 		// automatic recording
 		CUIRect AutoRecordView = Right;
 		AutoRecordView.HSplitTop(40.0f, nullptr, &AutoRecordView);
-		if(!DeferTailSections)
 		{
 			{
 				CPerfTimer StageTimer;
@@ -563,7 +722,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 				if(g_Config.m_ClAutoScreenshot)
 					Ui()->DoScrollbarOption(&g_Config.m_ClAutoScreenshotMax, &g_Config.m_ClAutoScreenshotMax, &Button, Localize("Max Screenshots"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_MULTILINE);
 
-				LogPerfStage("general_auto_record_core", StageTimer.ElapsedMs(), false, "page=general");
+				LogPerfStage(Client(), "general_auto_record_core", StageTimer.ElapsedMs(), false, "page=general");
 			}
 
 			{
@@ -589,11 +748,11 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 				if(g_Config.m_ClAutoCSV)
 					Ui()->DoScrollbarOption(&g_Config.m_ClAutoCSVMax, &g_Config.m_ClAutoCSVMax, &Button, Localize("Max CSVs"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_MULTILINE);
 
-				LogPerfStage("general_auto_record_extended", StageTimer.ElapsedMs(), false, "page=general");
+				LogPerfStage(Client(), "general_auto_record_extended", StageTimer.ElapsedMs(), false, "page=general");
 			}
 		}
 	}
-	LogPerfStage("general_page_total", RenderTimer.ElapsedMs(), false, "page=general");
+	LogPerfStage(Client(), "general_page_total", RenderTimer.ElapsedMs(), false, "page=general");
 }
 
 void CMenus::SetNeedSendInfo()
@@ -614,6 +773,114 @@ void CMenus::SetNeedSendInfo(bool Dummy)
 	else
 		GameClient()->SendInfo(false);
 	NeedSendInfo = false;
+}
+
+CUi::EPopupMenuFunctionResult CMenus::PopupSettingsCountrySelection(void *pContext, CUIRect View, bool Active)
+{
+	SPopupSettingsCountrySelectionContext *pPopupContext = static_cast<SPopupSettingsCountrySelectionContext *>(pContext);
+	CMenus *pMenus = pPopupContext->m_pMenus;
+
+	static CListBox s_ListBox;
+	s_ListBox.SetActive(Active);
+	s_ListBox.DoStart(50.0f, pMenus->GameClient()->m_CountryFlags.Num(), 8, 1, -1, &View, false);
+
+	if(pPopupContext->m_New)
+	{
+		pPopupContext->m_New = false;
+		s_ListBox.ScrollToSelected();
+	}
+
+	for(size_t i = 0; i < pMenus->GameClient()->m_CountryFlags.Num(); ++i)
+	{
+		const CCountryFlags::CCountryFlag &Entry = pMenus->GameClient()->m_CountryFlags.GetByIndex(i);
+		const CListboxItem Item = s_ListBox.DoNextItem(&Entry, Entry.m_CountryCode == pPopupContext->m_Selection);
+		if(!Item.m_Visible)
+			continue;
+
+		CUIRect FlagRect, Label;
+		Item.m_Rect.Margin(5.0f, &FlagRect);
+		FlagRect.HSplitBottom(12.0f, &FlagRect, &Label);
+		Label.HSplitTop(2.0f, nullptr, &Label);
+		const float OldWidth = FlagRect.w;
+		FlagRect.w = FlagRect.h * 2.0f;
+		FlagRect.x += (OldWidth - FlagRect.w) / 2.0f;
+		pMenus->GameClient()->m_CountryFlags.Render(Entry.m_CountryCode, ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), FlagRect.x, FlagRect.y, FlagRect.w, FlagRect.h);
+		pMenus->Ui()->DoLabel(&Label, Entry.m_aCountryCodeString, 10.0f, TEXTALIGN_MC);
+	}
+
+	const int NewSelected = s_ListBox.DoEnd();
+	pPopupContext->m_Selection = NewSelected >= 0 ? pMenus->GameClient()->m_CountryFlags.GetByIndex(NewSelected).m_CountryCode : -1;
+	if(s_ListBox.WasItemSelected() || s_ListBox.WasItemActivated())
+	{
+		if(pPopupContext->m_pCountry != nullptr)
+		{
+			*pPopupContext->m_pCountry = pPopupContext->m_Selection;
+			pMenus->SetNeedSendInfo();
+		}
+		return CUi::POPUP_CLOSE_CURRENT;
+	}
+
+	return CUi::POPUP_KEEP_OPEN;
+}
+
+void CMenus::RenderSettingsTeeIdentity(CUIRect MainView, CUIRect *pFlagButton)
+{
+	static CLineInput s_NameInput;
+	static CLineInput s_ClanInput;
+	int *pCountry = nullptr;
+	if(!m_Dummy)
+	{
+		pCountry = &g_Config.m_PlayerCountry;
+		s_NameInput.SetBuffer(g_Config.m_PlayerName, sizeof(g_Config.m_PlayerName));
+		s_NameInput.SetEmptyText(Client()->PlayerName());
+		s_ClanInput.SetBuffer(g_Config.m_PlayerClan, sizeof(g_Config.m_PlayerClan));
+	}
+	else
+	{
+		pCountry = &g_Config.m_ClDummyCountry;
+		s_NameInput.SetBuffer(g_Config.m_ClDummyName, sizeof(g_Config.m_ClDummyName));
+		s_NameInput.SetEmptyText(Client()->DummyName());
+		s_ClanInput.SetBuffer(g_Config.m_ClDummyClan, sizeof(g_Config.m_ClDummyClan));
+	}
+
+	CUIRect NameSide, ClanSide, NameLabel, NameInput, ClanLabel, ClanInput, FlagButton;
+	const float IdentityGap = 12.0f;
+	const float AvailableIdentityWidth = maximum(0.0f, MainView.w - IdentityGap);
+	const float NameSideWidth = AvailableIdentityWidth * 0.52f;
+	MainView.VSplitLeft(NameSideWidth, &NameSide, &ClanSide);
+	ClanSide.VSplitLeft(IdentityGap, nullptr, &ClanSide);
+	NameSide.VSplitLeft(45.0f, &NameLabel, &NameInput);
+	ClanSide.VSplitLeft(40.0f, &ClanLabel, &ClanInput);
+	ClanInput.VSplitRight(40.0f, &ClanInput, &FlagButton);
+	ClanInput.VSplitRight(6.0f, &ClanInput, nullptr);
+
+	Ui()->DoLabel(&NameLabel, Localize("Name"), 14.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&ClanLabel, Localize("Clan"), 14.0f, TEXTALIGN_ML);
+	if(Ui()->DoEditBox(&s_NameInput, &NameInput, 14.0f))
+		SetNeedSendInfo();
+	if(Ui()->DoEditBox(&s_ClanInput, &ClanInput, 14.0f))
+		SetNeedSendInfo();
+
+	static CButtonContainer s_FlagButton;
+	if(DoButton_Menu(&s_FlagButton, "", 0, &FlagButton))
+	{
+		static SPopupMenuId s_PopupCountryId;
+		static SPopupSettingsCountrySelectionContext s_PopupCountryContext;
+		s_PopupCountryContext.m_pMenus = this;
+		s_PopupCountryContext.m_pCountry = pCountry;
+		s_PopupCountryContext.m_Selection = *pCountry;
+		s_PopupCountryContext.m_New = true;
+		Ui()->DoPopupMenu(&s_PopupCountryId, FlagButton.x, FlagButton.y + FlagButton.h, 490.0f, 210.0f, &s_PopupCountryContext, PopupSettingsCountrySelection);
+	}
+	GameClient()->m_Tooltips.DoToolTip(&s_FlagButton, &FlagButton, Localize("Choose country flag"));
+
+	CUIRect FlagIcon = FlagButton;
+	const float OldWidth = FlagIcon.w;
+	FlagIcon.w = FlagIcon.h * 2.0f;
+	FlagIcon.x += (OldWidth - FlagIcon.w) / 2.0f;
+	GameClient()->m_CountryFlags.Render(*pCountry, ColorRGBA(1.0f, 1.0f, 1.0f, Ui()->HotItem() == &s_FlagButton ? 1.0f : 0.85f), FlagIcon.x, FlagIcon.y, FlagIcon.w, FlagIcon.h);
+	if(pFlagButton != nullptr)
+		*pFlagButton = FlagButton;
 }
 
 void CMenus::RenderSettingsPlayer(CUIRect MainView)
@@ -789,7 +1056,6 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 			continue;
 		vpFilteredFlags.push_back(&Entry);
 	}
-
 	MainView.HSplitTop(10.0f, nullptr, &MainView);
 	MainView.HSplitBottom(20.0f, &MainView, &QuickSearch);
 	MainView.HSplitBottom(5.0f, &MainView, nullptr);
@@ -833,6 +1099,13 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	}
 
 	Ui()->DoEditBox_Search(&s_FlagFilterInput, &QuickSearch, 14.0f, !Ui()->IsPopupOpen() && !GameClient()->m_GameConsole.IsActive());
+}
+
+void CMenus::FinalizeTeeListDrainPerfSession()
+{
+	LogTeeListDrainSummary(Client(), GameClient()->m_Skins, GameClient()->m_Skins.LoadingStats(), false, time_get_nanoseconds().count());
+	m_SettingsHighPrioritySettled = false;
+	ResetTeeSettingsPageState();
 }
 
 void CMenus::RenderSettingsTee(CUIRect MainView)
@@ -949,11 +1222,11 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	const float EyeLineSize = 40.0f;
 	const bool RenderEyesBelow = MainView.w < 750.0f;
 	CUIRect YourSkin, Checkboxes, SkinPrefix, Eyes, Button, Label;
-	MainView.HSplitTop(90.0f, &YourSkin, &MainView);
+	MainView.HSplitTop(130.0f, &YourSkin, &MainView);
 	if(RenderEyesBelow)
 	{
-		YourSkin.VSplitLeft(MainView.w * 0.45f, &YourSkin, &Checkboxes);
-		Checkboxes.VSplitLeft(MainView.w * 0.35f, &Checkboxes, &SkinPrefix);
+		YourSkin.VSplitLeft(MainView.w * 0.52f, &YourSkin, &Checkboxes);
+		Checkboxes.VSplitLeft(MainView.w * 0.30f, &Checkboxes, &SkinPrefix);
 		MainView.HSplitTop(5.0f, nullptr, &MainView);
 		MainView.HSplitTop(EyeLineSize, &Eyes, &MainView);
 		Eyes.VSplitRight(EyeLineSize * NUM_EMOTES + 5.0f * (NUM_EMOTES - 1), nullptr, &Eyes);
@@ -962,8 +1235,8 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	{
 		YourSkin.VSplitRight(3 * EyeLineSize + 2 * 5.0f, &YourSkin, &Eyes);
 		const float RemainderWidth = YourSkin.w;
-		YourSkin.VSplitLeft(RemainderWidth * 0.4f, &YourSkin, &Checkboxes);
-		Checkboxes.VSplitLeft(RemainderWidth * 0.35f, &Checkboxes, &SkinPrefix);
+		YourSkin.VSplitLeft(RemainderWidth * 0.46f, &YourSkin, &Checkboxes);
+		Checkboxes.VSplitLeft(RemainderWidth * 0.30f, &Checkboxes, &SkinPrefix);
 		SkinPrefix.VSplitRight(20.0f, &SkinPrefix, nullptr);
 	}
 	YourSkin.VSplitRight(20.0f, &YourSkin, nullptr);
@@ -1037,6 +1310,11 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 
 	// Player skin area
 	CUIRect CustomColorsButton, RandomSkinButton;
+	CUIRect IdentityRow;
+	YourSkin.HSplitTop(28.0f, &IdentityRow, &YourSkin);
+	CUIRect FlagButton;
+	RenderSettingsTeeIdentity(IdentityRow, &FlagButton);
+	YourSkin.HSplitTop(8.0f, nullptr, &YourSkin);
 	YourSkin.HSplitTop(20.0f, &Label, &YourSkin);
 	YourSkin.HSplitBottom(20.0f, &YourSkin, &CustomColorsButton);
 
@@ -1071,7 +1349,16 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	CTeeRenderInfo OwnSkinInfo;
 	OwnSkinInfo.Apply(pOwnSkinContainer == nullptr || pOwnSkinContainer->Skin() == nullptr ? pDefaultSkin : pOwnSkinContainer->Skin().get());
 	OwnSkinInfo.ApplyColors(*pUseCustomColor, *pColorBody, *pColorFeet);
-	OwnSkinInfo.m_Size = 50.0f;
+	OwnSkinInfo.m_Size = 60.0f;
+	SSettingsPreviewSkinKey PreviewKey;
+	str_copy(PreviewKey.m_aSkinName, pSkinName[0] == '\0' ? "default" : pSkinName, sizeof(PreviewKey.m_aSkinName));
+	PreviewKey.m_UseCustomColor = *pUseCustomColor;
+	PreviewKey.m_ColorBody = (int)*pColorBody;
+	PreviewKey.m_ColorFeet = (int)*pColorFeet;
+	static std::array<SSettingsPreviewSkinTransitionState, NUM_DUMMIES> s_aPreviewTransitionStates;
+	const std::chrono::nanoseconds PreviewNow = time_get_nanoseconds();
+	SSettingsPreviewSkinTransitionState &PreviewTransitionState = s_aPreviewTransitionStates[m_Dummy];
+	PreviewTransitionState.Update(PreviewKey, OwnSkinInfo, PreviewNow);
 
 	// Tee
 	{
@@ -1084,7 +1371,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		const float InteractionDistance = 20.0f;
 		const vec2 TeeDirection = Distance < InteractionDistance ? normalize(vec2(DeltaPosition.x, maximum(DeltaPosition.y, 0.5f))) : normalize(DeltaPosition);
 		const int TeeEmote = Distance < InteractionDistance ? EMOTE_HAPPY : *pEmote;
-		RenderTools()->RenderTee(CAnimState::GetIdle(), &OwnSkinInfo, TeeEmote, TeeDirection, TeeRenderPos);
+		RenderTools()->RenderTeeWithSkinChangeTransition(CAnimState::GetIdle(), PreviewTransitionState.PreviousInfo(PreviewNow), &OwnSkinInfo, TeeEmote, TeeDirection, TeeRenderPos, PreviewTransitionState.Progress(PreviewNow));
 	}
 
 	// Skin loading status
@@ -1098,29 +1385,31 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		Parent.HSplitTop(20.0f, &StatusIcon, nullptr);
 		StatusIcon.VSplitLeft(20.0f, &StatusIcon, nullptr);
 
-		if(pSkinContainer != nullptr &&
-			(pSkinContainer->State() == CSkins::CSkinContainer::EState::UNLOADED ||
-				pSkinContainer->State() == CSkins::CSkinContainer::EState::PENDING ||
-				pSkinContainer->State() == CSkins::CSkinContainer::EState::LOADING))
+		const CSkins::CSkinContainer::EStatusIndicator Indicator =
+			pSkinContainer == nullptr ?
+				CSkins::CSkinContainer::EStatusIndicator::ERROR :
+				CSkins::CSkinContainer::StatusIndicator(pSkinContainer->State());
+		Ui()->DoButtonLogic(pStatusTooltipId, 0, &StatusIcon, BUTTONFLAG_NONE);
+		if(Indicator == CSkins::CSkinContainer::EStatusIndicator::LOADING)
 		{
 			Ui()->RenderProgressSpinner(StatusIcon.Center(), 5.0f);
+			GameClient()->m_Tooltips.DoToolTip(pStatusTooltipId, &StatusIcon, Localize("Skin is loading."));
 		}
 		else
 		{
 			TextRender()->TextColor(ColorRGBA(1.0f, 0.0f, 0.0f, 1.0f));
 			TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 			TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
-			Ui()->DoLabel(&StatusIcon, pSkinContainer == nullptr || pSkinContainer->State() == CSkins::CSkinContainer::EState::ERROR ? FONT_ICON_TRIANGLE_EXCLAMATION : FONT_ICON_QUESTION, 12.0f, TEXTALIGN_MC);
+			Ui()->DoLabel(&StatusIcon, Indicator == CSkins::CSkinContainer::EStatusIndicator::NOT_FOUND ? FONT_ICON_QUESTION : FONT_ICON_TRIANGLE_EXCLAMATION, 12.0f, TEXTALIGN_MC);
 			TextRender()->SetRenderFlags(0);
 			TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 			TextRender()->TextColor(TextRender()->DefaultTextColor());
-			Ui()->DoButtonLogic(pStatusTooltipId, 0, &StatusIcon, BUTTONFLAG_NONE);
 			const char *pErrorTooltip;
 			if(pSkinContainer == nullptr)
 			{
 				pErrorTooltip = Localize("This skin name cannot be used.");
 			}
-			else if(pSkinContainer->State() == CSkins::CSkinContainer::EState::ERROR)
+			else if(Indicator == CSkins::CSkinContainer::EStatusIndicator::ERROR)
 			{
 				pErrorTooltip = Localize("Skin could not be loaded due to an error. Check the local console for details.");
 			}
@@ -1617,11 +1906,42 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	// Skin selector
 	static CListBox s_ListBox;
 	static std::vector<char> s_vQueueButtonIds;
+	static CLineInput s_SkinFilterInput(g_Config.m_ClSkinFilterString, sizeof(g_Config.m_ClSkinFilterString));
+	bool &s_SkinListScrollActiveLastFrame = gs_TeeSettingsPageState.m_SkinListScrollActiveLastFrame;
+	int &s_SkinListScrollCooldownFrames = gs_TeeSettingsPageState.m_SkinListScrollCooldownFrames;
+	int &s_SkinListPostScrollRecoveryFrames = gs_TeeSettingsPageState.m_SkinListPostScrollRecoveryFrames;
+	size_t &s_BackgroundRequestCursor = gs_TeeSettingsPageState.m_BackgroundRequestCursor;
+	int &s_LastLoggedVisibleCount = gs_TeeSettingsPageState.m_LastLoggedVisibleCount;
+	int &s_LastLoggedVisibleReadyCount = gs_TeeSettingsPageState.m_LastLoggedVisibleReadyCount;
+	int &s_LastLoggedRecoveryFrames = gs_TeeSettingsPageState.m_LastLoggedRecoveryFrames;
+	bool &s_LastLoggedScrollActive = gs_TeeSettingsPageState.m_LastLoggedScrollActive;
+	char *s_aLastLoggedFirstVisibleSkin = gs_TeeSettingsPageState.m_aLastLoggedFirstVisibleSkin;
+	bool &s_TeePageActiveLastFrame = gs_TeeSettingsPageState.m_TeePageActiveLastFrame;
+	bool &s_TeeClickActiveLastFrame = gs_TeeSettingsPageState.m_TeeClickActiveLastFrame;
+	bool &s_TeeScrollInteractionLastFrame = gs_TeeSettingsPageState.m_TeeScrollInteractionLastFrame;
+	bool &s_TeeFirstVisibleReadyLogged = gs_TeeSettingsPageState.m_TeeFirstVisibleReadyLogged;
+	bool &s_TeeAllVisibleReadyLogged = gs_TeeSettingsPageState.m_TeeAllVisibleReadyLogged;
+	bool &s_TeeFullListReadyLogged = gs_TeeSettingsPageState.m_TeeFullListReadyLogged;
+	bool &s_TeeRefreshInProgress = gs_TeeSettingsPageState.m_TeeRefreshInProgress;
+	int64_t &s_TeeEnterStartNs = gs_TeeSettingsPageState.m_TeeEnterStartNs;
+	int64_t &s_TeeRefreshStartNs = gs_TeeSettingsPageState.m_TeeRefreshStartNs;
+	if(m_SettingsRuntimeMetadata.m_LastPage != SETTINGS_TEE)
+	{
+		gs_TeeListDrainPerfSession.m_Active = false;
+		ResetTeeSettingsPageState();
+		m_SettingsHighPrioritySettled = false;
+	}
 	std::vector<CSkins::CSkinListEntry> &vSkinList = SkinList.Skins();
+	std::vector<size_t> vVisibleSkinIndices;
+	vVisibleSkinIndices.reserve(vSkinList.size());
+	int VisibleReadyCount = 0;
+	int VisibleBackgroundRequestedCount = 0;
+	int VisibleNonTerminalWaitingCount = 0;
+	int TotalReadyCount = 0;
 	int OldSelected = -1;
 	s_vQueueButtonIds.resize(vSkinList.size());
 	s_ListBox.DoStart(50.0f, vSkinList.size(), 4, 2, OldSelected, &MainView);
-	auto DoButton_SkinQueue = [&](const void *pButtonId, const void *pParentId, bool InQueue, bool Disabled, const CUIRect *pRect) {
+	auto DoButtonSkinQueue = [&](const void *pButtonId, const void *pParentId, bool InQueue, bool Disabled, const CUIRect *pRect) {
 		if(InQueue || (pParentId != nullptr && Ui()->HotItem() == pParentId) || Ui()->HotItem() == pButtonId)
 		{
 			TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
@@ -1668,23 +1988,48 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			continue;
 		}
 
-		// Keep the selected preview responsive via FindContainerImpl(), but let the list itself
-		// ramp visible skins in gradually so opening settings doesn't burst-load textures.
-		SkinListEntry.RequestLoad(false);
-		const CSkin *pSkin = pSkinContainer->State() == CSkins::CSkinContainer::EState::LOADED ? pSkinContainer->Skin().get() : pDefaultSkin;
+		vVisibleSkinIndices.push_back(i);
+		const auto State = pSkinContainer->State();
+		const bool EntryReady =
+			State == CSkins::CSkinContainer::EState::LOADED ||
+			State == CSkins::CSkinContainer::EState::ERROR ||
+			State == CSkins::CSkinContainer::EState::NOT_FOUND;
+		const bool EntryNonTerminalWaiting =
+			State == CSkins::CSkinContainer::EState::UNLOADED ||
+			State == CSkins::CSkinContainer::EState::BACKGROUND_REQUESTED ||
+			State == CSkins::CSkinContainer::EState::PENDING ||
+			State == CSkins::CSkinContainer::EState::LOADING;
+		if(EntryReady)
+		{
+			++TotalReadyCount;
+			++VisibleReadyCount;
+		}
+		if(State == CSkins::CSkinContainer::EState::BACKGROUND_REQUESTED)
+			++VisibleBackgroundRequestedCount;
+		if(EntryNonTerminalWaiting)
+			++VisibleNonTerminalWaitingCount;
+		const CSkin *pSkin = State == CSkins::CSkinContainer::EState::LOADED ? pSkinContainer->Skin().get() : pDefaultSkin;
 
 		Item.m_Rect.VSplitLeft(60.0f, &Button, &Label);
 
 		{
 			CTeeRenderInfo Info = OwnSkinInfo;
 			Info.Apply(pSkin);
-			Info.ApplyColors(EntryUseCustomColor, EntryColorBody, EntryColorFeet);
+			Info.m_Size = 50.0f;
+			float PreviewMinX, PreviewMinY, PreviewMaxX, PreviewMaxY;
+			GetSettingsTeePreviewBounds(CAnimState::GetIdle(), Info, PreviewMinX, PreviewMinY, PreviewMaxX, PreviewMaxY);
+			Info.m_Size = SettingsSkinPreviewSize(Item.m_Rect.h, Button.w, 50.0f, PreviewMaxX - PreviewMinX, PreviewMaxY - PreviewMinY);
 			vec2 OffsetToMid;
 			CRenderTools::GetRenderTeeOffsetToRenderedTee(CAnimState::GetIdle(), &Info, OffsetToMid);
-			const vec2 TeeRenderPos = vec2(Button.x + Button.w / 2.0f, Button.y + Button.h / 2 + OffsetToMid.y);
+			const float PreviewScale = Info.m_Size / 50.0f;
+			const float PreviewCenterOffsetX = SettingsSkinPreviewCenterOffset(PreviewMinX, PreviewMaxX) * PreviewScale;
+			CUIRect TeeClip = Button;
+			TeeClip.Margin(3.0f, &TeeClip);
+			const vec2 TeeRenderPos = vec2(TeeClip.x + TeeClip.w / 2.0f + PreviewCenterOffsetX, TeeClip.y + TeeClip.h / 2.0f + OffsetToMid.y);
+			Ui()->ClipEnable(&TeeClip);
 			RenderTools()->RenderTee(CAnimState::GetIdle(), &Info, *pEmote, vec2(1.0f, 0.0f), TeeRenderPos);
+			Ui()->ClipDisable();
 		}
-
 		{
 			CUIRect LabelContent = Label;
 			if(EntryColorKey.has_value())
@@ -1730,7 +2075,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			IconRow.VSplitRight(20.0f, &IconRow, &QueueIcon);
 			const bool InQueue = GameClient()->m_Skins.IsInSkinQueue(pSkinContainer->Name(), EntryUseCustomColor, EntryColorBody, EntryColorFeet, QueueDummy);
 			const bool QueueFull = !InQueue && (int)SkinQueue.size() >= QueueLength;
-			if(DoButton_SkinQueue(&s_vQueueButtonIds[i], SkinListEntry.ListItemId(), InQueue, QueueFull, &QueueIcon))
+			if(DoButtonSkinQueue(&s_vQueueButtonIds[i], SkinListEntry.ListItemId(), InQueue, QueueFull, &QueueIcon))
 			{
 				if(InQueue)
 				{
@@ -1759,27 +2104,328 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 
 		RenderSkinStatus(Item.m_Rect, pSkinContainer, SkinListEntry.ErrorTooltipId());
 	}
+	for(auto It = vVisibleSkinIndices.rbegin(); It != vVisibleSkinIndices.rend(); ++It)
+	{
+		vSkinList[*It].RequestLoad(ESettingsResourcePriority::VISIBLE);
+	}
+	for(size_t i = 0; i < vSkinList.size(); ++i)
+	{
+		if(std::find(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), i) != vVisibleSkinIndices.end())
+			continue;
+		const auto State = vSkinList[i].SkinContainer()->State();
+		if(State == CSkins::CSkinContainer::EState::LOADED ||
+			State == CSkins::CSkinContainer::EState::ERROR ||
+			State == CSkins::CSkinContainer::EState::NOT_FOUND)
+			++TotalReadyCount;
+	}
+	const bool SkinListScrollInteraction = m_SettingsScrollActive || s_ListBox.ScrollbarActive() || s_ListBox.ScrollbarAnimating() || s_SkinListScrollActiveLastFrame;
+	const int PreviousSkinListScrollCooldownFrames = s_SkinListScrollCooldownFrames;
+	s_SkinListScrollCooldownFrames = SettingsScrollInteractionCooldown(SkinListScrollInteraction, s_SkinListScrollCooldownFrames, 3);
+	s_SkinListPostScrollRecoveryFrames = SettingsScrollInteractionRecovery(
+		SkinListScrollInteraction, PreviousSkinListScrollCooldownFrames, s_SkinListScrollCooldownFrames, s_SkinListPostScrollRecoveryFrames, 2);
+	m_SettingsPostScrollRecoveryFrames = s_SkinListPostScrollRecoveryFrames;
+	const bool RequestWindowScrollBlocked = SkinListScrollInteraction || s_SkinListScrollCooldownFrames > 0;
+	SSettingsResourceFrameContext FrameContext = SettingsBuildFrameContext(RequestWindowScrollBlocked, false, s_SkinListPostScrollRecoveryFrames);
+	const bool VisibleSettled = VisibleReadyCount == (int)vVisibleSkinIndices.size();
+	m_SettingsHighPrioritySettled = VisibleSettled;
+	FrameContext.m_HighPrioritySettled = VisibleSettled;
+	const auto &Throughput = GameClient()->m_Skins.SettingsThroughputControllerOutput();
+	const bool BackgroundDrainActive = Throughput.m_BackgroundDrainActive;
+	const int CountFuseLimit = Throughput.m_CountFuseLimit;
+	const auto AdmissionTelemetry = GameClient()->m_Skins.SettingsSourceAdmissionTelemetry();
+	const auto SkinStatsBeforeBackgroundRequest = GameClient()->m_Skins.LoadingStats();
+	const int DefaultBackgroundRequestBudget = Throughput.m_BackgroundRequestBudget;
+	const int RecentLoadedDelta = gs_TeeListDrainPerfSession.m_Active ? (int)(GameClient()->m_Skins.SettingsSourceLoadsCompleted() - gs_TeeListDrainPerfSession.m_LastLoads) : 0;
+	const auto BackgroundBudgetDecision = SettingsSkinBackgroundRequestBudgetDecision({
+		DefaultBackgroundRequestBudget,
+		(int)SkinStatsBeforeBackgroundRequest.m_NumPending,
+		(int)SkinStatsBeforeBackgroundRequest.m_NumLoading,
+		(int)SkinStatsBeforeBackgroundRequest.m_NumBackgroundRequested,
+		CountFuseLimit,
+		Throughput.m_VisibleReserve,
+		RecentLoadedDelta,
+		AdmissionTelemetry.m_AdmittedDelta,
+		BackgroundDrainActive,
+	});
+	const int BackgroundRequestBudget = BackgroundBudgetDecision.m_RequestBudget;
+	gs_TeeSettingsPageState.m_LastRequestBudgetActual = BackgroundRequestBudget;
+	gs_TeeSettingsPageState.m_LastRequestBudgetBlockReason = BackgroundBudgetDecision.m_BlockReason;
+	int BackgroundRequestsIssued = 0;
+	if(VisibleSettled && BackgroundRequestBudget > 0 && !vSkinList.empty())
+	{
+		s_BackgroundRequestCursor %= vSkinList.size();
+		for(size_t Attempts = 0; Attempts < vSkinList.size() && BackgroundRequestsIssued < BackgroundRequestBudget; ++Attempts)
+		{
+			const size_t BackgroundIndex = (s_BackgroundRequestCursor + Attempts) % vSkinList.size();
+			if(std::find(vVisibleSkinIndices.begin(), vVisibleSkinIndices.end(), BackgroundIndex) != vVisibleSkinIndices.end())
+				continue;
 
+			const CSkins::CSkinContainer *pBackgroundContainer = vSkinList[BackgroundIndex].SkinContainer();
+			if(pBackgroundContainer == nullptr || pBackgroundContainer->State() != CSkins::CSkinContainer::EState::UNLOADED)
+				continue;
+
+			vSkinList[BackgroundIndex].RequestLoad(ESettingsResourcePriority::BACKGROUND);
+			++BackgroundRequestsIssued;
+			s_BackgroundRequestCursor = (BackgroundIndex + 1) % vSkinList.size();
+		}
+	}
+	const auto SkinStats = GameClient()->m_Skins.LoadingStats();
+	CSkins::SSettingsTeeVisibleSnapshot VisibleSnapshot;
+	VisibleSnapshot.m_VisibleTotal = (int)vVisibleSkinIndices.size();
+	VisibleSnapshot.m_VisibleReady = VisibleReadyCount;
+	VisibleSnapshot.m_VisibleWaiting = maximum(0, (int)vVisibleSkinIndices.size() - VisibleReadyCount);
+	VisibleSnapshot.m_VisibleBackgroundRequested = VisibleBackgroundRequestedCount;
+	VisibleSnapshot.m_VisibleNonterminalWaiting = VisibleNonTerminalWaitingCount;
+	str_copy(VisibleSnapshot.m_aRequestBudgetBlockReason,
+		SettingsSkinBackgroundRequestBlockReasonName(BackgroundBudgetDecision.m_BlockReason),
+		sizeof(VisibleSnapshot.m_aRequestBudgetBlockReason));
+	GameClient()->m_Skins.SetSettingsTeeVisibleSnapshot(VisibleSnapshot);
+	const char *pFirstVisibleSkin = !vVisibleSkinIndices.empty() ? vSkinList[vVisibleSkinIndices.front()].SkinContainer()->Name() : "";
+	const int FirstVisibleIndex = !vVisibleSkinIndices.empty() ? (int)vVisibleSkinIndices.front() : -1;
+	const int LastVisibleIndex = !vVisibleSkinIndices.empty() ? (int)vVisibleSkinIndices.back() : -1;
+	const bool FirstVisibleReady = !vVisibleSkinIndices.empty() &&
+				       (vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::LOADED ||
+					       vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::ERROR ||
+					       vSkinList[vVisibleSkinIndices.front()].SkinContainer()->State() == CSkins::CSkinContainer::EState::NOT_FOUND);
+	const bool FullListReady = !vSkinList.empty() && TotalReadyCount == (int)vSkinList.size();
+	const int64_t NowNs = time_get_nanoseconds().count();
+	if(!gs_TeeSettingsPageState.m_TeePageActiveLastFrame)
+	{
+		gs_TeeSettingsPageState.m_TeePageActiveLastFrame = true;
+		gs_TeeSettingsPageState.m_TeeEnterStartNs = NowNs;
+		BeginTeeListDrainPerfSession(GameClient()->m_Skins, NowNs);
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=tee_enter visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	const bool ClickActive = Input()->KeyIsPressed(KEY_MOUSE_1) != 0;
+	if(ClickActive && !gs_TeeSettingsPageState.m_TeeClickActiveLastFrame)
+	{
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=click_begin visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	else if(!ClickActive && gs_TeeSettingsPageState.m_TeeClickActiveLastFrame)
+	{
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=click_end visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	gs_TeeSettingsPageState.m_TeeClickActiveLastFrame = ClickActive;
+	if(SkinListScrollInteraction && !gs_TeeSettingsPageState.m_TeeScrollInteractionLastFrame)
+	{
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=scroll_begin visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	else if(!SkinListScrollInteraction && gs_TeeSettingsPageState.m_TeeScrollInteractionLastFrame)
+	{
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=scroll_end visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
+	}
+	gs_TeeSettingsPageState.m_TeeScrollInteractionLastFrame = SkinListScrollInteraction;
+	if(FirstVisibleReady && !gs_TeeSettingsPageState.m_TeeFirstVisibleReadyLogged)
+	{
+		gs_TeeSettingsPageState.m_TeeFirstVisibleReadyLogged = true;
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=first_visible_ready dur_ms=%.3f visible_rows=%d first_visible_index=%d first_visible_skin=%s",
+			gs_TeeSettingsPageState.m_TeeEnterStartNs > 0 ? (NowNs - gs_TeeSettingsPageState.m_TeeEnterStartNs) / 1000000.0 : 0.0,
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/skin-ux", aPayload, Client(), "settings:tee");
+	}
+	if(SettingsSkinListShouldLogAllVisibleReady(
+		   VisibleSettled,
+		   gs_TeeSettingsPageState.m_TeeAllVisibleReadyLogged,
+		   (int)vVisibleSkinIndices.size()))
+	{
+		gs_TeeSettingsPageState.m_TeeAllVisibleReadyLogged = true;
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=all_visible_ready dur_ms=%.3f visible_rows=%d first_visible_index=%d last_visible_index=%d first_visible_skin=%s",
+			gs_TeeSettingsPageState.m_TeeEnterStartNs > 0 ? (NowNs - gs_TeeSettingsPageState.m_TeeEnterStartNs) / 1000000.0 : 0.0,
+			(int)vVisibleSkinIndices.size(), FirstVisibleIndex, LastVisibleIndex, pFirstVisibleSkin);
+		QmPerfLogPayload("perf/skin-ux", aPayload, Client(), "settings:tee");
+	}
+	if(FullListReady && !gs_TeeSettingsPageState.m_TeeFullListReadyLogged)
+	{
+		gs_TeeSettingsPageState.m_TeeFullListReadyLogged = true;
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=full_list_ready dur_ms=%.3f total=%d visible_rows=%d first_visible_skin=%s",
+			gs_TeeSettingsPageState.m_TeeEnterStartNs > 0 ? (NowNs - gs_TeeSettingsPageState.m_TeeEnterStartNs) / 1000000.0 : 0.0,
+			(int)vSkinList.size(), (int)vVisibleSkinIndices.size(), pFirstVisibleSkin);
+		QmPerfLogPayload("perf/skin-ux", aPayload, Client(), "settings:tee");
+		LogTeeListDrainSummary(Client(), GameClient()->m_Skins, GameClient()->m_Skins.LoadingStats(), true, NowNs);
+		if(gs_TeeSettingsPageState.m_TeeRefreshInProgress)
+		{
+			char aRefreshPayload[256];
+			str_format(aRefreshPayload, sizeof(aRefreshPayload), "event=tee_refresh_end dur_ms=%.3f visible_rows=%d first_visible_skin=%s",
+				gs_TeeSettingsPageState.m_TeeRefreshStartNs > 0 ? (NowNs - gs_TeeSettingsPageState.m_TeeRefreshStartNs) / 1000000.0 : 0.0,
+				(int)vVisibleSkinIndices.size(), pFirstVisibleSkin);
+			QmPerfLogPayload("perf/interaction", aRefreshPayload, Client(), "settings:tee");
+			gs_TeeSettingsPageState.m_TeeRefreshInProgress = false;
+		}
+	}
+	if(PerfDebugEnabled() &&
+		(BackgroundRequestsIssued > 0 ||
+			gs_TeeSettingsPageState.m_LastLoggedVisibleCount != (int)vVisibleSkinIndices.size() ||
+			gs_TeeSettingsPageState.m_LastLoggedVisibleReadyCount != VisibleReadyCount ||
+			gs_TeeSettingsPageState.m_LastLoggedScrollActive != FrameContext.m_ScrollActive ||
+			gs_TeeSettingsPageState.m_LastLoggedRecoveryFrames != FrameContext.m_PostScrollRecoveryFrames ||
+			str_comp(gs_TeeSettingsPageState.m_aLastLoggedFirstVisibleSkin, pFirstVisibleSkin) != 0))
+	{
+		const int GpuUploadLimitUnits = GameClient()->GpuUploadLimiter()->MaxUploadsPerFrame();
+		const int GpuUploadRemainingUnits = GameClient()->GpuUploadLimiter()->RemainingUploads();
+		const int FinalizeBudgetLimit = Throughput.m_FinalizeBudgetLimit;
+		const char *pEffectiveFrameContext = SettingsSkinThroughputControllerModeName(Throughput.m_Mode);
+		char aPayload[768];
+		str_format(aPayload, sizeof(aPayload),
+			"event=request_window visible=%d visible_ready=%d visible_waiting=%d visible_background_requested=%d visible_nonterminal_waiting=%d background_budget=%d background_issued=%d requested=%d idle=%d scroll=%d recovery=%d pending=%d loading=%d loaded=%d total=%d first_visible_index=%d first_visible_skin=%s count_fuse_limit=%d real_inflight=%d visible_reserve=%d request_budget_default=%d request_budget_actual=%d request_budget_block_reason=%s gpu_upload_limit_units=%d gpu_upload_remaining_units=%d finalize_budget_limit=%d effective_frame_context=%s controller_reason=%s frame_time_avg_ms=%.3f render_frame_time_ms=%.3f admission_underfed=%d underfed_streak=%d",
+			(int)vVisibleSkinIndices.size(), VisibleReadyCount, maximum(0, (int)vVisibleSkinIndices.size() - VisibleReadyCount), VisibleBackgroundRequestedCount, VisibleNonTerminalWaitingCount, DefaultBackgroundRequestBudget, BackgroundRequestsIssued,
+			(int)SkinStats.m_NumBackgroundRequested,
+			!FrameContext.m_ScrollActive && FrameContext.m_PostScrollRecoveryFrames == 0 ? 1 : 0,
+			FrameContext.m_ScrollActive ? 1 : 0, FrameContext.m_PostScrollRecoveryFrames,
+			SkinStats.m_NumPending, SkinStats.m_NumLoading, SkinStats.m_NumLoaded, (int)vSkinList.size(), FirstVisibleIndex, pFirstVisibleSkin,
+			CountFuseLimit, AdmissionTelemetry.m_RealInflight, Throughput.m_VisibleReserve, DefaultBackgroundRequestBudget, BackgroundRequestBudget,
+			SettingsSkinBackgroundRequestBlockReasonName(BackgroundBudgetDecision.m_BlockReason),
+			GpuUploadLimitUnits, GpuUploadRemainingUnits, FinalizeBudgetLimit, pEffectiveFrameContext,
+			SettingsSkinThroughputControllerReasonName(Throughput.m_Reason),
+			AdmissionTelemetry.m_FrameTimeAverageMs,
+			AdmissionTelemetry.m_RenderFrameTimeMs,
+			AdmissionTelemetry.m_AdmissionUnderfed ? 1 : 0,
+			AdmissionTelemetry.m_UnderfedStreak);
+		QmPerfLogPayload("perf/settings-skin-source", aPayload, Client(), "settings:tee");
+		gs_TeeSettingsPageState.m_LastLoggedVisibleCount = (int)vVisibleSkinIndices.size();
+		gs_TeeSettingsPageState.m_LastLoggedVisibleReadyCount = VisibleReadyCount;
+		gs_TeeSettingsPageState.m_LastLoggedScrollActive = FrameContext.m_ScrollActive;
+		gs_TeeSettingsPageState.m_LastLoggedRecoveryFrames = FrameContext.m_PostScrollRecoveryFrames;
+		str_copy(gs_TeeSettingsPageState.m_aLastLoggedFirstVisibleSkin, pFirstVisibleSkin, sizeof(gs_TeeSettingsPageState.m_aLastLoggedFirstVisibleSkin));
+	}
+	if(PerfDebugEnabled() && gs_TeeListDrainPerfSession.m_Active)
+	{
+		const uint64_t UploadsDoneNow = GameClient()->m_Skins.SettingsSourceUploadsCompleted();
+		const uint64_t LoadedNow = GameClient()->m_Skins.SettingsSourceLoadsCompleted();
+		const uint64_t UploadsDoneDelta = UploadsDoneNow - gs_TeeListDrainPerfSession.m_LastUploads;
+		const uint64_t LoadedDelta = LoadedNow - gs_TeeListDrainPerfSession.m_LastLoads;
+		const int RequestedDelta = gs_TeeListDrainPerfSession.m_LastRequested >= 0 ? (int)SkinStats.m_NumBackgroundRequested - gs_TeeListDrainPerfSession.m_LastRequested : (int)SkinStats.m_NumBackgroundRequested;
+		const auto &Telemetry = GameClient()->m_Skins.SettingsSourceAdmissionTelemetry();
+		if(UploadsDoneDelta > 0 ||
+			LoadedDelta > 0 ||
+			Telemetry.m_AdmittedDelta > 0 ||
+			Telemetry.m_StartedDelta > 0 ||
+			gs_TeeListDrainPerfSession.m_LastBackgroundDrain != BackgroundDrainActive ||
+			gs_TeeListDrainPerfSession.m_LastVisibleReady != VisibleReadyCount ||
+			gs_TeeListDrainPerfSession.m_LastVisibleTotal != (int)vVisibleSkinIndices.size() ||
+			gs_TeeListDrainPerfSession.m_LastRequested != (int)SkinStats.m_NumBackgroundRequested ||
+			gs_TeeListDrainPerfSession.m_LastPending != (int)SkinStats.m_NumPending ||
+			gs_TeeListDrainPerfSession.m_LastLoading != (int)SkinStats.m_NumLoading ||
+			gs_TeeListDrainPerfSession.m_LastLoaded != (int)SkinStats.m_NumLoaded)
+		{
+			const int GpuUploadLimitUnits = GameClient()->GpuUploadLimiter()->MaxUploadsPerFrame();
+			const int GpuUploadRemainingUnits = GameClient()->GpuUploadLimiter()->RemainingUploads();
+			const int FinalizeBudgetLimit = Throughput.m_FinalizeBudgetLimit;
+			const char *pEffectiveFrameContext = SettingsSkinThroughputControllerModeName(Throughput.m_Mode);
+			char aPayload[1024];
+			str_format(aPayload, sizeof(aPayload), "event=list_drain_tick mode=%s visible_ready=%d visible_total=%d visible_waiting=%d visible_background_requested=%d visible_nonterminal_waiting=%d requested=%d pending=%d loading=%d loaded=%d uploads_done_delta=%llu loaded_delta=%llu requested_delta=%d admitted_delta=%d started_delta=%d real_inflight=%d loading_window_limit=%d loading_window_used=%d dynamic_decision=%s request_budget_block_reason=%s last_wait_reason=%s gpu_upload_limit_units=%d gpu_upload_remaining_units=%d finalize_budget_limit=%d effective_frame_context=%s controller_reason=%s visible_reserve_effective=%d frame_time_avg_ms=%.3f render_frame_time_ms=%.3f admission_underfed=%d underfed_streak=%d",
+				BackgroundDrainActive ? "background_drain" : "visible",
+				VisibleReadyCount,
+				(int)vVisibleSkinIndices.size(),
+				maximum(0, (int)vVisibleSkinIndices.size() - VisibleReadyCount),
+				VisibleBackgroundRequestedCount,
+				VisibleNonTerminalWaitingCount,
+				(int)SkinStats.m_NumBackgroundRequested,
+				(int)SkinStats.m_NumPending,
+				(int)SkinStats.m_NumLoading,
+				(int)SkinStats.m_NumLoaded,
+				(unsigned long long)UploadsDoneDelta,
+				(unsigned long long)LoadedDelta,
+				RequestedDelta,
+				Telemetry.m_AdmittedDelta,
+				Telemetry.m_StartedDelta,
+				Telemetry.m_RealInflight,
+				Telemetry.m_LoadingWindowLimit,
+				Telemetry.m_LoadingWindowUsed,
+				Telemetry.m_aDynamicDecision,
+				SettingsSkinBackgroundRequestBlockReasonName(BackgroundBudgetDecision.m_BlockReason),
+				Telemetry.m_aLastWaitReason,
+				GpuUploadLimitUnits,
+				GpuUploadRemainingUnits,
+				FinalizeBudgetLimit,
+				pEffectiveFrameContext,
+				Telemetry.m_aControllerReason,
+				Telemetry.m_VisibleReserve,
+				Telemetry.m_FrameTimeAverageMs,
+				Telemetry.m_RenderFrameTimeMs,
+				Telemetry.m_AdmissionUnderfed ? 1 : 0,
+				Telemetry.m_UnderfedStreak);
+			QmPerfLogPayload("perf/settings-skin-source", aPayload, Client(), "settings:tee");
+			gs_TeeListDrainPerfSession.m_TotalRequested += (uint64_t)maximum(0, RequestedDelta);
+			gs_TeeListDrainPerfSession.m_TotalAdmitted += (uint64_t)maximum(0, Telemetry.m_AdmittedDelta);
+			gs_TeeListDrainPerfSession.m_TotalStarted += (uint64_t)maximum(0, Telemetry.m_StartedDelta);
+			gs_TeeListDrainPerfSession.m_MaxRequested = maximum(gs_TeeListDrainPerfSession.m_MaxRequested, (int)SkinStats.m_NumBackgroundRequested);
+			gs_TeeListDrainPerfSession.m_MaxPending = maximum(gs_TeeListDrainPerfSession.m_MaxPending, (int)SkinStats.m_NumPending);
+			gs_TeeListDrainPerfSession.m_MaxLoading = maximum(gs_TeeListDrainPerfSession.m_MaxLoading, (int)SkinStats.m_NumLoading);
+			gs_TeeListDrainPerfSession.m_MaxRealInflight = maximum(gs_TeeListDrainPerfSession.m_MaxRealInflight, Telemetry.m_RealInflight);
+			gs_TeeListDrainPerfSession.m_CountFuseLimit = CountFuseLimit;
+			if(str_comp(Telemetry.m_aLastWaitReason, "loading_window") == 0)
+				gs_TeeListDrainPerfSession.m_NumLoadingWindowWaits++;
+			else if(str_comp(Telemetry.m_aLastWaitReason, "gpu_upload_budget") == 0)
+				gs_TeeListDrainPerfSession.m_NumGpuBudgetWaits++;
+			else if(str_comp(Telemetry.m_aLastWaitReason, "queue_fuse") == 0)
+				gs_TeeListDrainPerfSession.m_NumQueueFuseWaits++;
+			gs_TeeListDrainPerfSession.m_LastUploads = UploadsDoneNow;
+			gs_TeeListDrainPerfSession.m_LastLoads = LoadedNow;
+			gs_TeeListDrainPerfSession.m_LastBackgroundDrain = BackgroundDrainActive;
+			gs_TeeListDrainPerfSession.m_LastVisibleReady = VisibleReadyCount;
+			gs_TeeListDrainPerfSession.m_LastVisibleTotal = (int)vVisibleSkinIndices.size();
+			gs_TeeListDrainPerfSession.m_LastRequested = (int)SkinStats.m_NumBackgroundRequested;
+			gs_TeeListDrainPerfSession.m_LastPending = (int)SkinStats.m_NumPending;
+			gs_TeeListDrainPerfSession.m_LastLoading = (int)SkinStats.m_NumLoading;
+			gs_TeeListDrainPerfSession.m_LastLoaded = (int)SkinStats.m_NumLoaded;
+			gs_TeeListDrainPerfSession.m_LastAdmittedDelta = Telemetry.m_AdmittedDelta;
+			gs_TeeListDrainPerfSession.m_LastStartedDelta = Telemetry.m_StartedDelta;
+		}
+		if(Telemetry.m_AdmissionInvariantViolated)
+		{
+			char aPayload[256];
+			str_format(aPayload, sizeof(aPayload), "event=admission_invariant_violation pending=%d loading=%d real_inflight=%d count_fuse_limit=%d",
+				(int)SkinStats.m_NumPending,
+				(int)SkinStats.m_NumLoading,
+				Telemetry.m_RealInflight,
+				CountFuseLimit);
+			QmPerfLogPayload("perf/settings-skin-source", aPayload, Client(), "settings:tee");
+		}
+	}
 	const int NewSelected = s_ListBox.DoEnd();
+
+	const bool SkinListScrollActive = s_ListBox.ScrollbarActive() || s_ListBox.ScrollbarAnimating();
+	m_SettingsScrollActive = m_SettingsScrollActive || SkinListScrollActive;
+	gs_TeeSettingsPageState.m_SkinListScrollActiveLastFrame = SkinListScrollActive;
 	if(OldSelected != NewSelected)
 	{
-		const CSkins::CSkinListEntry &SelectedSkinEntry = vSkinList[NewSelected];
-		str_copy(pSkinName, SelectedSkinEntry.SkinContainer()->Name(), SkinNameSize);
-		if(SelectedSkinEntry.ColorKey().has_value())
+		if(NewSelected >= 0 && NewSelected < (int)vSkinList.size())
 		{
-			const auto &SelectedColorKey = SelectedSkinEntry.ColorKey().value();
-			*pUseCustomColor = SelectedColorKey.m_UseCustomColor ? 1 : 0;
-			if(SelectedColorKey.m_UseCustomColor)
+			const CSkins::CSkinListEntry &SelectedSkinEntry = vSkinList[NewSelected];
+			str_copy(pSkinName, SelectedSkinEntry.SkinContainer()->Name(), SkinNameSize);
+			if(SelectedSkinEntry.ColorKey().has_value())
 			{
-				*pColorBody = SelectedColorKey.m_ColorBody;
-				*pColorFeet = SelectedColorKey.m_ColorFeet;
+				const auto &SelectedColorKey = SelectedSkinEntry.ColorKey().value();
+				*pUseCustomColor = SelectedColorKey.m_UseCustomColor ? 1 : 0;
+				if(SelectedColorKey.m_UseCustomColor)
+				{
+					*pColorBody = SelectedColorKey.m_ColorBody;
+					*pColorFeet = SelectedColorKey.m_ColorFeet;
+				}
 			}
+			SkinList.ForceRefresh();
+			SetNeedSendInfo();
 		}
-		SkinList.ForceRefresh();
-		SetNeedSendInfo();
 	}
 
-	static CLineInput s_SkinFilterInput(g_Config.m_ClSkinFilterString, sizeof(g_Config.m_ClSkinFilterString));
 	if(SkinList.UnfilteredCount() > 0 && vSkinList.empty())
 	{
 		CUIRect FilterLabel, ResetButton;
@@ -1832,6 +2478,19 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 
 	if(ShouldRefresh)
 	{
+		const int64_t RefreshNowNs = time_get_nanoseconds().count();
+		if(gs_TeeListDrainPerfSession.m_Active)
+			LogTeeListDrainSummary(Client(), GameClient()->m_Skins, GameClient()->m_Skins.LoadingStats(), false, RefreshNowNs);
+		BeginTeeListDrainPerfSession(GameClient()->m_Skins, RefreshNowNs);
+		gs_TeeSettingsPageState.m_TeeFirstVisibleReadyLogged = false;
+		gs_TeeSettingsPageState.m_TeeAllVisibleReadyLogged = false;
+		gs_TeeSettingsPageState.m_TeeFullListReadyLogged = false;
+		gs_TeeSettingsPageState.m_TeeRefreshInProgress = true;
+		gs_TeeSettingsPageState.m_TeeRefreshStartNs = RefreshNowNs;
+		char aPayload[192];
+		str_format(aPayload, sizeof(aPayload), "event=tee_refresh_begin visible_rows=%d first_visible_skin=%s",
+			(int)vVisibleSkinIndices.size(), pFirstVisibleSkin);
+		QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings:tee");
 		GameClient()->RefreshSkins(CSkinDescriptor::FLAG_SIX);
 	}
 }
@@ -1841,7 +2500,6 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	CUIRect Button;
 	char aBuf[128];
 	bool CheckSettings = false;
-	const bool DeferHeavyGraphics = ShouldDeferSettingsTailSection(SETTINGS_GRAPHICS);
 	auto DoSliderWithValueInput = [this](const void *pId, int *pOption, const CUIRect &Rect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale = &CUi::ms_LinearScrollbarScale, const char *pSuffix = "", unsigned Flags = 0u, int InputMax = -1) {
 		const bool Infinite = Flags & CUi::SCROLLBAR_OPTION_INFINITE;
 		const bool NoClampValue = Flags & CUi::SCROLLBAR_OPTION_NOCLAMPVALUE;
@@ -1936,18 +2594,6 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		Ui()->DoLabel(&ModeLabel, aBuf, FontSizeResListHeader, TEXTALIGN_MC);
 	}
 
-	if(DeferHeavyGraphics)
-	{
-		ModeList.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.08f), IGraphics::CORNER_ALL, 6.0f);
-		ModeList.Margin(8.0f, &ModeList);
-		ModeList.HSplitTop(18.0f * UiScale, &Button, &ModeList);
-		str_format(aBuf, sizeof(aBuf), Localize("Preparing %d display modes..."), s_NumNodes);
-		Ui()->DoLabel(&Button, aBuf, FontSizeResList, TEXTALIGN_ML);
-		ModeList.HSplitTop(8.0f * UiScale, nullptr, &ModeList);
-		ModeList.HSplitTop(18.0f * UiScale, &Button, &ModeList);
-		Ui()->DoLabel(&Button, Localize("Renderer and GPU options will appear next frame"), FontSizeResList, TEXTALIGN_ML);
-	}
-	else
 	{
 		int SelectedOld = -1;
 		s_ListBox.SetActive(!Ui()->IsPopupOpen());
@@ -2104,7 +2750,27 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	static CButtonContainer s_UiColorResetId;
-	DoLine_ColorPicker(&s_UiColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("UI Color"), &g_Config.m_UiColor, color_cast<ColorRGBA>(ColorHSLA(0xE4A046AFU, true)), false, nullptr, true);
+	DoLine_ColorPicker(&s_UiColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("界面颜色"), &g_Config.m_UiColor, color_cast<ColorRGBA>(ColorHSLA(0xE4A046AFU, true)), false, nullptr, true);
+	static CButtonContainer s_MenuPanelColorResetId;
+	const unsigned OldMenuPanelColor = g_Config.m_ClMenuPanelColor;
+	DoLine_ColorPicker(&s_MenuPanelColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("菜单面板颜色"), &g_Config.m_ClMenuPanelColor, color_cast<ColorRGBA>(ColorHSLA(CConfig::ms_ClMenuPanelColor)), false, nullptr, false);
+	if(OldMenuPanelColor != g_Config.m_ClMenuPanelColor)
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
+
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelOpacity, &g_Config.m_ClMenuPanelOpacity, &Button, Localize("菜单面板透明度"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
+
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelElevatedOpacity, &g_Config.m_ClMenuPanelElevatedOpacity, &Button, Localize("菜单强调面板透明度"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
+
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClSettingsTabbarOpacity, &g_Config.m_ClSettingsTabbarOpacity, &Button, Localize("设置栏透明度"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
 
 	// Backend list
 	struct SMenuBackendInfo
@@ -2117,29 +2783,26 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	};
 	std::array<std::array<SMenuBackendInfo, EGraphicsDriverAgeType::GRAPHICS_DRIVER_AGE_TYPE_COUNT>, EBackendType::BACKEND_TYPE_COUNT> aaSupportedBackends{};
 	uint32_t FoundBackendCount = 0;
-	if(!DeferHeavyGraphics)
+	for(uint32_t i = 0; i < BACKEND_TYPE_COUNT; ++i)
 	{
-		for(uint32_t i = 0; i < BACKEND_TYPE_COUNT; ++i)
+		if(EBackendType(i) == BACKEND_TYPE_AUTO)
+			continue;
+		for(uint32_t n = 0; n < GRAPHICS_DRIVER_AGE_TYPE_COUNT; ++n)
 		{
-			if(EBackendType(i) == BACKEND_TYPE_AUTO)
-				continue;
-			for(uint32_t n = 0; n < GRAPHICS_DRIVER_AGE_TYPE_COUNT; ++n)
+			auto &Info = aaSupportedBackends[i][n];
+			if(Graphics()->GetDriverVersion(EGraphicsDriverAgeType(n), Info.m_Major, Info.m_Minor, Info.m_Patch, Info.m_pBackendName, EBackendType(i)))
 			{
-				auto &Info = aaSupportedBackends[i][n];
-				if(Graphics()->GetDriverVersion(EGraphicsDriverAgeType(n), Info.m_Major, Info.m_Minor, Info.m_Patch, Info.m_pBackendName, EBackendType(i)))
+				// don't count blocked opengl drivers
+				if(EBackendType(i) != BACKEND_TYPE_OPENGL || EGraphicsDriverAgeType(n) == GRAPHICS_DRIVER_AGE_TYPE_LEGACY || g_Config.m_GfxDriverIsBlocked == 0)
 				{
-					// don't count blocked opengl drivers
-					if(EBackendType(i) != BACKEND_TYPE_OPENGL || EGraphicsDriverAgeType(n) == GRAPHICS_DRIVER_AGE_TYPE_LEGACY || g_Config.m_GfxDriverIsBlocked == 0)
-					{
-						Info.m_Found = true;
-						++FoundBackendCount;
-					}
+					Info.m_Found = true;
+					++FoundBackendCount;
 				}
 			}
 		}
 	}
 
-	if(FoundBackendCount > 1 || DeferHeavyGraphics)
+	if(FoundBackendCount > 1)
 	{
 		CUIRect Text, BackendDropDown;
 		MainView.HSplitTop(10.0f, nullptr, &MainView);
@@ -2148,95 +2811,88 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		MainView.HSplitTop(20.0f, &BackendDropDown, &MainView);
 		Ui()->DoLabel(&Text, Localize("Renderer"), 16.0f, TEXTALIGN_MC);
 
-		if(DeferHeavyGraphics)
+		static std::vector<std::string> s_vBackendIdNames;
+		static std::vector<const char *> s_vpBackendIdNamesCStr;
+		static std::vector<SMenuBackendInfo> s_vBackendInfos;
+
+		size_t BackendCount = FoundBackendCount + 1;
+		s_vBackendIdNames.resize(BackendCount);
+		s_vpBackendIdNamesCStr.resize(BackendCount);
+		s_vBackendInfos.resize(BackendCount);
+
+		char aTmpBackendName[256];
+
+		auto IsInfoDefault = [](const SMenuBackendInfo &CheckInfo) {
+			return str_comp_nocase(CheckInfo.m_pBackendName, CConfig::ms_pGfxBackend) == 0 && CheckInfo.m_Major == CConfig::ms_GfxGLMajor && CheckInfo.m_Minor == CConfig::ms_GfxGLMinor && CheckInfo.m_Patch == CConfig::ms_GfxGLPatch;
+		};
+
+		int SelectedOldBackend = -1;
+		uint32_t CurCounter = 0;
+		for(uint32_t i = 0; i < BACKEND_TYPE_COUNT; ++i)
 		{
-			str_copy(aBuf, Localize("Preparing renderer list..."), sizeof(aBuf));
-			Ui()->DoLabel(&BackendDropDown, aBuf, 13.0f, TEXTALIGN_ML);
+			for(uint32_t n = 0; n < GRAPHICS_DRIVER_AGE_TYPE_COUNT; ++n)
+			{
+				auto &Info = aaSupportedBackends[i][n];
+				if(Info.m_Found)
+				{
+					bool IsDefault = IsInfoDefault(Info);
+					str_format(aTmpBackendName, sizeof(aTmpBackendName), "%s (%d.%d.%d)%s%s", Info.m_pBackendName, Info.m_Major, Info.m_Minor, Info.m_Patch, IsDefault ? " - " : "", IsDefault ? Localize("default") : "");
+					s_vBackendIdNames[CurCounter] = aTmpBackendName;
+					s_vpBackendIdNamesCStr[CurCounter] = s_vBackendIdNames[CurCounter].c_str();
+					if(str_comp_nocase(Info.m_pBackendName, g_Config.m_GfxBackend) == 0 && g_Config.m_GfxGLMajor == Info.m_Major && g_Config.m_GfxGLMinor == Info.m_Minor && g_Config.m_GfxGLPatch == Info.m_Patch)
+					{
+						SelectedOldBackend = CurCounter;
+					}
+
+					s_vBackendInfos[CurCounter] = Info;
+					++CurCounter;
+				}
+			}
+		}
+
+		if(SelectedOldBackend != -1)
+		{
+			// no custom selected
+			BackendCount -= 1;
 		}
 		else
 		{
-			static std::vector<std::string> s_vBackendIdNames;
-			static std::vector<const char *> s_vpBackendIdNamesCStr;
-			static std::vector<SMenuBackendInfo> s_vBackendInfos;
+			// custom selected one
+			str_format(aTmpBackendName, sizeof(aTmpBackendName), "%s (%s %d.%d.%d)", Localize("custom"), g_Config.m_GfxBackend, g_Config.m_GfxGLMajor, g_Config.m_GfxGLMinor, g_Config.m_GfxGLPatch);
+			s_vBackendIdNames[CurCounter] = aTmpBackendName;
+			s_vpBackendIdNamesCStr[CurCounter] = s_vBackendIdNames[CurCounter].c_str();
+			SelectedOldBackend = CurCounter;
 
-			size_t BackendCount = FoundBackendCount + 1;
-			s_vBackendIdNames.resize(BackendCount);
-			s_vpBackendIdNamesCStr.resize(BackendCount);
-			s_vBackendInfos.resize(BackendCount);
+			s_vBackendInfos[CurCounter].m_pBackendName = "custom";
+			s_vBackendInfos[CurCounter].m_Major = g_Config.m_GfxGLMajor;
+			s_vBackendInfos[CurCounter].m_Minor = g_Config.m_GfxGLMinor;
+			s_vBackendInfos[CurCounter].m_Patch = g_Config.m_GfxGLPatch;
+		}
 
-			char aTmpBackendName[256];
+		static int s_SelectedOldBackend = -1;
+		if(s_SelectedOldBackend == -1)
+			s_SelectedOldBackend = SelectedOldBackend;
 
-			auto IsInfoDefault = [](const SMenuBackendInfo &CheckInfo) {
-				return str_comp_nocase(CheckInfo.m_pBackendName, CConfig::ms_pGfxBackend) == 0 && CheckInfo.m_Major == CConfig::ms_GfxGLMajor && CheckInfo.m_Minor == CConfig::ms_GfxGLMinor && CheckInfo.m_Patch == CConfig::ms_GfxGLPatch;
-			};
+		static CUi::SDropDownState s_BackendDropDownState;
+		static CScrollRegion s_BackendDropDownScrollRegion;
+		s_BackendDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_BackendDropDownScrollRegion;
+		const int NewBackend = Ui()->DoDropDown(&BackendDropDown, SelectedOldBackend, s_vpBackendIdNamesCStr.data(), BackendCount, s_BackendDropDownState);
+		if(SelectedOldBackend != NewBackend)
+		{
+			str_copy(g_Config.m_GfxBackend, s_vBackendInfos[NewBackend].m_pBackendName);
+			g_Config.m_GfxGLMajor = s_vBackendInfos[NewBackend].m_Major;
+			g_Config.m_GfxGLMinor = s_vBackendInfos[NewBackend].m_Minor;
+			g_Config.m_GfxGLPatch = s_vBackendInfos[NewBackend].m_Patch;
 
-			int SelectedOldBackend = -1;
-			uint32_t CurCounter = 0;
-			for(uint32_t i = 0; i < BACKEND_TYPE_COUNT; ++i)
-			{
-				for(uint32_t n = 0; n < GRAPHICS_DRIVER_AGE_TYPE_COUNT; ++n)
-				{
-					auto &Info = aaSupportedBackends[i][n];
-					if(Info.m_Found)
-					{
-						bool IsDefault = IsInfoDefault(Info);
-						str_format(aTmpBackendName, sizeof(aTmpBackendName), "%s (%d.%d.%d)%s%s", Info.m_pBackendName, Info.m_Major, Info.m_Minor, Info.m_Patch, IsDefault ? " - " : "", IsDefault ? Localize("default") : "");
-						s_vBackendIdNames[CurCounter] = aTmpBackendName;
-						s_vpBackendIdNamesCStr[CurCounter] = s_vBackendIdNames[CurCounter].c_str();
-						if(str_comp_nocase(Info.m_pBackendName, g_Config.m_GfxBackend) == 0 && g_Config.m_GfxGLMajor == Info.m_Major && g_Config.m_GfxGLMinor == Info.m_Minor && g_Config.m_GfxGLPatch == Info.m_Patch)
-						{
-							SelectedOldBackend = CurCounter;
-						}
-
-						s_vBackendInfos[CurCounter] = Info;
-						++CurCounter;
-					}
-				}
-			}
-
-			if(SelectedOldBackend != -1)
-			{
-				// no custom selected
-				BackendCount -= 1;
-			}
-			else
-			{
-				// custom selected one
-				str_format(aTmpBackendName, sizeof(aTmpBackendName), "%s (%s %d.%d.%d)", Localize("custom"), g_Config.m_GfxBackend, g_Config.m_GfxGLMajor, g_Config.m_GfxGLMinor, g_Config.m_GfxGLPatch);
-				s_vBackendIdNames[CurCounter] = aTmpBackendName;
-				s_vpBackendIdNamesCStr[CurCounter] = s_vBackendIdNames[CurCounter].c_str();
-				SelectedOldBackend = CurCounter;
-
-				s_vBackendInfos[CurCounter].m_pBackendName = "custom";
-				s_vBackendInfos[CurCounter].m_Major = g_Config.m_GfxGLMajor;
-				s_vBackendInfos[CurCounter].m_Minor = g_Config.m_GfxGLMinor;
-				s_vBackendInfos[CurCounter].m_Patch = g_Config.m_GfxGLPatch;
-			}
-
-			static int s_SelectedOldBackend = -1;
-			if(s_SelectedOldBackend == -1)
-				s_SelectedOldBackend = SelectedOldBackend;
-
-			static CUi::SDropDownState s_BackendDropDownState;
-			static CScrollRegion s_BackendDropDownScrollRegion;
-			s_BackendDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_BackendDropDownScrollRegion;
-			const int NewBackend = Ui()->DoDropDown(&BackendDropDown, SelectedOldBackend, s_vpBackendIdNamesCStr.data(), BackendCount, s_BackendDropDownState);
-			if(SelectedOldBackend != NewBackend)
-			{
-				str_copy(g_Config.m_GfxBackend, s_vBackendInfos[NewBackend].m_pBackendName);
-				g_Config.m_GfxGLMajor = s_vBackendInfos[NewBackend].m_Major;
-				g_Config.m_GfxGLMinor = s_vBackendInfos[NewBackend].m_Minor;
-				g_Config.m_GfxGLPatch = s_vBackendInfos[NewBackend].m_Patch;
-
-				CheckSettings = true;
-				s_GfxBackendChanged = s_SelectedOldBackend != NewBackend;
-			}
+			CheckSettings = true;
+			s_GfxBackendChanged = s_SelectedOldBackend != NewBackend;
+			InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::BACKEND_CHANGED);
 		}
 	}
 
 	// GPU list
 	const auto &GpuList = Graphics()->GetGpus();
-	if(GpuList.m_vGpus.size() > 1 || DeferHeavyGraphics)
+	if(GpuList.m_vGpus.size() > 1)
 	{
 		CUIRect Text, GpuDropDown;
 		MainView.HSplitTop(10.0f, nullptr, &MainView);
@@ -2245,59 +2901,51 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 		MainView.HSplitTop(20.0f, &GpuDropDown, &MainView);
 		Ui()->DoLabel(&Text, Localize("Graphics card"), 16.0f, TEXTALIGN_MC);
 
-		if(DeferHeavyGraphics)
+		static std::vector<const char *> s_vpGpuIdNames;
+
+		size_t GpuCount = GpuList.m_vGpus.size() + 1;
+		s_vpGpuIdNames.resize(GpuCount);
+
+		char aCurDeviceName[256 + 4];
+
+		int OldSelectedGpu = -1;
+		for(size_t i = 0; i < GpuCount; ++i)
 		{
-			str_copy(aBuf, Localize("Preparing graphics device list..."), sizeof(aBuf));
-			Ui()->DoLabel(&GpuDropDown, aBuf, 13.0f, TEXTALIGN_ML);
+			if(i == 0)
+			{
+				str_format(aCurDeviceName, sizeof(aCurDeviceName), "%s (%s)", Localize("auto"), GpuList.m_AutoGpu.m_aName);
+				s_vpGpuIdNames[i] = aCurDeviceName;
+				if(str_comp("auto", g_Config.m_GfxGpuName) == 0)
+				{
+					OldSelectedGpu = 0;
+				}
+			}
+			else
+			{
+				s_vpGpuIdNames[i] = GpuList.m_vGpus[i - 1].m_aName;
+				if(str_comp(GpuList.m_vGpus[i - 1].m_aName, g_Config.m_GfxGpuName) == 0)
+				{
+					OldSelectedGpu = i;
+				}
+			}
 		}
-		else
+
+		static int s_OldSelectedGpu = -1;
+		if(s_OldSelectedGpu == -1)
+			s_OldSelectedGpu = OldSelectedGpu;
+
+		static CUi::SDropDownState s_GpuDropDownState;
+		static CScrollRegion s_GpuDropDownScrollRegion;
+		s_GpuDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_GpuDropDownScrollRegion;
+		const int NewGpu = Ui()->DoDropDown(&GpuDropDown, OldSelectedGpu, s_vpGpuIdNames.data(), GpuCount, s_GpuDropDownState);
+		if(OldSelectedGpu != NewGpu)
 		{
-			static std::vector<const char *> s_vpGpuIdNames;
-
-			size_t GpuCount = GpuList.m_vGpus.size() + 1;
-			s_vpGpuIdNames.resize(GpuCount);
-
-			char aCurDeviceName[256 + 4];
-
-			int OldSelectedGpu = -1;
-			for(size_t i = 0; i < GpuCount; ++i)
-			{
-				if(i == 0)
-				{
-					str_format(aCurDeviceName, sizeof(aCurDeviceName), "%s (%s)", Localize("auto"), GpuList.m_AutoGpu.m_aName);
-					s_vpGpuIdNames[i] = aCurDeviceName;
-					if(str_comp("auto", g_Config.m_GfxGpuName) == 0)
-					{
-						OldSelectedGpu = 0;
-					}
-				}
-				else
-				{
-					s_vpGpuIdNames[i] = GpuList.m_vGpus[i - 1].m_aName;
-					if(str_comp(GpuList.m_vGpus[i - 1].m_aName, g_Config.m_GfxGpuName) == 0)
-					{
-						OldSelectedGpu = i;
-					}
-				}
-			}
-
-			static int s_OldSelectedGpu = -1;
-			if(s_OldSelectedGpu == -1)
-				s_OldSelectedGpu = OldSelectedGpu;
-
-			static CUi::SDropDownState s_GpuDropDownState;
-			static CScrollRegion s_GpuDropDownScrollRegion;
-			s_GpuDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_GpuDropDownScrollRegion;
-			const int NewGpu = Ui()->DoDropDown(&GpuDropDown, OldSelectedGpu, s_vpGpuIdNames.data(), GpuCount, s_GpuDropDownState);
-			if(OldSelectedGpu != NewGpu)
-			{
-				if(NewGpu == 0)
-					str_copy(g_Config.m_GfxGpuName, "auto");
-				else
-					str_copy(g_Config.m_GfxGpuName, GpuList.m_vGpus[NewGpu - 1].m_aName);
-				CheckSettings = true;
-				s_GfxGpuChanged = NewGpu != s_OldSelectedGpu;
-			}
+			if(NewGpu == 0)
+				str_copy(g_Config.m_GfxGpuName, "auto");
+			else
+				str_copy(g_Config.m_GfxGpuName, GpuList.m_vGpus[NewGpu - 1].m_aName);
+			CheckSettings = true;
+			s_GfxGpuChanged = NewGpu != s_OldSelectedGpu;
 		}
 	}
 
@@ -2310,17 +2958,20 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 	}
 }
 
-struct SAudioPackEntry
+namespace
 {
-	char m_aName[64];
-	int m_FileCount;
-};
+	struct SAudioPackEntry
+	{
+		char m_aName[64];
+		int m_FileCount;
+	};
 
-struct SAudioPackScanUser
-{
-	IStorage *m_pStorage;
-	std::vector<SAudioPackEntry> *m_pPacks;
-};
+	struct SAudioPackScanUser
+	{
+		IStorage *m_pStorage;
+		std::vector<SAudioPackEntry> *m_pPacks;
+	};
+} // namespace
 
 static int AudioPackFileScan(const char *pName, int IsDir, int DirType, void *pUser)
 {
@@ -3345,26 +3996,30 @@ void CMenus::PrepareLanguagePageCache(float MainViewWidth)
 		return;
 	}
 
-	CUIRect List, CreditsScroll;
-	LayoutLanguagePageBaseRects(MainViewWidth, List, CreditsScroll);
+	CUIRect List;
+	LayoutLanguagePageBaseRects(MainViewWidth, List);
 
-	const char *pCreditsText = Localize("English translation by the DDNet Team", "Translation credits: Add your own name here when you update translations");
-	const float CreditsLineWidth = CreditsScroll.w - 2.0f * LANGUAGE_CREDITS_MARGIN;
 	const float LabelWidth = LanguageListLabelWidth(List);
 	const bool LanguageChanged = str_comp(gs_aLanguageCacheLanguageFile, g_Config.m_ClLanguagefile) != 0;
-	const bool LabelCacheInvalid = LanguageLabelCacheInvalid();
-	const bool CreditsLanguageChanged = str_comp(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile) != 0;
-	const bool CreditsWidthChanged = absolute(gs_CreditsLineWidth - CreditsLineWidth) > 0.01f;
+	bool LabelCacheInvalid = g_Localization.Languages().size() > MAX_LANGUAGE_CACHE;
+	if(!LabelCacheInvalid)
+	{
+		for(size_t i = 0; i < g_Localization.Languages().size(); ++i)
+		{
+			CUIElement &LabelElement = SettingsTextElement(SETTINGS_LANGUAGE, -1, g_Localization.Languages()[i].m_Filename.c_str());
+			if(!LabelElement.Rect(0)->m_UITextContainer.Valid())
+			{
+				LabelCacheInvalid = true;
+				break;
+			}
+		}
+	}
 	if(!LanguageChanged &&
 		!LabelCacheInvalid &&
-		absolute(gs_LanguageLabelWidth - LabelWidth) <= 0.01f &&
-		!(CreditsLanguageChanged || CreditsWidthChanged || !gs_CreditsLabelElement.Rect(0)->m_UITextContainer.Valid()))
+		absolute(gs_LanguageLabelWidth - LabelWidth) <= 0.01f)
 	{
 		return;
 	}
-
-	if(CreditsLanguageChanged || CreditsWidthChanged || !gs_CreditsLabelElement.Rect(0)->m_UITextContainer.Valid())
-		RebuildLanguageCreditsCache(Ui(), pCreditsText, CreditsLineWidth);
 
 	CUIRect ScrollClip = List;
 	ScrollClip.VSplitRight(LANGUAGE_SCROLLBAR_WIDTH, &ScrollClip, nullptr);
@@ -3377,7 +4032,8 @@ void CMenus::PrepareLanguagePageCache(float MainViewWidth)
 
 		CUIRect FlagRect, Label;
 		ItemRect.VSplitLeft(ItemRect.h * 2.0f, &FlagRect, &Label);
-		Ui()->DoLabelStreamed(*gs_aLanguageLabelElements[i].Rect(0), &Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
+		CUIElement &LabelElement = SettingsTextElement(SETTINGS_LANGUAGE, -1, Language.m_Filename.c_str());
+		Ui()->DoLabelStreamed(*LabelElement.Rect(0), &Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML, {}, -1, nullptr, false);
 	}
 
 	gs_LanguageLabelWidth = LabelWidth;
@@ -3387,59 +4043,31 @@ void CMenus::PrepareLanguagePageCache(float MainViewWidth)
 void CMenus::RenderLanguageSettings(CUIRect MainView)
 {
 	CPerfTimer RenderTimer;
-	const float CreditsFontSize = LANGUAGE_CREDITS_FONT_SIZE;
-	const float CreditsMargin = LANGUAGE_CREDITS_MARGIN;
-
-	CUIRect List, CreditsScroll;
-	MainView.HSplitBottom(4.0f * CreditsFontSize + 2.0f * CreditsMargin + CScrollRegion::HEIGHT_MAGIC_FIX, &List, &CreditsScroll);
-	List.HSplitBottom(5.0f, &List, nullptr);
-
 	const char *pCreditsText = Localize("English translation by the DDNet Team", "Translation credits: Add your own name here when you update translations");
-	const float CreditsLineWidth = CreditsScroll.w - 2.0f * CreditsMargin;
 	const int NumLanguages = (int)g_Localization.Languages().size();
 	EnsureLanguagePageCacheInit(Ui());
-	const bool LanguageChanged = str_comp(gs_aCreditsLanguageFile, g_Config.m_ClLanguagefile) != 0;
-	const bool WidthChanged = absolute(gs_CreditsLineWidth - CreditsLineWidth) > 0.01f;
-	const bool CreditsNeedRefresh = LanguageChanged || WidthChanged || !gs_CreditsLabelElement.Rect(0)->m_UITextContainer.Valid();
+
+	CUIRect Header, CreditsButton, List;
+	MainView.HSplitTop(30.0f, &Header, &List);
+	List.HSplitTop(8.0f, nullptr, &List);
+	Header.VSplitRight(130.0f, nullptr, &CreditsButton);
+	static CButtonContainer s_CreditsButton;
+	static CUi::SMessagePopupContext s_CreditsPopup;
+	if(DoButton_Menu(&s_CreditsButton, Localize("Credits"), 0, &CreditsButton))
+	{
+		str_copy(s_CreditsPopup.m_aMessage, pCreditsText, sizeof(s_CreditsPopup.m_aMessage));
+		s_CreditsPopup.DefaultColor(TextRender());
+		Ui()->ShowPopupMessage(CreditsButton.x, CreditsButton.y + CreditsButton.h + 5.0f, &s_CreditsPopup);
+	}
+
 	{
 		CPerfTimer StageTimer;
 		RenderLanguageSelection(List);
 		char aExtra[96];
 		str_format(aExtra, sizeof(aExtra), "page=language languages=%d", NumLanguages);
-		LogPerfStage("language_list_total", StageTimer.ElapsedMs(), false, aExtra);
+		LogPerfStage(Client(), "language_list_total", StageTimer.ElapsedMs(), false, aExtra);
 	}
-
-	CreditsScroll.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f), IGraphics::CORNER_ALL, 5.0f);
-
-	auto RefreshCreditsMetrics = [&]() {
-		CPerfTimer CreditsCreateTimer;
-		RebuildLanguageCreditsCache(Ui(), pCreditsText, CreditsLineWidth);
-		LogPerfStage("language_credits_create", CreditsCreateTimer.ElapsedMs(), false, "page=language");
-	};
-
-	if(CreditsNeedRefresh)
-		RefreshCreditsMetrics();
-
-	{
-		vec2 ScrollOffset(0.0f, 0.0f);
-		CScrollRegionParams ScrollParams;
-		ScrollParams.m_ScrollUnit = CreditsFontSize;
-		gs_CreditsScrollRegion.Begin(&CreditsScroll, &ScrollOffset, &ScrollParams);
-		CreditsScroll.y += ScrollOffset.y;
-
-		CPerfTimer CreditsRenderTimer;
-		CUIRect CreditsLabel;
-		CreditsScroll.HSplitTop(gs_CreditsHeight + 2.0f * CreditsMargin, &CreditsLabel, &CreditsScroll);
-		gs_CreditsScrollRegion.AddRect(CreditsLabel);
-		CreditsLabel.Margin(CreditsMargin, &CreditsLabel);
-		SLabelProperties CreditsLabelProps;
-		CreditsLabelProps.m_MaxWidth = CreditsLabel.w;
-		Ui()->DoLabelStreamed(*gs_CreditsLabelElement.Rect(0), &CreditsLabel, pCreditsText, CreditsFontSize, TEXTALIGN_TL, CreditsLabelProps);
-		LogPerfStage("language_credits_text", CreditsRenderTimer.ElapsedMs(), false, "page=language");
-
-		gs_CreditsScrollRegion.End();
-	}
-	LogPerfStage("language_page_total", RenderTimer.ElapsedMs(), false, "page=language");
+	LogPerfStage(Client(), "language_page_total", RenderTimer.ElapsedMs(), false, "page=language");
 }
 
 bool CMenus::RenderLanguageSelection(CUIRect MainView)
@@ -3466,11 +4094,14 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 	bool Activated = false;
 
 	vec2 ScrollOffset(0.0f, 0.0f);
+	static float s_PrevLanguageScrollY = 0.0f;
 	CScrollRegionParams ScrollParams;
 	ScrollParams.m_ScrollUnit = LANGUAGE_ROW_HEIGHT;
 	ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
 	ScrollParams.m_ScrollbarMargin = 5.0f;
 	gs_LanguageScrollRegion.Begin(&MainView, &ScrollOffset, &ScrollParams);
+	m_SettingsScrollActive = m_SettingsScrollActive || absolute(ScrollOffset.y - s_PrevLanguageScrollY) > 0.01f;
+	s_PrevLanguageScrollY = ScrollOffset.y;
 
 	CUIRect Content = MainView;
 	Content.y += ScrollOffset.y;
@@ -3503,7 +4134,10 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 		FlagRect.HMargin(3.0f, &FlagRect);
 		GameClient()->m_CountryFlags.Render(Language.m_CountryCode, ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), FlagRect.x, FlagRect.y, FlagRect.w, FlagRect.h);
 		if(UseCache)
-			Ui()->DoLabelStreamed(*gs_aLanguageLabelElements[i].Rect(0), &Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
+		{
+			CUIElement &LabelElement = SettingsTextElement(SETTINGS_LANGUAGE, -1, Language.m_Filename.c_str());
+			Ui()->DoLabelStreamed(*LabelElement.Rect(0), &Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
+		}
 		else
 			Ui()->DoLabel(&Label, Language.m_Name.c_str(), LANGUAGE_FONT_SIZE, TEXTALIGN_ML);
 	}
@@ -3528,8 +4162,12 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 void CMenus::RenderSettings(CUIRect MainView)
 {
 	// This handles cases where old config files have an invalid page index
+	m_SettingsScrollActive = Input()->KeyPress(KEY_MOUSE_WHEEL_UP) ||
+				 Input()->KeyPress(KEY_MOUSE_WHEEL_DOWN) ||
+				 Input()->KeyPress(KEY_MOUSE_WHEEL_LEFT) ||
+				 Input()->KeyPress(KEY_MOUSE_WHEEL_RIGHT);
 	if(g_Config.m_UiSettingsPage < 0 || g_Config.m_UiSettingsPage >= SETTINGS_LENGTH)
-		g_Config.m_UiSettingsPage = SETTINGS_LANGUAGE;
+		g_Config.m_UiSettingsPage = SETTINGS_GENERAL;
 	if(g_Config.m_UiSettingsPage == SETTINGS_CONFIGS)
 	{
 		g_Config.m_UiSettingsPage = SETTINGS_QMCLIENT;
@@ -3540,6 +4178,10 @@ void CMenus::RenderSettings(CUIRect MainView)
 		g_Config.m_UiSettingsPage = SETTINGS_QMCLIENT;
 		m_QmClientSettingsTab = QMCLIENT_SETTINGS_TAB_CONTRIBUTORS;
 	}
+	else
+	{
+		g_Config.m_UiSettingsPage = SettingsCanonicalPage(g_Config.m_UiSettingsPage);
+	}
 
 	if(g_Config.m_UiSettingsPage != SETTINGS_ASSETS && (m_AssetsEditorState.m_Open || m_AssetsEditorState.m_Initialized))
 		AssetsEditorCloseNow();
@@ -3547,27 +4189,21 @@ void CMenus::RenderSettings(CUIRect MainView)
 		AudioPackEditorClose();
 
 	static bool s_SettingsTransitionInitialized = false;
-	static int s_PrevSettingsPage = SETTINGS_LANGUAGE;
+	static int s_PrevSettingsPage = SETTINGS_GENERAL;
 	static float s_SettingsTransitionDirection = 0.0f;
 	const uint64_t SettingsPageSwitchNode = UiAnimNodeKey("settings_main_page_switch");
 
 	// render background
 	CUIRect Button, TabBar, RestartBar;
 	const bool UseNewSettingsUi = g_Config.m_QmNewUi != 0;
-	const ColorRGBA SettingsAccentColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
 	if(UseNewSettingsUi)
 	{
 		const float TabBarWidth = std::clamp(MainView.w * 0.16f, 132.0f, 168.0f);
-		const ColorRGBA SettingsBackingColor = SettingsUiColorSurface(0.38f, 0.16f);
-		const ColorRGBA SettingsTabBarColor = SettingsUiColorSurface(0.82f, 0.18f);
-		const ColorRGBA SettingsContentColor = SettingsUiColorSurface(0.70f, 0.16f);
-		MainView.Draw(SettingsBackingColor, IGraphics::CORNER_B, ui_token::radius::CARD);
-		MainView.Margin(std::clamp(MainView.w * 0.012f, 8.0f, 14.0f), &MainView);
 		MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
-		MainView.VSplitRight(12.0f, &MainView, nullptr);
-		TabBar.Draw(SettingsTabBarColor, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-		MainView.Draw(SettingsContentColor, IGraphics::CORNER_ALL, ui_token::radius::CARD);
-		MainView.Margin(std::clamp(MainView.w * 0.018f, 14.0f, 22.0f), &MainView);
+		MainView.VSplitRight(10.0f, &MainView, nullptr);
+		TabBar.Draw(SettingsTabbarColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		MainView.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		MainView.Margin(10.0f, &MainView);
 	}
 	else
 	{
@@ -3597,82 +4233,81 @@ void CMenus::RenderSettings(CUIRect MainView)
 	}
 
 	PrepareSettingsTabLabelCache(MainView.w);
-	if(g_Config.m_UiSettingsPage != SETTINGS_LANGUAGE)
-		PrepareLanguagePageCache(MainView.w);
+	PrepareLanguagePageCache(MainView.w);
 
 	{
 		CPerfTimer StageTimer;
-		for(int i = 0; i < SETTINGS_LENGTH; i++)
+		static constexpr int s_aSettingsTabOrder[] = {
+			SETTINGS_GENERAL,
+			SETTINGS_TEE,
+			SETTINGS_APPEARANCE,
+			SETTINGS_CONTROLS,
+			SETTINGS_GRAPHICS,
+			SETTINGS_SOUND,
+			SETTINGS_ASSETS,
+			SETTINGS_DDNET,
+			SETTINGS_TCLIENT,
+			SETTINGS_QMCLIENT,
+		};
+		for(int i : s_aSettingsTabOrder)
 		{
-			if(i == SETTINGS_PROFILES || i == SETTINGS_CONFIGS || i == SETTINGS_CONTRIBUTORS)
-				continue; // Profiles 已合并到 Tee 页面，Configs/Contributors 已并入 QmClient 顶部分页
+			if(!SettingsPageVisibleInRightTabBar(i))
+				continue;
+			const bool Active = g_Config.m_UiSettingsPage == i;
 			if(UseNewSettingsUi)
 			{
-				TabBar.HSplitTop(6.0f, nullptr, &TabBar);
-				TabBar.HSplitTop(27.0f, &Button, &TabBar);
-				const bool Active = g_Config.m_UiSettingsPage == i;
-				const bool Hovered = Ui()->HotItem() == &m_aSettingsTabButtons[i];
-				const uint64_t NodeKey = BuildUiAnimNodeKey(MakeUiScopeHash("settings_v2_nav"), reinterpret_cast<uint64_t>(&m_aSettingsTabButtons[i]));
-				CUiV2AnimationRuntime &AnimRuntime = GameClient()->UiRuntimeV2()->AnimRuntime();
-				const float NavStrength = std::clamp(ResolveUiAnimValue(AnimRuntime, NodeKey, EUiAnimProperty::ALPHA, (Active || Hovered) ? 1.0f : 0.0f, ui_token::motion::BTN_HOVER.m_DurationSec, ui_token::motion::BTN_HOVER.m_Easing), 0.0f, 1.0f);
-				ColorRGBA DefaultColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(0.25f + NavStrength * 0.85f);
-				ColorRGBA ActiveColor = SettingsAccentColor.WithAlpha(std::clamp(SettingsAccentColor.a * 0.24f, 0.0f, 1.0f));
-				ColorRGBA HoverColor = ui_token::color::SURFACE_HIGHLIGHT.WithMultipliedAlpha(1.35f);
-				if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], &DefaultColor, &ActiveColor, &HoverColor, ui_token::radius::BASE, nullptr, &m_aSettingsTabLabelElements[i]))
+				TabBar.HSplitTop(10.0f, nullptr, &TabBar);
+				TabBar.HSplitTop(26.0f, &Button, &TabBar);
+				if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
 					g_Config.m_UiSettingsPage = i;
 				if(Active)
 				{
 					CUIRect Accent = Button;
 					Accent.VSplitLeft(3.0f, &Accent, nullptr);
 					Accent.HMargin(5.0f, &Accent);
-					Accent.Draw(SettingsAccentColor, IGraphics::CORNER_ALL, 2.0f);
+					Accent.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_ALL, 2.0f);
 				}
 			}
 			else
 			{
 				TabBar.HSplitTop(10.0f, nullptr, &TabBar);
 				TabBar.HSplitTop(26.0f, &Button, &TabBar);
-				if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], g_Config.m_UiSettingsPage == i, &Button, IGraphics::CORNER_R, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
+				if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_R, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
 					g_Config.m_UiSettingsPage = i;
 			}
 		}
 
 		char aTabBarExtra[96];
 		str_format(aTabBarExtra, sizeof(aTabBarExtra), "page=%s", SettingsPageName(g_Config.m_UiSettingsPage));
-		LogPerfStage("settings_tabbar", StageTimer.ElapsedMs(), false, aTabBarExtra);
+		LogPerfStage(Client(), "settings_tabbar", StageTimer.ElapsedMs(), false, aTabBarExtra);
 	}
 
 	if(!s_SettingsTransitionInitialized)
 	{
 		s_PrevSettingsPage = g_Config.m_UiSettingsPage;
 		s_SettingsTransitionInitialized = true;
-		if(g_Config.m_UiSettingsPage == SETTINGS_GENERAL || g_Config.m_UiSettingsPage == SETTINGS_DDNET || g_Config.m_UiSettingsPage == SETTINGS_GRAPHICS)
-			BeginDeferredSettingsPage(g_Config.m_UiSettingsPage);
-		else
-			gs_SettingsDeferredPage = -1;
-
-		if(g_Config.m_UiSettingsPage == SETTINGS_CONTROLS)
-			m_MenusSettingsControls.SetDeferredFrames(4);
 	}
 	else if(g_Config.m_UiSettingsPage != s_PrevSettingsPage)
 	{
+		if(s_PrevSettingsPage == SETTINGS_TEE && g_Config.m_UiSettingsPage != SETTINGS_TEE)
+			FinalizeTeeListDrainPerfSession();
 		if(PerfDebugEnabled())
-			dbg_msg("perf/menu", "event=settings_page_switch from=%s to=%s", SettingsPageName(s_PrevSettingsPage), SettingsPageName(g_Config.m_UiSettingsPage));
-		s_SettingsTransitionDirection = g_Config.m_UiSettingsPage > s_PrevSettingsPage ? 1.0f : -1.0f;
-		TriggerUiSwitchAnimation(SettingsPageSwitchNode, 0.18f);
-		if(g_Config.m_UiSettingsPage == SETTINGS_GENERAL || g_Config.m_UiSettingsPage == SETTINGS_DDNET || g_Config.m_UiSettingsPage == SETTINGS_GRAPHICS)
-			BeginDeferredSettingsPage(g_Config.m_UiSettingsPage);
-		else
-			gs_SettingsDeferredPage = -1;
-
-		if(g_Config.m_UiSettingsPage == SETTINGS_CONTROLS)
-			m_MenusSettingsControls.SetDeferredFrames(4);
+		{
+			char aPayload[128];
+			str_format(aPayload, sizeof(aPayload), "event=settings_page_switch from=%s to=%s",
+				SettingsPageName(s_PrevSettingsPage), SettingsPageName(g_Config.m_UiSettingsPage));
+			QmPerfLogPayload("perf/interaction", aPayload, Client(), "settings");
+		}
+		s_SettingsTransitionDirection = UseNewSettingsUi ? (g_Config.m_UiSettingsPage > s_PrevSettingsPage ? 1.0f : -1.0f) : 0.0f;
+		if(UseNewSettingsUi)
+			TriggerUiSwitchAnimation(SettingsPageSwitchNode, 0.18f);
 		s_PrevSettingsPage = g_Config.m_UiSettingsPage;
 	}
 
 	CUIRect ContentView = MainView;
 	const float TransitionStrength = ReadUiSwitchAnimation(SettingsPageSwitchNode);
 	const bool TransitionActive = TransitionStrength > 0.0f && s_SettingsTransitionDirection != 0.0f;
+	m_SettingsPageSwitchActive = TransitionActive;
 	const CUIRect ContentClip = MainView;
 	const float TransitionAlpha = UiSwitchAnimationAlpha(TransitionStrength);
 	if(TransitionActive)
@@ -3683,68 +4318,108 @@ void CMenus::RenderSettings(CUIRect MainView)
 
 	{
 		CPerfTimer StageTimer;
-		if(g_Config.m_UiSettingsPage == SETTINGS_LANGUAGE)
-		{
-			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_LANGUAGE);
-			RenderLanguageSettings(ContentView);
-		}
-		else if(g_Config.m_UiSettingsPage == SETTINGS_GENERAL)
+		auto DrawOrPrewarmSection = [&](int Page, int Tab, const char *pSectionId) {
+			CPerfTimer SectionTimer;
+			if(!DrawSettingsSectionRuntimeCache(ContentView, Page, Tab, pSectionId))
+				(void)PrewarmSettingsSectionRuntimeCache(ContentView, Page, Tab, pSectionId);
+			char aPayload[192];
+			char aTab[16];
+			const char *pTab = nullptr;
+			if(Tab >= 0)
+			{
+				str_format(aTab, sizeof(aTab), "%d", Tab);
+				pTab = aTab;
+			}
+			str_format(aPayload, sizeof(aPayload), "event=section_render section=%s dur_ms=%.3f",
+				pSectionId != nullptr ? pSectionId : "unknown", SectionTimer.ElapsedMs());
+			QmPerfLogPayload("perf/section", aPayload, Client(), SettingsPageName(Page), pTab);
+		};
+		if(g_Config.m_UiSettingsPage == SETTINGS_GENERAL)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_GENERAL);
-			RenderSettingsGeneral(ContentView);
-		}
-		else if(g_Config.m_UiSettingsPage == SETTINGS_PLAYER)
-		{
-			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_PLAYER);
-			RenderSettingsPlayer(ContentView);
+			DrawOrPrewarmSection(SETTINGS_GENERAL, -1, "language-list");
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_GENERAL, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsGeneral(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_TEE)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_TEE);
-			if(Client()->IsSixup())
-				RenderSettingsTee7(ContentView);
-			else
-				RenderSettingsTee(ContentView);
+			DrawOrPrewarmSection(SETTINGS_TEE, -1, "identity");
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_TEE, -1);
+			if(!RuntimeCacheHit)
+			{
+				if(Client()->IsSixup())
+					RenderSettingsTee7(ContentView);
+				else
+					RenderSettingsTee(ContentView);
+			}
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_APPEARANCE)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_APPEARANCE);
-			RenderSettingsAppearance(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_APPEARANCE, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsAppearance(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_CONTROLS)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CONTROLS);
-			m_MenusSettingsControls.Render(ContentView);
+			DrawOrPrewarmSection(SETTINGS_CONTROLS, -1, "movement");
+			DrawOrPrewarmSection(SETTINGS_CONTROLS, -1, "weapons");
+			DrawOrPrewarmSection(SETTINGS_CONTROLS, -1, "voting");
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_CONTROLS, -1);
+			if(!RuntimeCacheHit)
+				m_MenusSettingsControls.Render(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_GRAPHICS)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_GRAPHICS);
-			RenderSettingsGraphics(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_GRAPHICS, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsGraphics(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_SOUND)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_SOUND);
-			RenderSettingsSound(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_SOUND, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsSound(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_DDNET)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_DDNET);
-			RenderSettingsDDNet(ContentView);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_DDNET, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsDDNet(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_ASSETS)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_ASSETS);
-			RenderSettingsCustom(ContentView);
+			DrawOrPrewarmSection(SETTINGS_ASSETS, -1, "resource-list");
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_ASSETS, -1);
+			if(!RuntimeCacheHit)
+				RenderSettingsCustom(ContentView);
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_TCLIENT)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(13);
-			RenderSettingsTClient(ContentView);
+			const float TClientCacheScrollY = m_SettingsTClientScrollRestorePending ? m_SettingsRuntimeMetadata.m_LastScrollY : m_SettingsTClientCurrentScrollY;
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_TCLIENT, m_TClientSettingsTab, TClientCacheScrollY);
+			if(!RuntimeCacheHit)
+				RenderSettingsTClient(ContentView);
+			m_SettingsRuntimeMetadata.m_LastTClientTab = m_TClientSettingsTab;
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_QMCLIENT)
 		{
 			GameClient()->m_MenuBackground.ChangePosition(15);
-			RenderSettingsQmClient(ContentView);
+			const char *pQmSection = m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONFIG ? "config" :
+													 (m_QmClientSettingsTab == QMCLIENT_SETTINGS_TAB_CONTRIBUTORS ? "contributors" : "general");
+			DrawOrPrewarmSection(SETTINGS_QMCLIENT, m_QmClientSettingsTab, pQmSection);
+			const bool RuntimeCacheHit = DrawSettingsPageRuntimeCache(ContentView, SETTINGS_QMCLIENT, m_QmClientSettingsTab);
+			if(!RuntimeCacheHit)
+				RenderSettingsQmClient(ContentView);
+			m_SettingsRuntimeMetadata.m_LastQmTab = m_QmClientSettingsTab;
 		}
 		else if(g_Config.m_UiSettingsPage == SETTINGS_PROFILES)
 		{
@@ -3755,12 +4430,13 @@ void CMenus::RenderSettings(CUIRect MainView)
 		{
 			dbg_assert_failed("ui_settings_page invalid");
 		}
-
 		char aContentExtra[128];
 		str_format(aContentExtra, sizeof(aContentExtra), "page=%s transition=%d", SettingsPageName(g_Config.m_UiSettingsPage), TransitionActive ? 1 : 0);
-		LogPerfStage("settings_page_content", StageTimer.ElapsedMs(), TransitionActive, aContentExtra);
-		FinishDeferredSettingsFrame(g_Config.m_UiSettingsPage);
+		LogPerfStage(Client(), "settings_page_content", StageTimer.ElapsedMs(), TransitionActive, aContentExtra);
 	}
+
+	m_SettingsRuntimeMetadata.m_LastPage = g_Config.m_UiSettingsPage;
+	m_SettingsRuntimeMetadata.m_Valid = true;
 
 	if(TransitionActive && TransitionAlpha > 0.0f)
 	{
@@ -3770,7 +4446,6 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		Ui()->ClipDisable();
 	}
-
 	if(NeedRestart)
 	{
 		CUIRect RestartWarning, RestartButton;
@@ -5068,8 +5743,6 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 void CMenus::RenderSettingsDDNet(CUIRect MainView)
 {
 	CUIRect Button, Left, Right, LeftLeft, Label;
-	const int DeferredTailFrames = DeferredSettingsTailFrames(SETTINGS_DDNET);
-	const bool DeferTailSections = DeferredTailFrames > 0;
 
 	// demo
 	CUIRect Demo;
@@ -5225,7 +5898,6 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 		}
 	}
 
-	if(!DeferTailSections)
 	{
 		CUIRect Background, Miscellaneous;
 		MainView.VSplitMid(&Background, &Miscellaneous, 20.0f);
@@ -5268,7 +5940,7 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 
 		if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesReload, FONT_ICON_ARROW_ROTATE_RIGHT, 0, &ReloadButton, BUTTONFLAG_LEFT))
 		{
-			BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
+			CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
 			g_Config.m_ClBackgroundEntities[0] = '\0';
 			s_BackgroundEntitiesInput.Set("");
 			s_aBackgroundEntitiesSync[0] = '\0';
@@ -5340,140 +6012,6 @@ void CMenus::RenderSettingsDDNet(CUIRect MainView)
 			Client()->ShellUnregister();
 		}
 #endif
-	}
-	else
-	{
-		CUIRect Background, Miscellaneous;
-		MainView.VSplitMid(&Background, &Miscellaneous, 20.0f);
-
-		if(DeferredTailFrames <= 1)
-		{
-			// background
-			Background.HSplitTop(30.0f, &Label, &Background);
-			Background.HSplitTop(5.0f, nullptr, &Background);
-			Ui()->DoLabel(&Label, Localize("Background"), 20.0f, TEXTALIGN_ML);
-
-			ColorRGBA GreyDefault(0.5f, 0.5f, 0.5f, 1);
-
-			static CButtonContainer s_ResetId1;
-			DoLine_ColorPicker(&s_ResetId1, 25.0f, 13.0f, 5.0f, &Background, Localize("Regular background color"), &g_Config.m_ClBackgroundColor, GreyDefault, false);
-
-			static CButtonContainer s_ResetId2;
-			DoLine_ColorPicker(&s_ResetId2, 25.0f, 13.0f, 5.0f, &Background, Localize("Entities background color"), &g_Config.m_ClBackgroundEntitiesColor, GreyDefault, false);
-
-			CUIRect EditBox, ReloadButton;
-			Background.HSplitTop(20.0f, &Label, &Background);
-			Background.HSplitTop(2.0f, nullptr, &Background);
-			Label.VSplitLeft(100.0f, &Label, &EditBox);
-			EditBox.VSplitRight(60.0f, &EditBox, &Button);
-			Button.VSplitMid(&ReloadButton, &Button, 5.0f);
-			EditBox.VSplitRight(5.0f, &EditBox, nullptr);
-
-			Ui()->DoLabel(&Label, Localize("Map"), 14.0f, TEXTALIGN_ML);
-
-			static CLineInput s_BackgroundEntitiesInput(g_Config.m_ClBackgroundEntities, sizeof(g_Config.m_ClBackgroundEntities));
-			static char s_aBackgroundEntitiesSync[sizeof(g_Config.m_ClBackgroundEntities)] = "";
-			const bool WasInputActive = s_BackgroundEntitiesInput.IsActive();
-			const bool InputCommitted = Ui()->DoEditBox(&s_BackgroundEntitiesInput, &EditBox, 14.0f);
-			bool BackgroundChanged = false;
-			if(InputCommitted)
-				BackgroundChanged = ApplyBackgroundEntitiesInputValue(s_BackgroundEntitiesInput);
-			else if(ShouldCommitBackgroundEntitiesInputOnBlur(WasInputActive, s_BackgroundEntitiesInput.IsActive(), s_BackgroundEntitiesInput.GetString(), s_aBackgroundEntitiesSync))
-				BackgroundChanged = ApplyBackgroundEntitiesInputValue(s_BackgroundEntitiesInput);
-			SyncBackgroundEntitiesInput(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-
-			static CButtonContainer s_BackgroundEntitiesMapPicker, s_BackgroundEntitiesReload;
-
-			if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesReload, FONT_ICON_ARROW_ROTATE_RIGHT, 0, &ReloadButton, BUTTONFLAG_LEFT))
-			{
-				BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-				g_Config.m_ClBackgroundEntities[0] = '\0';
-				s_BackgroundEntitiesInput.Set("");
-				s_aBackgroundEntitiesSync[0] = '\0';
-				BackgroundChanged = true;
-			}
-
-			if(Ui()->DoButton_FontIcon(&s_BackgroundEntitiesMapPicker, FONT_ICON_FOLDER, 0, &Button, BUTTONFLAG_LEFT))
-			{
-				BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-				static SPopupMenuId s_PopupMapPickerId;
-				static CPopupMapPickerContext s_PopupMapPickerContext;
-				s_PopupMapPickerContext.m_pMenus = this;
-				s_PopupMapPickerContext.m_aCurrentMapFolder[0] = '\0';
-				str_copy(s_PopupMapPickerContext.m_aRootPath, "maps", sizeof(s_PopupMapPickerContext.m_aRootPath));
-				str_copy(s_PopupMapPickerContext.m_aFallbackRootPath, "mapres", sizeof(s_PopupMapPickerContext.m_aFallbackRootPath));
-				s_PopupMapPickerContext.m_aValuePrefix[0] = '\0';
-				str_copy(s_PopupMapPickerContext.m_aFallbackValuePrefix, "mapres", sizeof(s_PopupMapPickerContext.m_aFallbackValuePrefix));
-				s_PopupMapPickerContext.m_pTargetConfig = g_Config.m_ClBackgroundEntities;
-				s_PopupMapPickerContext.m_TargetConfigSize = sizeof(g_Config.m_ClBackgroundEntities);
-				s_PopupMapPickerContext.MapListPopulate();
-				Ui()->DoPopupMenu(&s_PopupMapPickerId, Ui()->MouseX(), Ui()->MouseY(), 300.0f, 250.0f, &s_PopupMapPickerContext, PopupMapPicker);
-			}
-
-			Background.HSplitTop(20.0f, &Button, &Background);
-			const bool UseCurrentMap = IsCurrentMapBackgroundEntitiesValue(g_Config.m_ClBackgroundEntities);
-			static int s_UseCurrentMapId = 0;
-			if(DoButton_CheckBox(&s_UseCurrentMapId, Localize("Use current map as background"), UseCurrentMap, &Button))
-			{
-				BackgroundChanged |= CommitBackgroundEntitiesInputIfActive(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-				BackgroundChanged |= ToggleCurrentMapBackground(s_BackgroundEntitiesInput);
-				SyncBackgroundEntitiesInput(s_BackgroundEntitiesInput, s_aBackgroundEntitiesSync, sizeof(s_aBackgroundEntitiesSync));
-			}
-
-			if(BackgroundChanged)
-				GameClient()->m_Background.LoadBackground();
-
-			Background.HSplitTop(20.0f, &Button, &Background);
-			if(DoButton_CheckBox(&g_Config.m_ClBackgroundShowTilesLayers, Localize("Show tiles layers from BG map"), g_Config.m_ClBackgroundShowTilesLayers, &Button))
-				g_Config.m_ClBackgroundShowTilesLayers ^= 1;
-		}
-		else
-		{
-			Background.HSplitTop(30.0f, &Label, &Background);
-			Ui()->DoLabel(&Label, Localize("Background"), 20.0f, TEXTALIGN_ML);
-			Background.HSplitTop(10.0f, nullptr, &Background);
-			Background.HSplitTop(20.0f, &Label, &Background);
-			Ui()->DoLabel(&Label, Localize("Background settings are committed on the next frame"), 14.0f, TEXTALIGN_ML);
-		}
-
-		Miscellaneous.HSplitTop(30.0f, &Label, &Miscellaneous);
-		Miscellaneous.HSplitTop(5.0f, nullptr, &Miscellaneous);
-		Ui()->DoLabel(&Label, Localize("Miscellaneous"), 20.0f, TEXTALIGN_ML);
-
-		if(DeferredTailFrames <= 1)
-		{
-			static CButtonContainer s_ButtonTimeout;
-			Miscellaneous.HSplitTop(20.0f, &Button, &Miscellaneous);
-			if(DoButton_Menu(&s_ButtonTimeout, Localize("New random timeout code"), 0, &Button))
-			{
-				Client()->GenerateTimeoutSeed();
-			}
-
-			Miscellaneous.HSplitTop(5.0f, nullptr, &Miscellaneous);
-			Miscellaneous.HSplitTop(20.0f, &Label, &Miscellaneous);
-			Miscellaneous.HSplitTop(2.0f, nullptr, &Miscellaneous);
-			Ui()->DoLabel(&Label, Localize("Run on join"), 14.0f, TEXTALIGN_ML);
-			Miscellaneous.HSplitTop(20.0f, &Button, &Miscellaneous);
-			static CLineInput s_RunOnJoinInput(g_Config.m_ClRunOnJoin, sizeof(g_Config.m_ClRunOnJoin));
-			s_RunOnJoinInput.SetEmptyText(Localize("Chat command (e.g. showall 1)"));
-			Ui()->DoEditBox(&s_RunOnJoinInput, &Button, 14.0f);
-
-#if defined(CONF_FAMILY_WINDOWS)
-			static CButtonContainer s_ButtonUnregisterShell;
-			Miscellaneous.HSplitTop(10.0f, nullptr, &Miscellaneous);
-			Miscellaneous.HSplitTop(20.0f, &Button, &Miscellaneous);
-			if(DoButton_Menu(&s_ButtonUnregisterShell, Localize("Unregister protocol and file extensions"), 0, &Button))
-			{
-				Client()->ShellUnregister();
-			}
-#endif
-		}
-		else
-		{
-			Miscellaneous.HSplitTop(10.0f, nullptr, &Miscellaneous);
-			Miscellaneous.HSplitTop(20.0f, &Label, &Miscellaneous);
-			Ui()->DoLabel(&Label, Localize("Miscellaneous options are committed after background"), 14.0f, TEXTALIGN_ML);
-		}
 	}
 }
 

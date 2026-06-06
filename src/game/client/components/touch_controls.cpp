@@ -64,7 +64,7 @@ CTouchControls::CTouchButton::CTouchButton(CTouchButton &&Other) noexcept :
 	m_pTouchControls(Other.m_pTouchControls),
 	m_UnitRect(Other.m_UnitRect),
 	m_Shape(Other.m_Shape),
-	m_vVisibilities(Other.m_vVisibilities),
+	m_vVisibilities(std::move(Other.m_vVisibilities)),
 	m_pBehavior(std::move(Other.m_pBehavior)),
 	m_VisibilityCached(false)
 {
@@ -83,7 +83,7 @@ CTouchControls::CTouchButton &CTouchControls::CTouchButton::operator=(CTouchButt
 	Other.m_pTouchControls = nullptr;
 	m_UnitRect = Other.m_UnitRect;
 	m_Shape = Other.m_Shape;
-	m_vVisibilities = Other.m_vVisibilities;
+	m_vVisibilities = std::move(Other.m_vVisibilities);
 	m_pBehavior = std::move(Other.m_pBehavior);
 	m_VisibilityCached = false;
 	UpdatePointers();
@@ -1817,7 +1817,9 @@ void CTouchControls::UpdateButtonsEditor(const std::vector<IInput::CTouchFingerS
 
 	// Update active and zoom fingerstate. The first finger will be used for moving button.
 	if(!vTouchFingerStates.empty())
+	{
 		m_ActiveFingerState = vTouchFingerStates[0];
+	}
 	else
 	{
 		m_ActiveFingerState = std::nullopt;
@@ -2009,9 +2011,13 @@ void CTouchControls::UpdateButtonsEditor(const std::vector<IInput::CTouchFingerS
 					else
 					{
 						if(LimitH.has_value())
+						{
 							BiggestH = std::min(*LimitH, BiggestH.value_or(BUTTON_SIZE_SCALE));
+						}
 						else if(LimitW.has_value())
+						{
 							BiggestW = std::min(*LimitW, BiggestW.value_or(BUTTON_SIZE_SCALE));
+						}
 						else
 						{
 							/*

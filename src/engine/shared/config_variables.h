@@ -98,6 +98,8 @@ MACRO_CONFIG_INT(ClShowLocalTimeAlways, cl_show_local_time_always, 0, 0, 1, CFGF
 MACRO_CONFIG_INT(ClShowfps, cl_showfps, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内 FPS ")
 MACRO_CONFIG_INT(ClShowpred, cl_showpred, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内预测时间（以毫秒为单位）")
 MACRO_CONFIG_INT(ClShowPacketLoss, cl_show_packet_loss, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内丢包率")
+MACRO_CONFIG_INT(ClScoreboardPointsLegacy, cl_scoreboard_points, 0, 0, 1, CFGFLAG_CLIENT, "旧版记分牌设置")
+MACRO_CONFIG_INT(ClScoreboardSortModeLegacy, cl_scoreboard_sort_mode, 0, 0, 1, CFGFLAG_CLIENT, "旧版记分牌设置")
 MACRO_CONFIG_INT(ClSmtcEnableLegacy, cl_smtc_enable, 1, 0, 1, CFGFLAG_CLIENT, "旧版系统媒体传输控制集成设置")
 MACRO_CONFIG_INT(ClSmtcShowHudLegacy, cl_smtc_show_hud, 1, 0, 1, CFGFLAG_CLIENT, "旧版系统媒体传输控制集成设置")
 MACRO_CONFIG_INT(ClDummyMiniViewLegacy, cl_dummy_miniview, 0, 0, 1, CFGFLAG_CLIENT, "旧版分身迷你视图设置")
@@ -242,6 +244,10 @@ MACRO_CONFIG_INT(UiControllerSens, ui_controller_sens, 100, 1, 100000, CFGFLAG_S
 MACRO_CONFIG_INT(UiSmoothScrollTime, ui_smooth_scroll_time, 500, 0, 5000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "菜单/编辑器中平滑滚动动画的时间（单位：毫秒，0 为关闭）")
 
 MACRO_CONFIG_COL(UiColor, ui_color, 0xE4A046AF, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_COLALPHA, "界面颜色") // 160 70 175 228 hasalpha
+MACRO_CONFIG_COL(ClMenuPanelColor, cl_menu_panel_color, 0x242D1F, CFGFLAG_CLIENT | CFGFLAG_SAVE, "菜单主面板底色")
+MACRO_CONFIG_INT(ClMenuPanelOpacity, cl_menu_panel_opacity, 72, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "菜单主面板透明度")
+MACRO_CONFIG_INT(ClMenuPanelElevatedOpacity, cl_menu_panel_elevated_opacity, 84, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "菜单强调面板透明度")
+MACRO_CONFIG_INT(ClSettingsTabbarOpacity, cl_settings_tabbar_opacity, 84, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "设置页右侧设置栏透明度")
 
 MACRO_CONFIG_INT(UiColorizePing, ui_colorize_ping, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "高亮显示 ping 值")
 MACRO_CONFIG_INT(UiColorizeGametype, ui_colorize_gametype, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "高亮显示游戏类型")

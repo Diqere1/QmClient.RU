@@ -26,10 +26,10 @@ CEffects::CEffects()
 void CEffects::AirJump(vec2 Pos, float Alpha, float Volume)
 {
 	const bool FocusMode = g_Config.m_QmFocusMode != 0;
-	const bool MuteSound = ShouldMuteFocusJumpSounds(FocusMode, g_Config.m_QmFocusModeMuteJumpSounds != 0);
+	const bool PlaySound = ShouldPlayFocusJumpSound(FocusMode, g_Config.m_QmFocusModeMuteJumpSounds != 0, g_Config.m_SndGame != 0);
 	if(ShouldHideFocusJumpEffects(FocusMode, g_Config.m_QmFocusModeHideJumpEffects != 0))
 	{
-		if(g_Config.m_SndGame && !MuteSound)
+		if(PlaySound)
 			GameClient()->m_Sounds.PlayAt(CSounds::CHN_WORLD, SOUND_PLAYER_AIRJUMP, Volume, Pos);
 		return;
 	}
@@ -54,7 +54,7 @@ void CEffects::AirJump(vec2 Pos, float Alpha, float Volume)
 	p.m_Pos = Pos + vec2(6.0f, 16.0f);
 	GameClient()->m_Particles.Add(CParticles::GROUP_GENERAL, &p);
 
-	if(g_Config.m_SndGame && !MuteSound)
+	if(PlaySound)
 		GameClient()->m_Sounds.PlayAt(CSounds::CHN_WORLD, SOUND_PLAYER_AIRJUMP, Volume, Pos);
 }
 
@@ -205,6 +205,14 @@ void CEffects::BulletTrail(vec2 Pos, float Alpha, float TimePassed)
 
 void CEffects::PlayerSpawn(vec2 Pos, float Alpha, float Volume)
 {
+	const bool PlaySound = ShouldPlayFocusDeathOrSpawnSound(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeMuteDeathSounds != 0, g_Config.m_SndGame);
+	if(ShouldHideFocusKillEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideKillEffects != 0))
+	{
+		if(PlaySound)
+			GameClient()->m_Sounds.PlayAt(CSounds::CHN_WORLD, SOUND_PLAYER_SPAWN, Volume, Pos);
+		return;
+	}
+
 	for(int i = 0; i < 32; i++)
 	{
 		CParticle p;
@@ -223,7 +231,7 @@ void CEffects::PlayerSpawn(vec2 Pos, float Alpha, float Volume)
 		p.m_StartAlpha = Alpha;
 		GameClient()->m_Particles.Add(CParticles::GROUP_GENERAL, &p);
 	}
-	if(g_Config.m_SndGame)
+	if(PlaySound)
 		GameClient()->m_Sounds.PlayAt(CSounds::CHN_WORLD, SOUND_PLAYER_SPAWN, Volume, Pos);
 }
 

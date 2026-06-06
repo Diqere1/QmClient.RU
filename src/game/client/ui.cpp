@@ -16,16 +16,25 @@
 
 #include <game/localization.h>
 
+#include <algorithm>
 #include <limits>
 
 using namespace FontIcons;
 
 void CUIElement::Init(CUi *pUI, int RequestedRectCount)
 {
+	dbg_assert(m_pUI == nullptr, "UI element can only be registered once.");
 	m_pUI = pUI;
 	pUI->AddUIElement(this);
-	if(RequestedRectCount > 0)
+	if(RequestedRectCount > 0 && !AreRectsInit())
 		InitRects(RequestedRectCount);
+	dbg_assert(RequestedRectCount <= 0 || m_vUIRects.size() == (size_t)RequestedRectCount, "UI element rect count changed.");
+}
+
+CUIElement::~CUIElement()
+{
+	if(m_pUI != nullptr)
+		m_pUI->RemoveUIElement(this);
 }
 
 void CUIElement::InitRects(int RequestedRectCount)
@@ -127,6 +136,13 @@ CUi::CUi()
 
 CUi::~CUi()
 {
+	for(CUIElement *pEl : m_vpUIElements)
+	{
+		if(pEl != nullptr)
+			pEl->m_pUI = nullptr;
+	}
+	m_vpUIElements.clear();
+
 	for(CUIElement *&pEl : m_vpOwnUIElements)
 	{
 		delete pEl;
@@ -146,6 +162,12 @@ CUIElement *CUi::GetNewUIElement(int RequestedRectCount)
 void CUi::AddUIElement(CUIElement *pElement)
 {
 	m_vpUIElements.push_back(pElement);
+}
+
+void CUi::RemoveUIElement(CUIElement *pElement)
+{
+	m_vpUIElements.erase(std::remove(m_vpUIElements.begin(), m_vpUIElements.end(), pElement), m_vpUIElements.end());
+	pElement->m_pUI = nullptr;
 }
 
 void CUi::ResetUIElement(CUIElement &UIElement) const
@@ -511,6 +533,9 @@ void CUi::UpdateClipping()
 
 int CUi::DoButtonLogic(const void *pId, int Checked, const CUIRect *pRect, const unsigned Flags)
 {
+	if(RenderOnly())
+		return 0;
+
 	int ReturnValue = 0;
 	const bool Inside = MouseHovered(pRect);
 
@@ -548,6 +573,15 @@ int CUi::DoButtonLogic(const void *pId, int Checked, const CUIRect *pRect, const
 
 int CUi::DoDraggableButtonLogic(const void *pId, int Checked, const CUIRect *pRect, bool *pClicked, bool *pAbrupted)
 {
+	if(RenderOnly())
+	{
+		if(pClicked != nullptr)
+			*pClicked = false;
+		if(pAbrupted != nullptr)
+			*pAbrupted = false;
+		return 0;
+	}
+
 	// logic
 	int ReturnValue = 0;
 	const bool Inside = MouseHovered(pRect);
@@ -609,6 +643,9 @@ int CUi::DoDraggableButtonLogic(const void *pId, int Checked, const CUIRect *pRe
 
 bool CUi::DoDoubleClickLogic(const void *pId)
 {
+	if(RenderOnly())
+		return false;
+
 	if(m_DoubleClickState.m_pLastClickedId == pId &&
 		Client()->GlobalTime() - m_DoubleClickState.m_LastClickTime < 0.5f &&
 		distance(m_DoubleClickState.m_LastClickPos, MousePos()) <= 32.0f * Screen()->h / Graphics()->ScreenHeight())
@@ -624,6 +661,9 @@ bool CUi::DoDoubleClickLogic(const void *pId)
 
 EEditState CUi::DoPickerLogic(const void *pId, const CUIRect *pRect, float *pX, float *pY)
 {
+	if(RenderOnly())
+		return EEditState::NONE;
+
 	if(MouseHovered(pRect))
 		SetHotItem(pId);
 
@@ -715,6 +755,7 @@ void CUi::DoSmoothScrollLogic(float *pScrollOffset, float *pScrollOffsetChange, 
 	}
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SCursorAndBoundingBox
 {
 	vec2 m_TextSize;
@@ -839,7 +880,7 @@ void CUi::DoLabel(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, cons
 	RectEl.m_Cursor = Cursor;
 }
 
-void CUi::DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps, int StrLen, const CTextCursor *pReadCursor) const
+void CUi::DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRect, const char *pText, float Size, int Align, const SLabelProperties &LabelProps, int StrLen, const CTextCursor *pReadCursor, bool Render) const
 {
 	const int ReadCursorGlyphCount = pReadCursor == nullptr ? -1 : pReadCursor->m_GlyphCount;
 	bool NeedsRecreate = false;
@@ -888,7 +929,7 @@ void CUi::DoLabelStreamed(CUIElement::SUIElementRect &RectEl, const CUIRect *pRe
 		DoLabel(RectEl, &TmpRect, pText, Size, TEXTALIGN_TL, LabelProps, StrLen, pReadCursor);
 	}
 
-	if(RectEl.m_UITextContainer.Valid())
+	if(Render && RectEl.m_UITextContainer.Valid())
 	{
 		const vec2 CursorPos = CalcAlignedCursorPos(pRect, vec2(RectEl.m_Cursor.m_LongestLineWidth, RectEl.m_Cursor.Height()), Align);
 		TextRender()->RenderTextContainer(RectEl.m_UITextContainer, RectEl.m_TextColor, RectEl.m_TextOutlineColor, CursorPos.x, CursorPos.y);
@@ -905,16 +946,27 @@ CLabelResult CUi::DoLabel_AutoLineSize(const char *pText, float FontSize, int Al
 
 bool CUi::DoEditBox(CLineInput *pLineInput, const CUIRect *pRect, float FontSize, int Corners, const std::vector<STextColorSplit> &vColorSplits, int Align)
 {
+	const float VSpacing = 2.0f;
+	const float EditBoxRounding = 5.0f;
+	CUIRect Textbox;
+	pRect->VMargin(VSpacing, &Textbox);
+	if(RenderOnly())
+	{
+		const bool Active = m_pLastActiveItem == pLineInput;
+		pRect->Draw(ms_LightButtonColorFunction.GetColor(Active, HotItem() == pLineInput), Corners, EditBoxRounding);
+		ClipEnable(pRect);
+		Textbox.x -= pLineInput->GetScrollOffset();
+		pLineInput->Render(&Textbox, FontSize, Align, false, -1.0f, 0.0f, vColorSplits);
+		ClipDisable();
+		return false;
+	}
+
 	const bool Inside = MouseHovered(pRect);
 	bool Active = m_pLastActiveItem == pLineInput;
 	const bool Changed = pLineInput->WasChanged();
 	const bool CursorChanged = pLineInput->WasCursorChanged();
 	const bool SubmitPressed = Input()->KeyPress(KEY_RETURN) || Input()->KeyPress(KEY_KP_ENTER) || ConsumeHotkey(HOTKEY_ENTER);
 	const bool ClickedOutside = (MouseButtonClicked(0) || MouseButtonClicked(1)) && !Inside;
-
-	const float VSpacing = 2.0f;
-	CUIRect Textbox;
-	pRect->VMargin(VSpacing, &Textbox);
 
 	bool JustGotActive = false;
 	if(CheckActiveItem(pLineInput))
@@ -994,7 +1046,7 @@ bool CUi::DoEditBox(CLineInput *pLineInput, const CUIRect *pRect, float FontSize
 	}
 
 	// Render
-	pRect->Draw(ms_LightButtonColorFunction.GetColor(Active, HotItem() == pLineInput), Corners, 3.0f);
+	pRect->Draw(ms_LightButtonColorFunction.GetColor(Active, HotItem() == pLineInput), Corners, EditBoxRounding);
 	ClipEnable(pRect);
 	Textbox.x -= ScrollOffset;
 	const STextBoundingBox BoundingBox = pLineInput->Render(&Textbox, FontSize, Align, Changed || CursorChanged, -1.0f, 0.0f, vColorSplits);
@@ -1020,12 +1072,13 @@ bool CUi::DoEditBox(CLineInput *pLineInput, const CUIRect *pRect, float FontSize
 
 bool CUi::DoClearableEditBox(CLineInput *pLineInput, const CUIRect *pRect, float FontSize, int Corners, const std::vector<STextColorSplit> &vColorSplits)
 {
+	const float EditBoxRounding = 5.0f;
 	CUIRect EditBox, ClearButton;
 	pRect->VSplitRight(pRect->h, &EditBox, &ClearButton);
 
 	bool ReturnValue = DoEditBox(pLineInput, &EditBox, FontSize, Corners & ~IGraphics::CORNER_R, vColorSplits);
 
-	ClearButton.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f * ButtonColorMul(pLineInput->GetClearButtonId())), Corners & ~IGraphics::CORNER_L, 3.0f);
+	ClearButton.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.33f * ButtonColorMul(pLineInput->GetClearButtonId())), Corners & ~IGraphics::CORNER_L, EditBoxRounding);
 	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
 	DoLabel(&ClearButton, "×", ClearButton.h * CUi::ms_FontmodHeight * 0.8f, TEXTALIGN_MC);
 	TextRender()->SetRenderFlags(0);
@@ -1201,7 +1254,7 @@ int CUi::DoButton_FontIcon(CButtonContainer *pButtonContainer, const char *pText
 int CUi::DoButton_PopupMenu(CButtonContainer *pButtonContainer, const char *pText, const CUIRect *pRect, float Size, int Align, float Padding, bool TransparentInactive, bool Enabled, const std::optional<ColorRGBA> ButtonColor)
 {
 	if(!TransparentInactive || CheckActiveItem(pButtonContainer) || HotItem() == pButtonContainer)
-		pRect->Draw(ButtonColor.value_or(Enabled ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f * ButtonColorMul(pButtonContainer)) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f)), IGraphics::CORNER_ALL, 3.0f);
+		pRect->Draw(ButtonColor.value_or(Enabled ? ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f * ButtonColorMul(pButtonContainer)) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f)), IGraphics::CORNER_ALL, 5.0f);
 
 	CUIRect Label;
 	pRect->Margin(Padding, &Label);
@@ -1237,7 +1290,9 @@ SEditResult<int64_t> CUi::DoValueSelectorWithState(const void *pId, const CUIRec
 				m_ActiveValueSelectorState.m_pLastTextId = pId;
 				m_ActiveValueSelectorState.m_NumberInput.SetInteger64(Current, Base, Props.m_HexPrefix);
 				if(Props.m_SelectAllOnActivate)
+				{
 					m_ActiveValueSelectorState.m_NumberInput.SelectAll();
+				}
 				else
 				{
 					m_ActiveValueSelectorState.m_NumberInput.SetCursorOffset(m_ActiveValueSelectorState.m_NumberInput.GetLength());
@@ -1329,7 +1384,7 @@ SEditResult<int64_t> CUi::DoValueSelectorWithState(const void *pId, const CUIRec
 		}
 		const bool Active = CheckActiveItem(pId);
 		const bool Hovered = HotItem() == pId;
-		pRect->Draw(ms_LightButtonColorFunction.GetColor(Active, Hovered), IGraphics::CORNER_ALL, 3.0f);
+		pRect->Draw(ms_LightButtonColorFunction.GetColor(Active, Hovered), IGraphics::CORNER_ALL, 5.0f);
 		DoLabel(pRect, aBuf, 10.0f, TEXTALIGN_MC);
 	}
 
@@ -1566,7 +1621,9 @@ bool CUi::DoScrollbarOption(const void *pId, int *pOption, const CUIRect *pRect,
 			str_format(aBuf, sizeof(aBuf), "%s: %i%s", pStr, Value, pSuffix);
 	}
 	else
+	{
 		str_format(aBuf, sizeof(aBuf), "%s: ∞", pStr);
+	}
 
 	if(NoClampValue)
 	{

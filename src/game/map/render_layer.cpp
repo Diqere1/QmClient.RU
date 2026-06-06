@@ -14,149 +14,154 @@
 #include <chrono>
 #include <limits>
 
-/************************
- * Render Buffer Helper *
- ************************/
-class CTexCoords
+namespace
 {
-public:
-	std::array<uint8_t, 4> m_aTexX;
-	std::array<uint8_t, 4> m_aTexY;
-};
 
-constexpr static CTexCoords CalculateTexCoords(unsigned int Flags)
-{
-	CTexCoords TexCoord;
-	TexCoord.m_aTexX = {0, 1, 1, 0};
-	TexCoord.m_aTexY = {0, 0, 1, 1};
-
-	if(Flags & TILEFLAG_XFLIP)
-		std::rotate(std::begin(TexCoord.m_aTexX), std::begin(TexCoord.m_aTexX) + 2, std::end(TexCoord.m_aTexX));
-
-	if(Flags & TILEFLAG_YFLIP)
-		std::rotate(std::begin(TexCoord.m_aTexY), std::begin(TexCoord.m_aTexY) + 2, std::end(TexCoord.m_aTexY));
-
-	if(Flags & (TILEFLAG_ROTATE >> 1))
+	/************************
+	 * Render Buffer Helper *
+	 ************************/
+	class CTexCoords
 	{
-		std::rotate(std::begin(TexCoord.m_aTexX), std::begin(TexCoord.m_aTexX) + 3, std::end(TexCoord.m_aTexX));
-		std::rotate(std::begin(TexCoord.m_aTexY), std::begin(TexCoord.m_aTexY) + 3, std::end(TexCoord.m_aTexY));
-	}
-	return TexCoord;
-}
+	public:
+		std::array<uint8_t, 4> m_aTexX;
+		std::array<uint8_t, 4> m_aTexY;
+	};
 
-template<std::size_t N>
-constexpr static std::array<CTexCoords, N> MakeTexCoordsTable()
-{
-	std::array<CTexCoords, N> aTexCoords = {};
-	for(std::size_t i = 0; i < N; ++i)
-		aTexCoords[i] = CalculateTexCoords(i);
-	return aTexCoords;
-}
-
-constexpr std::array<CTexCoords, 8> TEX_COORDS_TABLE = MakeTexCoordsTable<8>();
-
-static void FillTmpTile(CGraphicTile *pTmpTile, CGraphicTileTextureCoords *pTmpTex, unsigned char Flags, unsigned char Index, int x, int y, const ivec2 &Offset, int Scale)
-{
-	if(pTmpTex)
+	constexpr static CTexCoords CalculateTexCoords(unsigned int Flags)
 	{
-		uint8_t TableFlag = (Flags & (TILEFLAG_XFLIP | TILEFLAG_YFLIP)) + ((Flags & TILEFLAG_ROTATE) >> 1);
-		const auto &aTexX = TEX_COORDS_TABLE[TableFlag].m_aTexX;
-		const auto &aTexY = TEX_COORDS_TABLE[TableFlag].m_aTexY;
+		CTexCoords TexCoord;
+		TexCoord.m_aTexX = {0, 1, 1, 0};
+		TexCoord.m_aTexY = {0, 0, 1, 1};
 
-		pTmpTex->m_TexCoordTopLeft.x = aTexX[0];
-		pTmpTex->m_TexCoordTopLeft.y = aTexY[0];
-		pTmpTex->m_TexCoordBottomLeft.x = aTexX[3];
-		pTmpTex->m_TexCoordBottomLeft.y = aTexY[3];
-		pTmpTex->m_TexCoordTopRight.x = aTexX[1];
-		pTmpTex->m_TexCoordTopRight.y = aTexY[1];
-		pTmpTex->m_TexCoordBottomRight.x = aTexX[2];
-		pTmpTex->m_TexCoordBottomRight.y = aTexY[2];
+		if(Flags & TILEFLAG_XFLIP)
+			std::rotate(std::begin(TexCoord.m_aTexX), std::begin(TexCoord.m_aTexX) + 2, std::end(TexCoord.m_aTexX));
 
-		pTmpTex->m_TexCoordTopLeft.z = Index;
-		pTmpTex->m_TexCoordBottomLeft.z = Index;
-		pTmpTex->m_TexCoordTopRight.z = Index;
-		pTmpTex->m_TexCoordBottomRight.z = Index;
+		if(Flags & TILEFLAG_YFLIP)
+			std::rotate(std::begin(TexCoord.m_aTexY), std::begin(TexCoord.m_aTexY) + 2, std::end(TexCoord.m_aTexY));
 
-		bool HasRotation = (Flags & TILEFLAG_ROTATE) != 0;
-		pTmpTex->m_TexCoordTopLeft.w = HasRotation;
-		pTmpTex->m_TexCoordBottomLeft.w = HasRotation;
-		pTmpTex->m_TexCoordTopRight.w = HasRotation;
-		pTmpTex->m_TexCoordBottomRight.w = HasRotation;
+		if(Flags & (TILEFLAG_ROTATE >> 1))
+		{
+			std::rotate(std::begin(TexCoord.m_aTexX), std::begin(TexCoord.m_aTexX) + 3, std::end(TexCoord.m_aTexX));
+			std::rotate(std::begin(TexCoord.m_aTexY), std::begin(TexCoord.m_aTexY) + 3, std::end(TexCoord.m_aTexY));
+		}
+		return TexCoord;
 	}
 
-	vec2 TopLeft(x * Scale + Offset.x, y * Scale + Offset.y);
-	vec2 BottomRight(x * Scale + Scale + Offset.x, y * Scale + Scale + Offset.y);
-	pTmpTile->m_TopLeft = TopLeft;
-	pTmpTile->m_BottomLeft.x = TopLeft.x;
-	pTmpTile->m_BottomLeft.y = BottomRight.y;
-	pTmpTile->m_TopRight.x = BottomRight.x;
-	pTmpTile->m_TopRight.y = TopLeft.y;
-	pTmpTile->m_BottomRight = BottomRight;
-}
-
-static void FillTmpTileSpeedup(CGraphicTile *pTmpTile, CGraphicTileTextureCoords *pTmpTex, unsigned char Flags, int x, int y, const ivec2 &Offset, int Scale, short AngleRotate)
-{
-	int Angle = AngleRotate % 360;
-	FillTmpTile(pTmpTile, pTmpTex, Angle >= 270 ? ROTATION_270 : (Angle >= 180 ? ROTATION_180 : (Angle >= 90 ? ROTATION_90 : 0)), AngleRotate % 90, x, y, Offset, Scale);
-}
-
-static bool AddTile(std::vector<CGraphicTile> &vTmpTiles, std::vector<CGraphicTileTextureCoords> &vTmpTileTexCoords, unsigned char Index, unsigned char Flags, int x, int y, bool DoTextureCoords, bool FillSpeedup = false, int AngleRotate = -1, const ivec2 &Offset = ivec2{0, 0}, int Scale = 32)
-{
-	if(Index <= 0)
-		return false;
-
-	vTmpTiles.emplace_back();
-	CGraphicTile &Tile = vTmpTiles.back();
-	CGraphicTileTextureCoords *pTileTex = nullptr;
-	if(DoTextureCoords)
+	template<std::size_t N>
+	constexpr static std::array<CTexCoords, N> MakeTexCoordsTable()
 	{
-		vTmpTileTexCoords.emplace_back();
-		CGraphicTileTextureCoords &TileTex = vTmpTileTexCoords.back();
-		pTileTex = &TileTex;
+		std::array<CTexCoords, N> aTexCoords = {};
+		for(std::size_t i = 0; i < N; ++i)
+			aTexCoords[i] = CalculateTexCoords(i);
+		return aTexCoords;
 	}
-	if(FillSpeedup)
-		FillTmpTileSpeedup(&Tile, pTileTex, Flags, x, y, Offset, Scale, AngleRotate);
-	else
-		FillTmpTile(&Tile, pTileTex, Flags, Index, x, y, Offset, Scale);
 
-	return true;
-}
+	constexpr std::array<CTexCoords, 8> TEX_COORDS_TABLE = MakeTexCoordsTable<8>();
 
-class CTmpQuadVertexTextured
-{
-public:
-	float m_X, m_Y, m_CenterX, m_CenterY;
-	unsigned char m_R, m_G, m_B, m_A;
-	float m_U, m_V;
-};
-
-class CTmpQuadVertex
-{
-public:
-	float m_X, m_Y, m_CenterX, m_CenterY;
-	unsigned char m_R, m_G, m_B, m_A;
-};
-
-class CTmpQuad
-{
-public:
-	CTmpQuadVertex m_aVertices[4];
-};
-
-class CTmpQuadTextured
-{
-public:
-	CTmpQuadVertexTextured m_aVertices[4];
-};
-
-static void mem_copy_special(void *pDest, void *pSource, size_t Size, size_t Count, size_t Steps)
-{
-	size_t CurStep = 0;
-	for(size_t i = 0; i < Count; ++i)
+	static void FillTmpTile(CGraphicTile *pTmpTile, CGraphicTileTextureCoords *pTmpTex, unsigned char Flags, unsigned char Index, int x, int y, const ivec2 &Offset, int Scale)
 	{
-		mem_copy(((char *)pDest) + CurStep + i * Size, ((char *)pSource) + i * Size, Size);
-		CurStep += Steps;
+		if(pTmpTex)
+		{
+			uint8_t TableFlag = (Flags & (TILEFLAG_XFLIP | TILEFLAG_YFLIP)) + ((Flags & TILEFLAG_ROTATE) >> 1);
+			const auto &aTexX = TEX_COORDS_TABLE[TableFlag].m_aTexX;
+			const auto &aTexY = TEX_COORDS_TABLE[TableFlag].m_aTexY;
+
+			pTmpTex->m_TexCoordTopLeft.x = aTexX[0];
+			pTmpTex->m_TexCoordTopLeft.y = aTexY[0];
+			pTmpTex->m_TexCoordBottomLeft.x = aTexX[3];
+			pTmpTex->m_TexCoordBottomLeft.y = aTexY[3];
+			pTmpTex->m_TexCoordTopRight.x = aTexX[1];
+			pTmpTex->m_TexCoordTopRight.y = aTexY[1];
+			pTmpTex->m_TexCoordBottomRight.x = aTexX[2];
+			pTmpTex->m_TexCoordBottomRight.y = aTexY[2];
+
+			pTmpTex->m_TexCoordTopLeft.z = Index;
+			pTmpTex->m_TexCoordBottomLeft.z = Index;
+			pTmpTex->m_TexCoordTopRight.z = Index;
+			pTmpTex->m_TexCoordBottomRight.z = Index;
+
+			bool HasRotation = (Flags & TILEFLAG_ROTATE) != 0;
+			pTmpTex->m_TexCoordTopLeft.w = HasRotation;
+			pTmpTex->m_TexCoordBottomLeft.w = HasRotation;
+			pTmpTex->m_TexCoordTopRight.w = HasRotation;
+			pTmpTex->m_TexCoordBottomRight.w = HasRotation;
+		}
+
+		vec2 TopLeft(x * Scale + Offset.x, y * Scale + Offset.y);
+		vec2 BottomRight(x * Scale + Scale + Offset.x, y * Scale + Scale + Offset.y);
+		pTmpTile->m_TopLeft = TopLeft;
+		pTmpTile->m_BottomLeft.x = TopLeft.x;
+		pTmpTile->m_BottomLeft.y = BottomRight.y;
+		pTmpTile->m_TopRight.x = BottomRight.x;
+		pTmpTile->m_TopRight.y = TopLeft.y;
+		pTmpTile->m_BottomRight = BottomRight;
 	}
+
+	static void FillTmpTileSpeedup(CGraphicTile *pTmpTile, CGraphicTileTextureCoords *pTmpTex, unsigned char Flags, int x, int y, const ivec2 &Offset, int Scale, short AngleRotate)
+	{
+		int Angle = AngleRotate % 360;
+		FillTmpTile(pTmpTile, pTmpTex, Angle >= 270 ? ROTATION_270 : (Angle >= 180 ? ROTATION_180 : (Angle >= 90 ? ROTATION_90 : 0)), AngleRotate % 90, x, y, Offset, Scale);
+	}
+
+	static bool AddTile(std::vector<CGraphicTile> &vTmpTiles, std::vector<CGraphicTileTextureCoords> &vTmpTileTexCoords, unsigned char Index, unsigned char Flags, int x, int y, bool DoTextureCoords, bool FillSpeedup = false, int AngleRotate = -1, const ivec2 &Offset = ivec2{0, 0}, int Scale = 32)
+	{
+		if(Index <= 0)
+			return false;
+
+		vTmpTiles.emplace_back();
+		CGraphicTile &Tile = vTmpTiles.back();
+		CGraphicTileTextureCoords *pTileTex = nullptr;
+		if(DoTextureCoords)
+		{
+			vTmpTileTexCoords.emplace_back();
+			CGraphicTileTextureCoords &TileTex = vTmpTileTexCoords.back();
+			pTileTex = &TileTex;
+		}
+		if(FillSpeedup)
+			FillTmpTileSpeedup(&Tile, pTileTex, Flags, x, y, Offset, Scale, AngleRotate);
+		else
+			FillTmpTile(&Tile, pTileTex, Flags, Index, x, y, Offset, Scale);
+
+		return true;
+	}
+
+	class CTmpQuadVertexTextured
+	{
+	public:
+		float m_X, m_Y, m_CenterX, m_CenterY;
+		unsigned char m_R, m_G, m_B, m_A;
+		float m_U, m_V;
+	};
+
+	class CTmpQuadVertex
+	{
+	public:
+		float m_X, m_Y, m_CenterX, m_CenterY;
+		unsigned char m_R, m_G, m_B, m_A;
+	};
+
+	class CTmpQuad
+	{
+	public:
+		CTmpQuadVertex m_aVertices[4];
+	};
+
+	class CTmpQuadTextured
+	{
+	public:
+		CTmpQuadVertexTextured m_aVertices[4];
+	};
+
+	static void mem_copy_special(void *pDest, void *pSource, size_t Size, size_t Count, size_t Steps)
+	{
+		size_t CurStep = 0;
+		for(size_t i = 0; i < Count; ++i)
+		{
+			mem_copy(((char *)pDest) + CurStep + i * Size, ((char *)pSource) + i * Size, Size);
+			CurStep += Steps;
+		}
+	}
+
 }
 
 static bool CheckedDataSize(size_t Count, size_t ItemSize, size_t &DataSize)
@@ -1708,7 +1713,6 @@ void CRenderLayerEntityGame::RenderTileLayerNoTileBuffer(const ColorRGBA &Color,
 	RenderFiltered(ColorRGBA(1.0f, 1.0f, 1.0f, QmOverlayAlpha(g_Config.m_QmEntityOverlayUnfreezeAlpha)), FilterUnfreezeAlphaTile);
 	RenderFiltered(ColorRGBA(1.0f, 1.0f, 1.0f, QmOverlayAlpha(g_Config.m_QmEntityOverlayDeepFreezeAlpha)), FilterDeepFreezeAlphaTile);
 	RenderFiltered(ColorRGBA(1.0f, 1.0f, 1.0f, QmOverlayAlpha(g_Config.m_QmEntityOverlayDeepUnfreezeAlpha)), FilterDeepUnfreezeAlphaTile);
-
 }
 
 ColorRGBA CRenderLayerEntityGame::GetDeathBorderColor() const
@@ -2243,9 +2247,13 @@ void CRenderLayerEntitySwitch::GetTileData(unsigned char *pIndex, unsigned char 
 			*pIndex = 8;
 	}
 	else if(CurOverlay == 1)
+	{
 		*pIndex = Tile.m_Number;
+	}
 	else if(CurOverlay == 2)
+	{
 		*pIndex = Tile.m_Delay;
+	}
 }
 
 void CRenderLayerEntitySwitch::RenderTileLayerWithTileBuffer(const ColorRGBA &Color, const CRenderLayerParams &Params)
@@ -2342,4 +2350,3 @@ void CRenderLayerEntityTune::RenderTileLayerNoTileBuffer(const ColorRGBA &Color,
 	Graphics()->BlendNormal();
 	RenderMap()->RenderTunemap(m_pTuneTiles, m_pLayerTilemap->m_Width, m_pLayerTilemap->m_Height, 32.0f, Color, (Params.m_RenderTileBorder ? TILERENDERFLAG_EXTEND : 0) | LAYERRENDERFLAG_TRANSPARENT);
 }
-

@@ -66,7 +66,7 @@ cmake --build cmake-build-release --target run_tests
 
 ## 🙏 特别感谢
 
-- DDNet、Teeworlds、DDRace、TaterClient、RClient 和 CactusClient 的所有贡献者
+- DDNet、Teeworlds、DDRace、TaterClient、RClient、Best Client和 CactusClient 的所有贡献者
 - 参与测试、提供反馈和启发灵感的朋友们
 - 继续为开源社区做出贡献的每一个人
 - 所有捐赠者 – 感谢你们
@@ -77,6 +77,7 @@ cmake --build cmake-build-release --target run_tests
 - DDRace — Shereef Marzouk
 - DDNet — Dennis Felsing 和贡献者
 - TaterClient — 社区修改版本
+- Best Client — 社区修改版本
 
 ## 📜 许可证
 

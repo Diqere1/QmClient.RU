@@ -7,6 +7,21 @@
 
 class CGameClient;
 
+enum class EQmImeCandidateRenderAction
+{
+	VALIDATE_ONLY = 0,
+	LEGACY,
+	POPUP,
+};
+
+inline EQmImeCandidateRenderAction QmImeComputeCandidateRenderAction(bool SupportsCustomCandidateUi, int NewImeMode)
+{
+	if(!SupportsCustomCandidateUi)
+		return EQmImeCandidateRenderAction::VALIDATE_ONLY;
+
+	return NewImeMode == 0 ? EQmImeCandidateRenderAction::LEGACY : EQmImeCandidateRenderAction::POPUP;
+}
+
 class CQmImeBlocker
 {
 public:

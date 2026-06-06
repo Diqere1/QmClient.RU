@@ -3,10 +3,10 @@
 #ifndef GAME_CLIENT_GAMECLIENT_H
 #define GAME_CLIENT_GAMECLIENT_H
 
-#include "render.h"
 #include "qm_command_router.h"
 #include "qm_icon_manager.h"
 #include "qm_ime_manager.h"
+#include "render.h"
 
 #include <base/color.h>
 #include <base/vmath.h>
@@ -71,6 +71,7 @@
 #include "components/players.h"
 #include "components/qmclient/collision_hitbox.h"
 #include "components/qmclient/data_version.h"
+#include "components/qmclient/hud_notifications.h"
 #include "components/qmclient/input_overlay.h"
 #include "components/qmclient/lyrics_component.h"
 #include "components/qmclient/monitoring.h"
@@ -81,6 +82,7 @@
 #include "components/qmclient/weapon_trajectory.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
+#include "components/section_loader.h"
 #include "components/skins.h"
 #include "components/skins7.h"
 #include "components/sounds.h"
@@ -113,10 +115,13 @@
 #include "live/live_replay_buffer.h"
 #endif
 
+#include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 class CQmJelly;
+class CCollisionHitbox;
 
 class CGameInfo
 {
@@ -208,6 +213,7 @@ public:
 
 	friend class CTClient;
 	friend class CFastPractice;
+	friend class CCollisionHitbox;
 
 	// all components
 	CInfoMessages m_InfoMessages;
@@ -273,6 +279,7 @@ public:
 	CBgDraw m_BgDraw;
 	CQmClient m_QmClient;
 	CQmMonitoring m_QmMonitoring;
+	CQmHudNotifications m_QmHudNotifications;
 	CQmWeaponTrajectory m_QmWeaponTrajectory;
 	CTClient m_TClient;
 	CFastPractice m_FastPractice;
@@ -298,6 +305,7 @@ private:
 	std::vector<class CComponent *> m_vpAll;
 	std::vector<class CComponent *> m_vpInput;
 	std::unique_ptr<CQmJelly> m_pJellyTee;
+
 	CNetObjHandler m_NetObjHandler;
 	protocol7::CNetObjHandler m_NetObjHandler7;
 
@@ -423,7 +431,11 @@ private:
 	int m_LastDemoInputRecordTick = -1;
 	int m_LastDemoPlaybackStateTick = -1;
 
+	void PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption, const char *pLoadingMessage);
+
 public:
+	// 将 IInterface 的 protected Kernel() 暴露给客户端组件的既有访问模式。
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	IKernel *Kernel() { return IInterface::Kernel(); }
 	IEngine *Engine() const { return m_pEngine; }
 	class IGraphics *Graphics() const { return m_pGraphics; }
@@ -673,6 +685,45 @@ public:
 
 		std::shared_ptr<CManagedTeeRenderInfo> m_pSkinInfo = nullptr; // this is what the server reports
 		CTeeRenderInfo m_RenderInfo; // this is what we use
+		CTeeRenderInfo m_SkinTransitionPreviousRenderInfo;
+
+		class CSkinTransitionKey
+		{
+		public:
+			CSkinDescriptor m_SkinDescriptor;
+			int m_UseCustomColor = 0;
+			int m_ColorBody = 0;
+			int m_ColorFeet = 0;
+			int m_aaSixupUseCustomColors[NUM_DUMMIES][protocol7::NUM_SKINPARTS] = {};
+			int m_aaSixupSkinPartColors[NUM_DUMMIES][protocol7::NUM_SKINPARTS] = {};
+
+			bool operator==(const CSkinTransitionKey &Other) const
+			{
+				if(!(m_SkinDescriptor == Other.m_SkinDescriptor) ||
+					m_UseCustomColor != Other.m_UseCustomColor ||
+					m_ColorBody != Other.m_ColorBody ||
+					m_ColorFeet != Other.m_ColorFeet)
+				{
+					return false;
+				}
+
+				for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+				{
+					for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+					{
+						if(m_aaSixupUseCustomColors[Dummy][Part] != Other.m_aaSixupUseCustomColors[Dummy][Part] ||
+							m_aaSixupSkinPartColors[Dummy][Part] != Other.m_aaSixupSkinPartColors[Dummy][Part])
+						{
+							return false;
+						}
+					}
+				}
+
+				return true;
+			}
+		} m_LastSkinTransitionKey;
+		bool m_HasSkinTransitionKey = false;
+		std::optional<std::chrono::nanoseconds> m_SkinTransitionStart;
 
 		float m_Angle;
 		bool m_Active;
@@ -711,6 +762,9 @@ public:
 		void UpdateSkin7HatSprite(int Dummy);
 		void UpdateSkin7BotDecoration(int Dummy);
 		void UpdateRenderInfo();
+		void UpdateSkinChangeTransition(const CTeeRenderInfo &NewRenderInfo, const CSkinDescriptor &SkinDescriptor);
+		float SkinChangeTransitionProgress(std::chrono::nanoseconds Now) const;
+		const CTeeRenderInfo *SkinChangePreviousRenderInfo(std::chrono::nanoseconds Now) const;
 		void Reset();
 		CSkinDescriptor ToSkinDescriptor() const;
 

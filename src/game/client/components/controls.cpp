@@ -60,6 +60,7 @@ void CControls::OnPlayerDeath()
 		AmmoCount = 0;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CInputState
 {
 	CControls *m_pControls;
@@ -89,6 +90,7 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	*pVariable &= INPUT_STATE_MASK;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct CInputSet
 {
 	CControls *m_pControls;
@@ -270,7 +272,9 @@ int CControls::SnapInput(int *pData)
 			m_aMousePosOnAction[g_Config.m_ClDummy] = vec2(0.0f, 0.0f);
 		}
 		else
+		{
 			Pos = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+		}
 
 		m_FastInputHookAction = false;
 		m_FastInputFireAction = false;

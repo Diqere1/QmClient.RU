@@ -43,6 +43,7 @@ public:
 		SResult m_Result;
 		bool m_Completed = false;
 
+	protected:
 		void Run() override REQUIRES(!m_Mutex);
 
 	public:
@@ -71,6 +72,10 @@ public:
 	size_t Num() const;
 	const CCountryFlag &GetByCountryCode(int CountryCode) const;
 	const CCountryFlag &GetByIndex(size_t Index) const;
+	void PrewarmByCountryCodes(const std::vector<int> &vCountryCodes);
+	void PrewarmByIndices(const std::vector<int> &vIndices);
+	bool PrewarmByCountryCodesReady(const std::vector<int> &vCountryCodes);
+	bool PrewarmByIndicesReady(const std::vector<int> &vIndices);
 	void Render(const CCountryFlag &Flag, ColorRGBA Color, float x, float y, float w, float h);
 	void Render(int CountryCode, ColorRGBA Color, float x, float y, float w, float h);
 

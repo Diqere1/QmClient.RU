@@ -45,6 +45,7 @@ bool CCommandProcessorFragment_Null::Cmd_Init(const SCommand_Init *pCommand)
 	pCommand->m_pCapabilities->m_2DArrayTextures = false;
 	pCommand->m_pCapabilities->m_2DArrayTexturesAsExtension = false;
 	pCommand->m_pCapabilities->m_ShaderSupport = false;
+	pCommand->m_pCapabilities->m_RenderTargets = false;
 
 	pCommand->m_pCapabilities->m_TrianglesAsQuads = false;
 

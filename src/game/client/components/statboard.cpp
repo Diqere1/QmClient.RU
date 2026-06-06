@@ -74,7 +74,9 @@ void CStatboard::OnMessage(int MsgType, void *pRawMsg)
 				pStats[pMsg->m_Killer].m_aFragsWith[pMsg->m_Weapon]++;
 		}
 		else
+		{
 			pStats[pMsg->m_Victim].m_Suicides++;
+		}
 	}
 	else if(MsgType == NETMSGTYPE_SV_KILLMSGTEAM)
 	{
@@ -448,7 +450,9 @@ std::string CStatboard::ReplaceCommata(char *pStr)
 			aOutbuf[i + Skip] = 'C';
 		}
 		else
+		{
 			aOutbuf[i + Skip] = pStr[i];
+		}
 	}
 	return aOutbuf;
 }

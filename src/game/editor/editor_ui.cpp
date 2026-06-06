@@ -289,11 +289,17 @@ SEditResult<int> CEditor::UiDoValueSelector(void *pId, CUIRect *pRect, const cha
 				str_copy(aBuf, pLabel);
 		}
 		else if(IsDegree)
+		{
 			str_format(aBuf, sizeof(aBuf), "%d°", Current);
+		}
 		else if(IsHex)
+		{
 			str_format(aBuf, sizeof(aBuf), "#%06X", Current);
+		}
 		else
+		{
 			str_format(aBuf, sizeof(aBuf), "%d", Current);
+		}
 		pRect->Draw(pColor ? *pColor : GetButtonColor(pId, 0), Corners, 3.0f);
 		Ui()->DoLabel(pRect, aBuf, 10, TEXTALIGN_MC);
 	}

@@ -69,6 +69,16 @@ static void LogQmClientRecognitionEvent(const char *pStage, const char *pDetail)
 	log_info("qmclient", "recognition %s: %s", pStage, pDetail ? pDetail : "");
 }
 
+static void LogQmClientDistributionRequestEvent(const char *pStage, const char *pDetail)
+{
+	log_info("qmclient", "distribution %s: %s", pStage, pDetail ? pDetail : "");
+}
+
+static void LogQmClientDistributionEvent(const char *pStage, int Users, int Dummies, int LocalMarks)
+{
+	log_info("qmclient", "distribution %s: users=%d dummies=%d local_marks=%d", pStage, Users, Dummies, LocalMarks);
+}
+
 static void LogQmClientDistributionFailureEvent(const char *pStage, const char *pDetail)
 {
 	log_warn("qmclient", "distribution %s: %s", pStage, pDetail ? pDetail : "");
@@ -178,6 +188,7 @@ namespace
 		CLock m_Lock;
 		SResult m_Result;
 
+	protected:
 		void Run() override REQUIRES(!m_Lock)
 		{
 			SResult Result;
@@ -232,6 +243,7 @@ namespace
 		CLock m_Lock;
 		SResult m_Result;
 
+	protected:
 		void Run() override REQUIRES(!m_Lock)
 		{
 			SResult Result;
@@ -351,6 +363,7 @@ namespace
 		IStorage *m_pStorage = nullptr;
 		std::string m_Content;
 
+	protected:
 		void Run() override
 		{
 			if(m_pStorage == nullptr || State() == IJob::STATE_ABORTED)
@@ -422,6 +435,7 @@ namespace
 	}
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 struct SKeywordReplyRule
 {
 	std::string m_Keywords;
@@ -453,6 +467,7 @@ static bool ParseQmClientServiceHostPort(const char *pAddrStr, char *pHost, size
 	return Port > 0 && Port <= 65535;
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 const char *GetEffectiveQmVoiceServer()
 {
 	return g_Config.m_QmVoiceServer[0] != '\0' ? g_Config.m_QmVoiceServer : QMCLIENT_DEFAULT_VOICE_SERVER;
@@ -1382,6 +1397,7 @@ void CQmClient::ResetQmClientRecognitionTasks()
 	AbortTask(m_pQmClientUsersTask);
 	AbortTask(m_pQmClientUsersSendTask);
 	m_pQmClientUsersParseJob = nullptr;
+	m_QmClientDistributionSuccessLatched = false;
 	m_aQmClientAuthToken[0] = '\0';
 	m_aQmClientPendingVoicePresenceServerAddress[0] = '\0';
 	m_QmClientPendingVoicePresencePlayers = 0;
@@ -1614,6 +1630,8 @@ void CQmClient::FetchQmClientUsers()
 	m_pQmClientUsersTask->IpResolve(IPRESOLVE::V4);
 	m_pQmClientUsersTask->LogProgress(HTTPLOG::FAILURE);
 	Http()->Run(m_pQmClientUsersTask);
+	if(!m_QmClientDistributionSuccessLatched)
+		LogQmClientDistributionRequestEvent("request", aUrl);
 }
 
 void CQmClient::FinishQmClientAuthToken()
@@ -1661,6 +1679,7 @@ void CQmClient::FinishQmClientUsers()
 
 		if(!Result.m_Parsed)
 		{
+			m_QmClientDistributionSuccessLatched = false;
 			LogQmClientDistributionFailureEvent("parse_failed", "users payload could not be parsed");
 			return;
 		}
@@ -1668,6 +1687,9 @@ void CQmClient::FinishQmClientUsers()
 		m_vQmClientServerDistribution = std::move(Result.m_vServerDistribution);
 		m_QmClientOnlineUserCount = Result.m_OnlineUserCount;
 		m_QmClientOnlineDummyCount = Result.m_OnlineDummyCount;
+		if(!m_QmClientDistributionSuccessLatched)
+			LogQmClientDistributionEvent("parse_ok", Result.m_OnlineUserCount, Result.m_OnlineDummyCount, (int)Result.m_vLocalServerMarks.size());
+		m_QmClientDistributionSuccessLatched = true;
 		for(const auto &Mark : Result.m_vLocalServerMarks)
 		{
 			for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
@@ -1703,6 +1725,7 @@ void CQmClient::FinishQmClientUsers()
 		char aFailure[128];
 		str_format(aFailure, sizeof(aFailure), "state=%d status=%d", (int)State, StatusCode);
 		m_pQmClientUsersTask = nullptr;
+		m_QmClientDistributionSuccessLatched = false;
 		LogQmClientDistributionFailureEvent("request_failed", aFailure);
 		return;
 	}
@@ -1769,7 +1792,7 @@ void CQmClient::UpdateQmClientRecognition()
 		// Report can fail after center service restart (stale auth token).
 		// Clear token to force refetch on the next sync cycle.
 		const EHttpState State = m_pQmClientUsersSendTask->State();
-		const int StatusCode = State == EHttpState::DONE ? m_pQmClientUsersSendTask->StatusCode() : -1;
+		const int StatusCode = State == EHttpState::DONE ? m_pQmClientUsersSendTask->StatusCode() : 0;
 		const bool HttpOk = StatusCode >= 200 && StatusCode < 300;
 		if(State != EHttpState::DONE || !HttpOk)
 		{

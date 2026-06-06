@@ -29,10 +29,10 @@ inline void CTooltips::ClearActiveTooltip()
 void CTooltips::SetFadeTime(const void *pId, float Time)
 {
 	uintptr_t Id = reinterpret_cast<uintptr_t>(pId);
-	const auto it = m_Tooltips.find(Id);
-	if(it != m_Tooltips.end())
+	const auto Iter = m_Tooltips.find(Id);
+	if(Iter != m_Tooltips.end())
 	{
-		it->second.m_FadeTime = Time;
+		Iter->second.m_FadeTime = Time;
 	}
 }
 

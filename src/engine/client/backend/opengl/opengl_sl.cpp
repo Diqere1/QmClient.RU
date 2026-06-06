@@ -36,27 +36,41 @@ bool CGLSL::LoadShader(CGLSLCompiler *pCompiler, IStorage *pStorage, const char 
 	bool IsNewOpenGL = (BackendType == BACKEND_TYPE_OPENGL ? (pCompiler->m_OpenGLVersionMajor >= 4 || (pCompiler->m_OpenGLVersionMajor == 3 && pCompiler->m_OpenGLVersionMinor == 3)) : pCompiler->m_OpenGLVersionMajor >= 3);
 	std::string GLShaderStringPostfix = std::string(" core\r\n");
 	if(BackendType == BACKEND_TYPE_OPENGL_ES)
+	{
 		GLShaderStringPostfix = std::string(" es\r\n");
+	}
 	//add compiler specific values
 	if(IsNewOpenGL)
+	{
 		vLines.push_back(std::string("#version ") + std::string(std::to_string(pCompiler->m_OpenGLVersionMajor)) + std::string(std::to_string(pCompiler->m_OpenGLVersionMinor)) + std::string(std::to_string(pCompiler->m_OpenGLVersionPatch)) + GLShaderStringPostfix);
+	}
 	else
 	{
 		if(pCompiler->m_OpenGLVersionMajor == 3)
 		{
 			if(pCompiler->m_OpenGLVersionMinor == 0)
+			{
 				vLines.emplace_back("#version 130 \r\n");
+			}
 			if(pCompiler->m_OpenGLVersionMinor == 1)
+			{
 				vLines.emplace_back("#version 140 \r\n");
+			}
 			if(pCompiler->m_OpenGLVersionMinor == 2)
+			{
 				vLines.emplace_back("#version 150 \r\n");
+			}
 		}
 		else if(pCompiler->m_OpenGLVersionMajor == 2)
 		{
 			if(pCompiler->m_OpenGLVersionMinor == 0)
+			{
 				vLines.emplace_back("#version 110 \r\n");
+			}
 			if(pCompiler->m_OpenGLVersionMinor == 1)
+			{
 				vLines.emplace_back("#version 120 \r\n");
+			}
 		}
 	}
 

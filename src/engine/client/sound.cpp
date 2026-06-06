@@ -138,9 +138,13 @@ void CSound::Mix(short *pFinalOut, unsigned Frames)
 				if(!(Voice.m_Flags & ISound::FLAG_NO_PANNING))
 				{
 					if(Delta.x > 0)
+					{
 						VolumeL = ((RangeX - absolute(Delta.x)) * VolumeL) / RangeX;
+					}
 					else
+					{
 						VolumeR = ((RangeX - absolute(Delta.x)) * VolumeR) / RangeX;
+					}
 				}
 
 				{
@@ -169,7 +173,9 @@ void CSound::Mix(short *pFinalOut, unsigned Frames)
 		if(Voice.m_Tick == Voice.m_pSample->m_NumFrames)
 		{
 			if(Voice.m_Flags & ISound::FLAG_LOOP)
+			{
 				Voice.m_Tick = 0;
+			}
 			else
 			{
 				Voice.m_pSample = nullptr;
@@ -182,7 +188,9 @@ void CSound::Mix(short *pFinalOut, unsigned Frames)
 
 	// clamp accumulated values
 	for(unsigned i = 0; i < Frames * 2; i++)
+	{
 		pFinalOut[i] = std::clamp<int>(((m_pMixBuffer[i] * MasterVol) / 101) >> 8, std::numeric_limits<short>::min(), std::numeric_limits<short>::max());
+	}
 
 #if defined(CONF_ARCH_ENDIAN_BIG)
 	swap_endian(pFinalOut, sizeof(short), Frames * 2);
@@ -251,7 +259,9 @@ int CSound::Init()
 		return -1;
 	}
 	else
+	{
 		dbg_msg("sound", "sound init successful using audio driver '%s'", SDL_GetCurrentAudioDriver());
+	}
 
 	m_MixingRate = FormatOut.freq;
 	m_MaxFrames = FormatOut.samples * 2;
@@ -285,7 +295,9 @@ void CSound::UpdateVolume()
 {
 	int WantedVolume = g_Config.m_SndVolume;
 	if(!m_pGraphics->WindowActive() && g_Config.m_SndNonactiveMute)
+	{
 		WantedVolume = 0;
+	}
 	m_SoundVolume.store(WantedVolume, std::memory_order_relaxed);
 }
 
@@ -360,11 +372,15 @@ bool CSound::RateConvert(CSample &Sample) const
 		float a = i / (float)NumFrames;
 		int f = (int)(a * Sample.m_NumFrames);
 		if(f >= Sample.m_NumFrames)
+		{
 			f = Sample.m_NumFrames - 1;
+		}
 
 		// set new data
 		if(Sample.m_Channels == 1)
+		{
 			pNewData[i] = Sample.m_pData[f];
+		}
 		else if(Sample.m_Channels == 2)
 		{
 			pNewData[i * 2] = Sample.m_pData[f * 2];
@@ -436,7 +452,9 @@ bool CSound::DecodeOpus(CSample &Sample, const void *pData, unsigned DataSize, c
 				return false;
 			}
 			else if(Read == 0) // EOF
+			{
 				break;
+			}
 			Pos += Read;
 		}
 

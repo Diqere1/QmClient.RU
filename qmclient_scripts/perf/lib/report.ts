@@ -1,0 +1,606 @@
+// report.ts — 生成自包含 ECharts HTML 报表（R-style 论文式排版，纸面图表主题）
+
+import { basename } from 'node:path';
+
+import type { PerfEntry } from './parse.ts';
+import {
+  calcPercentiles, toTimeSeries, detectSpikes, histogram, pageBreakdown,
+  complianceRate, computeVerdict, generateNarrative, isSamplingBiased, BUDGET,
+  kde, qqNorm,
+  type Percentiles, type SpikeInfo, type PageStats, type ComparisonResult,
+} from './stats.ts';
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function percentilesToChartData(p: Percentiles) {
+  return [
+    { name: 'p50', value: p.p50 },
+    { name: 'p90', value: p.p90 },
+    { name: 'p95', value: p.p95 },
+    { name: 'p99', value: p.p99 },
+    { name: 'max', value: p.max },
+  ];
+}
+
+export function generateReport(
+  entries: PerfEntry[],
+  sourceFile: string,
+  comparison?: ComparisonResult | null,
+): string {
+  const interactionEntries = entries.filter(e => e.system === 'perf/interaction');
+  const menuEntries = entries.filter(e => e.system === 'perf/menu' && (e.stage.includes('render_total') || e.stage.includes('page_content')));
+  const deviceEntries = entries.filter(e => e.system === 'perf/device');
+  const skinUxEntries = entries.filter(e => e.system === 'perf/skin-ux');
+  const allEntries = entries.filter(e => e.system === 'perf/menu' || e.system === 'perf/gameclient');
+  const menuDurations = menuEntries.map(e => e.durationMs);
+
+  const p = calcPercentiles(menuDurations);
+  const ts = toTimeSeries(allEntries);
+  const spikes = detectSpikes(allEntries, 16.67);
+  const histData = histogram(menuDurations, [0, 2, 4, 8, 16, 33, 100, 500]);
+  const pages = pageBreakdown(menuEntries, 16.67);
+  const compliance240 = complianceRate(menuDurations, BUDGET.h240);
+  const compliance120 = complianceRate(menuDurations, BUDGET.h120);
+  const compliance60 = complianceRate(menuDurations, BUDGET.h60);
+  const biased = isSamplingBiased(menuDurations);
+  const verdict = computeVerdict(p, spikes.length);
+  const narrative = generateNarrative(p, spikes, compliance240, compliance120, compliance60, biased);
+
+  const dataJson = JSON.stringify({
+    percentiles: percentilesToChartData(p),
+    timeline: ts,
+    spikes: spikes.slice(0, 20),
+    histogram: histData,
+    kde: kde(menuDurations),
+    qq: qqNorm(menuDurations),
+    qqLine: { x1: 0, y1: 0, x2: p.max, y2: p.max },
+    pages: pages.map(pg => ({ page: pg.page, count: pg.count, avg: pg.avg, max: pg.max, p95: pg.p95, boxPlot: pg.boxPlot, outliers: pg.outliers.slice(0, 50) })),
+    interactions: interactionEntries.map(e => ({ timestamp: e.timestamp, event: e.fields.event ?? '', page: e.fields.page ?? '', frame: e.fields.frame ?? '', visibleRows: e.fields.visible_rows ?? '', firstVisibleSkin: e.fields.first_visible_skin ?? '' })),
+    skinUx: skinUxEntries.map(e => ({ timestamp: e.timestamp, event: e.fields.event ?? '', durMs: e.fields.dur_ms ?? e.fields.duration_ms ?? '', total: e.fields.total ?? '', visibleRows: e.fields.visible_rows ?? '' })),
+    devices: deviceEntries.map(e => ({ timestamp: e.timestamp, frame: e.fields.frame ?? '', gpuUtil: e.fields.gpu_util_percent ?? '', gpuDedicated: e.fields.gpu_dedicated_vram_mb ?? '', gpuShared: e.fields.gpu_shared_vram_mb ?? '', cpuProcess: e.fields.cpu_process_percent ?? '', cpuTotal: e.fields.cpu_total_percent ?? '', mem: e.fields.memory_process_mb ?? '', disk: e.fields.disk_read_mb_s ?? '' })),
+  });
+
+  const kpiClass = (v: number, okThresh: number, warnThresh: number) =>
+    v <= okThresh ? 'ok' : v <= warnThresh ? 'warn' : 'bad';
+
+  const verdictClass = verdict === 'PASS' ? 'ok' : verdict === 'WARN' ? 'warn' : 'bad';
+  const genDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QmClient 性能分析报告 — ${escapeHtml(sourceFile)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+:root {
+  --ink: #0a1f3d;
+  --ink-rgb: 10,31,61;
+  --paper: #faf9f7;
+  --paper-rgb: 250,249,247;
+  --paper-tint: #eae8e4;
+  --accent: #2563eb;
+  --accent-rgb: 37,99,235;
+  --ok: #8FA89A;
+  --ok-bg: #EFF4F1;
+  --warn: #C4A77D;
+  --warn-bg: #F7F2EB;
+  --bad: #B5838D;
+  --bad-bg: #F5EFF0;
+  --hairline: rgba(10,31,61,0.09);
+  --hairline-strong: rgba(10,31,61,0.16);
+  --serif: 'Noto Serif SC', Georgia, 'Source Han Serif SC', 'SimSun', serif;
+  --sans: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  --mono: 'IBM Plex Mono', 'JetBrains Mono', Consolas, monospace;
+  --max-w: 960px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{font-size:15px;scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-weight:400;line-height:1.75;-webkit-font-smoothing:antialiased}
+
+/* ── Title Page ── */
+.title-page{max-width:var(--max-w);margin:0 auto;padding:6rem 2rem 3rem;border-bottom:1px solid var(--hairline-strong)}
+.title-page h1{font-family:var(--serif);font-weight:700;font-size:2.4rem;line-height:1.3;letter-spacing:-0.02em}
+.title-page .subtitle{font-family:var(--serif);font-size:1.15rem;color:rgba(var(--ink-rgb),0.5);margin-top:0.5rem}
+.title-page .meta-grid{display:grid;grid-template-columns:auto 1fr;gap:0.25rem 1.2rem;margin-top:2rem;font-family:var(--mono);font-size:0.8rem;color:rgba(var(--ink-rgb),0.5)}
+.title-page .meta-grid .label{text-transform:uppercase;letter-spacing:0.05em;font-weight:500}
+.title-page .meta-grid .value{color:rgba(var(--ink-rgb),0.75)}
+
+/* ── Abstract / Summary ── */
+.abstract{max-width:var(--max-w);margin:0 auto;padding:2.5rem 2rem;border-bottom:1px solid var(--hairline)}
+.abstract .kicker{font-family:var(--mono);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:rgba(var(--ink-rgb),0.4);margin-bottom:0.6rem}
+.abstract p{font-size:0.95rem;line-height:1.85;color:rgba(var(--ink-rgb),0.72)}
+.verdict-banner{display:inline-block;padding:0.15rem 0.7rem;border-radius:2px;font-family:var(--mono);font-size:0.7rem;font-weight:500;letter-spacing:0.04em;margin-left:0.5rem;vertical-align:middle}
+.verdict-banner.ok{background:var(--ok-bg);color:var(--ok)}
+.verdict-banner.warn{background:var(--warn-bg);color:var(--warn)}
+.verdict-banner.bad{background:var(--bad-bg);color:var(--bad)}
+
+/* ── Section ── */
+.section{max-width:var(--max-w);margin:0 auto;padding:2.5rem 2rem;border-bottom:1px solid var(--hairline)}
+.section-head{display:flex;align-items:baseline;gap:0.8rem;margin-bottom:1.5rem}
+.section-num{font-family:var(--mono);font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);opacity:0.7}
+.section-head h2{font-family:var(--serif);font-weight:700;font-size:1.35rem;letter-spacing:-0.01em}
+.section p.body-text{font-size:0.92rem;line-height:1.85;color:rgba(var(--ink-rgb),0.68);margin-bottom:1rem}
+
+/* ── KPI Cards ── */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem}
+.kpi-card{border:1px solid var(--hairline-strong);border-radius:2px;padding:1rem 1.2rem;text-align:center;background:white}
+.kpi-card .kpi-label{font-family:var(--mono);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(var(--ink-rgb),0.4);margin-bottom:0.3rem}
+.kpi-card .kpi-value{font-family:var(--serif);font-size:1.8rem;font-weight:700;letter-spacing:-0.02em;line-height:1.2}
+.kpi-card .kpi-value.ok{color:var(--ok)}
+.kpi-card .kpi-value.warn{color:var(--warn)}
+.kpi-card .kpi-value.bad{color:var(--bad)}
+.kpi-card .kpi-unit{font-family:var(--sans);font-size:0.7rem;color:rgba(var(--ink-rgb),0.35);margin-top:0.15rem}
+
+/* ── Chart Figure ── */
+.figure{margin-top:1rem}
+.figure .chart-wrap{background:white;border:1px solid var(--hairline-strong);border-radius:2px;overflow:hidden}
+.figure .chart-inner{width:100%;height:320px}
+.figure .chart-inner.tall{height:400px}
+.figure .chart-inner.short{height:240px}
+.figcaption{font-family:var(--mono);font-size:0.68rem;color:rgba(var(--ink-rgb),0.38);margin-top:0.6rem;padding-left:0.2rem}
+.figcaption em{font-style:italic;color:rgba(var(--ink-rgb),0.52)}
+
+/* ── Grid ── */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+
+/* ── Data Table ── */
+.data-table{width:100%;border-collapse:collapse;font-size:0.85rem;margin-top:0.5rem}
+.data-table thead th{font-family:var(--mono);font-size:0.63rem;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:rgba(var(--ink-rgb),0.42);border-bottom:2px solid var(--hairline-strong);padding:0.5rem 0.8rem;text-align:left}
+.data-table tbody td{padding:0.5rem 0.8rem;border-bottom:1px solid var(--hairline);font-variant-numeric:tabular-nums}
+.data-table tbody tr:hover{background:rgba(var(--ink-rgb),0.02)}
+.data-table .mono{font-family:var(--mono);font-size:0.8rem}
+.badge{display:inline-block;padding:0.1rem 0.5rem;border-radius:1px;font-family:var(--mono);font-size:0.63rem;font-weight:500}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.bad{background:var(--bad-bg);color:var(--bad)}
+
+/* ── Methodology ── */
+.methodology p{font-size:0.88rem;line-height:1.8;color:rgba(var(--ink-rgb),0.62);margin-bottom:0.8rem}
+.methodology code{font-family:var(--mono);font-size:0.82rem;background:rgba(var(--ink-rgb),0.05);padding:0.1em 0.4em;border-radius:2px}
+
+/* ── Footer ── */
+.report-footer{max-width:var(--max-w);margin:0 auto;padding:1.5rem 2rem 3rem;font-family:var(--mono);font-size:0.63rem;color:rgba(var(--ink-rgb),0.28);text-transform:uppercase;letter-spacing:0.05em}
+
+/* ── Comparison ── */
+.compare-section{max-width:var(--max-w);margin:0 auto;padding:2rem 2rem;border-bottom:1px solid var(--hairline)}
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-top:0.8rem}
+.delta-card{border:1px solid var(--hairline-strong);border-radius:2px;padding:0.6rem 1rem;display:flex;justify-content:space-between;align-items:center;background:white}
+.delta-card .delta-name{font-family:var(--mono);font-size:0.72rem;color:rgba(var(--ink-rgb),0.55)}
+.delta-card .delta-values{display:flex;align-items:baseline;gap:0.5rem}
+.delta-card .delta-before{font-size:0.82rem;color:rgba(var(--ink-rgb),0.4)}
+.delta-card .delta-arrow{font-size:0.75rem}
+.delta-card .delta-after{font-family:var(--serif);font-size:1rem;font-weight:600}
+.delta-card .delta-after.better{color:var(--ok)}
+.delta-card .delta-after.worse{color:var(--bad)}
+.delta-card .delta-after.neutral{color:var(--ink)}
+.delta-card .delta-pct{font-family:var(--mono);font-size:0.65rem;opacity:0.6}
+.delta-narrative{font-size:0.9rem;line-height:1.7;color:rgba(var(--ink-rgb),0.68);margin-top:0.8rem;padding:0.6rem 0.8rem;background:rgba(var(--ink-rgb),0.02);border-radius:2px}
+
+@media print{html{font-size:11pt}.chart-wrap{break-inside:avoid}.section{break-inside:avoid}}
+@media(max-width:700px){
+  .title-page{padding:3rem 1.2rem 2rem}
+  .title-page h1{font-size:1.6rem}
+  .section{padding:1.5rem 1.2rem}
+  .chart-grid{grid-template-columns:1fr}
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<header class="title-page">
+  <h1>QmClient 设置页性能分析报告</h1>
+  <div class="subtitle">Settings Page UI Performance Quantitative Analysis</div>
+  <div class="meta-grid">
+    <span class="label">Date</span><span class="value">${genDate}</span>
+    <span class="label">Source</span><span class="value">${escapeHtml(sourceFile.replace(/^.*[\\/]/, ''))}</span>
+    <span class="label">Verdict</span><span class="value"><span class="verdict-banner ${verdictClass}">${verdict}</span></span>
+    <span class="label">Total Frames</span><span class="value">${allEntries.length}</span>
+    <span class="label">Menu Frames</span><span class="value">${menuEntries.length}</span>
+    <span class="label">Spikes</span><span class="value">${spikes.length} (&gt;16.67ms)</span>
+  </div>
+  ${biased ? `<div style="max-width:var(--max-w);margin:0 auto;padding:1rem 2rem;border-bottom:1px solid var(--hairline);font-family:var(--mono);font-size:0.75rem;color:var(--warn);background:var(--warn-bg)">
+    ⚠ Sampling Bias Detected — 当前采样阈值 ${p.min.toFixed(1)}ms（默认 20ms），日志仅包含超过阈值的帧，合规率和百分位统计不能反映实际帧分布。建议设置 <code style="background:rgba(0,0,0,0.06);padding:0.1em 0.3em;border-radius:2px">qm_perf_debug_threshold_ms 4</code> 后重新采集。
+  </div>` : ''}
+</header>
+
+<div class="abstract">
+  <div class="kicker">Executive Summary</div>
+  <p>${escapeHtml(narrative)}</p>
+</div>
+
+${comparison ? `<section class="compare-section">
+  <div class="section-head">
+    <span class="section-num">vs</span>
+    <h2>Session 对比分析</h2>
+  </div>
+  <p style="font-family:var(--mono);font-size:0.75rem;color:rgba(var(--ink-rgb),0.4)">
+    基线: ${escapeHtml(basename(comparison.previous.file))} (${comparison.previous.totalFrames} 帧)
+    &nbsp;|&nbsp; 判定: <span class="badge ${comparison.previous.verdict.toLowerCase() === 'pass' ? 'ok' : comparison.previous.verdict.toLowerCase() === 'warn' ? 'warn' : 'bad'}">${comparison.previous.verdict}</span>
+    → <span class="badge ${comparison.current.verdict.toLowerCase() === 'pass' ? 'ok' : comparison.current.verdict.toLowerCase() === 'warn' ? 'warn' : 'bad'}">${comparison.current.verdict}</span>
+    ${comparison.verdictChanged ? '<span style="color:var(--bad);font-weight:600;margin-left:0.5rem">判定变化!</span>' : ''}
+  </p>
+  <div class="compare-grid">
+    ${comparison.metrics.map(m => `<div class="delta-card">
+      <span class="delta-name">${m.name}</span>
+      <span class="delta-values">
+        <span class="delta-before">${m.before.toFixed(1)}</span>
+        <span class="delta-arrow">${m.direction === 'better' ? '→' : m.direction === 'worse' ? '→' : '→'}</span>
+        <span class="delta-after ${m.direction}">${m.after.toFixed(1)}</span>
+        <span class="delta-pct">${m.direction === 'better' ? '↓' : m.direction === 'worse' ? '↑' : '—'}${Math.abs(m.changePercent).toFixed(0)}%</span>
+      </span>
+    </div>`).join('')}
+    ${comparison.compliance.map(c => `<div class="delta-card">
+      <span class="delta-name">${c.name}</span>
+      <span class="delta-values">
+        <span class="delta-before">${c.before.toFixed(1)}%</span>
+        <span class="delta-arrow">→</span>
+        <span class="delta-after ${c.direction}">${c.after.toFixed(1)}%</span>
+        <span class="delta-pct">${c.direction === 'better' ? '↑' : c.direction === 'worse' ? '↓' : '—'}${Math.abs(c.changePercent).toFixed(0)}%</span>
+      </span>
+    </div>`).join('')}
+  </div>
+  <div class="delta-narrative">${escapeHtml(comparison.narrative)}</div>
+</section>` : ''}
+
+<section class="section">
+  <div class="section-head">
+    <span class="section-num">§1</span>
+    <h2>关键性能指标</h2>
+  </div>
+  <div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-label">p50</div><div class="kpi-value ${kpiClass(p.p50, 4, 8)}">${p.p50.toFixed(1)}</div><div class="kpi-unit">ms · median</div></div>
+    <div class="kpi-card"><div class="kpi-label">p95</div><div class="kpi-value ${kpiClass(p.p95, 8, 16)}">${p.p95.toFixed(1)}</div><div class="kpi-unit">ms</div></div>
+    <div class="kpi-card"><div class="kpi-label">p99</div><div class="kpi-value ${kpiClass(p.p99, 16, 33)}">${p.p99.toFixed(1)}</div><div class="kpi-unit">ms</div></div>
+    <div class="kpi-card"><div class="kpi-label">Max</div><div class="kpi-value ${kpiClass(p.max, 16, 999)}">${p.max.toFixed(1)}</div><div class="kpi-unit">ms · worst</div></div>
+    <div class="kpi-card"><div class="kpi-label">240Hz 合规</div><div class="kpi-value ${compliance240 >= 95 ? 'ok' : compliance240 >= 80 ? 'warn' : 'bad'}">${compliance240.toFixed(1)}</div><div class="kpi-unit">% ≤4.17ms</div></div>
+    <div class="kpi-card"><div class="kpi-label">120Hz 合规</div><div class="kpi-value ${compliance120 >= 95 ? 'ok' : compliance120 >= 80 ? 'warn' : 'bad'}">${compliance120.toFixed(1)}</div><div class="kpi-unit">% ≤8.33ms</div></div>
+    <div class="kpi-card"><div class="kpi-label">60Hz 合规</div><div class="kpi-value ${compliance60 >= 99 ? 'ok' : compliance60 >= 95 ? 'warn' : 'bad'}">${compliance60.toFixed(1)}</div><div class="kpi-unit">% ≤16.67ms</div></div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <span class="section-num">§2</span>
+    <h2>描述统计</h2>
+  </div>
+  <p class="body-text">
+    样本量 N=${p.count}，均值 ${p.avg.toFixed(2)}ms，标准差 ${p.std.toFixed(2)}ms。
+    IQR (Q3−Q1) = ${p.iqr.toFixed(2)}ms，反映中间 50% 数据的离散程度。
+  </p>
+  <table class="data-table">
+    <thead><tr><th>Statistic</th><th>Value</th><th>Statistic</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">Min</td><td>${p.min.toFixed(2)} ms</td><td class="mono">Max</td><td>${p.max.toFixed(2)} ms</td></tr>
+      <tr><td class="mono">Q1 (p25)</td><td>${p.p25.toFixed(2)} ms</td><td class="mono">Q3 (p75)</td><td>${p.p75.toFixed(2)} ms</td></tr>
+      <tr><td class="mono">Median (p50)</td><td>${p.p50.toFixed(2)} ms</td><td class="mono">IQR</td><td>${p.iqr.toFixed(2)} ms</td></tr>
+      <tr><td class="mono">Mean</td><td>${p.avg.toFixed(2)} ms</td><td class="mono">Std Dev</td><td>${p.std.toFixed(2)} ms</td></tr>
+      <tr><td class="mono">p90</td><td>${p.p90.toFixed(2)} ms</td><td class="mono">p95</td><td>${p.p95.toFixed(2)} ms</td></tr>
+      <tr><td class="mono">p99</td><td>${p.p99.toFixed(2)} ms</td><td class="mono">Spikes</td><td>${spikes.length}</td></tr>
+    </tbody>
+  </table>
+  <div class="figcaption"><em>Table 1.</em> 描述统计摘要。Spikes 定义为超过 16.67ms (60Hz 帧预算) 的帧数。</div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <span class="section-num">§3</span>
+    <h2>帧时间趋势</h2>
+  </div>
+  <div class="figure">
+    <div class="chart-wrap"><div id="chart-timeline" class="chart-inner tall"></div></div>
+    <div class="figcaption"><em>Figure 1.</em> 帧耗时时间序列（Y 轴对数刻度，兼顾正常帧与尖峰帧）。绿色虚线 = 8.33ms (120Hz)，红色虚线 = 16.67ms (60Hz)。红色标注 = 尖峰帧。可拖拽缩放查看细节。</div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <span class="section-num">§4</span>
+    <h2>分布与百分位</h2>
+  </div>
+  <div class="chart-grid">
+    <div class="figure">
+      <div class="chart-wrap"><div id="chart-histogram" class="chart-inner short"></div></div>
+      <div class="figcaption"><em>Figure 2.</em> 帧耗时分布直方图 + 核密度估计曲线 (KDE)。</div>
+    </div>
+    <div class="figure">
+      <div class="chart-wrap"><div id="chart-qq" class="chart-inner short"></div></div>
+      <div class="figcaption"><em>Figure 3.</em> QQ 图（分位数-分位数图）。偏离参考线 = 偏离正态分布。</div>
+    </div>
+  </div>
+</section>
+
+${pages.length > 1 ? `<section class="section">
+  <div class="section-head">
+    <span class="section-num">§5</span>
+    <h2>页面级耗时分解</h2>
+  </div>
+  <div class="chart-grid">
+    <div class="figure">
+      <div class="chart-wrap"><div id="chart-boxplot" class="chart-inner short"></div></div>
+      <div class="figcaption"><em>Figure 4.</em> 各页面帧耗时箱线图 (Box Plot)。箱体 = Q1→Q3，中线 = 中位数，须 = 1.5×IQR，圆点 = 离群值。</div>
+    </div>
+    <div class="figure">
+      <div class="chart-wrap"><div id="chart-percentiles" class="chart-inner short"></div></div>
+      <div class="figcaption"><em>Figure 5.</em> 关键百分位 (p50 / p90 / p95 / p99 / max)。</div>
+    </div>
+  </div>
+</section>` : `<section class="section">
+  <div class="section-head">
+    <span class="section-num">§5</span>
+    <h2>百分位分析</h2>
+  </div>
+  <div class="figure">
+    <div class="chart-wrap"><div id="chart-percentiles" class="chart-inner short"></div></div>
+    <div class="figcaption"><em>Figure 4.</em> 关键百分位 (p50 / p90 / p95 / p99 / max)。</div>
+  </div>
+</section>`}
+
+<section class="section">
+  <div class="section-head">
+    <span class="section-num">§${pages.length > 1 ? '6' : '5'}</span>
+    <h2>尖峰帧详细分析</h2>
+  </div>
+  ${spikes.length === 0 ? '<p class="body-text" style="color:rgba(var(--ink-rgb),0.4);font-style:italic">本次 session 未检测到超过 16.67ms 阈值的尖峰帧。</p>' : ''}
+  ${spikes.length > 0 ? `<table class="data-table">
+    <thead><tr><th>Timestamp</th><th>Stage</th><th>Page</th><th>Duration</th><th>Overrun</th><th>Severity</th></tr></thead>
+    <tbody>
+      ${spikes.slice(0, 20).map(s => {
+        const sev = s.durationMs > 100 ? 'bad' : s.durationMs > 33 ? 'warn' : 'ok';
+        const sevLabel = s.durationMs > 100 ? 'Critical' : s.durationMs > 33 ? 'Warning' : 'Minor';
+        return `<tr>
+          <td class="mono">${s.timestamp.slice(11,19)}</td>
+          <td>${escapeHtml(s.stage)}</td>
+          <td>${escapeHtml(s.page)}</td>
+          <td style="font-weight:600;color:${s.durationMs>100?'var(--bad)':s.durationMs>33?'var(--warn)':'var(--ink)'}">${s.durationMs.toFixed(1)}ms</td>
+          <td class="mono">${(s.durationMs/16.67).toFixed(1)}x</td>
+          <td><span class="badge ${sev}">${sevLabel}</span></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>
+  <div class="figcaption"><em>Table 2.</em> 超过 16.67ms 阈值的尖峰帧，按耗时降序，最多 20 条。</div>` : ''}
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <span class="section-num">§${pages.length > 1 ? '7' : '6'}</span>
+    <h2>交互窗口</h2>
+  </div>
+  <p class="body-text">记录 Tee 页进入、滚动、点击、刷新等交互边界，供主线程帧时间与 UX 收敛事件做窗口切片。</p>
+  ${interactionEntries.length === 0 ? '<p class="body-text" style="color:rgba(var(--ink-rgb),0.4);font-style:italic">本次日志未包含 perf/interaction 事件。</p>' : `<table class="data-table">
+    <thead><tr><th>Timestamp</th><th>Event</th><th>Page</th><th>Frame</th><th>Visible</th><th>First Skin</th></tr></thead>
+    <tbody>
+      ${interactionEntries.slice(0, 20).map(e => `<tr><td class="mono">${escapeHtml(e.timestamp.slice(11, 19))}</td><td>${escapeHtml(e.fields.event ?? '')}</td><td>${escapeHtml(e.fields.page ?? '')}</td><td class="mono">${escapeHtml(String(e.fields.frame ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.visible_rows ?? ''))}</td><td>${escapeHtml(e.fields.first_visible_skin ?? '')}</td></tr>`).join('')}
+    </tbody>
+  </table>`}
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <span class="section-num">§${pages.length > 1 ? '8' : '7'}</span>
+    <h2>Tee 收敛</h2>
+  </div>
+  <p class="body-text">关注首个可见预览、全部可见预览、全列表完成的 UX 耗时，不把 source/load 队列状态误当成用户已经可见。</p>
+  ${skinUxEntries.length === 0 ? '<p class="body-text" style="color:rgba(var(--ink-rgb),0.4);font-style:italic">本次日志未包含 perf/skin-ux 事件。</p>' : `<table class="data-table">
+    <thead><tr><th>Timestamp</th><th>Event</th><th>Duration</th><th>Visible</th><th>Total</th></tr></thead>
+    <tbody>
+      ${skinUxEntries.slice(0, 20).map(e => `<tr><td class="mono">${escapeHtml(e.timestamp.slice(11, 19))}</td><td>${escapeHtml(e.fields.event ?? '')}</td><td class="mono">${escapeHtml(String(e.fields.dur_ms ?? e.fields.duration_ms ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.visible_rows ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.total ?? ''))}</td></tr>`).join('')}
+    </tbody>
+  </table>`}
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <span class="section-num">§${pages.length > 1 ? '9' : '8'}</span>
+    <h2>设备资源</h2>
+  </div>
+  <p class="body-text">汇总 GPU、VRAM、CPU、内存、磁盘读速率样本，用于判断加载慢时是否真的把设备资源吃满。</p>
+  ${deviceEntries.length === 0 ? '<p class="body-text" style="color:rgba(var(--ink-rgb),0.4);font-style:italic">本次日志未包含 perf/device 事件。</p>' : `<table class="data-table">
+    <thead><tr><th>Timestamp</th><th>Frame</th><th>GPU%</th><th>VRAM(Ded.)</th><th>VRAM(Shared)</th><th>CPU Proc.</th><th>CPU Total</th><th>Disk MB/s</th></tr></thead>
+    <tbody>
+      ${deviceEntries.slice(0, 20).map(e => `<tr><td class="mono">${escapeHtml(e.timestamp.slice(11, 19))}</td><td class="mono">${escapeHtml(String(e.fields.frame ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.gpu_util_percent ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.gpu_dedicated_vram_mb ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.gpu_shared_vram_mb ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.cpu_process_percent ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.cpu_total_percent ?? ''))}</td><td class="mono">${escapeHtml(String(e.fields.disk_read_mb_s ?? ''))}</td></tr>`).join('')}
+    </tbody>
+  </table>`}
+</section>
+
+<section class="section methodology">
+  <div class="section-head">
+    <span class="section-num">§${pages.length > 1 ? '10' : '9'}</span>
+    <h2>数据采集方法</h2>
+  </div>
+  <p>性能数据通过 QmClient 内置的 <code>perf/menu</code> 日志系统采集，需启用 <code>qm_perf_debug 1</code> 和 <code>qm_perf_logfile 1</code>。日志输出至 <code>%APPDATA%/DDNet/dumps/QmClient_Perf/</code>。</p>
+  <p>帧预算基准：240Hz → 4.17ms，120Hz → 8.33ms，60Hz → 16.67ms。百分位采用最近秩法 (nearest-rank)。直方图分桶 [0, 2, 4, 8, 16, 33, 100, 500] ms。</p>
+  ${biased ? `<p style="color:var(--warn)">当前采样阈值 ${p.min.toFixed(1)}ms（配置项 <code>qm_perf_debug_threshold_ms</code>，默认 20ms）。仅超过阈值的帧会被记录，因此本报告中的合规率和百分位仅反映被采样帧的分布，不能代表实际渲染性能。将阈值降至 4ms 后，可获取完整帧分布和真实合规率。</p>` : ''}
+  <p>判定标准：p99 &lt; 16.67ms 且尖峰 &lt; 5 → <span class="badge ok">PASS</span>；p99 &lt; 33ms 或尖峰 &ge; 1 → <span class="badge warn">WARN</span>；p99 &ge; 33ms 或尖峰 &ge; 5 → <span class="badge bad">FAIL</span>。</p>
+</section>
+
+<footer class="report-footer">Generated by QmClient Perf Analyzer &mdash; ${genDate}</footer>
+
+<script>
+const DATA = ${dataJson};
+
+(function(){
+  // ── Morandi Chart Theme ──
+  const F = "'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  const ink = '#0a1f3d';
+  const axisLbl = { color: '#8a8a8a', fontFamily: F, fontSize: 11 };
+  const axisName = { color: '#a3a3a3', fontFamily: F, fontSize: 11 };
+  const gridLine = { lineStyle: { color: '#e5e3df', type: 'dashed' } };
+  const axisLine = { lineStyle: { color: '#d1cec8' } };
+  const tooltipStyle = {
+    backgroundColor: '#fdfcfa',
+    borderColor: '#d1cec8',
+    borderWidth: 1,
+    textStyle: { color: ink, fontFamily: F, fontSize: 12 },
+    extraCssText: 'box-shadow:0 2px 8px rgba(10,31,61,0.06);',
+  };
+  const primaryColor = '#8B9DAF';
+  const areaFill = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(139,157,175,0.10)' }, { offset: 1, color: 'rgba(139,157,175,0)' }] };
+  const m = {
+    // Morandi palette
+    green: '#8FA89A',     // sage
+    yellow: '#C4A77D',    // sand
+    red: '#B5838D',       // dusty rose
+    purple: '#9B8BB4',    // lavender
+    blue: '#8B9DAF',      // steel blue
+    blueLt: '#A5B5C7',    // light steel
+  };
+
+  // ── §3 Timeline ──
+  const tl = echarts.init(document.getElementById('chart-timeline'));
+  tl.setOption({
+    textStyle: { fontFamily: F },
+    backgroundColor: 'transparent',
+    tooltip: { ...tooltipStyle, trigger: 'axis', valueFormatter: v => v.toFixed(2) + ' ms' },
+    xAxis: { type: 'category', data: DATA.timeline.times, axisLabel: { show: false }, axisLine, axisTick: { show: false } },
+    yAxis: { type: 'log', name: 'ms', nameTextStyle: axisName, axisLabel: { ...axisLbl, formatter: '{value}' }, splitLine: gridLine, minorSplitLine: { show: true, lineStyle: { color: '#edeae6', type: 'dashed' } } },
+    dataZoom: [
+      { type: 'inside', brushSelect: false },
+      { type: 'slider', height: 18, bottom: 6, borderColor: '#d1d5db', fillerColor: 'rgba(59,89,152,0.1)', handleStyle: { color: primaryColor }, textStyle: { color: '#9ca3af', fontFamily: F, fontSize: 10 }, dataBackground: { lineStyle: { color: '#d1d5db' }, areaStyle: { color: '#e5e7eb' } } },
+    ],
+    series: [{
+      type: 'line', data: DATA.timeline.durations, symbol: 'none',
+      lineStyle: { color: primaryColor, width: 1.2 },
+      areaStyle: { color: areaFill },
+      markLine: {
+        silent: true, symbol: 'none',
+        label: { fontFamily: F, fontSize: 10, color: '#6b7280' },
+        data: [
+          { yAxis: 4.17, lineStyle: { color: m.purple, type: 'dotted', width: 1 }, label: { formatter: '4.17ms / 240Hz', position: 'insideStart', color: m.purple } },
+          { yAxis: 8.33, lineStyle: { color: m.green, type: 'dashed', width: 1 }, label: { formatter: '8.33ms / 120Hz', position: 'insideStart', color: m.green } },
+          { yAxis: 16.67, lineStyle: { color: m.red, type: 'dashed', width: 1 }, label: { formatter: '16.67ms / 60Hz', position: 'insideStart', color: m.red } },
+        ],
+      },
+      markPoint: {
+        data: DATA.spikes.slice(0, 5).map(s => ({
+          coord: [s.index, s.durationMs],
+          value: s.durationMs.toFixed(0) + 'ms',
+          symbol: 'diamond', symbolSize: 10,
+          itemStyle: { color: m.red },
+          label: { show: true, color: m.red, fontFamily: F, fontSize: 10, fontWeight: 600, position: 'top' },
+        })),
+      },
+    }],
+    grid: { left: 50, right: 14, top: 14, bottom: 48 },
+  });
+
+  // ── §4 Histogram + KDE overlay ──
+  const hist = echarts.init(document.getElementById('chart-histogram'));
+  const histColors = [m.green, m.green, m.yellow, m.yellow, m.red, m.red, m.red];
+  hist.setOption({
+    textStyle: { fontFamily: F },
+    backgroundColor: 'transparent',
+    tooltip: { ...tooltipStyle, trigger: 'axis' },
+    xAxis: { type: 'category', data: DATA.histogram.map(h => h.label), axisLabel: { ...axisLbl, fontSize: 10 }, axisLine },
+    yAxis: [
+      { type: 'value', name: 'frames', nameTextStyle: axisName, axisLabel: { ...axisLbl, fontSize: 10 }, splitLine: gridLine },
+      { type: 'value', name: 'density', nameTextStyle: axisName, axisLabel: { show: false }, splitLine: { show: false } },
+    ],
+    series: [
+      {
+        type: 'bar', yAxisIndex: 0,
+        data: DATA.histogram.map((h, i) => ({ value: h.count, itemStyle: { color: histColors[i] ?? m.red } })),
+        barWidth: '55%',
+      },
+      {
+        type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none',
+        data: DATA.kde ? DATA.kde.map(d => [String(d.x), d.y]) : [],
+        lineStyle: { color: m.blue, width: 2 },
+        areaStyle: { color: 'rgba(139,157,175,0.10)' },
+      },
+    ],
+    grid: { left: 42, right: 10, top: 12, bottom: 26 },
+  });
+
+  // ── §4 QQ Plot ──
+  const qqEl = document.getElementById('chart-qq');
+  if (qqEl) {
+    const qq = echarts.init(qqEl);
+    const qqData = DATA.qq || [];
+    const maxVal = qqData.length > 0 ? Math.max(qqData[qqData.length-1]?.theoretical||0, qqData[qqData.length-1]?.sample||0) : 1;
+    qq.setOption({
+      textStyle: { fontFamily: F },
+      backgroundColor: 'transparent',
+      tooltip: { ...tooltipStyle, formatter: p => \`Theoretical: \${p.data[0].toFixed(2)} ms<br>Sample: \${p.data[1].toFixed(2)} ms\` },
+      xAxis: { type: 'value', name: 'Theoretical (ms)', nameTextStyle: axisName, axisLabel: { ...axisLbl, fontSize: 10 }, axisLine, splitLine: gridLine },
+      yAxis: { type: 'value', name: 'Sample (ms)', nameTextStyle: axisName, axisLabel: { ...axisLbl, fontSize: 10 }, axisLine, splitLine: gridLine },
+      series: [
+        { type: 'scatter', data: qqData.map(d => [d.theoretical, d.sample]), symbolSize: 3, itemStyle: { color: m.blue, opacity: 0.6 } },
+        { type: 'line', data: [[0, 0], [maxVal, maxVal]], lineStyle: { color: '#c4c4c4', type: 'dashed', width: 1 }, symbol: 'none' },
+      ],
+      grid: { left: 48, right: 10, top: 12, bottom: 30 },
+    });
+    window.addEventListener('resize', () => qq.resize());
+  }
+
+  // ── §5 Percentiles ──
+  const pc = echarts.init(document.getElementById('chart-percentiles'));
+  const pColors = [m.green, m.green, m.yellow, m.yellow, m.red];
+  pc.setOption({
+    textStyle: { fontFamily: F },
+    backgroundColor: 'transparent',
+    tooltip: { ...tooltipStyle, trigger: 'axis', valueFormatter: v => v.toFixed(2) + ' ms' },
+    xAxis: { type: 'category', data: DATA.percentiles.map(p => p.name), axisLabel: axisLbl, axisLine },
+    yAxis: { type: 'value', name: 'ms', nameTextStyle: axisName, axisLabel: { ...axisLbl, fontSize: 10 }, splitLine: gridLine },
+    series: [{
+      type: 'bar',
+      data: DATA.percentiles.map((p, i) => ({ value: p.value, itemStyle: { color: pColors[i] ?? m.red } })),
+      barWidth: '48%',
+      markLine: {
+        silent: true, symbol: 'none',
+        label: { fontFamily: F, fontSize: 10 },
+        data: [
+          { yAxis: 4.17, lineStyle: { color: m.purple, type: 'dotted', width: 1 } },
+          { yAxis: 8.33, lineStyle: { color: m.green, type: 'dashed', width: 1 } },
+          { yAxis: 16.67, lineStyle: { color: m.red, type: 'dashed', width: 1 } },
+        ],
+      },
+    }],
+    grid: { left: 42, right: 10, top: 12, bottom: 26 },
+  });
+
+  // ── §5 Box Plot per Page ──
+  const boxEl = document.getElementById('chart-boxplot');
+  if (boxEl && DATA.pages && DATA.pages.length > 0) {
+    const bx = echarts.init(boxEl);
+    const pageNames = DATA.pages.map(p => p.page);
+    const boxData = DATA.pages.map(p => p.boxPlot);
+    const outlierData = [];
+    DATA.pages.forEach((pg, i) => {
+      (pg.outliers || []).forEach(o => outlierData.push({ value: [i, o] }));
+    });
+    bx.setOption({
+      textStyle: { fontFamily: F },
+      backgroundColor: 'transparent',
+      tooltip: { ...tooltipStyle, trigger: 'item' },
+      xAxis: { type: 'category', data: pageNames, axisLabel: { ...axisLbl, fontSize: 10 }, axisLine },
+      yAxis: { type: 'log', name: 'ms', nameTextStyle: axisName, axisLabel: { ...axisLbl, fontSize: 10 }, splitLine: gridLine, minorSplitLine: { show: true, lineStyle: { color: '#edeae6', type: 'dashed' } } },
+      series: [
+        {
+          name: 'boxplot', type: 'boxplot', data: boxData,
+          itemStyle: { color: 'rgba(139,157,175,0.25)', borderColor: m.blue, borderWidth: 1 },
+        },
+        {
+          name: 'outliers', type: 'scatter', data: outlierData,
+          symbolSize: 4, itemStyle: { color: m.red, opacity: 0.7 },
+        },
+      ],
+      grid: { left: 48, right: 10, top: 12, bottom: 26 },
+    });
+    window.addEventListener('resize', () => bx.resize());
+  }
+
+  window.addEventListener('resize', () => { tl.resize(); hist.resize(); pc.resize(); });
+})();
+</script>
+</body>
+</html>`;
+}

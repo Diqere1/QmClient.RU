@@ -85,7 +85,9 @@ void CLineInput::SetRange(const char *pString, size_t Begin, size_t End)
 			mem_move(m_pStr + Begin + AddedCharSize, m_pStr + Begin + RemovedCharSize, m_Len - Begin - AddedCharSize);
 		}
 		else if(AddedCharSize > RemovedCharSize)
+		{
 			mem_move(m_pStr + End + AddedCharSize - RemovedCharSize, m_pStr + End, m_Len - End);
+		}
 
 		if(AddedCharSize >= RemovedCharSize)
 			mem_copy(m_pStr + Begin, pString, AddedCharSize);
@@ -319,7 +321,9 @@ bool CLineInput::ProcessInput(const IInput::CEvent &Event)
 					m_SelectionEnd = m_SelectionStart;
 			}
 			else
+			{
 				m_SelectionEnd = 0;
+			}
 			m_CursorPos = 0;
 			m_SelectionStart = 0;
 			KeyHandled = true;
@@ -332,7 +336,9 @@ bool CLineInput::ProcessInput(const IInput::CEvent &Event)
 					m_SelectionStart = m_SelectionEnd;
 			}
 			else
+			{
 				m_SelectionStart = m_Len;
+			}
 			m_CursorPos = m_Len;
 			m_SelectionEnd = m_Len;
 			KeyHandled = true;

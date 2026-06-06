@@ -50,7 +50,9 @@ void CScrollRegion::Begin(CUIRect *pClipRect, vec2 *pOutOffset, const CScrollReg
 		m_RailRect.VSplitLeft(m_Params.m_ScrollbarMargin, nullptr, &m_RailRect);
 	}
 	else
+	{
 		ScrollBarBg.Margin(m_Params.m_ScrollbarMargin, &m_RailRect);
+	}
 
 	// only show scrollbar if required
 	if(HasScrollBar)
@@ -251,6 +253,16 @@ void CScrollRegion::ScrollRelative(EScrollRelative Direction, float SpeedMultipl
 void CScrollRegion::ScrollRelativeDirect(float ScrollAmount)
 {
 	m_RequestScrollY = std::clamp(m_ScrollY + ScrollAmount, 0.0f, m_ContentH - m_ClipRect.h);
+}
+
+void CScrollRegion::SetScrollOffsetY(float OffsetY)
+{
+	m_ScrollY = maximum(0.0f, -OffsetY);
+	m_AnimInitScrollY = m_ScrollY;
+	m_AnimTargetScrollY = m_ScrollY;
+	m_AnimTime = 0.0f;
+	m_RequestScrollY = -1.0f;
+	m_ContentScrollOff.y = -m_ScrollY;
 }
 
 void CScrollRegion::DoEdgeScrolling()

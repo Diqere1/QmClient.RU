@@ -204,7 +204,7 @@ void CEmoticon::OnRender()
 		Graphics()->QuadsEnd();
 
 		CTeeRenderInfo TeeInfo = GameClient()->m_aClients[GameClient()->m_aLocalIds[g_Config.m_ClDummy]].m_RenderInfo;
-		
+
 		for(int Emote = 0; Emote < NUM_EMOTES; Emote++)
 		{
 			float Angle = 2.0f * pi * Emote / NUM_EMOTES;
@@ -224,7 +224,9 @@ void CEmoticon::OnRender()
 		Graphics()->QuadsEnd();
 	}
 	else
+	{
 		m_SelectedEyeEmote = -1;
+	}
 
 	RenderTools()->RenderCursor(ScreenCenter + m_SelectorMouse, 24.0f, 1.0f);
 }

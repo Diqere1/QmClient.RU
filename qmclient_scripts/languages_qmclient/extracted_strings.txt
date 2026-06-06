@@ -168,7 +168,7 @@ Remove from favorites
 Reset stats when joining a server
 Ring
 Rounded caps
-Run a 
+Run a
 SMTC
 Seconds
 SecretId
@@ -346,7 +346,7 @@ X 对齐颜色
 彩虹名字
 快速定位功能模块
 感谢您的陪伴与信任.正是如此,才给了我继续前行的勇气
-我 是 机 器 人 
+我 是 机 器 人
 房间
 房间密码
 所有玩家

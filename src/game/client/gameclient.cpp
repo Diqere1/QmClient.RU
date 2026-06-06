@@ -33,8 +33,12 @@
 #include "components/particles.h"
 #include "components/players.h"
 #include "components/qmclient/jelly_tee.h"
+#include "components/qmclient/modes.h"
+#include "components/qmclient/perf_logging.h"
 #include "components/race_demo.h"
 #include "components/scoreboard.h"
+#include "components/settings_resource_jobs.h"
+#include "components/settings_runtime_cache.h"
 #include "components/skins.h"
 #include "components/skins7.h"
 #include "components/sounds.h"
@@ -76,10 +80,34 @@
 
 #include <generated/client_data.h>
 #include <generated/client_data7.h>
+
+#include <cinttypes>
+
+namespace
+{
+
+	void LogSettingsLoadingPrewarmEvent(const IClient *pClient, const char *pEvent, int CompletedSteps, int MaxAttempts, int TeeWarmupEntries, int ConsecutiveNoProgressSteps, uint64_t UploadsCompleted, uint64_t LoadsCompleted)
+	{
+		if(g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0)
+			return;
+		char aPayload[256];
+		str_format(aPayload, sizeof(aPayload), "event=%s steps=%d max_attempts=%d tee_entries=%d stall_steps=%d uploads_completed=%" PRIu64 " loads_completed=%" PRIu64,
+			pEvent != nullptr ? pEvent : "startup_prewarm",
+			CompletedSteps,
+			MaxAttempts,
+			TeeWarmupEntries,
+			ConsecutiveNoProgressSteps,
+			UploadsCompleted,
+			LoadsCompleted);
+		QmPerfLogPayload("perf/settings-warmup", aPayload, pClient, "settings:tee");
+	}
+
+} // namespace
 #include <generated/protocol.h>
 #include <generated/protocol7.h>
 #include <generated/protocolglue.h>
 
+#include <game/client/components/qmclient/perf_logging.h>
 #include <game/client/projectile_data.h>
 #include <game/localization.h>
 #include <game/mapitems.h>
@@ -91,12 +119,12 @@ namespace
 
 	bool PerfDebugEnabled()
 	{
-		return g_Config.m_QmPerfDebug != 0;
+		return QmPerfEnabled();
 	}
 
 	double PerfDebugThresholdMs()
 	{
-		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
+		return QmPerfThresholdMs();
 	}
 
 #if defined(CONF_QM_LIVE_CLIENT)
@@ -112,17 +140,9 @@ namespace
 	constexpr float LIVE_OBSERVER_DIM_ALPHA = 0.10f;
 #endif
 
-	void LogPerfStage(const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
+	void LogPerfStage(const CGameClient *pGameClient, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
 	{
-		if(!PerfDebugEnabled())
-			return;
-		if(!Force && DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg("perf/gameclient", "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg("perf/gameclient", "stage=%s duration_ms=%.3f", pStage, DurationMs);
+		QmPerfLogStage("perf/gameclient", pStage, DurationMs, Force, pGameClient != nullptr ? pGameClient->Client() : nullptr, nullptr, nullptr, pExtra);
 	}
 
 	struct SConfigIntAliasSync
@@ -131,11 +151,26 @@ namespace
 		int *m_pTarget;
 	};
 
+	struct SConfigIntFanoutSync
+	{
+		int *m_pSource;
+		int *m_apTargets[8];
+		int m_NumTargets;
+	};
+
 	void ConchainConfigIntAlias(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
 	{
 		pfnCallback(pResult, pCallbackUserData);
 		const SConfigIntAliasSync *pSync = static_cast<const SConfigIntAliasSync *>(pUserData);
 		*pSync->m_pTarget = *pSync->m_pSource;
+	}
+
+	void ConchainConfigIntFanout(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
+	{
+		pfnCallback(pResult, pCallbackUserData);
+		const SConfigIntFanoutSync *pSync = static_cast<const SConfigIntFanoutSync *>(pUserData);
+		for(int i = 0; i < pSync->m_NumTargets; ++i)
+			*pSync->m_apTargets[i] = *pSync->m_pSource;
 	}
 
 	void SetDemoInputKeyState(unsigned char *pKeyStates, int Key, bool Pressed)
@@ -301,6 +336,7 @@ void CGameClient::OnConsoleInit()
 					      &m_StatusBar,
 					      &m_InfoMessages,
 					      &m_Chat,
+					      &m_QmHudNotifications,
 					      &m_Broadcast,
 					      &m_ImportantAlert,
 					      &m_DebugHud,
@@ -367,8 +403,6 @@ void CGameClient::OnConsoleInit()
 	m_QmCommandRouter.OnConsoleInit();
 
 	static SConfigIntAliasSync s_aLegacyToQmHudAliases[] = {
-		{&g_Config.m_ClScoreboardPointsLegacy, &g_Config.m_QmScoreboardPoints},
-		{&g_Config.m_ClScoreboardSortModeLegacy, &g_Config.m_QmScoreboardSortMode},
 		{&g_Config.m_ClScoreboardOnDeathLegacy, &g_Config.m_QmScoreboardOnDeath},
 		{&g_Config.m_ClDummyMiniViewLegacy, &g_Config.m_QmDummyMiniView},
 		{&g_Config.m_ClDummyMiniViewAutoLegacy, &g_Config.m_QmDummyMiniViewAuto},
@@ -378,8 +412,6 @@ void CGameClient::OnConsoleInit()
 		{&g_Config.m_ClSmtcShowHudLegacy, &g_Config.m_QmSmtcShowHud},
 	};
 	static SConfigIntAliasSync s_aQmToLegacyHudAliases[] = {
-		{&g_Config.m_QmScoreboardPoints, &g_Config.m_ClScoreboardPointsLegacy},
-		{&g_Config.m_QmScoreboardSortMode, &g_Config.m_ClScoreboardSortModeLegacy},
 		{&g_Config.m_QmScoreboardOnDeath, &g_Config.m_ClScoreboardOnDeathLegacy},
 		{&g_Config.m_QmDummyMiniView, &g_Config.m_ClDummyMiniViewLegacy},
 		{&g_Config.m_QmDummyMiniViewAuto, &g_Config.m_ClDummyMiniViewAutoLegacy},
@@ -388,26 +420,36 @@ void CGameClient::OnConsoleInit()
 		{&g_Config.m_QmSmtcEnable, &g_Config.m_ClSmtcEnableLegacy},
 		{&g_Config.m_QmSmtcShowHud, &g_Config.m_ClSmtcShowHudLegacy},
 	};
+	static SConfigIntFanoutSync s_aLegacyFocusAliases[] = {
+		{&g_Config.m_QmFocusModeHideEffectsLegacy,
+			{&g_Config.m_QmFocusModeHideJumpEffects, &g_Config.m_QmFocusModeHideKillEffects, &g_Config.m_QmFocusModeHideExplosionEffects, &g_Config.m_QmFocusModeHideFreezeEffects, &g_Config.m_QmFocusModeHideHammerEffects, &g_Config.m_QmFocusModeHideMuzzleEffects},
+			6},
+		{&g_Config.m_QmFocusModeHideUILegacy,
+			{&g_Config.m_QmFocusModeHideHud},
+			1},
+		{&g_Config.m_QmFocusModeHideOverheadIndicatorsLegacy,
+			{&g_Config.m_QmFocusModeHideDirectionIndicators, &g_Config.m_QmFocusModeHideGuideLines},
+			2},
+	};
 
 	Console()->Chain("cl_languagefile", ConchainLanguageUpdate, this);
-	Console()->Chain("cl_scoreboard_points", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[0]);
-	Console()->Chain("cl_scoreboard_sort_mode", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[1]);
-	Console()->Chain("cl_scoreboard_on_death", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[2]);
-	Console()->Chain("cl_dummy_miniview", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[3]);
-	Console()->Chain("cl_dummy_miniview_auto", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[4]);
-	Console()->Chain("cl_dummy_miniview_size", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[5]);
-	Console()->Chain("cl_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[6]);
-	Console()->Chain("cl_smtc_enable", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[7]);
-	Console()->Chain("cl_smtc_show_hud", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[8]);
-	Console()->Chain("qm_scoreboard_points", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[0]);
-	Console()->Chain("qm_scoreboard_sort_mode", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[1]);
-	Console()->Chain("qm_scoreboard_on_death", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[2]);
-	Console()->Chain("qm_dummy_miniview", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[3]);
-	Console()->Chain("qm_dummy_miniview_auto", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[4]);
-	Console()->Chain("qm_dummy_miniview_size", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[5]);
-	Console()->Chain("qm_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[6]);
-	Console()->Chain("qm_smtc_enable", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[7]);
-	Console()->Chain("qm_smtc_show_hud", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[8]);
+	Console()->Chain("cl_scoreboard_on_death", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[0]);
+	Console()->Chain("cl_dummy_miniview", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[1]);
+	Console()->Chain("cl_dummy_miniview_auto", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[2]);
+	Console()->Chain("cl_dummy_miniview_size", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[3]);
+	Console()->Chain("cl_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[4]);
+	Console()->Chain("cl_smtc_enable", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[5]);
+	Console()->Chain("cl_smtc_show_hud", ConchainConfigIntAlias, &s_aLegacyToQmHudAliases[6]);
+	Console()->Chain("qm_scoreboard_on_death", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[0]);
+	Console()->Chain("qm_dummy_miniview", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[1]);
+	Console()->Chain("qm_dummy_miniview_auto", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[2]);
+	Console()->Chain("qm_dummy_miniview_size", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[3]);
+	Console()->Chain("qm_dummy_miniview_zoom", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[4]);
+	Console()->Chain("qm_smtc_enable", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[5]);
+	Console()->Chain("qm_smtc_show_hud", ConchainConfigIntAlias, &s_aQmToLegacyHudAliases[6]);
+	Console()->Chain("qm_focus_mode_hide_effects", ConchainConfigIntFanout, &s_aLegacyFocusAliases[0]);
+	Console()->Chain("qm_focus_mode_hide_ui", ConchainConfigIntFanout, &s_aLegacyFocusAliases[1]);
+	Console()->Chain("qm_focus_mode_hide_overhead_indicators", ConchainConfigIntFanout, &s_aLegacyFocusAliases[2]);
 
 	Console()->Chain("player_name", ConchainSpecialInfoupdate, this);
 	Console()->Chain("player_clan", ConchainSpecialInfoupdate, this);
@@ -492,6 +534,18 @@ static void GenerateTimeoutCode(char *pTimeoutCode)
 	}
 }
 
+static void MigrateChatBubbleConfig()
+{
+	auto MigrateInt = [](int &NewValue, int LegacyValue, int NewDefault, int LegacyDefault) {
+		if(NewValue == NewDefault && LegacyValue != LegacyDefault)
+			NewValue = LegacyValue;
+	};
+	auto MigrateCol = [](unsigned &NewValue, unsigned LegacyValue, unsigned NewDefault, unsigned LegacyDefault) {
+		if(NewValue == NewDefault && LegacyValue != LegacyDefault)
+			NewValue = LegacyValue;
+	};
+}
+
 static void MigrateQmHudConfig()
 {
 	auto MigrateInt = [](int &NewValue, int LegacyValue, int NewDefault, int LegacyDefault) {
@@ -499,8 +553,6 @@ static void MigrateQmHudConfig()
 			NewValue = LegacyValue;
 	};
 
-	MigrateInt(g_Config.m_QmScoreboardPoints, g_Config.m_ClScoreboardPointsLegacy, CConfig::ms_QmScoreboardPoints, CConfig::ms_ClScoreboardPointsLegacy);
-	MigrateInt(g_Config.m_QmScoreboardSortMode, g_Config.m_ClScoreboardSortModeLegacy, CConfig::ms_QmScoreboardSortMode, CConfig::ms_ClScoreboardSortModeLegacy);
 	MigrateInt(g_Config.m_QmScoreboardOnDeath, g_Config.m_ClScoreboardOnDeathLegacy, CConfig::ms_QmScoreboardOnDeath, CConfig::ms_ClScoreboardOnDeathLegacy);
 	MigrateInt(g_Config.m_QmDummyMiniView, g_Config.m_ClDummyMiniViewLegacy, CConfig::ms_QmDummyMiniView, CConfig::ms_ClDummyMiniViewLegacy);
 	MigrateInt(g_Config.m_QmDummyMiniViewAuto, g_Config.m_ClDummyMiniViewAutoLegacy, CConfig::ms_QmDummyMiniViewAuto, CConfig::ms_ClDummyMiniViewAutoLegacy);
@@ -512,8 +564,6 @@ static void MigrateQmHudConfig()
 
 static void SyncQmHudLegacyAliasesFromQm()
 {
-	g_Config.m_ClScoreboardPointsLegacy = g_Config.m_QmScoreboardPoints;
-	g_Config.m_ClScoreboardSortModeLegacy = g_Config.m_QmScoreboardSortMode;
 	g_Config.m_ClScoreboardOnDeathLegacy = g_Config.m_QmScoreboardOnDeath;
 	g_Config.m_ClDummyMiniViewLegacy = g_Config.m_QmDummyMiniView;
 	g_Config.m_ClDummyMiniViewAutoLegacy = g_Config.m_QmDummyMiniViewAuto;
@@ -523,6 +573,16 @@ static void SyncQmHudLegacyAliasesFromQm()
 	g_Config.m_ClSmtcShowHudLegacy = g_Config.m_QmSmtcShowHud;
 }
 
+static void LoadQmClientLanguageOverlay(CLocalizationDatabase &Localization, const char *pLanguageFile, IStorage *pStorage, IConsole *pConsole)
+{
+	if(str_comp(pLanguageFile, "languages/simplified_chinese.txt") == 0)
+		return;
+	const char *pQmLanguageFile = pLanguageFile[0] != '\0' ? pLanguageFile : "languages/english.txt";
+	char aBuf[512];
+	str_format(aBuf, sizeof(aBuf), "qmclient/%s", pQmLanguageFile);
+	Localization.Load(aBuf, pStorage, pConsole, false);
+}
+
 void CGameClient::InitializeLanguage()
 {
 	// set the language
@@ -530,11 +590,7 @@ void CGameClient::InitializeLanguage()
 	if(g_Config.m_ClShowWelcome)
 		g_Localization.SelectDefaultLanguage(Console(), g_Config.m_ClLanguagefile, sizeof(g_Config.m_ClLanguagefile));
 	g_Localization.Load(g_Config.m_ClLanguagefile, Storage(), Console());
-
-	// TClient
-	char aBuf[512];
-	str_format(aBuf, sizeof(aBuf), "qmclient/%s", g_Config.m_ClLanguagefile);
-	g_Localization.Load(aBuf, Storage(), Console(), false);
+	LoadQmClientLanguageOverlay(g_Localization, g_Config.m_ClLanguagefile, Storage(), Console());
 }
 
 void CGameClient::ForceUpdateConsoleRemoteCompletionSuggestions()
@@ -692,6 +748,8 @@ void CGameClient::OnInit()
 	// window not being focused after starting client.
 	Graphics()->SetWindowGrab(true);
 
+	PrewarmSettingsRuntimeCachesDuringLoading(pLoadingDDNetCaption, pLoadingMessageAssets);
+
 	CChecksumData *pChecksum = Client()->ChecksumData();
 	pChecksum->m_SizeofGameClient = sizeof(*this);
 	pChecksum->m_NumComponents = m_vpAll.size();
@@ -709,8 +767,25 @@ void CGameClient::OnInit()
 	log_trace("gameclient", "initialization finished after %.2fms", (time_get() - OnInitStart) * 1000.0f / (float)time_freq());
 }
 
+void CGameClient::PrewarmSettingsRuntimeCachesDuringLoading(const char *pLoadingCaption, const char *pLoadingMessage)
+{
+	(void)pLoadingCaption;
+	(void)pLoadingMessage;
+
+	// Do not pump settings resources synchronously during startup. Runtime menu
+	// prewarm still runs with per-frame budgets once the menu is interactive.
+	return;
+}
+
 void CGameClient::OnUpdate()
 {
+	const bool TeeSettingsActive = m_Menus.IsSettingsPageActive() && g_Config.m_UiSettingsPage == CMenus::SETTINGS_TEE;
+	m_Skins.PrepareSettingsThroughputForFrame();
+	const int FrameGpuUploadLimit = TeeSettingsActive ? m_Skins.SettingsGpuUploadLimiterUnitsForFrame() : CGpuUploadLimiter::DefaultMaxUploadsPerFrame();
+	const int FrameSkinUploadBudget = TeeSettingsActive ? m_Skins.SettingsGpuUploadFrameBudgetForFrame() : -1;
+	m_GpuUploadLimiter.OnFrameStart(FrameGpuUploadLimit);
+	m_Menus.ResetSettingsFrameBudgetForFrame(TeeSettingsActive, FrameSkinUploadBudget);
+
 	HandleLanguageChanged();
 
 	CUIElementBase::Init(Ui()); // update static pointer because game and editor use separate UI
@@ -1957,7 +2032,9 @@ void CGameClient::UpdatePositions()
 				// don't use predicted
 			}
 			else
+			{
 				m_LocalCharacterPos = mix(m_PredictedPrevChar.m_Pos, m_PredictedChar.m_Pos, Client()->PredIntraGameTick(g_Config.m_ClDummy));
+			}
 		}
 		else
 		{
@@ -2024,9 +2101,6 @@ void CGameClient::OnRender()
 {
 	CPerfTimer FrameTimer;
 
-	// Reset GPU upload limiter for this frame
-	m_GpuUploadLimiter.OnFrameStart();
-
 	const ColorRGBA ClearColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClOverlayEntities ? g_Config.m_ClBackgroundEntitiesColor : g_Config.m_ClBackgroundColor));
 	Graphics()->Clear(ClearColor.r, ClearColor.g, ClearColor.b);
 
@@ -2039,7 +2113,7 @@ void CGameClient::OnRender()
 			TeamId = m_LiveObserverCurrentTeam;
 		else
 #endif
-		if(m_Snap.m_SpecInfo.m_SpectatorId >= 0)
+			if(m_Snap.m_SpecInfo.m_SpectatorId >= 0)
 			TeamId = m_Teams.Team(m_Snap.m_SpecInfo.m_SpectatorId);
 
 		if(TeamId > MAX_CLIENTS || TeamId < 0)
@@ -2056,7 +2130,7 @@ void CGameClient::OnRender()
 	{
 		CPerfTimer StageTimer;
 		UpdatePositions();
-		LogPerfStage("update_positions", StageTimer.ElapsedMs());
+		LogPerfStage(this, "update_positions", StageTimer.ElapsedMs());
 	}
 
 	// display warnings
@@ -2079,13 +2153,13 @@ void CGameClient::OnRender()
 		CPerfTimer StageTimer;
 		m_Camera.UpdateCamera();
 		UpdateSpectatorCursor();
-		LogPerfStage("camera_and_cursor", StageTimer.ElapsedMs());
+		LogPerfStage(this, "camera_and_cursor", StageTimer.ElapsedMs());
 	}
 
 	{
 		CPerfTimer StageTimer;
 		m_UiRuntimeV2.OnRender();
-		LogPerfStage("ui_runtime_v2", StageTimer.ElapsedMs());
+		LogPerfStage(this, "ui_runtime_v2", StageTimer.ElapsedMs());
 	}
 
 	// render all systems
@@ -2096,14 +2170,14 @@ void CGameClient::OnRender()
 		{
 			CPerfTimer StageTimer;
 			pComponent->OnRender();
-			LogPerfStage("component_menus", StageTimer.ElapsedMs());
+			LogPerfStage(this, "component_menus", StageTimer.ElapsedMs());
 		}
 		else
 		{
 			pComponent->OnRender();
 		}
 	}
-	LogPerfStage("components_total", ComponentsTimer.ElapsedMs());
+	LogPerfStage(this, "components_total", ComponentsTimer.ElapsedMs());
 
 #if defined(CONF_QM_LIVE_CLIENT)
 	RenderLiveObserverOverlay();
@@ -2115,7 +2189,7 @@ void CGameClient::OnRender()
 		m_QmImeManager.RenderCandidatePopup();
 		m_QmImeManager.OnFrame();
 		Input()->Clear();
-		LogPerfStage("input_clear_and_candidates", StageTimer.ElapsedMs());
+		LogPerfStage(this, "input_clear_and_candidates", StageTimer.ElapsedMs());
 	}
 
 	const bool WasNewTick = m_NewTick;
@@ -2128,7 +2202,7 @@ void CGameClient::OnRender()
 	if(g_Config.m_ClDummy && !Client()->DummyConnected())
 		g_Config.m_ClDummy = 0;
 
-	LogPerfStage("gameclient_onrender_total", FrameTimer.ElapsedMs());
+	LogPerfStage(this, "gameclient_onrender_total", FrameTimer.ElapsedMs());
 
 	// resend player and dummy info if it was filtered by server
 	if(m_aLocalIds[0] >= 0 && Client()->State() == IClient::STATE_ONLINE && !m_Menus.IsActive() && WasNewTick)
@@ -2672,7 +2746,9 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 		{
 			const int Team = pUnpacker->GetInt();
 			if(!pUnpacker->Error() && Team >= TEAM_FLOCK && Team <= TEAM_SUPER)
+			{
 				m_Teams.Team(i, Team);
+			}
 			else
 			{
 				m_Teams.Team(i, 0);
@@ -2689,6 +2765,9 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 	else if(MsgId == NETMSGTYPE_SV_KILLMSG)
 	{
 		CNetMsg_Sv_KillMsg *pMsg = (CNetMsg_Sv_KillMsg *)pRawMsg;
+		if(pMsg->m_Victim < 0 || pMsg->m_Victim >= MAX_CLIENTS)
+			return;
+
 		// reset character prediction
 		if(!(m_GameWorld.m_WorldConfig.m_IsFNG && pMsg->m_Weapon == WEAPON_LASER))
 		{
@@ -2706,7 +2785,9 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 
 			// if everyone of a team killed, we have no ids to spectate anymore, so we disable multi view
 			if(!IsMultiViewIdSet())
+			{
 				ResetMultiView();
+			}
 			else
 			{
 				// the "main" tee killed, search a new one
@@ -2940,13 +3021,10 @@ void CGameClient::HandleLanguageChanged()
 	m_LanguageChanged = false;
 
 	g_Localization.Load(g_Config.m_ClLanguagefile, Storage(), Console());
-
-	// TClient
-	char aBuf[512];
-	str_format(aBuf, sizeof(aBuf), "qmclient/%s", g_Config.m_ClLanguagefile);
-	g_Localization.Load(aBuf, Storage(), Console(), false);
+	LoadQmClientLanguageOverlay(g_Localization, g_Config.m_ClLanguagefile, Storage(), Console());
 
 	TextRender()->SetFontLanguageVariant(g_Config.m_ClLanguagefile);
+	m_Menus.InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::LANGUAGE_CHANGED);
 
 	// Clear all text containers
 	Client()->OnWindowResize();
@@ -3085,6 +3163,12 @@ void CGameClient::ProcessEvents()
 			}
 
 			if(!Config()->m_SndGame)
+				continue;
+
+			const bool FocusMode = g_Config.m_QmFocusMode != 0;
+			if(pEvent->m_SoundId == SOUND_PLAYER_JUMP && !ShouldPlayFocusJumpSound(FocusMode, g_Config.m_QmFocusModeMuteJumpSounds != 0, Config()->m_SndGame))
+				continue;
+			if(pEvent->m_SoundId == SOUND_PLAYER_DIE && !ShouldPlayFocusDeathOrSpawnSound(FocusMode, g_Config.m_QmFocusModeMuteDeathSounds != 0, Config()->m_SndGame))
 				continue;
 
 			if(m_GameInfo.m_RaceSounds && ((pEvent->m_SoundId == SOUND_GUN_FIRE && !g_Config.m_SndGun) || (pEvent->m_SoundId == SOUND_PLAYER_PAIN_LONG && !g_Config.m_SndLongPain)))
@@ -3428,7 +3512,9 @@ void CGameClient::OnNewSnapshot()
 							m_aStats[pInfo->m_ClientId].JoinGame(Client()->GameTick(g_Config.m_ClDummy));
 					}
 					else if(m_aStats[pInfo->m_ClientId].IsActive())
+					{
 						m_aStats[pInfo->m_ClientId].JoinSpec(Client()->GameTick(g_Config.m_ClDummy));
+					}
 				}
 			}
 			else if(Item.m_Type == NETOBJTYPE_DDNETPLAYER)
@@ -3603,14 +3689,18 @@ void CGameClient::OnNewSnapshot()
 						m_aFlagDropTick[TEAM_RED] = Client()->GameTick(g_Config.m_ClDummy);
 				}
 				else
+				{
 					m_aFlagDropTick[TEAM_RED] = 0;
+				}
 				if(m_Snap.m_pGameDataObj->m_FlagCarrierBlue == FLAG_TAKEN)
 				{
 					if(m_aFlagDropTick[TEAM_BLUE] == 0)
 						m_aFlagDropTick[TEAM_BLUE] = Client()->GameTick(g_Config.m_ClDummy);
 				}
 				else
+				{
 					m_aFlagDropTick[TEAM_BLUE] = 0;
+				}
 				if(m_LastFlagCarrierRed == FLAG_ATSTAND && m_Snap.m_pGameDataObj->m_FlagCarrierRed >= 0)
 					OnFlagGrab(TEAM_RED);
 				else if(m_LastFlagCarrierBlue == FLAG_ATSTAND && m_Snap.m_pGameDataObj->m_FlagCarrierBlue >= 0)
@@ -4698,16 +4788,18 @@ void CGameClient::OnPredict()
 			RealPredTick = true;
 			vec2 Pos = pLocalChar->Core()->m_Pos;
 			int Events = pLocalChar->Core()->m_TriggeredEvents;
-			if(Events & COREEVENT_AIR_JUMP)
-				m_aLastPredictedAirJumpTick[Dummy] = Tick;
 
 			if(g_Config.m_ClPredict && m_PredictedWorld.m_WorldConfig.m_PredictEvents && !m_SuppressEvents)
 				if(Events & COREEVENT_AIR_JUMP)
+				{
+					m_aLastPredictedAirJumpTick[Dummy] = Tick;
 					m_Effects.AirJump(Pos, 1.0f, 1.0f);
+				}
 			if(g_Config.m_SndGame && !m_SuppressEvents)
 			{
 				if(Events & COREEVENT_GROUND_JUMP)
-					m_Sounds.PlayAndRecord(CSounds::CHN_WORLD, SOUND_PLAYER_JUMP, 1.0f, Pos);
+					if(ShouldPlayFocusJumpSound(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeMuteJumpSounds != 0, g_Config.m_SndGame))
+						m_Sounds.PlayAndRecord(CSounds::CHN_WORLD, SOUND_PLAYER_JUMP, 1.0f, Pos);
 				if(Events & COREEVENT_HOOK_ATTACH_GROUND)
 					m_Sounds.PlayAndRecord(CSounds::CHN_WORLD, SOUND_HOOK_ATTACH_GROUND, 1.0f, Pos);
 				if(Events & COREEVENT_HOOK_HIT_NOHOOK)
@@ -4721,11 +4813,12 @@ void CGameClient::OnPredict()
 			m_aLastNewPredictedTick[!Dummy] = Tick;
 			vec2 Pos = pDummyChar->Core()->m_Pos;
 			int Events = pDummyChar->Core()->m_TriggeredEvents;
-			if(Events & COREEVENT_AIR_JUMP)
-				m_aLastPredictedAirJumpTick[!Dummy] = Tick;
 			if(g_Config.m_ClPredict && m_PredictedWorld.m_WorldConfig.m_PredictEvents && !m_SuppressEvents)
 				if(Events & COREEVENT_AIR_JUMP)
+				{
+					m_aLastPredictedAirJumpTick[!Dummy] = Tick;
 					m_Effects.AirJump(Pos, 1.0f, 1.0f);
+				}
 		}
 	}
 
@@ -4994,7 +5087,9 @@ void CGameClient::OnPredict()
 			// Detect mispredictions
 			float Confidence = 1.0f;
 			if(PredDir == vec2(0, 0))
+			{
 				Confidence = 1.0f;
+			}
 			else
 			{
 				Confidence = std::max(0.0f, dot(LastDir, PredDir));
@@ -5061,7 +5156,9 @@ void CGameClient::OnPredict()
 			}
 		}
 		else
+		{
 			m_aLastActive[i] = false;
+		}
 	}
 
 	if(g_Config.m_Debug && g_Config.m_ClPredict && FastInputTicks == 0 && m_PredictedTick == Client()->PredGameTick(g_Config.m_ClDummy))
@@ -5280,13 +5377,14 @@ namespace
 
 void CGameClient::CClientData::UpdateRenderInfo()
 {
-	m_RenderInfo = m_pSkinInfo->TeeRenderInfo();
+	const CSkinDescriptor SkinDescriptor = ToSkinDescriptor();
+	CTeeRenderInfo NewRenderInfo = m_pSkinInfo->TeeRenderInfo();
 
 	// force team colors
 	if(m_pGameClient->IsTeamPlay())
 	{
-		m_RenderInfo.m_CustomColoredSkin = true;
-		for(auto &Sixup : m_RenderInfo.m_aSixup)
+		NewRenderInfo.m_CustomColoredSkin = true;
+		for(auto &Sixup : NewRenderInfo.m_aSixup)
 		{
 			std::fill(std::begin(Sixup.m_aUseCustomColors), std::end(Sixup.m_aUseCustomColors), true);
 		}
@@ -5294,11 +5392,11 @@ void CGameClient::CClientData::UpdateRenderInfo()
 		if(m_Team >= TEAM_RED && m_Team <= TEAM_BLUE)
 		{
 			const int aTeamColors[2] = {65461, 10223541};
-			m_RenderInfo.m_ColorBody = color_cast<ColorRGBA>(ColorHSLA(aTeamColors[m_Team]));
-			m_RenderInfo.m_ColorFeet = color_cast<ColorRGBA>(ColorHSLA(aTeamColors[m_Team]));
+			NewRenderInfo.m_ColorBody = color_cast<ColorRGBA>(ColorHSLA(aTeamColors[m_Team]));
+			NewRenderInfo.m_ColorFeet = color_cast<ColorRGBA>(ColorHSLA(aTeamColors[m_Team]));
 
 			// 0.7
-			for(auto &Sixup : m_RenderInfo.m_aSixup)
+			for(auto &Sixup : NewRenderInfo.m_aSixup)
 			{
 				const ColorRGBA aTeamColorsSixup[2] = {
 					ColorRGBA(0.753f, 0.318f, 0.318f, 1.0f),
@@ -5319,9 +5417,9 @@ void CGameClient::CClientData::UpdateRenderInfo()
 		}
 		else
 		{
-			m_RenderInfo.m_ColorBody = color_cast<ColorRGBA>(ColorHSLA(12829350));
-			m_RenderInfo.m_ColorFeet = color_cast<ColorRGBA>(ColorHSLA(12829350));
-			for(auto &Sixup : m_RenderInfo.m_aSixup)
+			NewRenderInfo.m_ColorBody = color_cast<ColorRGBA>(ColorHSLA(12829350));
+			NewRenderInfo.m_ColorFeet = color_cast<ColorRGBA>(ColorHSLA(12829350));
+			for(auto &Sixup : NewRenderInfo.m_aSixup)
 			{
 				for(auto &Color : Sixup.m_aColors)
 				{
@@ -5333,28 +5431,110 @@ void CGameClient::CClientData::UpdateRenderInfo()
 
 	if(m_pGameClient->ShouldHideStreamerSkin(m_ClientId))
 	{
-		CTeeRenderInfo OriginalInfo = m_RenderInfo;
-		const float OriginalSize = m_RenderInfo.m_Size;
+		CTeeRenderInfo OriginalInfo = NewRenderInfo;
+		const float OriginalSize = NewRenderInfo.m_Size;
 		const bool KeepTeamColors = m_pGameClient->IsTeamPlay();
 
-		ApplyDefaultSkin(m_pGameClient, m_RenderInfo);
-		m_RenderInfo.m_Size = OriginalSize;
+		ApplyDefaultSkin(m_pGameClient, NewRenderInfo);
+		NewRenderInfo.m_Size = OriginalSize;
 
 		if(KeepTeamColors)
 		{
-			m_RenderInfo.m_CustomColoredSkin = true;
-			m_RenderInfo.m_ColorBody = OriginalInfo.m_ColorBody;
-			m_RenderInfo.m_ColorFeet = OriginalInfo.m_ColorFeet;
+			NewRenderInfo.m_CustomColoredSkin = true;
+			NewRenderInfo.m_ColorBody = OriginalInfo.m_ColorBody;
+			NewRenderInfo.m_ColorFeet = OriginalInfo.m_ColorFeet;
 			for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
 			{
 				for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
 				{
-					m_RenderInfo.m_aSixup[Dummy].m_aUseCustomColors[Part] = OriginalInfo.m_aSixup[Dummy].m_aUseCustomColors[Part];
-					m_RenderInfo.m_aSixup[Dummy].m_aColors[Part] = OriginalInfo.m_aSixup[Dummy].m_aColors[Part];
+					NewRenderInfo.m_aSixup[Dummy].m_aUseCustomColors[Part] = OriginalInfo.m_aSixup[Dummy].m_aUseCustomColors[Part];
+					NewRenderInfo.m_aSixup[Dummy].m_aColors[Part] = OriginalInfo.m_aSixup[Dummy].m_aColors[Part];
 				}
 			}
 		}
 	}
+
+	UpdateSkinChangeTransition(NewRenderInfo, SkinDescriptor);
+	m_RenderInfo = NewRenderInfo;
+}
+
+void CGameClient::CClientData::UpdateSkinChangeTransition(const CTeeRenderInfo &NewRenderInfo, const CSkinDescriptor &SkinDescriptor)
+{
+	CSkinTransitionKey Key;
+	Key.m_SkinDescriptor = SkinDescriptor;
+	const int LocalDummy = LocalDummyIndex();
+	Key.m_UseCustomColor = LocalDummy >= 0 ? (LocalDummy ? g_Config.m_ClDummyUseCustomColor : g_Config.m_ClPlayerUseCustomColor) : m_UseCustomColor;
+	Key.m_ColorBody = LocalDummy >= 0 ? (LocalDummy ? g_Config.m_ClDummyColorBody : g_Config.m_ClPlayerColorBody) : m_ColorBody;
+	Key.m_ColorFeet = LocalDummy >= 0 ? (LocalDummy ? g_Config.m_ClDummyColorFeet : g_Config.m_ClPlayerColorFeet) : m_ColorFeet;
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+	{
+		for(int Part = 0; Part < protocol7::NUM_SKINPARTS; ++Part)
+		{
+			if(LocalDummy >= 0)
+			{
+				Key.m_aaSixupUseCustomColors[Dummy][Part] = *CSkins7::ms_apUCCVariables[LocalDummy][Part];
+				Key.m_aaSixupSkinPartColors[Dummy][Part] = *CSkins7::ms_apColorVariables[LocalDummy][Part];
+			}
+			else
+			{
+				Key.m_aaSixupUseCustomColors[Dummy][Part] = m_aSixup[Dummy].m_aUseCustomColors[Part];
+				Key.m_aaSixupSkinPartColors[Dummy][Part] = m_aSixup[Dummy].m_aSkinPartColors[Part];
+			}
+		}
+	}
+
+	const bool IsTransitionClient = m_pGameClient != nullptr && m_pGameClient->IsLocalClientId(m_ClientId);
+	if(!IsTransitionClient)
+	{
+		m_LastSkinTransitionKey = Key;
+		m_HasSkinTransitionKey = true;
+		m_SkinTransitionPreviousRenderInfo.Reset();
+		m_SkinTransitionStart.reset();
+		return;
+	}
+
+	if(g_Config.m_QmSkinChangeTransitionMs <= 0)
+	{
+		m_LastSkinTransitionKey = Key;
+		m_HasSkinTransitionKey = true;
+		m_SkinTransitionPreviousRenderInfo.Reset();
+		m_SkinTransitionStart.reset();
+		return;
+	}
+
+	if(m_HasSkinTransitionKey && !(m_LastSkinTransitionKey == Key) && m_RenderInfo.Valid() && NewRenderInfo.Valid())
+	{
+		const std::chrono::nanoseconds Now = time_get_nanoseconds();
+		const bool TransitionActive = m_SkinTransitionStart.has_value() &&
+					      m_SkinTransitionPreviousRenderInfo.Valid() &&
+					      SkinChangeTransitionProgress(Now) < 1.0f;
+		m_SkinTransitionPreviousRenderInfo = TransitionActive ? m_SkinTransitionPreviousRenderInfo : m_RenderInfo;
+		m_SkinTransitionStart = Now;
+	}
+
+	m_LastSkinTransitionKey = Key;
+	m_HasSkinTransitionKey = true;
+}
+
+float CGameClient::CClientData::SkinChangeTransitionProgress(std::chrono::nanoseconds Now) const
+{
+	if(!m_SkinTransitionStart.has_value())
+	{
+		return 1.0f;
+	}
+
+	const float ElapsedSeconds = std::chrono::duration<float>(Now - m_SkinTransitionStart.value()).count();
+	return ResolveSkinChangeTransitionProgress(ElapsedSeconds, g_Config.m_QmSkinChangeTransitionMs);
+}
+
+const CTeeRenderInfo *CGameClient::CClientData::SkinChangePreviousRenderInfo(std::chrono::nanoseconds Now) const
+{
+	if(g_Config.m_QmSkinChangeTransitionMs <= 0 || !m_SkinTransitionStart.has_value() || SkinChangeTransitionProgress(Now) >= 1.0f || !m_SkinTransitionPreviousRenderInfo.Valid())
+	{
+		return nullptr;
+	}
+
+	return &m_SkinTransitionPreviousRenderInfo;
 }
 
 void CGameClient::CClientData::Reset()
@@ -5407,6 +5587,9 @@ void CGameClient::CClientData::Reset()
 		m_pSkinInfo = nullptr;
 	}
 	m_RenderInfo.Reset();
+	m_SkinTransitionPreviousRenderInfo.Reset();
+	m_SkinTransitionStart.reset();
+	m_HasSkinTransitionKey = false;
 
 	m_Angle = 0.0f;
 	m_Active = false;
@@ -5455,7 +5638,11 @@ CSkinDescriptor CGameClient::CClientData::ToSkinDescriptor() const
 {
 	CSkinDescriptor SkinDescriptor;
 
-	CTranslationContext::CClientData &TranslatedClient = m_pGameClient->m_pClient->m_TranslationContext.m_aClients[ClientId()];
+	const int ClientId = this->ClientId();
+	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
+		return SkinDescriptor;
+
+	CTranslationContext::CClientData &TranslatedClient = m_pGameClient->m_pClient->m_TranslationContext.m_aClients[ClientId];
 	const int LocalDummy = LocalDummyIndex();
 	if(LocalDummy >= 0)
 	{
@@ -5598,11 +5785,11 @@ bool CGameClient::GotWantedSkin7(bool Dummy)
 
 	for(int SkinPart = 0; SkinPart < protocol7::NUM_SKINPARTS; SkinPart++)
 	{
-		if(str_comp(m_aClients[m_aLocalIds[(int)Dummy]].m_aSixup[g_Config.m_ClDummy].m_aaSkinPartNames[SkinPart], apSkinPartsPtr[SkinPart]))
+		if(str_comp(m_aClients[m_aLocalIds[(int)Dummy]].m_aSixup[(int)Dummy].m_aaSkinPartNames[SkinPart], apSkinPartsPtr[SkinPart]))
 			return false;
-		if(m_aClients[m_aLocalIds[(int)Dummy]].m_aSixup[g_Config.m_ClDummy].m_aUseCustomColors[SkinPart] != aUCCVars[SkinPart])
+		if(m_aClients[m_aLocalIds[(int)Dummy]].m_aSixup[(int)Dummy].m_aUseCustomColors[SkinPart] != aUCCVars[SkinPart])
 			return false;
-		if(m_aClients[m_aLocalIds[(int)Dummy]].m_aSixup[g_Config.m_ClDummy].m_aSkinPartColors[SkinPart] != aColorVars[SkinPart])
+		if(m_aClients[m_aLocalIds[(int)Dummy]].m_aSixup[(int)Dummy].m_aSkinPartColors[SkinPart] != aColorVars[SkinPart])
 			return false;
 	}
 
@@ -6124,6 +6311,7 @@ void CGameClient::UpdateSpectatorCursor()
 	{
 		// interpolate cursor positions
 		const double Tick = Client()->GameTick(g_Config.m_ClDummy);
+		m_CursorInfo.m_NumSamples = std::clamp(m_CursorInfo.m_NumSamples, 0, CCursorInfo::CURSOR_SAMPLES);
 
 		const bool HasSample = m_CursorInfo.m_NumSamples > 0;
 		const vec2 LastInput = HasSample ? m_CursorInfo.m_aTargetSamplesData[m_CursorInfo.m_NumSamples - 1] : vec2(0.0f, 0.0f);
@@ -6141,9 +6329,11 @@ void CGameClient::UpdateSpectatorCursor()
 		{
 			m_CursorInfo.m_aTargetSamplesTime[0] = Tick - CCursorInfo::INTERP_DELAY;
 			m_CursorInfo.m_aTargetSamplesData[0] = Target;
+			m_CursorInfo.m_NumSamples = 1;
 		}
 
-		if(NewSample)
+		if(NewSample && (m_CursorInfo.m_aTargetSamplesTime[m_CursorInfo.m_NumSamples - 1] != Tick ||
+					m_CursorInfo.m_aTargetSamplesData[m_CursorInfo.m_NumSamples - 1] != Target))
 		{
 			if(m_CursorInfo.m_NumSamples == CCursorInfo::CURSOR_SAMPLES)
 			{
@@ -6250,7 +6440,9 @@ void CGameClient::UpdateRenderedCharacters()
 					Pos = GetFastInputPos(i);
 			}
 			else if(g_Config.m_TcRemoveAnti)
+			{
 				Pos = GetFreezePos(i);
+			}
 			else if(m_TClient.IsFastInputActive() && (i == m_Snap.m_LocalClientId || (PredictDummy() && i == m_aLocalIds[!g_Config.m_ClDummy])))
 			{
 				Pos = GetFastInputPos(i);
@@ -6542,9 +6734,13 @@ bool CGameClient::IsOtherTeam(int ClientId) const
 	bool Local = m_Snap.m_LocalClientId == ClientId;
 
 	if(m_Snap.m_LocalClientId < 0)
+	{
 		return false;
+	}
 	else if((m_Snap.m_SpecInfo.m_Active && m_Snap.m_SpecInfo.m_SpectatorId == SPEC_FREEVIEW) || ClientId < 0)
+	{
 		return false;
+	}
 	else if(m_Snap.m_SpecInfo.m_Active && m_Snap.m_SpecInfo.m_SpectatorId != SPEC_FREEVIEW)
 	{
 		if(m_Teams.Team(ClientId) == TEAM_SUPER || m_Teams.Team(m_Snap.m_SpecInfo.m_SpectatorId) == TEAM_SUPER)
@@ -6552,7 +6748,9 @@ bool CGameClient::IsOtherTeam(int ClientId) const
 		return m_Teams.Team(ClientId) != m_Teams.Team(m_Snap.m_SpecInfo.m_SpectatorId);
 	}
 	else if((m_aClients[m_Snap.m_LocalClientId].m_Solo || m_aClients[ClientId].m_Solo) && !Local)
+	{
 		return true;
+	}
 
 	if(m_Teams.Team(ClientId) == TEAM_SUPER || m_Teams.Team(m_Snap.m_LocalClientId) == TEAM_SUPER)
 		return false;
@@ -7448,7 +7646,9 @@ void CGameClient::ConchainMenuMap(IConsole::IResult *pResult, void *pUserData, I
 		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CGameClient::DummyResetInput()

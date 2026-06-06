@@ -1,4 +1,5 @@
 #include "menu_background.h"
+
 #include "theme_scan.h"
 
 #include <base/lock.h>
@@ -27,20 +28,20 @@ using namespace std::chrono_literals;
 
 namespace
 {
-constexpr int MAX_THEME_ICON_DIMENSION = 512;
+	constexpr int MAX_THEME_ICON_DIMENSION = 512;
 
-void ResizeThemeIconIfNeeded(CImageInfo &Image)
-{
-	if(Image.m_Width <= MAX_THEME_ICON_DIMENSION && Image.m_Height <= MAX_THEME_ICON_DIMENSION)
-		return;
+	void ResizeThemeIconIfNeeded(CImageInfo &Image)
+	{
+		if(Image.m_Width <= MAX_THEME_ICON_DIMENSION && Image.m_Height <= MAX_THEME_ICON_DIMENSION)
+			return;
 
-	const double Scale = minimum(
-		(double)MAX_THEME_ICON_DIMENSION / (double)Image.m_Width,
-		(double)MAX_THEME_ICON_DIMENSION / (double)Image.m_Height);
-	const int NewWidth = maximum(1, (int)std::floor((double)Image.m_Width * Scale));
-	const int NewHeight = maximum(1, (int)std::floor((double)Image.m_Height * Scale));
-	ResizeImage(Image, NewWidth, NewHeight);
-}
+		const double Scale = minimum(
+			(double)MAX_THEME_ICON_DIMENSION / (double)Image.m_Width,
+			(double)MAX_THEME_ICON_DIMENSION / (double)Image.m_Height);
+		const int NewWidth = maximum(1, (int)std::floor((double)Image.m_Width * Scale));
+		const int NewHeight = maximum(1, (int)std::floor((double)Image.m_Height * Scale));
+		ResizeImage(Image, NewWidth, NewHeight);
+	}
 }
 
 class CMenuBackground::CThemeListLoadJob : public IJob
@@ -60,6 +61,7 @@ private:
 	std::vector<SThemeEntry> m_vEntries;
 	bool m_Completed = false;
 
+protected:
 	static int ScanCallback(const char *pName, int IsDir, int DirType, void *pUser)
 	{
 		(void)DirType;
@@ -130,6 +132,7 @@ private:
 	SResult m_Result;
 	bool m_Completed = false;
 
+protected:
 	void Run() override REQUIRES(!m_Lock)
 	{
 		void *pFileData = nullptr;

@@ -1,7 +1,7 @@
 Requirements:
 - clang
 - clangd
-- clang-format-20, needs to be in PATH
+- clang-format (version 20 or newer), needs to be in PATH
 - clang-tidy
 - lldb
 - cmake

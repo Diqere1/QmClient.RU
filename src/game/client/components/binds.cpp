@@ -16,6 +16,7 @@
 
 static constexpr LOG_COLOR BIND_PRINT_COLOR{255, 255, 204};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 enum EDeepflyMode
 {
 	DEEPFLY_MODE_NONE = -1,
@@ -144,9 +145,9 @@ static bool IsIndirectDeepflyScriptCommand(const char *pCommand)
 	// The HUD mode is refreshed again when those nested bind commands run, so
 	// the wrapper script itself should not count as a deepfly custom bind.
 	return str_startswith_nocase(pCommand, "bind ") != nullptr ||
-		str_startswith_nocase(pCommand, "unbind ") != nullptr ||
-		str_comp_nocase(pCommand, "unbindall") == 0 ||
-		str_startswith_nocase(pCommand, "exec ") != nullptr;
+	       str_startswith_nocase(pCommand, "unbind ") != nullptr ||
+	       str_comp_nocase(pCommand, "unbindall") == 0 ||
+	       str_startswith_nocase(pCommand, "exec ") != nullptr;
 }
 
 static int DetectDeepflyModeFromBindCommand(const char *pCommand)
@@ -186,6 +187,16 @@ static bool ShouldAppendGoresPrevWeapon(const CGameClient *pGameClient)
 	return pGameClient != nullptr && pGameClient->m_TClient.ShouldAppendGoresPrevWeapon();
 }
 
+static bool IsExactDebugGraphToggleCommand(const char *pCommand)
+{
+	if(!pCommand || pCommand[0] == '\0')
+		return false;
+
+	char aNormalized[1024];
+	NormalizeBindCommand(pCommand, aNormalized, sizeof(aNormalized));
+	return str_comp_nocase(aNormalized, "toggle dbg_graphs 0 1") == 0;
+}
+
 static void ExecuteBindCommand(IConsole *pConsole, const char *pBind, const CGameClient *pGameClient, int Stroke)
 {
 	if(!pBind)
@@ -210,6 +221,19 @@ bool CBinds::CBindsSpecial::OnInput(const IInput::CEvent &Event)
 	// do not handle F5 bind while menu is active
 	if(((Event.m_Key >= KEY_F1 && Event.m_Key <= KEY_F12) || (Event.m_Key >= KEY_F13 && Event.m_Key <= KEY_F24)) &&
 		(Event.m_Key != KEY_F5 || !GameClient()->m_Menus.IsActive()))
+	{
+		return m_pBinds->OnInput(Event);
+	}
+
+	const int KeyModifierMask = GetModifierMaskOfKey(Event.m_Key);
+	const int ModifierMask = GetModifierMask(Input()) & ~KeyModifierMask;
+	const auto HasGlobalDebugGraphBind = [&](int Mask) {
+		return IsExactDebugGraphToggleCommand(m_pBinds->Get(Event.m_Key, Mask));
+	};
+	if(HasGlobalDebugGraphBind(ModifierMask) ||
+		(ModifierMask != ((1 << KeyModifier::CTRL) | (1 << KeyModifier::SHIFT)) &&
+			ModifierMask != ((1 << KeyModifier::GUI) | (1 << KeyModifier::SHIFT)) &&
+			HasGlobalDebugGraphBind(KeyModifier::NONE)))
 	{
 		return m_pBinds->OnInput(Event);
 	}
@@ -313,6 +337,26 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 
 	if(Event.m_Flags & IInput::FLAG_PRESS)
 	{
+		if(KeyModifierMask != KeyModifier::NONE)
+		{
+			while(true)
+			{
+				auto ActiveModifierBind = std::find_if(m_vActiveBinds.begin(), m_vActiveBinds.end(), [&](const CBindSlot &Bind) {
+					return ShouldReleaseUnmodifiedModifierBindOnModifierPress(Bind, KeyModifierMask);
+				});
+				if(ActiveModifierBind == m_vActiveBinds.end())
+					break;
+
+				// The release command can unbind itself, so resolve it before erasing the active slot.
+				const char *pBind = m_aapKeyBindings[ActiveModifierBind->m_ModifierMask][ActiveModifierBind->m_Key];
+				if(pBind)
+				{
+					ExecuteBindCommand(Console(), pBind, GameClient(), 0);
+				}
+				m_vActiveBinds.erase(ActiveModifierBind);
+			}
+		}
+
 		auto ActiveBind = std::find_if(m_vActiveBinds.begin(), m_vActiveBinds.end(), [&](const CBindSlot &Bind) {
 			return Event.m_Key == Bind.m_Key;
 		});
@@ -337,8 +381,7 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 				Handled = true;
 			}
 			else if(m_aapKeyBindings[KeyModifier::NONE][Event.m_Key] &&
-				ModifierMask != ((1 << KeyModifier::CTRL) | (1 << KeyModifier::SHIFT)) &&
-				ModifierMask != ((1 << KeyModifier::GUI) | (1 << KeyModifier::SHIFT)))
+				AllowsUnmodifiedFallback(Event.m_Key, ModifierMask))
 			{
 				OnKeyPress(KeyModifier::NONE);
 				Handled = true;
@@ -549,6 +592,8 @@ void CBinds::SetDefaults()
 
 	Bind(KEY_F3, "vote yes");
 	Bind(KEY_F4, "vote no");
+	Bind(KEY_G, "toggle dbg_graphs 0 1", false, (1 << KeyModifier::CTRL) | (1 << KeyModifier::SHIFT));
+	Bind(KEY_G, "toggle dbg_graphs 0 1", false, (1 << KeyModifier::GUI) | (1 << KeyModifier::SHIFT));
 
 	Bind(KEY_K, "kill");
 	Bind(KEY_Q, "say /spec");
@@ -605,7 +650,9 @@ void CBinds::ConBinds(IConsole::IResult *pResult, void *pUserData)
 		else
 		{
 			if(!pBinds->m_aapKeyBindings[BindSlot.m_ModifierMask][BindSlot.m_Key])
+			{
 				log_info_color(BIND_PRINT_COLOR, "binds", "%s is not bound", pKeyName);
+			}
 			else
 			{
 				char *pBuf = pBinds->GetKeyBindCommand(BindSlot.m_ModifierMask, BindSlot.m_Key);

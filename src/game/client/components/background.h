@@ -8,6 +8,7 @@
 
 #include <game/client/components/maplayers.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -17,14 +18,20 @@
 #include <vector>
 
 #if defined(CONF_VIDEORECORDER)
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVFormatContext;
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVCodecContext;
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVIOContext;
 struct SwsContext;
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVFrame;
+// NOLINTNEXTLINE(readability-identifier-naming)
 struct AVPacket;
 #endif
 #if defined(CONF_FAMILY_WINDOWS) && defined(CONF_VIDEORECORDER)
+// NOLINTNEXTLINE(cppcoreguidelines-virtual-class-destructor)
 struct IMFSourceReader;
 #endif
 
@@ -64,12 +71,9 @@ inline bool IsBackgroundImageExtension(const char *pName)
 {
 	if(pName == nullptr)
 		return false;
-	for(const char *pExtension : BACKGROUND_IMAGE_EXTENSIONS)
-	{
-		if(str_endswith_nocase(pName, pExtension))
-			return true;
-	}
-	return false;
+	return std::any_of(BACKGROUND_IMAGE_EXTENSIONS.begin(), BACKGROUND_IMAGE_EXTENSIONS.end(), [pName](const char *pExtension) {
+		return str_endswith_nocase(pName, pExtension);
+	});
 }
 
 inline const char *FindBackgroundFileExtension(const char *pName)
@@ -95,12 +99,9 @@ inline bool IsBackgroundVideoExtension(const char *pName)
 {
 	if(pName == nullptr)
 		return false;
-	for(const char *pExtension : BACKGROUND_VIDEO_EXTENSIONS)
-	{
-		if(str_endswith_nocase(pName, pExtension))
-			return true;
-	}
-	return false;
+	return std::any_of(BACKGROUND_VIDEO_EXTENSIONS.begin(), BACKGROUND_VIDEO_EXTENSIONS.end(), [pName](const char *pExtension) {
+		return str_endswith_nocase(pName, pExtension);
+	});
 }
 
 inline void NormalizeBackgroundEntitiesValue(const char *pValue, char *pOut, int OutSize)
@@ -322,6 +323,8 @@ public:
 	void OnShutdown() override;
 	void OnMapLoad() override;
 	void OnRender() override;
+	// 返回是否已渲染背景，调用方需要区别于 CMapLayers::RenderCustom() 的 void 接口。
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	bool RenderCustom(const vec2 &Center, float Zoom);
 
 	void LoadBackground();

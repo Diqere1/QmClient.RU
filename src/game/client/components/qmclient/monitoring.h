@@ -11,6 +11,11 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <cstdint>
+#include <functional>
+#include <mutex>
+#include <thread>
 
 enum class EQmConnectionGrade
 {
@@ -32,6 +37,16 @@ enum class EQmDiagnosticCause
 
 struct SQmNetworkMetrics
 {
+	struct STrafficStats
+	{
+		uint64_t m_Packets = 0;
+		uint64_t m_PayloadBytes = 0;
+		uint64_t m_OverheadBytes = 0;
+		uint64_t m_TotalBytes = 0;
+		uint64_t m_AveragePayloadBytes = 0;
+		float m_RateKibPerSec = 0.0f;
+	};
+
 	float m_SnapshotLatencyMs = 0.0f;
 	float m_PredictionLatencyMs = 0.0f;
 	float m_PredictionMarginMs = 0.0f;
@@ -42,20 +57,98 @@ struct SQmNetworkMetrics
 	float m_ServerRollbackRatePct = 0.0f;
 	float m_DownBytesPerSec = 0.0f;
 	float m_UpBytesPerSec = 0.0f;
+	STrafficStats m_Send;
+	STrafficStats m_Recv;
 	bool m_ConnectionProblems = false;
 	bool m_Connected = false;
 };
 
 struct SQmPerformanceMetrics
 {
+	struct SGraphicsMemoryStats
+	{
+		uint64_t m_TextureKiB = 0;
+		uint64_t m_BufferKiB = 0;
+		uint64_t m_StreamedKiB = 0;
+		uint64_t m_StagingKiB = 0;
+	};
+
 	float m_Fps = 0.0f;
 	float m_FrameTimeMs = 0.0f;
 	float m_FrameTimeSpikeMs = 0.0f;
+	float m_FrameTimeUs = 0.0f;
 	float m_CpuUsagePct = -1.0f;
+	float m_TotalCpuUsagePct = -1.0f;
 	float m_MemoryUsageMb = -1.0f;
+	float m_GpuUtilPct = -1.0f;
+	float m_GpuDedicatedVramMb = -1.0f;
+	float m_GpuDedicatedVramBudgetMb = -1.0f;
+	float m_GpuSharedVramMb = -1.0f;
+	float m_DiskReadMbPerSec = -1.0f;
 	float m_PredictionTimeMs = 0.0f;
 	float m_PredictionStress = 0.0f;
+	int m_GameTick = 0;
+	int m_PredictedTick = 0;
+	bool m_DeviceSampleAvailable = false;
+	SGraphicsMemoryStats m_GraphicsMemory;
 };
+
+struct SQmDevicePerfSample
+{
+	float m_GpuUtilPct = -1.0f;
+	float m_GpuDedicatedVramMb = -1.0f;
+	float m_GpuDedicatedVramBudgetMb = -1.0f;
+	float m_GpuSharedVramMb = -1.0f;
+	float m_DiskReadMbPerSec = -1.0f;
+	bool m_Available = false;
+};
+
+struct SQmDevicePerfSnapshot
+{
+	SQmDevicePerfSample m_Sample;
+	uint64_t m_Version = 0;
+};
+
+class CQmDevicePerfSnapshotCache
+{
+public:
+	SQmDevicePerfSnapshot Publish(const SQmDevicePerfSample &Sample);
+	void Reset();
+	SQmDevicePerfSnapshot Snapshot() const;
+
+private:
+	mutable std::mutex m_Mutex;
+	SQmDevicePerfSnapshot m_Snapshot;
+};
+
+class CQmAsyncDevicePerfSampler
+{
+public:
+	using FSampleOverride = std::function<SQmDevicePerfSample()>;
+
+	explicit CQmAsyncDevicePerfSampler(FSampleOverride SampleOverride = {}, std::chrono::milliseconds PollInterval = std::chrono::milliseconds(100));
+	~CQmAsyncDevicePerfSampler();
+
+	void EnsureStarted();
+	void SetEnabled(bool Enabled);
+	void Stop();
+	SQmDevicePerfSnapshot Snapshot() const;
+
+private:
+	void Run();
+
+	FSampleOverride m_SampleOverride;
+	std::chrono::milliseconds m_PollInterval;
+	CQmDevicePerfSnapshotCache m_Cache;
+	std::thread m_Thread;
+	mutable std::mutex m_StateMutex;
+	std::condition_variable m_StateCv;
+	bool m_Started = false;
+	bool m_Enabled = false;
+	bool m_StopRequested = false;
+};
+
+void QmUpdateDevicePerfSamplerState(CQmAsyncDevicePerfSampler &Sampler, bool Enabled);
 
 struct SQmDiagnosticVerdict
 {
@@ -83,7 +176,7 @@ struct SQmMonitoringBodyLayout
 	float m_MainGraphHeight = 0.0f;
 	float m_FpsGraphHeight = 0.0f;
 	float m_PrimaryCardsHeight = 0.0f;
-	float m_SecondaryCardsHeight = 0.0f;
+	float m_MetricsExtraHeight = 0.0f;
 };
 
 struct SQmHistoryStats
@@ -95,13 +188,13 @@ struct SQmHistoryStats
 	bool m_HasData = false;
 };
 
-inline constexpr float QM_MONITORING_PANEL_PADDING = 14.0f;
-inline constexpr float QM_MONITORING_HEADER_HEIGHT = 60.0f;
-inline constexpr float QM_MONITORING_SECTION_GAP = 10.0f;
-inline constexpr float QM_MONITORING_MAIN_GRAPH_HEIGHT = 330.0f;
-inline constexpr float QM_MONITORING_FPS_GRAPH_HEIGHT = 220.0f;
-inline constexpr float QM_MONITORING_PRIMARY_CARDS_HEIGHT = 150.0f;
-inline constexpr float QM_MONITORING_SECONDARY_CARDS_HEIGHT = 140.0f;
+inline constexpr float QM_MONITORING_PANEL_PADDING = 12.0f;
+inline constexpr float QM_MONITORING_HEADER_HEIGHT = 56.0f;
+inline constexpr float QM_MONITORING_SECTION_GAP = 8.0f;
+inline constexpr float QM_MONITORING_MAIN_GRAPH_HEIGHT = 280.0f;
+inline constexpr float QM_MONITORING_FPS_GRAPH_HEIGHT = 180.0f;
+inline constexpr float QM_MONITORING_PRIMARY_CARDS_HEIGHT = 112.0f;
+inline constexpr float QM_MONITORING_SECONDARY_CARDS_HEIGHT = 96.0f;
 inline constexpr int QM_MONITORING_HISTORY_CAPACITY = 180;
 
 inline float QmComputeMonitoringUiScale(float ScreenWidth, float ScreenHeight)
@@ -117,9 +210,77 @@ inline float QmComputeRateKibPerSec(float BytesPerSec)
 	return BytesPerSec <= 0.0f ? 0.0f : BytesPerSec / 1024.0f;
 }
 
+inline float QmComputeMonitoringPanelOpacity(int OpacityPercent)
+{
+	return std::clamp(OpacityPercent / 100.0f, 0.0f, 1.0f);
+}
+
+inline float QmNormalizeProcessCpuUsagePct(float RawCpuUsagePct, unsigned CpuCount)
+{
+	if(RawCpuUsagePct < 0.0f)
+		return -1.0f;
+	if(CpuCount == 0)
+		return std::clamp(RawCpuUsagePct, 0.0f, 100.0f);
+	return std::clamp(RawCpuUsagePct / (float)CpuCount, 0.0f, 100.0f);
+}
+
+inline float QmComputeTotalCpuUsagePct(uint64_t PrevIdle, uint64_t PrevTotal, uint64_t CurrentIdle, uint64_t CurrentTotal)
+{
+	if(PrevTotal == 0 || CurrentTotal <= PrevTotal || CurrentIdle < PrevIdle)
+		return -1.0f;
+
+	const uint64_t TotalDelta = CurrentTotal - PrevTotal;
+	const uint64_t IdleDelta = CurrentIdle - PrevIdle;
+	if(TotalDelta == 0)
+		return -1.0f;
+	return std::clamp((float)(TotalDelta - std::min(IdleDelta, TotalDelta)) * 100.0f / (float)TotalDelta, 0.0f, 100.0f);
+}
+
 inline float QmComputeRollbackMs(float GameTimeMarginMs)
 {
 	return GameTimeMarginMs < 0.0f ? -GameTimeMarginMs : 0.0f;
+}
+
+inline float QmComputeDiskReadMbPerSec(uint64_t PrevReadBytes, uint64_t PrevTickNs, uint64_t CurrentReadBytes, uint64_t CurrentTickNs)
+{
+	if(PrevTickNs == 0 || CurrentTickNs <= PrevTickNs || CurrentReadBytes < PrevReadBytes)
+		return -1.0f;
+
+	const uint64_t DeltaNs = CurrentTickNs - PrevTickNs;
+	if(DeltaNs == 0)
+		return -1.0f;
+
+	const double DeltaBytes = (double)(CurrentReadBytes - PrevReadBytes);
+	const double DeltaSeconds = (double)DeltaNs / 1000000000.0;
+	return DeltaSeconds > 0.0 ? (float)(DeltaBytes / (1024.0 * 1024.0) / DeltaSeconds) : -1.0f;
+}
+
+inline SQmNetworkMetrics::STrafficStats QmComputeTrafficStats(const NETSTATS &Prev, const NETSTATS &Current)
+{
+	SQmNetworkMetrics::STrafficStats Stats;
+	constexpr uint64_t OverheadSize = 14 + 20 + 8;
+
+	if(Current.sent_packets < Prev.sent_packets || Current.sent_bytes < Prev.sent_bytes)
+		return Stats;
+
+	Stats.m_Packets = Current.sent_packets - Prev.sent_packets;
+	Stats.m_PayloadBytes = Current.sent_bytes - Prev.sent_bytes;
+	Stats.m_OverheadBytes = Stats.m_Packets * OverheadSize;
+	Stats.m_TotalBytes = Stats.m_PayloadBytes + Stats.m_OverheadBytes;
+	Stats.m_AveragePayloadBytes = Stats.m_Packets == 0 ? 0 : Stats.m_PayloadBytes / Stats.m_Packets;
+	Stats.m_RateKibPerSec = (float)Stats.m_TotalBytes * 8.0f / 1024.0f;
+	return Stats;
+}
+
+inline SQmNetworkMetrics::STrafficStats QmComputeTrafficStats(uint64_t PrevPackets, uint64_t PrevBytes, uint64_t CurrentPackets, uint64_t CurrentBytes)
+{
+	NETSTATS Prev = {};
+	Prev.sent_packets = PrevPackets;
+	Prev.sent_bytes = PrevBytes;
+	NETSTATS Current = {};
+	Current.sent_packets = CurrentPackets;
+	Current.sent_bytes = CurrentBytes;
+	return QmComputeTrafficStats(Prev, Current);
 }
 
 inline void FormatMetricValue(char *pBuf, int BufSize, const char *pUnit, float Value, int Precision = 0)
@@ -145,9 +306,24 @@ inline void FormatRateValue(char *pBuf, int BufSize, float BytesPerSec)
 
 	const float KibPerSec = QmComputeRateKibPerSec(BytesPerSec);
 	if(KibPerSec >= 1024.0f)
-		str_format(pBuf, BufSize, "%.2fMiB/s", KibPerSec / 1024.0f);
+		str_format(pBuf, BufSize, "%.1fMiB/s", KibPerSec / 1024.0f);
 	else
 		str_format(pBuf, BufSize, "%.1fKiB/s", KibPerSec);
+}
+
+inline void FormatCpuRatioValue(char *pBuf, int BufSize, float ProcessCpuPct, float TotalCpuPct)
+{
+	if(ProcessCpuPct < 0.0f)
+	{
+		str_copy(pBuf, "--", BufSize);
+		return;
+	}
+	if(TotalCpuPct < 0.0f)
+	{
+		str_format(pBuf, BufSize, "%.0f%%", ProcessCpuPct);
+		return;
+	}
+	str_format(pBuf, BufSize, "%.0f%%/%.0f%%", ProcessCpuPct, TotalCpuPct);
 }
 
 template<size_t N>
@@ -271,11 +447,19 @@ inline SQmMonitoringHudLayout QmComputeMonitoringHudLayout(float ScreenWidth, fl
 	const float Padding = std::round(QM_MONITORING_PANEL_PADDING * UiScale);
 
 	float PanelW = std::round(ScreenWidth * 0.48f);
-	float PanelH = std::round(ScreenHeight * 0.78f);
+	float PanelH = std::round(ScreenHeight * 0.66f);
 	PanelW = std::max(PanelW, 760.0f * UiScale);
-	PanelH = std::max(PanelH, 760.0f * UiScale);
+	PanelH = std::max(PanelH, 650.0f * UiScale);
 	PanelW = std::min(PanelW, 1040.0f * UiScale);
-	PanelH = std::min(PanelH, 1220.0f * UiScale);
+	PanelH = std::min(PanelH, 1000.0f * UiScale);
+	const float PreferredContentHeight = (QM_MONITORING_HEADER_HEIGHT +
+						 QM_MONITORING_SECTION_GAP * 4.0f +
+						 QM_MONITORING_MAIN_GRAPH_HEIGHT +
+						 QM_MONITORING_FPS_GRAPH_HEIGHT +
+						 QM_MONITORING_PRIMARY_CARDS_HEIGHT +
+						 QM_MONITORING_SECONDARY_CARDS_HEIGHT) *
+						UiScale;
+	PanelH = std::min(PanelH, std::round(PreferredContentHeight + Padding * 2.0f));
 	PanelW = std::min(PanelW, ScreenWidth);
 	PanelH = std::min(PanelH, ScreenHeight);
 
@@ -300,19 +484,19 @@ inline SQmMonitoringBodyLayout QmComputeMonitoringBodyLayout(float ContentHeight
 	const float MainGraphHeight = QM_MONITORING_MAIN_GRAPH_HEIGHT * UiScale;
 	const float FpsGraphHeight = QM_MONITORING_FPS_GRAPH_HEIGHT * UiScale;
 	const float PrimaryCardsHeight = QM_MONITORING_PRIMARY_CARDS_HEIGHT * UiScale;
-	const float SecondaryCardsHeight = QM_MONITORING_SECONDARY_CARDS_HEIGHT * UiScale;
-	const float MainGraphMinHeight = 235.0f * UiScale;
-	const float FpsGraphMinHeight = 150.0f * UiScale;
+	const float MetricsExtraHeight = QM_MONITORING_SECONDARY_CARDS_HEIGHT * UiScale;
+	const float MainGraphMinHeight = 190.0f * UiScale;
+	const float FpsGraphMinHeight = 120.0f * UiScale;
 	const float AvailableBodyHeight = std::max(ContentHeight - HeaderHeight - SectionGap * 4.0f, 0.0f);
 	if(AvailableBodyHeight <= 0.0f)
 		return Layout;
 
 	const float PreferredGraphTotal = MainGraphHeight + FpsGraphHeight;
 	const float MinimumGraphTotal = MainGraphMinHeight + FpsGraphMinHeight;
-	const float ReservedCardTotal = PrimaryCardsHeight + SecondaryCardsHeight;
+	const float ReservedCardTotal = PrimaryCardsHeight + MetricsExtraHeight;
 
 	Layout.m_PrimaryCardsHeight = PrimaryCardsHeight;
-	Layout.m_SecondaryCardsHeight = SecondaryCardsHeight;
+	Layout.m_MetricsExtraHeight = MetricsExtraHeight;
 
 	if(AvailableBodyHeight >= ReservedCardTotal + PreferredGraphTotal)
 	{
@@ -327,7 +511,7 @@ inline SQmMonitoringBodyLayout QmComputeMonitoringBodyLayout(float ContentHeight
 		const float GraphScale = (AvailableGraphHeight - MinimumGraphTotal) / (PreferredGraphTotal - MinimumGraphTotal);
 		Layout.m_MainGraphHeight = MainGraphMinHeight + (MainGraphHeight - MainGraphMinHeight) * GraphScale;
 		Layout.m_FpsGraphHeight = FpsGraphMinHeight + (FpsGraphHeight - FpsGraphMinHeight) * GraphScale;
-		Layout.m_SecondaryCardsHeight = std::max(AvailableBodyHeight - Layout.m_MainGraphHeight - Layout.m_FpsGraphHeight - Layout.m_PrimaryCardsHeight, 0.0f);
+		Layout.m_MetricsExtraHeight = std::max(AvailableBodyHeight - Layout.m_MainGraphHeight - Layout.m_FpsGraphHeight - Layout.m_PrimaryCardsHeight, 0.0f);
 		return Layout;
 	}
 
@@ -336,7 +520,7 @@ inline SQmMonitoringBodyLayout QmComputeMonitoringBodyLayout(float ContentHeight
 	Layout.m_MainGraphHeight = MainGraphMinHeight * FallbackScale;
 	Layout.m_FpsGraphHeight = FpsGraphMinHeight * FallbackScale;
 	Layout.m_PrimaryCardsHeight = PrimaryCardsHeight * FallbackScale;
-	Layout.m_SecondaryCardsHeight = std::max(AvailableBodyHeight - Layout.m_MainGraphHeight - Layout.m_FpsGraphHeight - Layout.m_PrimaryCardsHeight, 0.0f);
+	Layout.m_MetricsExtraHeight = std::max(AvailableBodyHeight - Layout.m_MainGraphHeight - Layout.m_FpsGraphHeight - Layout.m_PrimaryCardsHeight, 0.0f);
 	return Layout;
 }
 
@@ -362,11 +546,12 @@ class CQmMonitoring : public CComponent
 	void RenderMainGraph(CUIRect Rect) const;
 	void RenderFpsGraph(CUIRect Rect) const;
 	void RenderPrimaryCards(CUIRect Rect) const;
-	void RenderSecondaryCards(CUIRect Rect) const;
+	void RenderDebugDetails(CUIRect Rect) const;
 
 public:
 	int Sizeof() const override { return sizeof(*this); }
 	void OnInit() override;
+	void OnShutdown() override;
 	void OnStateChange(int NewState, int OldState) override;
 	void OnRender() override;
 

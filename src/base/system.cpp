@@ -1499,7 +1499,9 @@ int net_addr_from_str(NETADDR *addr, const char *string)
 			}
 		}
 		else
+		{
 			return -1;
+		}
 
 		return 0;
 	}
@@ -2492,7 +2494,9 @@ int fs_storage_path(const char *appname, char *path, int max)
 			str_format(path, max, "%s/%s", data_home, appname);
 		}
 		else
+		{
 			str_format(path, max, "%s/.local/share/%s", home, appname);
+		}
 	}
 	for(int i = str_length(path) - str_length(appname); path[i]; i++)
 		path[i] = tolower((unsigned char)path[i]);
@@ -3455,7 +3459,9 @@ int open_file(const char *path)
 		str_append(workingDir, "/");
 	}
 	else
+	{
 		workingDir[0] = '\0';
+	}
 	str_format(buf, sizeof(buf), "file://%s%s", workingDir, path);
 	return open_link(buf);
 #endif

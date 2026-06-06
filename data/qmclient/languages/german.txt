@@ -508,8 +508,8 @@ Ring
 Rounded caps
 == Rounded caps
 
-Run a 
-== Run a 
+Run a
+== Run a
 
 SMTC
 == SMTC
@@ -1036,7 +1036,7 @@ X 对齐颜色
 感谢您的陪伴与信任.正是如此,才给了我继续前行的勇气
 == Thank you for your company and trust. This is what gives me the courage to keep going.
 
-我 是 机 器 人 
+我 是 机 器 人
 == I am a robot
 
 房间
@@ -1632,4 +1632,3 @@ X 对齐颜色
 
 默认输出打开失败
 == Default output open failed
-

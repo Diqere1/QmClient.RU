@@ -35,6 +35,7 @@ enum class EHudEditorElement
 	Chat,
 	VoiceOverlay,
 	InputOverlay,
+	HudNotifications,
 
 	Count,
 };
@@ -120,7 +121,7 @@ private:
 	void ParseLayoutConfig(const char *pConfig);
 	void SaveLayoutConfig();
 	void ResetLayoutConfig();
-	void ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight, float StateOffsetX = 0.0f, float StateOffsetY = 0.0f) const;
+	void ClampStateToScreen(SElementState &State, float BaseWidth, float BaseHeight, float StateOffsetX, float StateOffsetY) const;
 	SElementState &EnsureState(EHudEditorElement Element);
 	const SElementState &State(EHudEditorElement Element) const;
 	int FindHoveredVisibleElement() const;

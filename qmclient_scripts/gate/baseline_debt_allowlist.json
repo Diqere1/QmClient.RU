@@ -2,13 +2,22 @@
   "version": 1,
   "entries": [
     {
-      "title": "配置变量使用检查（Qm/Tc/栖梦）",
-      "detail_hash": "e114ee0e0b814b3cd4f6d7787d86b4fb1c11fb2a1df38fa37c7837fc9c868f2a",
+      "title": "代码格式干跑检查",
+      "detail_hash": "5c2f1b05a4693a486e07d0c50b03d7ff1cb45f7ade936e620d49a40d721bb958",
       "reason": "known_baseline_debt",
-      "base_ref": "main",
-      "added_at": "2026-05-17T11:53:51Z",
-      "source_report": "tmp/check-gate-report.json",
-      "source_generated_at": "2026-05-17T11:50:28Z"
+      "base_ref": "",
+      "added_at": "2026-05-26T21:59:33Z",
+      "source_report": "E:/Coding/DDNet/QmClient/tmp/check-gate-report.json",
+      "source_generated_at": "2026-05-26T21:59:14Z"
+    },
+    {
+      "title": "未使用头文件检查",
+      "detail_hash": "6ac4b5169abf50d50366cbbf7afdb27490bcf2ebdb62acfdc6d03ca9b7056199",
+      "reason": "known_baseline_debt",
+      "base_ref": "",
+      "added_at": "2026-05-26T21:59:33Z",
+      "source_report": "E:/Coding/DDNet/QmClient/tmp/check-gate-report.json",
+      "source_generated_at": "2026-05-26T21:59:14Z"
     }
   ]
 }

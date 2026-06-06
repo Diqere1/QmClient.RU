@@ -28,7 +28,6 @@ static float cross(vec2 A, vec2 B)
 	return A.x * B.y - A.y * B.x;
 }
 
-
 static bool line_intersects(vec2 A, vec2 B, vec2 C, vec2 D)
 {
 	const vec2 R = B - A;
@@ -44,6 +43,7 @@ static bool line_intersects(vec2 A, vec2 B, vec2 C, vec2 D)
 	return (T >= 0.0f && T <= 1.0f) && (U >= 0.0f && U <= 1.0f);
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CBoundingBox
 {
 public:
@@ -70,6 +70,7 @@ public:
 	}
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class CPathContainer
 {
 private:

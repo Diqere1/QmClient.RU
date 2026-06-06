@@ -1,0 +1,101 @@
+#!/usr/bin/env npx tsx
+// analyze.ts — QmClient 性能日志分析入口
+// 用法: npx tsx analyze.ts [log文件路径]
+//       如果不传路径，自动读取 %APPDATA%/DDNet/dumps/QmClient_Perf/ 下最新日志
+//       自动检测上一次报告对应的日志，生成对比分析
+
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from 'node:fs';
+import { join, basename } from 'node:path';
+
+const PERF_DIR = () => join(process.env.APPDATA ?? '', 'DDNet', 'dumps', 'QmClient_Perf');
+const REPORT_DIR = () => join(PERF_DIR(), 'Perf_Report');
+
+function listLogFiles(): { name: string; path: string; mtime: number }[] {
+  const dir = PERF_DIR();
+  try {
+    return readdirSync(dir)
+      .filter(f => f.startsWith('qm_perf_') && f.endsWith('.log'))
+      .map(f => ({ name: f, path: join(dir, f), mtime: statSync(join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+  } catch {
+    return [];
+  }
+}
+
+function findLatestLog(): string {
+  const files = listLogFiles();
+  if (files.length === 0) {
+    console.error('无法找到性能日志文件。请确保:');
+    console.error('  1. qm_perf_debug 1 和 qm_perf_logfile 1 已启用');
+    console.error('  2. 至少运行过一次游戏客户端');
+    process.exit(1);
+  }
+  return files[0].path;
+}
+
+/** 找到上一次报告对应的日志文件（当前日志的前一个） */
+function findPreviousLog(currentLogPath: string): string | null {
+  const files = listLogFiles();
+  const currentName = basename(currentLogPath);
+  const idx = files.findIndex(f => f.name === currentName);
+  if (idx < 0 || idx >= files.length - 1) return null;
+  return files[idx + 1].path; // 下一个 = 时间更早的
+}
+
+async function main() {
+  const { parseLog } = await import('./lib/parse.ts');
+  const { generateReport } = await import('./lib/report.ts');
+  const { snapshot, compareSessions } = await import('./lib/stats.ts');
+
+  const logPath = process.argv[2] ?? findLatestLog();
+  console.log(`读取: ${logPath}`);
+
+  const content = readFileSync(logPath, 'utf-8');
+  console.log(`解析中... ${content.split('\n').length} 行`);
+
+  const entries = parseLog(content);
+  console.log(`有效条目: ${entries.length}`);
+
+  // 当前会话快照
+  const currentSnapshot = snapshot(entries, logPath);
+
+  // 自动查找上一次日志并生成对比
+  let comparison = null;
+  const prevLogPath = findPreviousLog(logPath);
+  if (prevLogPath) {
+    try {
+      const prevContent = readFileSync(prevLogPath, 'utf-8');
+      const prevEntries = parseLog(prevContent);
+      if (prevEntries.length > 0) {
+        const prevSnapshot = snapshot(prevEntries, prevLogPath);
+        comparison = compareSessions(prevSnapshot, currentSnapshot);
+        console.log(`对比基线: ${basename(prevLogPath)} (${prevEntries.length} 条)`);
+        if (comparison.verdictChanged) {
+          console.log(`  判定变化: ${comparison.previous.verdict} → ${comparison.current.verdict}`);
+        }
+        const reg = comparison.metrics.filter(m => m.direction === 'worse').length;
+        const imp = comparison.metrics.filter(m => m.direction === 'better').length;
+        console.log(`  ${imp} 项改善, ${reg} 项退化`);
+      }
+    } catch (e) {
+      console.log(`跳过对比: ${(e as Error).message}`);
+    }
+  } else {
+    console.log('无历史日志可对比（首次分析）');
+  }
+
+  const reportHtml = generateReport(entries, logPath, comparison);
+
+  // 输出到 Perf_Report/ 子目录
+  const reportDir = REPORT_DIR();
+  if (!existsSync(reportDir)) {
+    mkdirSync(reportDir, { recursive: true });
+  }
+
+  const logName = basename(logPath).replace('.log', '');
+  const outPath = join(reportDir, `${logName}_report.html`);
+  writeFileSync(outPath, reportHtml, 'utf-8');
+  console.log(`报表已生成: ${outPath}`);
+}
+
+main();

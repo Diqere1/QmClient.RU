@@ -165,6 +165,7 @@ option(EXCEPTION_HANDLING "Enable crashdumps (only works with Windows)" ON)
 option(IPO "Enable interprocedural optimizations" ON)
 option(FUSE_LD "Linker to use" OFF)
 option(SECURITY_COMPILER_FLAGS "Whether to set security-relevant compiler flags like -D_FORTIFY_SOURCE=2 and -fstack-protector-strong" ON)
+option(QM_DISABLE_PARALLEL_COMPILE "Disable /MP for compiler warnings-sensitive gates" OFF)
 option(QM_MSVC_ANALYZE "Enable MSVC /analyze static analysis (Windows only)" OFF)
 option(QM_STRICT_WARNINGS "Treat compiler warnings as errors" OFF)
 option(QM_BUILD_ICON_ATLAS "Build QmClient Tabler PNG icon atlas from SVG sources" ON)
@@ -1631,7 +1632,6 @@ set(EXPECTED_DATA
   qmclient/languages/russian.txt
   qmclient/languages/serbian.txt
   qmclient/languages/serbian_cyrillic.txt
-  qmclient/languages/simplified_chinese.txt
   qmclient/languages/slovak.txt
   qmclient/languages/spanish.txt
   qmclient/languages/swedish.txt
@@ -1737,20 +1737,6 @@ set(EXPECTED_DATA
   qmclient/fonts/Rubik-Regular.ttf
   qmclient/fonts/minecraft_font.ttf
   qmclient/gui_logo.png
-  qmclient/rmlui/main_menu.rcss
-  qmclient/rmlui/main_menu.rml
-  qmclient/rmlui/main_menu_shell.rcss
-  qmclient/rmlui/main_menu_shell.rml
-  qmclient/rmlui/serverbrowser_page.rcss
-  qmclient/rmlui/serverbrowser_page.rml
-  qmclient/rmlui/settings_frontend.rcss
-  qmclient/rmlui/settings_frontend.rml
-  qmclient/rmlui/settings_modal.rcss
-  qmclient/rmlui/settings_modal.rml
-  qmclient/rmlui/settings_page.rcss
-  qmclient/rmlui/settings_page.rml
-  qmclient/rmlui/ui_unavailable.rcss
-  qmclient/rmlui/ui_unavailable.rml
   race_flag.png
   shader/pipeline.frag
   shader/pipeline.vert
@@ -2308,7 +2294,6 @@ set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   config_tags.h
   config_variables.h
   config_variables_qmclient.h
-  config_variables_qmclient_extra.h
   config_variables_tclient.h
   console.cpp
   console.h
@@ -2718,8 +2703,6 @@ if(CLIENT)
     components/effects.h
     components/emoticon.cpp
     components/emoticon.h
-    components/entity_bg_preview_renderer.cpp
-    components/entity_bg_preview_renderer.h
     components/envelope_state.cpp
     components/envelope_state.h
     components/flow.cpp
@@ -2783,6 +2766,11 @@ if(CLIENT)
     components/qmclient/collision_hitbox.h
     components/qmclient/colored_parts.h
     components/qmclient/data_version.h
+    components/qmclient/hud_notification_rules.cpp
+    components/qmclient/hud_notification_rules.h
+    components/qmclient/hud_notification_static_rules.h
+    components/qmclient/hud_notifications.cpp
+    components/qmclient/hud_notifications.h
     components/qmclient/input_overlay.cpp
     components/qmclient/input_overlay.h
     components/qmclient/jelly_tee.cpp
@@ -2794,6 +2782,7 @@ if(CLIENT)
     components/qmclient/modes.cpp
     components/qmclient/modes.h
     components/qmclient/monitoring.cpp
+    components/qmclient/monitoring_device_perf.cpp
     components/qmclient/monitoring.h
     components/qmclient/qmclient.cpp
     components/qmclient/qmclient.h
@@ -2809,6 +2798,8 @@ if(CLIENT)
     components/qmclient/translate_parse.h
     components/qmclient/translate_ui_settings.cpp
     components/qmclient/translate_ui_settings.h
+    components/qmclient/update_version.cpp
+    components/qmclient/update_version.h
     components/qmclient/voice_capture_pipeline.cpp
     components/qmclient/voice_capture_pipeline.h
     components/qmclient/voice_component.cpp
@@ -2823,6 +2814,13 @@ if(CLIENT)
     components/race_demo.h
     components/scoreboard.cpp
     components/scoreboard.h
+    components/section_loader.cpp
+    components/section_loader.h
+    components/settings_runtime_cache.cpp
+    components/settings_runtime_cache.h
+    components/settings_resource_jobs.cpp
+    components/settings_resource_jobs.h
+    components/settings_warmup.cpp
     components/settings_warmup.h
     components/skins.cpp
     components/skins.h
@@ -3576,7 +3574,6 @@ if(TOOLS)
     map_find_env.cpp
     map_generator.cpp
     map_optimize.cpp
-    map_preview.cpp
     map_replace_area.cpp
     map_replace_image.cpp
     map_resave.cpp
@@ -3680,6 +3677,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     assets_resource_registry_test.cpp
     audio_pack_editor_test.cpp
     bezier_test.cpp
+    binds_test.cpp
     blocklist_driver_test.cpp
     bytes_be_test.cpp
     chunk_header_test.cpp
@@ -3699,6 +3697,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     json_test.cpp
     jsonwriter_test.cpp
     keyword_reply_rules_test.cpp
+    logger_test.cpp
     linereader_test.cpp
     mapbugs_test.cpp
     mapitems_test.cpp
@@ -3710,15 +3709,24 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     os_test.cpp
     packer_test.cpp
     prng_test.cpp
+    qm_chat_interactions_test.cpp
+    qm_hud_notifications_test.cpp
+    qm_new_ui_menu_branch_test.cpp
     qm_live_client_test.cpp
     qm_modes_test.cpp
+    qmclient_update_version_test.cpp
+    QmUiTokensTest.cpp
     qmclient_monitoring_test.cpp
     score_test.cpp
+    section_loader_test.cpp
     secure_random_test.cpp
     server_test.cpp
     serverbrowser_test.cpp
     serverinfo_test.cpp
     settings_warmup_test.cpp
+    skin_transition_test.cpp
+    skins_test.cpp
+    render_target_test.cpp
     shell_execute_test.cpp
     snapshot_test.cpp
     str_test.cpp
@@ -3745,12 +3753,24 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     voice_core_test.cpp
   )
   set(TESTS_EXTRA
+    src/game/client/animstate.cpp
+    src/game/client/skin.cpp
+    src/test/render_tee_offset_helpers.cpp
+    src/game/client/components/section_loader.cpp
+    src/game/client/components/settings_runtime_cache.cpp
+    src/game/client/components/settings_resource_jobs.cpp
+    src/game/client/components/settings_warmup.cpp
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
+    src/generated/client_data.h
+    src/generated/client_data7.h
+    src/game/client/components/qmclient/hud_notification_rules.cpp
+    src/game/client/components/qmclient/monitoring_device_perf.cpp
     src/game/client/live/live_director.cpp
     src/game/client/live/live_replay_buffer.cpp
     src/game/client/components/qmclient/modes.cpp
+    src/game/client/components/qmclient/update_version.cpp
     src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp
     src/game/client/components/qmclient/voice_capture_pipeline.cpp
@@ -4367,7 +4387,9 @@ foreach(target ${TARGETS})
   if(MSVC)
     set_property(TARGET ${target} PROPERTY MSVC_RUNTIME_LIBRARY MultiThreaded$<${DBG}:Debug>) # Use static CRT
     target_compile_options(${target} PRIVATE /Zc:__cplusplus) # Fixes the __cplusplus macro
-    target_compile_options(${target} PRIVATE /MP) # Use multiple cores
+    if(NOT QM_DISABLE_PARALLEL_COMPILE)
+      target_compile_options(${target} PRIVATE /MP) # Use multiple cores
+    endif()
     target_compile_options(${target} PRIVATE /EHsc) # Only catch C++ exceptions with catch.
     target_compile_options(${target} PRIVATE /GS) # Protect the stack pointer.
     target_compile_options(${target} PRIVATE /wd4996) # Use of non-_s functions.
@@ -4461,7 +4483,7 @@ foreach(target ${TARGETS_OWN})
   target_include_directories(${target} PRIVATE src/engine/external/rnnoise/include)
   target_include_directories(${target} PRIVATE src/engine/external/rnnoise/src)
   target_compile_definitions(${target} PRIVATE $<$<CONFIG:Debug>:CONF_DEBUG>)
-  target_compile_definitions(${target} PRIVATE CONF_RNNOISE)
+  target_compile_definitions(${target} PRIVATE CONF_RNNOISE RNN_DISABLE_CPU_WARNING)
   set(COMMON_SYSTEM_INCLUDE_DIRS ${CURL_INCLUDE_DIRS} ${SQLite3_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
   if(TARGET_OS STREQUAL "mac")
     # Do not pass SDK usr/include explicitly on macOS. libc++ expects to

@@ -16,7 +16,6 @@ namespace
 			return &json_value_none;
 		return json_object_get(pObject, pName);
 	}
-
 	bool JsonReadBoolean(const json_value *pValue, bool &OutValue)
 	{
 		if(!pValue)
@@ -39,7 +38,6 @@ namespace
 		}
 		return false;
 	}
-
 	EClientBrand JsonReadClientBrand(const json_value *pEntry)
 	{
 		const json_value *pClientType = JsonObjectField(pEntry, "client_type");
@@ -55,8 +53,7 @@ namespace
 			return EClientBrand::QM;
 		return EClientBrand::QM;
 	}
-
-}
+} // namespace
 
 bool ParseQmClientUsersJson(const json_value *pRoot, const char *pServerAddress, SQmClientUsersParseResult &OutResult)
 {

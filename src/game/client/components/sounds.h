@@ -17,7 +17,7 @@ class CSoundLoading : public IJob
 
 public:
 	CSoundLoading(CGameClient *pGameClient, bool Render);
-	void Run() override;
+	void Run() override; // NOLINT(misc-override-with-different-visibility)
 };
 
 class CSounds : public CComponent

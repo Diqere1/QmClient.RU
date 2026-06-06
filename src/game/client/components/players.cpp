@@ -5,6 +5,7 @@
 
 #include <base/color.h>
 #include <base/math.h>
+#include <base/system.h>
 
 #include <engine/client/enums.h>
 #include <engine/demo.h>
@@ -356,9 +357,13 @@ void CPlayers::RenderHookCollLine(
 				vLineSegments.emplace_back(StartPos, aIntersections[1]);
 		}
 		else if(NumIntersections == 1)
+		{
 			vLineSegments.emplace_back(StartPos, aIntersections[0]);
+		}
 		else
+		{
 			vLineSegments.emplace_back(StartPos, HitPos);
+		}
 	};
 
 	// simulate the hook into the future
@@ -625,7 +630,9 @@ void CPlayers::RenderHook(
 		}
 	}
 	else
+	{
 		HookPos = mix(vec2(Prev.m_HookX, Prev.m_HookY), vec2(Player.m_HookX, Player.m_HookY), Intra);
+	}
 
 	float d = distance(Pos, HookPos);
 	vec2 Dir = normalize(Pos - HookPos);
@@ -648,9 +655,9 @@ void CPlayers::RenderHook(
 	++QuadOffset;
 	static IGraphics::SRenderSpriteInfo s_aHookChainRenderInfo[1024];
 	int HookChainCount = 0;
-	for(float f = 24; f < d && HookChainCount < 1024; f += 24, ++HookChainCount)
+	for(int Chain = 1; Chain * 24 < d && HookChainCount < 1024; ++Chain, ++HookChainCount)
 	{
-		vec2 p = HookPos + Dir * f;
+		vec2 p = HookPos + Dir * (float)(Chain * 24);
 		s_aHookChainRenderInfo[HookChainCount].m_Pos[0] = p.x;
 		s_aHookChainRenderInfo[HookChainCount].m_Pos[1] = p.y;
 		s_aHookChainRenderInfo[HookChainCount].m_Scale = 1;
@@ -830,7 +837,9 @@ void CPlayers::RenderPlayer(
 	State.Set(&g_pData->m_aAnimations[ANIM_BASE], 0.0f);
 
 	if(InAir)
+	{
 		State.Add(&g_pData->m_aAnimations[ANIM_INAIR], 0.0f, 1.0f); // TODO: some sort of time here
+	}
 	else if(Stationary)
 	{
 		if(Inactive)
@@ -839,7 +848,9 @@ void CPlayers::RenderPlayer(
 			RenderInfo.m_FeetFlipped = true;
 		}
 		else
+		{
 			State.Add(&g_pData->m_aAnimations[ANIM_IDLE], 0.0f, 1.0f); // TODO: some sort of time here
+		}
 	}
 	else if(!WantOtherDir)
 	{
@@ -930,7 +941,9 @@ void CPlayers::RenderPlayer(
 							Graphics()->QuadsSetRotation(-pi / 2 + State.GetAttach()->m_Angle * pi * 2 + WeaponSwitchAngle);
 					}
 					else
+					{
 						Graphics()->QuadsSetRotation((Direction.x < 0 ? 100.0f : 500.0f) + WeaponSwitchAngle);
+					}
 
 					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x + WeaponSwitchOffset.x, WeaponPosition.y + WeaponSwitchOffset.y);
 					break;
@@ -1001,7 +1014,9 @@ void CPlayers::RenderPlayer(
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 
 				// HADOKEN
-				if(AttackTime <= 1.0f / 6.0f && g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
+				if(!ShouldHideFocusMuzzleEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMuzzleEffects != 0) &&
+					AttackTime <= 1.0f / 6.0f &&
+					g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
 				{
 					int IteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
 					static int s_LastIteX = IteX;
@@ -1066,18 +1081,18 @@ void CPlayers::RenderPlayer(
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 			}
 
-			if(Player.m_Weapon == WEAPON_GUN || Player.m_Weapon == WEAPON_SHOTGUN)
+			if(!ShouldHideFocusMuzzleEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMuzzleEffects != 0) &&
+				(Player.m_Weapon == WEAPON_GUN || Player.m_Weapon == WEAPON_SHOTGUN) &&
+				g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
 			{
-				// check if we're firing stuff
-				if(g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles) // prev.attackticks)
+				float AlphaMuzzle = 0.0f;
+				if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
 				{
-					float AlphaMuzzle = 0.0f;
-					if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
-					{
-						float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
-						AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
-					}
-
+					float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
+					AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
+				}
+				if(AlphaMuzzle > 0.0f)
+				{
 					int MuzzleIteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
 					static int s_LastMuzzleIteX = MuzzleIteX;
 					if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
@@ -1095,7 +1110,7 @@ void CPlayers::RenderPlayer(
 						else
 							s_LastMuzzleIteX = MuzzleIteX;
 					}
-					if(AlphaMuzzle > 0.0f && g_pData->m_Weapons.m_aId[CurrentWeapon].m_aSpriteMuzzles[MuzzleIteX])
+					if(g_pData->m_Weapons.m_aId[CurrentWeapon].m_aSpriteMuzzles[MuzzleIteX])
 					{
 						float OffsetY = -g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsety;
 						int MuzzleQuadOffset = MuzzleIteX * 2 + (Direction.x < 0.0f ? 1 : 0);
@@ -1125,7 +1140,10 @@ void CPlayers::RenderPlayer(
 		RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, ShadowPosition, 0.5f, JellyDeform.m_BodyScale, JellyDeform.m_FeetScale, JellyDeform.m_BodyAngle, JellyDeform.m_FeetAngle); // render ghost
 	}
 
-	RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, Position, Alpha, JellyDeform.m_BodyScale, JellyDeform.m_FeetScale, JellyDeform.m_BodyAngle, JellyDeform.m_FeetAngle);
+	const std::chrono::nanoseconds Now = time_get_nanoseconds();
+	const CTeeRenderInfo *pPreviousSkinInfo = ClientId >= 0 ? GameClient()->m_aClients[ClientId].SkinChangePreviousRenderInfo(Now) : nullptr;
+	const float SkinTransitionProgress = ClientId >= 0 ? GameClient()->m_aClients[ClientId].SkinChangeTransitionProgress(Now) : 1.0f;
+	RenderTools()->RenderTeeWithSkinChangeTransition(&State, pPreviousSkinInfo, &RenderInfo, Player.m_Emote, Direction, Position, SkinTransitionProgress, Alpha, JellyDeform.m_BodyScale, JellyDeform.m_FeetScale, JellyDeform.m_BodyAngle, JellyDeform.m_FeetAngle);
 
 	float TeeAnimScale, TeeBaseSize;
 	CRenderTools::GetRenderTeeAnimScaleAndBaseSize(&RenderInfo, TeeAnimScale, TeeBaseSize);
@@ -1356,7 +1374,9 @@ void CPlayers::RenderPlayerGhost(
 	State.Set(&g_pData->m_aAnimations[ANIM_BASE], 0);
 
 	if(InAir)
+	{
 		State.Add(&g_pData->m_aAnimations[ANIM_INAIR], 0, 1.0f);
+	}
 	else if(Stationary)
 	{
 		if(Inactive)
@@ -1365,7 +1385,9 @@ void CPlayers::RenderPlayerGhost(
 			RenderInfo.m_FeetFlipped = true;
 		}
 		else
+		{
 			State.Add(&g_pData->m_aAnimations[ANIM_IDLE], 0, 1.0f);
+		}
 	}
 	else if(!WantOtherDir)
 	{
@@ -1433,7 +1455,9 @@ void CPlayers::RenderPlayerGhost(
 							Graphics()->QuadsSetRotation(-pi / 2 + State.GetAttach()->m_Angle * pi * 2);
 					}
 					else
+					{
 						Graphics()->QuadsSetRotation(Direction.x < 0 ? 100.0f : 500.0f);
+					}
 
 					Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 					break;
@@ -1502,7 +1526,9 @@ void CPlayers::RenderPlayerGhost(
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 
 				// HADOKEN
-				if(AttackTime <= 1.0f / 6.0f && g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
+				if(!ShouldHideFocusMuzzleEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMuzzleEffects != 0) &&
+					AttackTime <= 1.0f / 6.0f &&
+					g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
 				{
 					int IteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
 					static int s_LastIteX = IteX;
@@ -1566,18 +1592,18 @@ void CPlayers::RenderPlayerGhost(
 				Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, WeaponPosition.x, WeaponPosition.y);
 			}
 
-			if(Player.m_Weapon == WEAPON_GUN || Player.m_Weapon == WEAPON_SHOTGUN)
+			if(!ShouldHideFocusMuzzleEffects(g_Config.m_QmFocusMode != 0, g_Config.m_QmFocusModeHideMuzzleEffects != 0) &&
+				(Player.m_Weapon == WEAPON_GUN || Player.m_Weapon == WEAPON_SHOTGUN) &&
+				g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles)
 			{
-				// check if we're firing stuff
-				if(g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles) // prev.attackticks)
+				float AlphaMuzzle = 0.0f;
+				if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
 				{
-					float AlphaMuzzle = 0.0f;
-					if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
-					{
-						float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
-						AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
-					}
-
+					float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
+					AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
+				}
+				if(AlphaMuzzle > 0.0f)
+				{
 					int MuzzleIteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
 					static int s_LastMuzzleIteX = MuzzleIteX;
 					if(Client()->State() == IClient::STATE_DEMOPLAYBACK)
@@ -1595,7 +1621,7 @@ void CPlayers::RenderPlayerGhost(
 						else
 							s_LastMuzzleIteX = MuzzleIteX;
 					}
-					if(AlphaMuzzle > 0.0f && g_pData->m_Weapons.m_aId[CurrentWeapon].m_aSpriteMuzzles[MuzzleIteX])
+					if(g_pData->m_Weapons.m_aId[CurrentWeapon].m_aSpriteMuzzles[MuzzleIteX])
 					{
 						float OffsetY = -g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleoffsety;
 						int MuzzleQuadOffset = MuzzleIteX * 2 + (Direction.x < 0.0f ? 1 : 0);
@@ -1875,7 +1901,6 @@ void CPlayers::OnReset()
 void CPlayers::OnInit()
 {
 	OnReset();
-
 	m_WeaponEmoteQuadContainerIndex = Graphics()->CreateQuadContainer(false);
 
 	Graphics()->SetColor(1.f, 1.f, 1.f, 1.f);
@@ -1922,7 +1947,9 @@ void CPlayers::OnInit()
 					Graphics()->GetSpriteScaleImpl(96, 64, ScaleX, ScaleY);
 				}
 				else
+				{
 					Graphics()->GetSpriteScale(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n], ScaleX, ScaleY);
+				}
 			}
 
 			float SWidth = (g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleX) * (4.0f / 3.0f);

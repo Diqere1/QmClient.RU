@@ -51,6 +51,7 @@ public:
 	void ScrollToSelected() { m_ListBoxUpdateScroll = true; }
 	CListboxItem DoNextItem(const void *pId, bool Selected = false, float CornerRadius = 5.0f);
 	CListboxItem DoCustomRow(float Height, bool ScrollHere = false);
+	void ResetScroll() { m_ScrollRegion.Reset(); }
 	CListboxItem DoSubheader();
 	int DoEnd();
 
@@ -63,6 +64,8 @@ public:
 
 	bool ScrollbarShown() const { return m_ScrollbarShown; }
 	float ScrollbarWidth() const { return ScrollbarShown() ? ScrollbarWidthMax() : 0.0f; }
+	bool ScrollbarActive() const { return m_ScrollRegion.Active(); }
+	bool ScrollbarAnimating() const { return m_ScrollRegion.Animating(); }
 	float ScrollbarWidthMax() const { return m_ScrollbarWidth; }
 	void SetScrollbarWidth(float Width) { m_ScrollbarWidth = Width; }
 	float ScrollbarMargin() const { return m_ScrollbarMargin; }

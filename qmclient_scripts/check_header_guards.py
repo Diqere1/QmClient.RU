@@ -57,16 +57,20 @@ QMCLIENT_DIRS = [
     "src/game/client/QmUi/",
 ]
 
+
 def path_to_guard(filename):
     return "_".join(filename.split(PATH)[1].split("/"))[:-2].upper() + "_H"
+
 
 def get_expected_guard(filename):
     if filename in GUARD_OVERRIDES:
         return "#ifndef " + GUARD_OVERRIDES[filename]
     return "#ifndef " + path_to_guard(filename)
 
+
 def is_qmclient_file(filename):
     return any(filename.startswith(d) for d in QMCLIENT_DIRS)
+
 
 def check_file(filename, show_fix=False):
     if filename in EXCEPTIONS:
@@ -77,26 +81,41 @@ def check_file(filename, show_fix=False):
             if line == "// This file can be included several times.\n":
                 break
             stripped = line.lstrip()
-            if stripped.startswith("/") or stripped.startswith("*") or stripped == "" or stripped == "\r\n" or stripped == "\n":
+            if (
+                stripped.startswith("/")
+                or stripped.startswith("*")
+                or stripped == ""
+                or stripped == "\r\n"
+                or stripped == "\n"
+            ):
                 continue
             expected_guard = get_expected_guard(filename)
             path_guard = "#ifndef " + path_to_guard(filename)
             if line.startswith("#ifndef"):
                 if line[:-1] != expected_guard:
                     error = True
-                    source = "QMClient override" if filename in GUARD_OVERRIDES else "path-based"
+                    source = (
+                        "QMClient override"
+                        if filename in GUARD_OVERRIDES
+                        else "path-based"
+                    )
                     print(f"Wrong header guard in {filename}")
                     print(f"  is:      {line[:-1]}")
                     print(f"  expect:  {expected_guard} ({source})")
                     if line[:-1] != path_guard and filename not in GUARD_OVERRIDES:
                         print(f"  path:    {path_guard}")
                     if show_fix:
-                        print(f"  fix:     sed -i 's/{line[:-1].replace('#ifndef ', '')}/{expected_guard.replace('#ifndef ', '')}/' {filename}")
+                        print(
+                            f"  fix:     sed -i 's/{line[:-1].replace('#ifndef ', '')}/{expected_guard.replace('#ifndef ', '')}/' {filename}"
+                        )
             else:
                 error = True
-                print(f"Missing header guard in {filename}, should be: {expected_guard}")
+                print(
+                    f"Missing header guard in {filename}, should be: {expected_guard}"
+                )
             break
     return error
+
 
 def check_dir(directory, qm_only=False, show_fix=False):
     errors = 0
@@ -112,11 +131,17 @@ def check_dir(directory, qm_only=False, show_fix=False):
             errors += check_file(path, show_fix)
     return errors
 
+
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Check QmClient header guards")
-    parser.add_argument('--qm-only', action='store_true', help='Only check QmClient-specific directories')
-    parser.add_argument('--fix', action='store_true', help='Show fix suggestions')
+    parser.add_argument(
+        "--qm-only",
+        action="store_true",
+        help="Only check QmClient-specific directories",
+    )
+    parser.add_argument("--fix", action="store_true", help="Show fix suggestions")
     args = parser.parse_args()
 
     errors = check_dir(PATH, qm_only=args.qm_only, show_fix=args.fix)
@@ -126,5 +151,6 @@ def main():
         print("All header guards are correct.")
     return int(errors != 0)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     sys.exit(main())

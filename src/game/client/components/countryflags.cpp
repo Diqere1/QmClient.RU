@@ -14,6 +14,30 @@
 #include <engine/storage.h>
 
 #include <game/client/gameclient.h>
+#include <game/client/components/menus.h>
+#include <game/client/components/qmclient/perf_logging.h>
+#include <game/client/components/settings_runtime_cache.h>
+
+namespace
+{
+	bool CountryFlagsPerfDebugEnabled()
+	{
+		return g_Config.m_QmPerfDebug != 0;
+	}
+
+	void LogCountryFlagsPerfStage(const char *pStage, const char *pExtra)
+	{
+		if(!CountryFlagsPerfDebugEnabled())
+			return;
+		QmPerfLogStage("perf/countryflags", pStage, 0.0, true, nullptr, nullptr, nullptr, pExtra);
+	}
+
+	void LogCountryFlagSettingsResourcePerf(const char *pJob, int Count, int Budget, int Remaining, ESettingsWarmupMissReason Reason, double DurationMs)
+	{
+		LogSettingsResourcePerf(CMenus::SETTINGS_LANGUAGE, pJob, Count, Budget, Remaining, Reason, DurationMs);
+		LogSettingsResourcePerf(CMenus::SETTINGS_PLAYER, pJob, Count, Budget, Remaining, Reason, DurationMs);
+	}
+}
 
 CCountryFlags::CCountryFlagLoadJob::CCountryFlagLoadJob(const char *pPath, int CountryCode, IStorage *pStorage) :
 	m_Path(pPath),
@@ -135,26 +159,30 @@ void CCountryFlags::StartFlagLoadJob(int Index)
 	auto pJob = std::make_shared<CCountryFlagLoadJob>(aPath, m_vCountryFlags[Index].m_CountryCode, Storage());
 	Engine()->AddJob(pJob);
 	m_PendingJobs.push_back(pJob);
+	LogCountryFlagSettingsResourcePerf("queued", 1, 1, (int)m_PendingJobs.size(), ESettingsWarmupMissReason::RESOURCE_PLAN_PENDING, 0.0);
 }
 
 void CCountryFlags::ProcessCompletedJobs()
 {
-	auto it = m_PendingJobs.begin();
-	while(it != m_PendingJobs.end())
+	auto Iter = m_PendingJobs.begin();
+	while(Iter != m_PendingJobs.end())
 	{
-		auto &pJob = *it;
+		auto &pJob = *Iter;
 		if(!pJob->IsCompleted())
 		{
-			++it;
+			++Iter;
 			continue;
 		}
 
 		if(!GameClient()->GpuUploadLimiter()->CanUpload())
 		{
+			LogCountryFlagsPerfStage("countryflags_gpu_upload_budget", SettingsWarmupMissReasonName(ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET));
+			LogCountryFlagSettingsResourcePerf("upload", 0, 1, (int)m_PendingJobs.size(), ESettingsWarmupMissReason::GPU_UPLOAD_BUDGET, 0.0);
 			break;
 		}
 
 		CCountryFlagLoadJob::SResult Result = pJob->GetResult();
+		LogCountryFlagSettingsResourcePerf("complete", Result.m_Success ? 1 : 0, 1, (int)m_PendingJobs.size() - 1, Result.m_Success ? ESettingsWarmupMissReason::NONE : ESettingsWarmupMissReason::JOB_RESULT_PENDING, 0.0);
 		if(Result.m_Success)
 		{
 			for(auto &Flag : m_vCountryFlags)
@@ -164,6 +192,7 @@ void CCountryFlags::ProcessCompletedJobs()
 					Flag.m_Texture = Graphics()->LoadTextureRawMove(Result.m_Image, 0, Flag.m_aCountryCodeString);
 					Flag.m_Loaded = true;
 					GameClient()->GpuUploadLimiter()->OnUploaded();
+					LogCountryFlagSettingsResourcePerf("upload", 1, 1, (int)m_PendingJobs.size() - 1, ESettingsWarmupMissReason::NONE, 0.0);
 
 					if(g_Config.m_Debug)
 					{
@@ -174,7 +203,7 @@ void CCountryFlags::ProcessCompletedJobs()
 			}
 		}
 
-		it = m_PendingJobs.erase(it);
+		Iter = m_PendingJobs.erase(Iter);
 	}
 }
 
@@ -221,6 +250,65 @@ const CCountryFlags::CCountryFlag &CCountryFlags::GetByIndex(size_t Index) const
 {
 	const_cast<CCountryFlags *>(this)->StartFlagLoadJob(Index);
 	return m_vCountryFlags[Index % m_vCountryFlags.size()];
+}
+
+void CCountryFlags::PrewarmByCountryCodes(const std::vector<int> &vCountryCodes)
+{
+	for(int CountryCode : vCountryCodes)
+	{
+		size_t Index = m_aCodeIndexLUT[maximum(0, (CountryCode - CODE_LB) % CODE_RANGE)];
+		StartFlagLoadJob((int)Index);
+	}
+}
+
+void CCountryFlags::PrewarmByIndices(const std::vector<int> &vIndices)
+{
+	for(int Index : vIndices)
+		StartFlagLoadJob(Index);
+}
+
+bool CCountryFlags::PrewarmByCountryCodesReady(const std::vector<int> &vCountryCodes)
+{
+	constexpr int MaxStartsPerCall = 16;
+	int StartsThisCall = 0;
+	for(int CountryCode : vCountryCodes)
+	{
+		size_t Index = m_aCodeIndexLUT[maximum(0, (CountryCode - CODE_LB) % CODE_RANGE)];
+		if(Index >= m_vCountryFlags.size() || m_vLoadTriggered[Index])
+			continue;
+		StartFlagLoadJob((int)Index);
+		if(++StartsThisCall >= MaxStartsPerCall)
+			break;
+	}
+	ProcessCompletedJobs();
+	for(int CountryCode : vCountryCodes)
+	{
+		size_t Index = m_aCodeIndexLUT[maximum(0, (CountryCode - CODE_LB) % CODE_RANGE)];
+		if(Index >= m_vCountryFlags.size() || !m_vCountryFlags[Index].m_Loaded)
+			return false;
+	}
+	return true;
+}
+
+bool CCountryFlags::PrewarmByIndicesReady(const std::vector<int> &vIndices)
+{
+	constexpr int MaxStartsPerCall = 16;
+	int StartsThisCall = 0;
+	for(int Index : vIndices)
+	{
+		if(Index < 0 || Index >= (int)m_vCountryFlags.size() || m_vLoadTriggered[Index])
+			continue;
+		StartFlagLoadJob(Index);
+		if(++StartsThisCall >= MaxStartsPerCall)
+			break;
+	}
+	ProcessCompletedJobs();
+	for(int Index : vIndices)
+	{
+		if(Index < 0 || Index >= (int)m_vCountryFlags.size() || !m_vCountryFlags[Index].m_Loaded)
+			return false;
+	}
+	return true;
 }
 
 void CCountryFlags::Render(const CCountryFlag &Flag, ColorRGBA Color, float x, float y, float w, float h)

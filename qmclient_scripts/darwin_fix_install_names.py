@@ -50,7 +50,9 @@ def fix_dylib_install_names(otool, install_name_tool, frameworks_dir, executable
                 desired_dep = f"@rpath/{dep_basename}"
                 if dep != desired_dep:
                     print(f"Fixing dependency in {basename}: {dep} -> {desired_dep}")
-                    subprocess.check_call([install_name_tool, "-change", dep, desired_dep, dylib])
+                    subprocess.check_call(
+                        [install_name_tool, "-change", dep, desired_dep, dylib]
+                    )
 
     if executable and os.path.exists(executable):
         deps = get_dependencies(otool, executable)
@@ -60,19 +62,27 @@ def fix_dylib_install_names(otool, install_name_tool, frameworks_dir, executable
                 desired_dep = f"@rpath/{dep_basename}"
                 if dep != desired_dep:
                     print(f"Fixing dependency in executable: {dep} -> {desired_dep}")
-                    subprocess.check_call([install_name_tool, "-change", dep, desired_dep, executable])
+                    subprocess.check_call(
+                        [install_name_tool, "-change", dep, desired_dep, executable]
+                    )
 
 
 def main():
-    p = argparse.ArgumentParser(description="Fix install_name for dylibs in macOS App Bundle")
-    p.add_argument('otool', help="Path to otool")
-    p.add_argument('install_name_tool', help="Path to install_name_tool")
-    p.add_argument('frameworks_dir', help="Path to Contents/Frameworks directory")
-    p.add_argument('--executable', help="Path to main executable (optional)", default=None)
+    p = argparse.ArgumentParser(
+        description="Fix install_name for dylibs in macOS App Bundle"
+    )
+    p.add_argument("otool", help="Path to otool")
+    p.add_argument("install_name_tool", help="Path to install_name_tool")
+    p.add_argument("frameworks_dir", help="Path to Contents/Frameworks directory")
+    p.add_argument(
+        "--executable", help="Path to main executable (optional)", default=None
+    )
     args = p.parse_args()
 
-    fix_dylib_install_names(args.otool, args.install_name_tool, args.frameworks_dir, args.executable)
+    fix_dylib_install_names(
+        args.otool, args.install_name_tool, args.frameworks_dir, args.executable
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -477,7 +477,9 @@ void CCamera::OnRender()
 		m_ForceFreeview = false;
 	}
 	else
+	{
 		m_ForceFreeviewPos = m_Center;
+	}
 
 	const int SpecId = GameClient()->m_Snap.m_SpecInfo.m_SpectatorId;
 
@@ -775,7 +777,9 @@ void CCamera::SpectatorTeleportToHoveredTele()
 	std::vector<vec2> vTeleCheckOutTargets;
 	const std::vector<vec2> *pTeleTargets = nullptr;
 	if(IsSpectatorTeleportFromTile(TileType))
+	{
 		pTeleTargets = &Collision()->TeleOuts(TeleNumber - 1);
+	}
 	else if(TileType == TILE_TELEOUT)
 	{
 		CollectSpectatorTeleportFroms(Collision(), TeleNumber, vTeleFromTargets);
@@ -797,7 +801,9 @@ void CCamera::SpectatorTeleportToHoveredTele()
 		pTeleTargets = &vTeleFromTargets;
 	}
 	else
+	{
 		return;
+	}
 
 	if(pTeleTargets->empty())
 		return;

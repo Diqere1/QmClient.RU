@@ -55,6 +55,7 @@ class CQmClient : public CComponent
 	int m_QmClientOnlineDummyCount = 0;
 	int m_QmDdnetTotalFinishes = -1;
 	int m_QmClientPendingVoicePresencePlayers = 0;
+	bool m_QmClientDistributionSuccessLatched = false;
 	bool m_QmClientShutdownReported = false;
 	bool m_QmClientAwaitingRecoveryStop = false;
 	bool m_QmClientStartupSent = false;

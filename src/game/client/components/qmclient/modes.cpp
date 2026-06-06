@@ -56,13 +56,6 @@ bool ShouldRenderGoresDebugRoute(bool Online, bool DebugRouteEnabled, bool Gores
 	return Online && DebugRouteEnabled && GoresMapProgressEnabled;
 }
 
-bool ShouldHideFocusUiOverlays(bool FocusActive, bool HideUi)
-{
-	(void)FocusActive;
-	(void)HideUi;
-	return false;
-}
-
 bool ShouldHideFocusHud(bool FocusActive, bool HideHud)
 {
 	return FocusActive && HideHud;
@@ -76,6 +69,11 @@ bool ShouldHideFocusScoreboard(bool FocusActive, bool HideScoreboard)
 bool ShouldHideFocusNames(bool FocusActive, bool HideNames)
 {
 	return FocusActive && HideNames;
+}
+
+bool ShouldHideFocusNameplates(bool FocusActive, bool HideNameplates)
+{
+	return FocusActive && HideNameplates;
 }
 
 bool ShouldHideFocusJumpEffects(bool FocusActive, bool HideJumpEffects)
@@ -103,9 +101,19 @@ bool ShouldHideFocusHammerEffects(bool FocusActive, bool HideHammerEffects)
 	return FocusActive && HideHammerEffects;
 }
 
+bool ShouldHideFocusMuzzleEffects(bool FocusActive, bool HideMuzzleEffects)
+{
+	return FocusActive && HideMuzzleEffects;
+}
+
 bool ShouldMuteFocusJumpSounds(bool FocusActive, bool MuteJumpSounds)
 {
 	return FocusActive && MuteJumpSounds;
+}
+
+bool ShouldMuteFocusDeathSounds(bool FocusActive, bool MuteDeathSounds)
+{
+	return FocusActive && MuteDeathSounds;
 }
 
 bool ShouldMuteFocusHammerSounds(bool FocusActive, bool MuteHammerSounds)
@@ -116,6 +124,11 @@ bool ShouldMuteFocusHammerSounds(bool FocusActive, bool MuteHammerSounds)
 bool ShouldPlayFocusJumpSound(bool FocusActive, bool MuteJumpSounds, bool SoundEnabled)
 {
 	return SoundEnabled && !ShouldMuteFocusJumpSounds(FocusActive, MuteJumpSounds);
+}
+
+bool ShouldPlayFocusDeathOrSpawnSound(bool FocusActive, bool MuteDeathSounds, bool SoundEnabled)
+{
+	return SoundEnabled && !ShouldMuteFocusDeathSounds(FocusActive, MuteDeathSounds);
 }
 
 SQmAirJumpEffectDecision GetQmAirJumpEffectDecision(bool FocusActive, bool HideJumpEffects, bool MuteJumpSounds, bool SoundEnabled)
@@ -148,24 +161,24 @@ bool ShouldHideFocusGuideLines(bool FocusActive, bool HideGuideLines)
 	return FocusActive && HideGuideLines;
 }
 
-bool ShouldRenderFocusFilteredChatLine(bool FocusHidePlayerMessages, bool FocusHideSystemMessages, bool FocusHideEcho, int ClientId, bool ForceVisible)
+bool ShouldRenderFocusFilteredChatLine(bool FocusHidePlayerMessages, bool FocusHideSystemInfoMessages, bool FocusHideSystemPromptMessages, bool FocusHideEcho, int ClientId, bool ForceVisible, bool ServerMessageIsBasicInfo)
 {
 	if(ForceVisible)
 		return true;
 	if(ClientId == -2)
 		return !FocusHideEcho;
 	if(ClientId == -1)
-		return !FocusHideSystemMessages;
+		return ServerMessageIsBasicInfo ? !FocusHideSystemInfoMessages : !FocusHideSystemPromptMessages;
 	if(ClientId >= 0)
 		return !FocusHidePlayerMessages;
-	if(FocusHideSystemMessages)
+	if(FocusHideSystemPromptMessages)
 		return false;
 	return true;
 }
 
-bool ShouldRenderAnyFocusFilteredChat(bool FocusHidePlayerMessages, bool FocusHideSystemMessages, bool FocusHideEcho, bool HasForceVisibleLine)
+bool ShouldRenderAnyFocusFilteredChat(bool FocusHidePlayerMessages, bool FocusHideSystemInfoMessages, bool FocusHideSystemPromptMessages, bool FocusHideEcho, bool HasForceVisibleLine)
 {
-	return !(FocusHidePlayerMessages && FocusHideSystemMessages && FocusHideEcho) || HasForceVisibleLine;
+	return !(FocusHidePlayerMessages && FocusHideSystemInfoMessages && FocusHideSystemPromptMessages && FocusHideEcho) || HasForceVisibleLine;
 }
 
 SQmFocusModeDecisions GetQmFocusModeDecisions(const SQmFocusModeConfig &Config)
@@ -176,16 +189,20 @@ SQmFocusModeDecisions GetQmFocusModeDecisions(const SQmFocusModeConfig &Config)
 	Decisions.m_HideExplosionEffects = ShouldHideFocusExplosionEffects(Config.m_FocusActive, Config.m_HideExplosionEffects);
 	Decisions.m_HideFreezeEffects = ShouldHideFocusFreezeEffects(Config.m_FocusActive, Config.m_HideFreezeEffects);
 	Decisions.m_HideHammerEffects = ShouldHideFocusHammerEffects(Config.m_FocusActive, Config.m_HideHammerEffects);
+	Decisions.m_HideMuzzleEffects = ShouldHideFocusMuzzleEffects(Config.m_FocusActive, Config.m_HideMuzzleEffects);
+	Decisions.m_MuteDeathSounds = ShouldMuteFocusDeathSounds(Config.m_FocusActive, Config.m_MuteDeathSounds);
 	Decisions.m_MuteHammerSounds = ShouldMuteFocusHammerSounds(Config.m_FocusActive, Config.m_MuteHammerSounds);
 	Decisions.m_RenderMapProgressBar = ShouldRenderMapProgressBar(Config.m_MapProgressEnabled, Config.m_MapProgressStyle, Config.m_PlayerStatsHudEnabled, Config.m_GoresMapProgressEnabled) && !ShouldHideFocusMapProgress(Config.m_FocusActive, Config.m_HideMapProgress);
 	Decisions.m_HideHud = ShouldHideFocusHud(Config.m_FocusActive, Config.m_HideHud);
 	Decisions.m_HideScoreboard = ShouldHideFocusScoreboard(Config.m_FocusActive, Config.m_HideScoreboard);
 	Decisions.m_HideNames = ShouldHideFocusNames(Config.m_FocusActive, Config.m_HideNames);
+	Decisions.m_HideNameplates = ShouldHideFocusNameplates(Config.m_FocusActive, Config.m_HideNameplates);
 	Decisions.m_HideInfoMessages = ShouldHideFocusInfoMessages(Config.m_FocusActive, Config.m_HideInfoMessages);
 	Decisions.m_HideDirectionIndicators = ShouldHideFocusDirectionIndicators(Config.m_FocusActive, Config.m_HideDirectionIndicators);
 	Decisions.m_HideGuideLines = ShouldHideFocusGuideLines(Config.m_FocusActive, Config.m_HideGuideLines);
 	Decisions.m_HidePlayerMessages = Config.m_FocusActive && Config.m_HidePlayerMessages;
-	Decisions.m_HideSystemMessages = Config.m_FocusActive && Config.m_HideSystemMessages;
+	Decisions.m_HideSystemInfoMessages = Config.m_FocusActive && Config.m_HideSystemInfoMessages;
+	Decisions.m_HideSystemPromptMessages = Config.m_FocusActive && Config.m_HideSystemPromptMessages;
 	Decisions.m_HideEchoMessages = Config.m_FocusActive && Config.m_HideEchoMessages;
 	return Decisions;
 }

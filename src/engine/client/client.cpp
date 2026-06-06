@@ -58,6 +58,7 @@
 
 #include <game/localization.h>
 #include <game/version.h>
+#include <game/client/components/qmclient/perf_logging.h>
 
 #if defined(CONF_VIDEORECORDER)
 #include "video.h"
@@ -73,28 +74,6 @@
 
 namespace
 {
-	bool PerfDebugEnabled()
-	{
-		return g_Config.m_QmPerfDebug != 0;
-	}
-
-	double PerfDebugThresholdMs()
-	{
-		return g_Config.m_QmPerfDebugThresholdMs > 0 ? g_Config.m_QmPerfDebugThresholdMs : 1.0;
-	}
-
-	void LogPerfStage(const char *pSystem, const char *pStage, const double DurationMs, const bool Force = false, const char *pExtra = nullptr)
-	{
-		if(!PerfDebugEnabled())
-			return;
-		if(!Force && DurationMs < PerfDebugThresholdMs())
-			return;
-
-		if(pExtra != nullptr && pExtra[0] != '\0')
-			dbg_msg(pSystem, "stage=%s duration_ms=%.3f %s", pStage, DurationMs, pExtra);
-		else
-			dbg_msg(pSystem, "stage=%s duration_ms=%.3f", pStage, DurationMs);
-	}
 }
 #ifdef main
 #undef main
@@ -169,8 +148,7 @@ static bool WriteMiniDumpFile(const char *pFilename)
 		return false;
 	}
 
-	const MINIDUMP_TYPE DumpType = static_cast<MINIDUMP_TYPE>(
-		MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithIndirectlyReferencedMemory);
+	const MINIDUMP_TYPE DumpType = MINIDUMP_TYPE(MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithIndirectlyReferencedMemory); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
 	const BOOL Result = pMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), FileHandle, DumpType, nullptr, nullptr, nullptr);
 
 	CloseHandle(FileHandle);
@@ -214,21 +192,37 @@ static inline bool RepackMsg(const CMsgPacker *pMsg, CPacker &Packer, bool Sixup
 		if(pMsg->m_System)
 		{
 			if(MsgId >= OFFSET_UUID)
+			{
 				;
+			}
 			else if(MsgId == NETMSG_INFO || MsgId == NETMSG_REQUEST_MAP_DATA)
+			{
 				;
+			}
 			else if(MsgId == NETMSG_READY)
+			{
 				MsgId = protocol7::NETMSG_READY;
+			}
 			else if(MsgId == NETMSG_RCON_CMD)
+			{
 				MsgId = protocol7::NETMSG_RCON_CMD;
+			}
 			else if(MsgId == NETMSG_ENTERGAME)
+			{
 				MsgId = protocol7::NETMSG_ENTERGAME;
+			}
 			else if(MsgId == NETMSG_INPUT)
+			{
 				MsgId = protocol7::NETMSG_INPUT;
+			}
 			else if(MsgId == NETMSG_RCON_AUTH)
+			{
 				MsgId = protocol7::NETMSG_RCON_AUTH;
+			}
 			else if(MsgId == NETMSG_PING)
+			{
 				MsgId = protocol7::NETMSG_PING;
+			}
 			else
 			{
 				log_error("net", "0.7 DROP send sys %d", MsgId);
@@ -1014,9 +1008,13 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 		m_SendPassword = false;
 	}
 	else if(!pPassword)
+	{
 		m_aPassword[0] = 0;
+	}
 	else
+	{
 		str_copy(m_aPassword, pPassword);
+	}
 
 	m_CanReceiveServerCapabilities = true;
 #if defined(CONF_QM_LIVE_CLIENT)
@@ -1030,7 +1028,9 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 		m_aNetClient[CONN_MAIN].Connect7(aConnectAddrs, NumConnectAddrs);
 	}
 	else
+	{
 		m_aNetClient[CONN_MAIN].Connect(aConnectAddrs, NumConnectAddrs);
+	}
 
 	m_aNetClient[CONN_MAIN].RefreshStun();
 	SetState(IClient::STATE_CONNECTING);
@@ -1498,28 +1498,28 @@ void CClient::Render()
 	{
 		CPerfTimer StageTimer;
 		m_pEditor->OnRender();
-		LogPerfStage("perf/render", "editor_onrender", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "editor_onrender", StageTimer.ElapsedMs(), false, this);
 	}
 	else
 	{
 		CPerfTimer StageTimer;
 		GameClient()->OnRender();
-		LogPerfStage("perf/render", "gameclient_onrender", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "gameclient_onrender", StageTimer.ElapsedMs(), false, this);
 	}
 
 	{
 		CPerfTimer StageTimer;
 		RenderDebug();
-		LogPerfStage("perf/render", "client_render_debug", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "client_render_debug", StageTimer.ElapsedMs(), false, this);
 	}
 
 	{
 		CPerfTimer StageTimer;
 		RenderGraphs();
-		LogPerfStage("perf/render", "client_render_graphs", StageTimer.ElapsedMs());
+		QmPerfLogStage("perf/render", "client_render_graphs", StageTimer.ElapsedMs(), false, this);
 	}
 
-	LogPerfStage("perf/render", "client_render_total", RenderTimer.ElapsedMs());
+	QmPerfLogStage("perf/render", "client_render_total", RenderTimer.ElapsedMs(), false, this);
 }
 
 const char *CClient::LoadMap(const char *pName, const char *pFilename, SHA256_DIGEST *pWantedSha256, unsigned WantedCrc)
@@ -1927,6 +1927,9 @@ static CServerCapabilities GetServerCapabilities(int Version, int Flags, bool Si
 
 void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 {
+	if(Conn < 0 || Conn >= NUM_DUMMIES)
+		return;
+
 	CUnpacker Unpacker;
 	Unpacker.Reset(pPacket->m_pData, pPacket->m_DataSize);
 	CMsgPacker Packer(NETMSG_EX, true);
@@ -1980,13 +1983,13 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 				pMapUrl = "";
 			}
 
-			m_MapDetails = std::make_optional<CMapDetails>();
-			CMapDetails &MapDetails = m_MapDetails.value();
+			CMapDetails MapDetails;
 			str_copy(MapDetails.m_aName, pMap);
 			MapDetails.m_Size = MapSize;
 			MapDetails.m_Crc = MapCrc;
 			MapDetails.m_Sha256 = *pMapSha256;
 			str_copy(MapDetails.m_aUrl, pMapUrl);
+			m_MapDetails = MapDetails;
 		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CAPABILITIES)
 		{
@@ -2257,7 +2260,9 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 				g_Config.m_ClDummy = 0;
 			}
 			else
+			{
 				m_DummyDeactivateOnReconnect = false;
+			}
 		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CON_READY)
 		{
@@ -3485,7 +3490,9 @@ void CClient::Update()
 	if(m_pMapdownloadTask)
 	{
 		if(m_pMapdownloadTask->State() == EHttpState::DONE)
+		{
 			FinishMapDownload();
+		}
 		else if(m_pMapdownloadTask->State() == EHttpState::ERROR || m_pMapdownloadTask->State() == EHttpState::ABORTED)
 		{
 			dbg_msg("webdl", "http failed, falling back to gameserver");
@@ -3770,7 +3777,6 @@ void CClient::Run()
 
 	bool LastD = false;
 	bool LastE = false;
-	bool LastG = false;
 
 	auto LastTime = time_get_nanoseconds();
 	int64_t LastRenderTime = time_get();
@@ -3778,6 +3784,7 @@ void CClient::Run()
 	while(true)
 	{
 		CPerfTimer LoopTimer;
+		++m_PerfFrame;
 		set_new_tick();
 		UpdateHangHeartbeat();
 
@@ -3815,7 +3822,7 @@ void CClient::Run()
 			const bool QuitRequested = Input()->Update();
 			char aExtra[96];
 			str_format(aExtra, sizeof(aExtra), "state=%d quit=%d", State(), QuitRequested ? 1 : 0);
-			LogPerfStage("perf/main_thread", "input_update", StageTimer.ElapsedMs(), QuitRequested, aExtra);
+			QmPerfLogStage("perf/main_thread", "input_update", StageTimer.ElapsedMs(), QuitRequested, this, nullptr, nullptr, aExtra);
 			if(QuitRequested)
 			{
 				if(State() == IClient::STATE_QUITTING)
@@ -3840,7 +3847,7 @@ void CClient::Run()
 		{
 			CPerfTimer StageTimer;
 			Updater()->Update();
-			LogPerfStage("perf/main_thread", "updater_update", StageTimer.ElapsedMs());
+			QmPerfLogStage("perf/main_thread", "updater_update", StageTimer.ElapsedMs(), false, this);
 		}
 #endif
 
@@ -3848,14 +3855,11 @@ void CClient::Run()
 		{
 			CPerfTimer StageTimer;
 			Sound()->Update();
-			LogPerfStage("perf/main_thread", "sound_update", StageTimer.ElapsedMs());
+			QmPerfLogStage("perf/main_thread", "sound_update", StageTimer.ElapsedMs(), false, this);
 		}
 
 		if(CtrlShiftKey(KEY_D, LastD))
 			g_Config.m_Debug ^= 1;
-
-		if(CtrlShiftKey(KEY_G, LastG))
-			g_Config.m_DbgGraphs ^= 1;
 
 		if(CtrlShiftKey(KEY_E, LastE))
 		{
@@ -3886,7 +3890,7 @@ void CClient::Run()
 				Update();
 				char aExtra[96];
 				str_format(aExtra, sizeof(aExtra), "state=%d editor=%d", State(), m_EditorActive ? 1 : 0);
-				LogPerfStage("perf/main_thread", "client_update", StageTimer.ElapsedMs(), false, aExtra);
+				QmPerfLogStage("perf/main_thread", "client_update", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 			}
 			int64_t Now = time_get();
 
@@ -3941,14 +3945,14 @@ void CClient::Run()
 					Render();
 					char aExtra[64];
 					str_format(aExtra, sizeof(aExtra), "state=%d", State());
-					LogPerfStage("perf/main_thread", "frame_render", StageTimer.ElapsedMs(), false, aExtra);
+					QmPerfLogStage("perf/main_thread", "frame_render", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 				}
 				{
 					CPerfTimer StageTimer;
 					m_pGraphics->Swap();
 					char aExtra[64];
 					str_format(aExtra, sizeof(aExtra), "state=%d", State());
-					LogPerfStage("perf/main_thread", "graphics_swap", StageTimer.ElapsedMs(), false, aExtra);
+					QmPerfLogStage("perf/main_thread", "graphics_swap", StageTimer.ElapsedMs(), false, this, nullptr, nullptr, aExtra);
 				}
 			}
 			else if(!IsRenderActive)
@@ -3963,7 +3967,7 @@ void CClient::Run()
 		AutoCSV_Cleanup();
 
 		m_Fifo.Update();
-		LogPerfStage("perf/main_thread", "loop_total", LoopTimer.ElapsedMs());
+		QmPerfLogStage("perf/main_thread", "loop_total", LoopTimer.ElapsedMs(), false, this);
 
 		if(State() == IClient::STATE_QUITTING || State() == IClient::STATE_RESTARTING)
 			break;
@@ -4008,7 +4012,9 @@ void CClient::Run()
 			LastTime = Now + SleepTimeInNanoSeconds;
 		}
 		else
+		{
 			LastTime = Now;
+		}
 
 		// update local and global time
 		m_LocalTime = (time_get() - m_LocalStartTime) / (float)time_freq();
@@ -4135,7 +4141,9 @@ bool CClient::CtrlShiftKey(int Key, bool &Last)
 		return true;
 	}
 	else if(Last && !Input()->KeyIsPressed(Key))
+	{
 		Last = false;
+	}
 
 	return false;
 }
@@ -4490,17 +4498,25 @@ void CClient::Con_SaveReplay(IConsole::IResult *pResult, void *pUserData)
 	{
 		int Length = pResult->GetInteger(0);
 		if(Length <= 0)
+		{
 			pSelf->m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "replay", "ERROR: length must be greater than 0 second.");
+		}
 		else
 		{
 			if(pResult->NumArguments() >= 2)
+			{
 				pSelf->SaveReplay(Length, pResult->GetString(1));
+			}
 			else
+			{
 				pSelf->SaveReplay(Length);
+			}
 		}
 	}
 	else
+	{
 		pSelf->SaveReplay(g_Config.m_ClReplayLength);
+	}
 }
 
 void CClient::SaveReplay(const int Length, const char *pFilename)
@@ -5135,10 +5151,14 @@ void CClient::ConchainWindowScreen(IConsole::IResult *pResult, void *pUserData, 
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxScreen != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SwitchWindowScreen(pResult->GetInteger(0), true);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainFullscreen(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -5147,10 +5167,14 @@ void CClient::ConchainFullscreen(IConsole::IResult *pResult, void *pUserData, IC
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxFullscreen != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SetWindowParams(pResult->GetInteger(0), g_Config.m_GfxBorderless);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainWindowBordered(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -5159,10 +5183,14 @@ void CClient::ConchainWindowBordered(IConsole::IResult *pResult, void *pUserData
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(!g_Config.m_GfxFullscreen && (g_Config.m_GfxBorderless != pResult->GetInteger(0)))
+		{
 			pSelf->Graphics()->SetWindowParams(g_Config.m_GfxFullscreen, !g_Config.m_GfxBorderless);
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::Notify(const char *pTitle, const char *pMessage)
@@ -5188,10 +5216,14 @@ void CClient::ConchainWindowVSync(IConsole::IResult *pResult, void *pUserData, I
 	if(pSelf->Graphics() && pResult->NumArguments())
 	{
 		if(g_Config.m_GfxVsync != pResult->GetInteger(0))
+		{
 			pSelf->Graphics()->SetVSync(pResult->GetInteger(0));
+		}
 	}
 	else
+	{
 		pfnCallback(pResult, pCallbackUserData);
+	}
 }
 
 void CClient::ConchainWindowResize(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
@@ -5525,6 +5557,7 @@ int main(int argc, const char **argv)
 		pStdoutLogger = std::shared_ptr<ILogger>(log_logger_stdout());
 	}
 #endif
+	std::shared_ptr<CFutureLogger> pFuturePerfFileLogger = std::make_shared<CFutureLogger>();
 	if(pStdoutLogger)
 	{
 		vpLoggers.push_back(pStdoutLogger);
@@ -5535,7 +5568,8 @@ int main(int argc, const char **argv)
 	vpLoggers.push_back(pFutureConsoleLogger);
 	std::shared_ptr<CFutureLogger> pFutureAssertionLogger = std::make_shared<CFutureLogger>();
 	vpLoggers.push_back(pFutureAssertionLogger);
-	log_set_global_logger(log_logger_collection(std::move(vpLoggers)).release());
+	std::shared_ptr<ILogger> pFallbackLogger(log_logger_collection(std::move(vpLoggers)).release());
+	log_set_global_logger(log_logger_prefix_router(pFuturePerfFileLogger, pFallbackLogger, "perf/").release());
 
 #if defined(CONF_PLATFORM_ANDROID)
 	// Initialize Android after logger is available
@@ -5589,7 +5623,7 @@ int main(int argc, const char **argv)
 	CleanerFunctions.emplace([]() { SDL_Quit(); });
 
 	CClient *pClient = CreateClient();
-	pClient->SetLoggers(pFutureFileLogger, std::move(pStdoutLogger));
+	pClient->SetLoggers(pFutureFileLogger, std::move(pStdoutLogger), pFuturePerfFileLogger);
 
 	IKernel *pKernel = IKernel::Create();
 	pKernel->RegisterInterface(pClient, false);
@@ -5852,6 +5886,43 @@ int main(int argc, const char **argv)
 	{
 		pFutureFileLogger->Set(log_logger_noop());
 	}
+
+	if(g_Config.m_QmPerfLogfile || g_Config.m_QmPerfDebug)
+	{
+		pStorage->CreateFolder("dumps", IStorage::TYPE_SAVE);
+		pStorage->CreateFolder("dumps/QmClient_Perf", IStorage::TYPE_SAVE);
+		char aDate[64];
+		str_timestamp(aDate, sizeof(aDate));
+		char aPerfLogPath[128];
+		str_format(aPerfLogPath, sizeof(aPerfLogPath), "dumps/QmClient_Perf/qm_perf_%s.log", aDate);
+		char aPerfLogCompletePath[IO_MAX_PATH_LENGTH];
+		pStorage->GetCompletePath(IStorage::TYPE_SAVE, aPerfLogPath, aPerfLogCompletePath, sizeof(aPerfLogCompletePath));
+		IOHANDLE PerfLogfile = pStorage->OpenFile(aPerfLogPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+		if(PerfLogfile)
+		{
+			pFuturePerfFileLogger->Set(log_logger_prefix_file(PerfLogfile, "perf/"));
+			log_info("client", "writing performance log to '%s'", aPerfLogCompletePath);
+		}
+		else
+		{
+			log_error("client", "failed to open '%s' for performance logging", aPerfLogCompletePath);
+			pFuturePerfFileLogger->Set(log_logger_noop());
+		}
+	}
+	else
+	{
+		pFuturePerfFileLogger->Set(log_logger_noop());
+	}
+
+#if defined(CONF_FAMILY_WINDOWS)
+	if(g_Config.m_QmProcessHighPriority)
+	{
+		if(SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS))
+			log_info("client", "applied Windows high priority class");
+		else
+			log_error("client", "failed to apply Windows high priority class (error=%lu)", GetLastError());
+	}
+#endif
 
 	// Register protocol and file extensions
 #if defined(CONF_FAMILY_WINDOWS)
@@ -6251,7 +6322,9 @@ bool CClient::ViewFile(const char *pFilename)
 		str_append(aWorkingDir, "/");
 	}
 	else
+	{
 		aWorkingDir[0] = '\0';
+	}
 
 	char aFileLink[IO_MAX_PATH_LENGTH];
 	str_format(aFileLink, sizeof(aFileLink), "file://%s%s", aWorkingDir, pFilename);
@@ -6346,8 +6419,9 @@ void CClient::GetGpuInfoString(char (&aGpuInfo)[512])
 	}
 }
 
-void CClient::SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger)
+void CClient::SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger, std::shared_ptr<ILogger> &&pPerfFileLogger)
 {
 	m_pFileLogger = pFileLogger;
 	m_pStdoutLogger = pStdoutLogger;
+	m_pPerfFileLogger = pPerfFileLogger;
 }

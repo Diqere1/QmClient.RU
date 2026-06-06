@@ -17,7 +17,7 @@ static_assert(ui_token::color::ACCENT_PRIMARY.x > 0.39f && ui_token::color::ACCE
 static_assert(ui_token::color::SURFACE_GLASS.a == 0.70f,
 	"SURFACE_GLASS alpha must remain at 0.70 to preserve QmClient glass appearance");
 static_assert(ui_token::radius::CARD == 12.0f,
-	"radius::CARD must match LG_CornerRadius in menus_qmclient.cpp");
+	"radius::CARD must match LgCornerRadius in menus_qmclient.cpp");
 
 // Spacing scale must be strictly monotonic so downstream code can pick a
 // "next size up" without ambiguity.

@@ -59,7 +59,7 @@ void CTrails::OnRender()
 	Graphics()->GetScreen(&ScreenX0, &ScreenY0, &ScreenX1, &ScreenY1);
 	const auto IsVisibleOnScreen = [&](vec2 Pos, float Margin) {
 		return Pos.x >= ScreenX0 - Margin && Pos.x <= ScreenX1 + Margin &&
-			Pos.y >= ScreenY0 - Margin && Pos.y <= ScreenY1 + Margin;
+		       Pos.y >= ScreenY0 - Margin && Pos.y <= ScreenY1 + Margin;
 	};
 
 	// TClient: Foot particles - render falling particles behind tee
@@ -101,7 +101,7 @@ void CTrails::OnRender()
 
 			if(!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
 				continue;
-			
+
 			if(IsLocalClient)
 				continue; // Remote rendering is only for other players.
 
@@ -152,7 +152,9 @@ void CTrails::OnRender()
 			continue;
 		}
 		else
+		{
 			m_HistoryValid[ClientId] = true;
+		}
 
 		CTeeRenderInfo TeeInfo = GameClient()->m_aClients[ClientId].m_RenderInfo;
 
@@ -366,7 +368,9 @@ void CTrails::OnRender()
 				PrevPos = Pos - Direction;
 			}
 			else
+			{
 				PrevPos = s_Trail[i - 1].m_Pos;
+			}
 
 			if(i == (int)s_Trail.size() - 1)
 			{
@@ -374,7 +378,9 @@ void CTrails::OnRender()
 				NextPos = Pos + Direction;
 			}
 			else
+			{
 				NextPos = s_Trail[i + 1].m_Pos;
+			}
 
 			vec2 NextDirection = normalize(NextPos - Pos);
 			vec2 PrevDirection = normalize(Pos - PrevPos);

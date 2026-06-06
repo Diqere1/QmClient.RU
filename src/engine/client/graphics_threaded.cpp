@@ -82,6 +82,39 @@ static bool IsMainThread()
 	return std::this_thread::get_id() == gs_MainThreadId;
 }
 
+static bool IsPlausibleWindowRefreshRate(int RefreshRate)
+{
+	return RefreshRate >= 0 && RefreshRate <= 1000;
+}
+
+static bool IsPlausibleWindowSize(int Width, int Height)
+{
+	return Width >= 320 && Height >= 240 && Width <= 16384 && Height <= 16384;
+}
+
+static int LogicalWindowSizeFromViewport(int ViewportSize, float HiDPIScale)
+{
+	if(HiDPIScale > 0.0f)
+		return std::max(round_to_int(ViewportSize / HiDPIScale), 1);
+	return ViewportSize;
+}
+
+static bool CommandBufferCanFitCommands(CCommandBuffer &CommandBuffer, size_t FirstCommandSize, size_t SecondCommandSize)
+{
+	auto &Buffer = CommandBuffer.m_CmdBuffer;
+	size_t Used = Buffer.DataUsed();
+	for(const size_t CommandSize : {FirstCommandSize, SecondCommandSize})
+	{
+		size_t Offset = reinterpret_cast<uintptr_t>(Buffer.DataPtr() + Used) % alignof(std::max_align_t);
+		if(Offset != 0)
+			Offset = alignof(std::max_align_t) - Offset;
+		if(Used + CommandSize + Offset > Buffer.DataSize())
+			return false;
+		Used += CommandSize + Offset;
+	}
+	return true;
+}
+
 static CVideoMode g_aFakeModes[] = {
 	{8192, 4320, 8192, 4320, 0, 8, 8, 8, 0}, {7680, 4320, 7680, 4320, 0, 8, 8, 8, 0}, {5120, 2880, 5120, 2880, 0, 8, 8, 8, 0},
 	{4096, 2160, 4096, 2160, 0, 8, 8, 8, 0}, {3840, 2160, 3840, 2160, 0, 8, 8, 8, 0}, {2560, 1440, 2560, 1440, 0, 8, 8, 8, 0},
@@ -186,6 +219,7 @@ CGraphics_Threaded::CGraphics_Threaded()
 	m_Drawing = EDrawing::NONE;
 
 	m_TextureMemoryUsage = 0;
+	m_GLRenderTargetsSupported = false;
 
 	m_RenderEnable = true;
 	m_DoScreenshot = false;
@@ -710,6 +744,347 @@ IGraphics::CTextureHandle CGraphics_Threaded::LoadTexture(const char *pFilename,
 	return m_NullTexture;
 }
 
+bool CGraphics_Threaded::IsRenderTargetSupported() const
+{
+	return m_GLRenderTargetsSupported;
+}
+
+const char *CGraphics_Threaded::RenderTargetSupportReason() const
+{
+	if(m_GLRenderTargetsSupported)
+		return "supported";
+	if(m_pBackend != nullptr)
+		return m_pBackend->RenderTargetSupportReason();
+	return "backend_not_initialized";
+}
+
+IGraphics::CRenderTargetHandle CGraphics_Threaded::CreateRenderTarget(int Width, int Height)
+{
+	if(!IsRenderTargetSupported() || Width <= 0 || Height <= 0)
+		return CRenderTargetHandle();
+
+	const size_t CurSize = m_vRenderTargetIndices.size();
+	if(m_FirstFreeRenderTarget == CurSize)
+	{
+		const size_t NewSize = CurSize == 0 ? 16 : CurSize * 2;
+		m_vRenderTargetIndices.resize(NewSize);
+		for(size_t Index = CurSize; Index < NewSize; ++Index)
+			m_vRenderTargetIndices[Index] = Index + 1;
+	}
+
+	const size_t TargetId = m_FirstFreeRenderTarget;
+	m_FirstFreeRenderTarget = m_vRenderTargetIndices[TargetId];
+	m_vRenderTargetIndices[TargetId] = -1;
+
+	CCommandBuffer::SCommand_RenderTarget_Create Cmd;
+	Cmd.m_TargetId = TargetId;
+	Cmd.m_Width = Width;
+	Cmd.m_Height = Height;
+	AddCmd(Cmd);
+
+	return CreateRenderTargetHandle(TargetId);
+}
+
+void CGraphics_Threaded::DestroyRenderTarget(CRenderTargetHandle *pTarget)
+{
+	if(!pTarget || !pTarget->IsValid())
+		return;
+	const size_t TargetId = pTarget->Id();
+	if(TargetId >= m_vRenderTargetIndices.size() || m_vRenderTargetIndices[TargetId] != -1)
+	{
+		pTarget->Invalidate();
+		return;
+	}
+
+	CCommandBuffer::SCommand_RenderTarget_Destroy Cmd;
+	Cmd.m_TargetId = TargetId;
+	AddCmd(Cmd);
+
+	m_vRenderTargetIndices[TargetId] = m_FirstFreeRenderTarget;
+	m_FirstFreeRenderTarget = TargetId;
+	pTarget->Invalidate();
+}
+
+IGraphics::CRenderTargetReadbackHandle CGraphics_Threaded::AllocateRenderTargetReadbackHandle()
+{
+	size_t ReadbackId;
+	if(m_FirstFreeRenderTargetReadback >= 0)
+	{
+		ReadbackId = (size_t)m_FirstFreeRenderTargetReadback;
+		dbg_assert(ReadbackId < m_vRenderTargetReadbackRequests.size(), "readback free list out of range");
+		m_FirstFreeRenderTargetReadback = m_vRenderTargetReadbackRequests[ReadbackId].m_NextFree;
+	}
+	else
+	{
+		ReadbackId = m_vRenderTargetReadbackRequests.size();
+		m_vRenderTargetReadbackRequests.emplace_back();
+	}
+
+	SRenderTargetReadbackRequest &Request = m_vRenderTargetReadbackRequests[ReadbackId];
+	Request.m_Image.Free();
+	if(Request.m_pCompletion == nullptr)
+		Request.m_pCompletion = std::make_unique<CSemaphore>();
+	while(Request.m_pCompletion->GetApproximateValue() > 0)
+		Request.m_pCompletion->Wait();
+	++Request.m_Generation;
+	if(Request.m_Generation == 0)
+		++Request.m_Generation;
+	Request.m_NextFree = -1;
+	Request.m_State = ERenderTargetReadbackRequestState::PENDING;
+
+	return CreateRenderTargetReadbackHandle((int)ReadbackId, Request.m_Generation);
+}
+
+CGraphics_Threaded::SRenderTargetReadbackRequest *CGraphics_Threaded::GetRenderTargetReadbackRequest(CRenderTargetReadbackHandle Handle)
+{
+	if(!Handle.IsValid())
+		return nullptr;
+
+	const size_t ReadbackId = (size_t)Handle.Id();
+	if(ReadbackId >= m_vRenderTargetReadbackRequests.size())
+		return nullptr;
+
+	SRenderTargetReadbackRequest &Request = m_vRenderTargetReadbackRequests[ReadbackId];
+	if(Request.m_State == ERenderTargetReadbackRequestState::FREE || Request.m_State == ERenderTargetReadbackRequestState::CANCELED || Request.m_Generation != Handle.Generation())
+		return nullptr;
+
+	return &Request;
+}
+
+const CGraphics_Threaded::SRenderTargetReadbackRequest *CGraphics_Threaded::GetRenderTargetReadbackRequest(CRenderTargetReadbackHandle Handle) const
+{
+	if(!Handle.IsValid())
+		return nullptr;
+
+	const size_t ReadbackId = (size_t)Handle.Id();
+	if(ReadbackId >= m_vRenderTargetReadbackRequests.size())
+		return nullptr;
+
+	const SRenderTargetReadbackRequest &Request = m_vRenderTargetReadbackRequests[ReadbackId];
+	if(Request.m_State == ERenderTargetReadbackRequestState::FREE || Request.m_State == ERenderTargetReadbackRequestState::CANCELED || Request.m_Generation != Handle.Generation())
+		return nullptr;
+
+	return &Request;
+}
+
+void CGraphics_Threaded::UpdateRenderTargetReadbackRequestState(SRenderTargetReadbackRequest &Request)
+{
+	if(Request.m_State != ERenderTargetReadbackRequestState::PENDING || Request.m_pCompletion == nullptr || Request.m_pCompletion->GetApproximateValue() <= 0)
+		return;
+
+	Request.m_pCompletion->Wait();
+	Request.m_State = Request.m_Image.m_pData != nullptr ? ERenderTargetReadbackRequestState::READY : ERenderTargetReadbackRequestState::FAILED;
+}
+
+void CGraphics_Threaded::FreeRenderTargetReadbackHandle(CRenderTargetReadbackHandle Handle, bool FreeImageData)
+{
+	if(!Handle.IsValid())
+		return;
+
+	const size_t ReadbackId = (size_t)Handle.Id();
+	if(ReadbackId >= m_vRenderTargetReadbackRequests.size())
+		return;
+
+	SRenderTargetReadbackRequest &Request = m_vRenderTargetReadbackRequests[ReadbackId];
+	if(Request.m_State == ERenderTargetReadbackRequestState::FREE || Request.m_Generation != Handle.Generation())
+		return;
+
+	if(FreeImageData)
+		Request.m_Image.Free();
+	else
+		Request.m_Image = CImageInfo();
+	while(Request.m_pCompletion != nullptr && Request.m_pCompletion->GetApproximateValue() > 0)
+		Request.m_pCompletion->Wait();
+	Request.m_State = ERenderTargetReadbackRequestState::FREE;
+	Request.m_NextFree = m_FirstFreeRenderTargetReadback;
+	m_FirstFreeRenderTargetReadback = (int)ReadbackId;
+}
+
+void CGraphics_Threaded::CleanupCanceledRenderTargetReadbacks()
+{
+	for(size_t ReadbackId = 0; ReadbackId < m_vRenderTargetReadbackRequests.size(); ++ReadbackId)
+	{
+		SRenderTargetReadbackRequest &Request = m_vRenderTargetReadbackRequests[ReadbackId];
+		if(Request.m_State != ERenderTargetReadbackRequestState::CANCELED || Request.m_pCompletion == nullptr || Request.m_pCompletion->GetApproximateValue() <= 0)
+			continue;
+
+		Request.m_pCompletion->Wait();
+		FreeRenderTargetReadbackHandle(CreateRenderTargetReadbackHandle((int)ReadbackId, Request.m_Generation), true);
+	}
+}
+
+bool CGraphics_Threaded::BeginRenderTarget(CRenderTargetHandle Target, ColorRGBA ClearColor)
+{
+	if(!IsRenderTargetSupported() || !Target.IsValid())
+		return false;
+	const size_t TargetId = Target.Id();
+	if(TargetId >= m_vRenderTargetIndices.size() || m_vRenderTargetIndices[TargetId] != -1)
+		return false;
+
+	FlushVertices();
+	CCommandBuffer::SCommand_RenderTarget_Begin Cmd;
+	Cmd.m_TargetId = TargetId;
+	Cmd.m_ClearColor.r = ClearColor.r;
+	Cmd.m_ClearColor.g = ClearColor.g;
+	Cmd.m_ClearColor.b = ClearColor.b;
+	Cmd.m_ClearColor.a = ClearColor.a;
+	Cmd.m_State = m_State;
+	Cmd.m_State.m_ClipEnable = false;
+	AddCmd(Cmd);
+	return true;
+}
+
+void CGraphics_Threaded::EndRenderTarget()
+{
+	if(!IsRenderTargetSupported())
+		return;
+	FlushVertices();
+	CCommandBuffer::SCommand_RenderTarget_End Cmd;
+	Cmd.m_State = m_State;
+	AddCmd(Cmd);
+}
+
+void CGraphics_Threaded::DrawRenderTarget(CRenderTargetHandle Target, float X, float Y, float W, float H)
+{
+	if(!IsRenderTargetSupported() || !Target.IsValid() || W <= 0.0f || H <= 0.0f)
+		return;
+	const size_t TargetId = Target.Id();
+	if(TargetId >= m_vRenderTargetIndices.size() || m_vRenderTargetIndices[TargetId] != -1)
+		return;
+
+	FlushVertices();
+	CCommandBuffer::SCommand_RenderTarget_Draw Cmd;
+	Cmd.m_TargetId = TargetId;
+	Cmd.m_X = X;
+	Cmd.m_Y = Y;
+	Cmd.m_W = W;
+	Cmd.m_H = H;
+	Cmd.m_State = m_State;
+	AddCmd(Cmd);
+}
+
+IGraphics::CRenderTargetReadbackHandle CGraphics_Threaded::BeginRenderTargetReadback(CRenderTargetHandle Target)
+{
+	if(!IsRenderTargetSupported() || !Target.IsValid())
+		return CRenderTargetReadbackHandle();
+	const size_t TargetId = Target.Id();
+	if(TargetId >= m_vRenderTargetIndices.size() || m_vRenderTargetIndices[TargetId] != -1)
+		return CRenderTargetReadbackHandle();
+
+	CleanupCanceledRenderTargetReadbacks();
+	FlushVertices();
+
+	// Keep the readback and completion signal in the same command buffer so readiness tracks the actual copy.
+	if(!CommandBufferCanFitCommands(*m_pCommandBuffer, sizeof(CCommandBuffer::SCommand_RenderTarget_Readback), sizeof(CCommandBuffer::SCommand_Signal)))
+		KickCommandBuffer();
+
+	CRenderTargetReadbackHandle Handle = AllocateRenderTargetReadbackHandle();
+	SRenderTargetReadbackRequest *pRequest = GetRenderTargetReadbackRequest(Handle);
+	dbg_assert(pRequest != nullptr, "render target readback request allocation failed");
+
+	CCommandBuffer::SCommand_RenderTarget_Readback Cmd;
+	Cmd.m_TargetId = (int)TargetId;
+	Cmd.m_pImage = &pRequest->m_Image;
+	AddCmd(Cmd);
+
+	CCommandBuffer::SCommand_Signal SignalCmd;
+	SignalCmd.m_pSemaphore = pRequest->m_pCompletion.get();
+	AddCmd(SignalCmd);
+
+	KickCommandBuffer();
+	return Handle;
+}
+
+IGraphics::ERenderTargetReadbackState CGraphics_Threaded::PollRenderTargetReadback(CRenderTargetReadbackHandle Handle)
+{
+	CleanupCanceledRenderTargetReadbacks();
+	SRenderTargetReadbackRequest *pRequest = GetRenderTargetReadbackRequest(Handle);
+	if(pRequest == nullptr)
+		return ERenderTargetReadbackState::INVALID;
+
+	UpdateRenderTargetReadbackRequestState(*pRequest);
+	if(pRequest->m_State == ERenderTargetReadbackRequestState::READY)
+		return ERenderTargetReadbackState::READY;
+	if(pRequest->m_State == ERenderTargetReadbackRequestState::FAILED)
+		return ERenderTargetReadbackState::FAILED;
+	return ERenderTargetReadbackState::PENDING;
+}
+
+bool CGraphics_Threaded::ResolveRenderTargetReadback(CRenderTargetReadbackHandle *pHandle, CImageInfo &Image)
+{
+	if(pHandle == nullptr || !pHandle->IsValid())
+		return false;
+
+	CleanupCanceledRenderTargetReadbacks();
+	const CRenderTargetReadbackHandle Handle = *pHandle;
+	SRenderTargetReadbackRequest *pRequest = GetRenderTargetReadbackRequest(Handle);
+	if(pRequest == nullptr)
+	{
+		pHandle->Invalidate();
+		return false;
+	}
+
+	UpdateRenderTargetReadbackRequestState(*pRequest);
+	if(pRequest->m_State == ERenderTargetReadbackRequestState::FAILED)
+	{
+		FreeRenderTargetReadbackHandle(Handle, true);
+		pHandle->Invalidate();
+		return false;
+	}
+	if(pRequest->m_State != ERenderTargetReadbackRequestState::READY)
+		return false;
+
+	Image.Free();
+	Image = std::move(pRequest->m_Image);
+	FreeRenderTargetReadbackHandle(Handle, false);
+	pHandle->Invalidate();
+	return Image.m_pData != nullptr;
+}
+
+void CGraphics_Threaded::CancelRenderTargetReadback(CRenderTargetReadbackHandle *pHandle)
+{
+	if(pHandle == nullptr || !pHandle->IsValid())
+		return;
+
+	CleanupCanceledRenderTargetReadbacks();
+	const CRenderTargetReadbackHandle Handle = *pHandle;
+	SRenderTargetReadbackRequest *pRequest = GetRenderTargetReadbackRequest(Handle);
+	if(pRequest == nullptr)
+	{
+		pHandle->Invalidate();
+		return;
+	}
+
+	UpdateRenderTargetReadbackRequestState(*pRequest);
+	if(pRequest->m_State == ERenderTargetReadbackRequestState::READY || pRequest->m_State == ERenderTargetReadbackRequestState::FAILED)
+		FreeRenderTargetReadbackHandle(Handle, true);
+	else
+		pRequest->m_State = ERenderTargetReadbackRequestState::CANCELED;
+
+	pHandle->Invalidate();
+	CleanupCanceledRenderTargetReadbacks();
+}
+
+bool CGraphics_Threaded::ReadRenderTarget(CRenderTargetHandle Target, CImageInfo &Image)
+{
+	CRenderTargetReadbackHandle Readback = BeginRenderTargetReadback(Target);
+	if(!Readback.IsValid())
+		return false;
+
+	WaitForIdle();
+	const ERenderTargetReadbackState State = PollRenderTargetReadback(Readback);
+	if(State != ERenderTargetReadbackState::READY)
+	{
+		CancelRenderTargetReadback(&Readback);
+		return false;
+	}
+
+	const bool Resolved = ResolveRenderTargetReadback(&Readback, Image);
+	if(!Resolved)
+		CancelRenderTargetReadback(&Readback);
+	return Resolved;
+}
+
 bool CGraphics_Threaded::LoadTextTextures(size_t Width, size_t Height, CTextureHandle &TextTexture, CTextureHandle &TextOutlineTexture, uint8_t *pTextData, uint8_t *pTextOutlineData)
 {
 	size_t MemSize = 0;
@@ -986,39 +1361,43 @@ void CGraphics_Threaded::KickCommandBuffer()
 	m_pCommandBuffer->Reset();
 }
 
-class CScreenshotSaveJob : public IJob
+namespace
 {
-	IStorage *m_pStorage;
-	char m_aName[IO_MAX_PATH_LENGTH];
-	CImageInfo m_Image;
-
-	void Run() override
+	class CScreenshotSaveJob : public IJob
 	{
-		static constexpr LOG_COLOR SCREENSHOT_LOG_COLOR = LOG_COLOR{255, 153, 76};
-		char aWholePath[IO_MAX_PATH_LENGTH];
-		if(CImageLoader::SavePng(m_pStorage->OpenFile(m_aName, IOFLAG_WRITE, IStorage::TYPE_SAVE, aWholePath, sizeof(aWholePath)), m_aName, m_Image))
+		IStorage *m_pStorage;
+		char m_aName[IO_MAX_PATH_LENGTH];
+		CImageInfo m_Image;
+
+	protected:
+		void Run() override
 		{
-			log_info_color(SCREENSHOT_LOG_COLOR, "client", "Saved screenshot to '%s'", aWholePath);
+			static constexpr LOG_COLOR SCREENSHOT_LOG_COLOR = LOG_COLOR{255, 153, 76};
+			char aWholePath[IO_MAX_PATH_LENGTH];
+			if(CImageLoader::SavePng(m_pStorage->OpenFile(m_aName, IOFLAG_WRITE, IStorage::TYPE_SAVE, aWholePath, sizeof(aWholePath)), m_aName, m_Image))
+			{
+				log_info_color(SCREENSHOT_LOG_COLOR, "client", "Saved screenshot to '%s'", aWholePath);
+			}
+			else
+			{
+				log_error_color(SCREENSHOT_LOG_COLOR, "client", "Failed to save screenshot to '%s'", aWholePath);
+			}
 		}
-		else
+
+	public:
+		CScreenshotSaveJob(IStorage *pStorage, const char *pName, CImageInfo &&Image) :
+			m_pStorage(pStorage),
+			m_Image(std::move(Image))
 		{
-			log_error_color(SCREENSHOT_LOG_COLOR, "client", "Failed to save screenshot to '%s'", aWholePath);
+			str_copy(m_aName, pName);
 		}
-	}
 
-public:
-	CScreenshotSaveJob(IStorage *pStorage, const char *pName, CImageInfo &&Image) :
-		m_pStorage(pStorage),
-		m_Image(std::move(Image))
-	{
-		str_copy(m_aName, pName);
-	}
-
-	~CScreenshotSaveJob() override
-	{
-		m_Image.Free();
-	}
-};
+		~CScreenshotSaveJob() override
+		{
+			m_Image.Free();
+		}
+	};
+} // namespace
 
 void CGraphics_Threaded::ScreenshotDirect(bool *pSwapped)
 {
@@ -2821,6 +3200,7 @@ int CGraphics_Threaded::IssueInit()
 		m_GLTextBufferingEnabled = (m_GLQuadContainerBufferingEnabled && m_pBackend->HasTextBuffering());
 		m_GLUses2DTextureArrays = m_pBackend->Uses2DTextureArrays();
 		m_GLHasTextureArraysSupport = m_pBackend->HasTextureArraysSupport();
+		m_GLRenderTargetsSupported = m_pBackend->HasRenderTargets();
 		m_ScreenHiDPIScale = m_ScreenWidth / (float)g_Config.m_GfxScreenWidth;
 		m_ScreenRefreshRate = g_Config.m_GfxScreenRefreshRate;
 	}
@@ -3046,6 +3426,10 @@ int CGraphics_Threaded::Init()
 	m_vTextureGenerations.resize(CCommandBuffer::MAX_TEXTURES);
 	for(size_t i = 0; i < m_vTextureIndices.size(); ++i)
 		m_vTextureIndices[i] = i + 1;
+	m_FirstFreeRenderTarget = 0;
+	m_vRenderTargetIndices.clear();
+	m_vRenderTargetReadbackRequests.clear();
+	m_FirstFreeRenderTargetReadback = -1;
 
 	m_FirstFreeVertexArrayInfo = -1;
 	m_FirstFreeBufferObjectIndex = -1;
@@ -3117,6 +3501,17 @@ void CGraphics_Threaded::Shutdown()
 {
 	// shutdown the backend
 	m_pBackend->Shutdown();
+
+	for(SRenderTargetReadbackRequest &Request : m_vRenderTargetReadbackRequests)
+	{
+		if(Request.m_State != ERenderTargetReadbackRequestState::FREE)
+		{
+			Request.m_Image.Free();
+			Request.m_State = ERenderTargetReadbackRequestState::FREE;
+			while(Request.m_pCompletion != nullptr && Request.m_pCompletion->GetApproximateValue() > 0)
+				Request.m_pCompletion->Wait();
+		}
+	}
 	delete m_pBackend;
 	m_pBackend = nullptr;
 
@@ -3274,6 +3669,25 @@ void CGraphics_Threaded::GotResized(int w, int h, int RefreshRate)
 	// if RefreshRate is -1 use the current config refresh rate
 	if(RefreshRate == -1)
 		RefreshRate = g_Config.m_GfxScreenRefreshRate;
+	if(!IsPlausibleWindowRefreshRate(RefreshRate))
+	{
+		log_warn("gfx", "Ignoring implausible refresh rate during resize: %d", RefreshRate);
+		RefreshRate = m_ScreenRefreshRate;
+	}
+	if(!IsPlausibleWindowSize(w, h))
+	{
+		log_warn("gfx", "Ignoring implausible resize dimensions: %dx%d", w, h);
+		if(IsPlausibleWindowSize(g_Config.m_GfxScreenWidth, g_Config.m_GfxScreenHeight))
+		{
+			w = g_Config.m_GfxScreenWidth;
+			h = g_Config.m_GfxScreenHeight;
+		}
+		else
+		{
+			w = LogicalWindowSizeFromViewport(m_ScreenWidth, m_ScreenHiDPIScale);
+			h = LogicalWindowSizeFromViewport(m_ScreenHeight, m_ScreenHiDPIScale);
+		}
+	}
 
 	// if the size change event is triggered, set all parameters and change the viewport
 	auto PrevCanvasWidth = m_ScreenWidth;

@@ -10,10 +10,13 @@
 #include <generated/protocol7.h>
 
 #include <game/client/component.h>
+#include <game/client/components/qmclient/hud_notifications.h>
 #include <game/client/lineinput.h>
 #include <game/client/render.h>
 #include <game/client/ui.h>
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 class CTranslateResponse
@@ -32,8 +35,8 @@ class CChat : public CComponent
 	static constexpr float CHAT_HEIGHT_MIN = 50.0f;
 	static constexpr float CHAT_FONTSIZE_WIDTH_RATIO = 2.5f;
 
-	static constexpr float CHAT_ANIM_SLIDE_OUT_OFFSET = 60.0f;    // 被挤出可见区域时的水平偏移量
-	static constexpr float CHAT_ANIM_CUTOFF_DURATION = 0.3f;      // 被挤出动画平滑时间（秒）
+	static constexpr float CHAT_ANIM_SLIDE_OUT_OFFSET = 60.0f; // 被挤出可见区域时的水平偏移量
+	static constexpr float CHAT_ANIM_CUTOFF_DURATION = 0.3f; // 被挤出动画平滑时间（秒）
 	static constexpr float CHAT_VISIBLE_SECONDS_NO_FOCUS = 16.0f; // 聊天折叠时保留消息时长（秒）
 
 	enum
@@ -62,6 +65,7 @@ class CChat : public CComponent
 		bool m_Friend;
 		bool m_Highlighted;
 		bool m_ForceVisible;
+		QmHudNotifications::EServerMessageClass m_ServerMessageClass;
 		std::optional<ColorRGBA> m_CustomColor;
 
 		STextContainerIndex m_TextContainerIndex;
@@ -86,6 +90,13 @@ class CChat : public CComponent
 
 	CLine m_aLines[MAX_LINES];
 	int m_CurrentLine;
+	int m_BacklogCurLine;
+	bool m_ScrollbarDragging;
+	float m_ScrollbarDragOffset;
+	std::optional<vec2> m_LastMousePos;
+	bool m_MouseIsPress;
+	vec2 m_MousePress;
+	vec2 m_MouseRelease;
 
 	enum
 	{
@@ -186,6 +197,8 @@ class CChat : public CComponent
 	const char *LocalizeCommandPreviewText(const char *pText) const;
 	bool BuildCommandUsagePreview(const char *pInput, char *pBuf, size_t BufSize) const;
 	void SendChatQueued(int Team, const char *pLine, bool AllowOutgoingTranslation);
+	int CountInitializedLines() const;
+	int CountVisibleLinesFrom(int BacklogLine) const;
 
 	static float EaseInQuad(float t);
 	static float CalculateCutOffAlpha(float CutOffT);
@@ -261,17 +274,39 @@ class CChat : public CComponent
 	CLanguagePopupContext m_LanguagePopupContext;
 	bool m_LanguageMenuOpen = false;
 
-	bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
-
 public:
 	CChat();
 	int Sizeof() const override { return sizeof(*this); }
 
 	static constexpr float MESSAGE_TEE_PADDING_RIGHT = 0.5f;
 
+	static int ClampBacklogLine(int Line, int TotalLines, int VisibleLines)
+	{
+		const int MaxScroll = std::max(0, TotalLines - VisibleLines);
+		return std::clamp(Line, 0, MaxScroll);
+	}
+	static int ScrollbarValueToBacklogLine(float Value, int MaxScroll)
+	{
+		const float ClampedValue = std::clamp(Value, 0.0f, 1.0f);
+		return std::clamp((int)std::round((1.0f - ClampedValue) * MaxScroll), 0, MaxScroll);
+	}
+	static bool IsCopyClickDrag(vec2 Press, vec2 Release)
+	{
+		return length(Release - Press) <= 5.0f;
+	}
+	static QmHudNotifications::EServerMessageClass ResolveLineServerMessageClass(int ClientId, const char *pLine, std::optional<QmHudNotifications::EServerMessageClass> KnownServerMessageClass = std::nullopt)
+	{
+		if(ClientId != SERVER_MSG)
+			return QmHudNotifications::EServerMessageClass::None;
+		if(KnownServerMessageClass.has_value())
+			return *KnownServerMessageClass;
+		return QmHudNotifications::ServerMessageClass(pLine, QmHudNotifications::ESoloPrompt::None);
+	}
+
 	bool IsActive() const { return m_Mode != MODE_NONE; }
 	const char *GetInputText() const { return m_Input.GetString(); }
 	void AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible = false);
+	void AddLine(int ClientId, int Team, const char *pLine, bool ForceVisible, std::optional<QmHudNotifications::EServerMessageClass> KnownServerMessageClass);
 	void EnableMode(int Team);
 	void DisableMode();
 	void SaveDraft();
@@ -288,6 +323,7 @@ public:
 	void Reset();
 	void OnRelease() override;
 	void OnMessage(int MsgType, void *pRawMsg) override;
+	bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 	bool OnInput(const IInput::CEvent &Event) override;
 	void OnInit() override;
 

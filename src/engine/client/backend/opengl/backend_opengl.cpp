@@ -14,6 +14,8 @@
 #include <engine/client/blocklist_driver.h>
 #include <engine/gfx/image_manipulation.h>
 
+#include <limits>
+
 #ifndef BACKEND_AS_OPENGL_ES
 #include <GL/glew.h>
 #else
@@ -406,6 +408,7 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 				pCommand->m_pCapabilities->m_TextBuffering = true;
 				pCommand->m_pCapabilities->m_QuadContainerBuffering = true;
 				pCommand->m_pCapabilities->m_ShaderSupport = true;
+				pCommand->m_pCapabilities->m_RenderTargets = true;
 
 				pCommand->m_pCapabilities->m_MipMapping = true;
 				pCommand->m_pCapabilities->m_3DTextures = true;
@@ -420,6 +423,7 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 				pCommand->m_pCapabilities->m_3DTextures = false;
 				pCommand->m_pCapabilities->m_2DArrayTextures = false;
 				pCommand->m_pCapabilities->m_ShaderSupport = true;
+				pCommand->m_pCapabilities->m_RenderTargets = true;
 
 				int TextureLayers = 0;
 				glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &TextureLayers);
@@ -456,6 +460,7 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 				pCommand->m_pCapabilities->m_2DArrayTextures = false;
 
 				pCommand->m_pCapabilities->m_ShaderSupport = false;
+				pCommand->m_pCapabilities->m_RenderTargets = true;
 
 				int Texture3DSize = 0;
 				glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &Texture3DSize);
@@ -486,6 +491,7 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 				pCommand->m_pCapabilities->m_TextBuffering = false;
 				pCommand->m_pCapabilities->m_QuadContainerBuffering = false;
 				pCommand->m_pCapabilities->m_ShaderSupport = false;
+				pCommand->m_pCapabilities->m_RenderTargets = false;
 
 				pCommand->m_pCapabilities->m_MipMapping = false;
 				pCommand->m_pCapabilities->m_3DTextures = false;
@@ -504,6 +510,7 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 			pCommand->m_pCapabilities->m_TextBuffering = false;
 			pCommand->m_pCapabilities->m_QuadContainerBuffering = false;
 			pCommand->m_pCapabilities->m_ShaderSupport = false;
+			pCommand->m_pCapabilities->m_RenderTargets = false;
 
 			pCommand->m_pCapabilities->m_MipMapping = false;
 			pCommand->m_pCapabilities->m_3DTextures = false;
@@ -519,6 +526,7 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 			pCommand->m_pCapabilities->m_TextBuffering = true;
 			pCommand->m_pCapabilities->m_QuadContainerBuffering = true;
 			pCommand->m_pCapabilities->m_ShaderSupport = true;
+			pCommand->m_pCapabilities->m_RenderTargets = true;
 
 			pCommand->m_pCapabilities->m_MipMapping = true;
 			pCommand->m_pCapabilities->m_3DTextures = true;
@@ -528,6 +536,8 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 			pCommand->m_pCapabilities->m_TrianglesAsQuads = true;
 		}
 	}
+
+	pCommand->m_pCapabilities->m_pRenderTargetSupportReason = pCommand->m_pCapabilities->m_RenderTargets ? "supported" : "opengl_context_without_render_target_support";
 
 	if(*pCommand->m_pInitError != -2)
 	{
@@ -566,14 +576,18 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 				dbg_msg("gfx", "Enabled OpenGL debug mode");
 			}
 			else
+			{
 				dbg_msg("gfx", "Requested OpenGL debug mode, but the driver does not support the required extension");
+			}
 		}
 #endif
 
 		return true;
 	}
 	else
+	{
 		return false;
+	}
 }
 
 bool CCommandProcessorFragment_OpenGL::Cmd_Init(const SCommand_Init *pCommand)
@@ -997,6 +1011,177 @@ void CCommandProcessorFragment_OpenGL::Cmd_Render(const CCommandBuffer::SCommand
 #endif
 }
 
+void CCommandProcessorFragment_OpenGL::Cmd_RenderTarget_Create(const CCommandBuffer::SCommand_RenderTarget_Create *pCommand)
+{
+	if(pCommand->m_TargetId < 0 || pCommand->m_Width <= 0 || pCommand->m_Height <= 0)
+		return;
+	if((size_t)pCommand->m_TargetId >= m_vRenderTargets.size())
+		m_vRenderTargets.resize((size_t)pCommand->m_TargetId + 1);
+
+	SOpenGLRenderTarget &Target = m_vRenderTargets[pCommand->m_TargetId];
+	if(Target.m_Framebuffer != 0 || Target.m_Texture != 0)
+	{
+		CCommandBuffer::SCommand_RenderTarget_Destroy DestroyCmd;
+		DestroyCmd.m_TargetId = pCommand->m_TargetId;
+		Cmd_RenderTarget_Destroy(&DestroyCmd);
+	}
+
+	glGenTextures(1, &Target.m_Texture);
+	glBindTexture(GL_TEXTURE_2D, Target.m_Texture);
+#if defined(BACKEND_AS_OPENGL_ES)
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pCommand->m_Width, pCommand->m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+#else
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pCommand->m_Width, pCommand->m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+#endif
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	glGenFramebuffers(1, &Target.m_Framebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, Target.m_Framebuffer);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, Target.m_Texture, 0);
+	const GLenum Status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	if(Status != GL_FRAMEBUFFER_COMPLETE)
+	{
+		dbg_msg("opengl", "render target %d incomplete: 0x%x", pCommand->m_TargetId, Status);
+		CCommandBuffer::SCommand_RenderTarget_Destroy DestroyCmd;
+		DestroyCmd.m_TargetId = pCommand->m_TargetId;
+		Cmd_RenderTarget_Destroy(&DestroyCmd);
+		return;
+	}
+
+	Target.m_Width = pCommand->m_Width;
+	Target.m_Height = pCommand->m_Height;
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_RenderTarget_Destroy(const CCommandBuffer::SCommand_RenderTarget_Destroy *pCommand)
+{
+	if(pCommand->m_TargetId < 0 || (size_t)pCommand->m_TargetId >= m_vRenderTargets.size())
+		return;
+	SOpenGLRenderTarget &Target = m_vRenderTargets[pCommand->m_TargetId];
+	if(Target.m_Framebuffer != 0)
+		glDeleteFramebuffers(1, &Target.m_Framebuffer);
+	if(Target.m_Texture != 0)
+		glDeleteTextures(1, &Target.m_Texture);
+	Target = SOpenGLRenderTarget{};
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_RenderTarget_Begin(const CCommandBuffer::SCommand_RenderTarget_Begin *pCommand)
+{
+	if(pCommand->m_TargetId < 0 || (size_t)pCommand->m_TargetId >= m_vRenderTargets.size())
+		return;
+	const SOpenGLRenderTarget &Target = m_vRenderTargets[pCommand->m_TargetId];
+	if(Target.m_Framebuffer == 0)
+		return;
+	if(m_bRenderTargetActive)
+	{
+		dbg_msg("opengl", "nested render target begin ignored");
+		return;
+	}
+
+	// render target 会临时改写绘制目标和视口，结束时必须恢复，否则后续 UI 坐标会错位。
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &m_RenderTargetPreviousFramebuffer);
+	glGetIntegerv(GL_VIEWPORT, m_aRenderTargetPreviousViewport);
+	m_bRenderTargetActive = true;
+	glBindFramebuffer(GL_FRAMEBUFFER, Target.m_Framebuffer);
+	glViewport(0, 0, Target.m_Width, Target.m_Height);
+	SetState(pCommand->m_State);
+	glClearColor(pCommand->m_ClearColor.r, pCommand->m_ClearColor.g, pCommand->m_ClearColor.b, pCommand->m_ClearColor.a);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_RenderTarget_End(const CCommandBuffer::SCommand_RenderTarget_End *pCommand)
+{
+	if(!m_bRenderTargetActive)
+		return;
+	glBindFramebuffer(GL_FRAMEBUFFER, m_RenderTargetPreviousFramebuffer);
+	glViewport(m_aRenderTargetPreviousViewport[0], m_aRenderTargetPreviousViewport[1], m_aRenderTargetPreviousViewport[2], m_aRenderTargetPreviousViewport[3]);
+	SetState(pCommand->m_State);
+	m_bRenderTargetActive = false;
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_RenderTarget_Draw(const CCommandBuffer::SCommand_RenderTarget_Draw *pCommand)
+{
+	if(pCommand->m_TargetId < 0 || (size_t)pCommand->m_TargetId >= m_vRenderTargets.size())
+		return;
+	const SOpenGLRenderTarget &Target = m_vRenderTargets[pCommand->m_TargetId];
+	if(Target.m_Texture == 0 || pCommand->m_W <= 0.0f || pCommand->m_H <= 0.0f)
+		return;
+
+	SetState(pCommand->m_State);
+
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, Target.m_Texture);
+	CCommandBuffer::SVertex aVertices[4];
+	const float X0 = pCommand->m_X;
+	const float Y0 = pCommand->m_Y;
+	const float X1 = pCommand->m_X + pCommand->m_W;
+	const float Y1 = pCommand->m_Y + pCommand->m_H;
+	aVertices[0].m_Pos = vec2(X0, Y0);
+	aVertices[0].m_Tex = vec2(0.0f, 1.0f);
+	aVertices[1].m_Pos = vec2(X1, Y0);
+	aVertices[1].m_Tex = vec2(1.0f, 1.0f);
+	aVertices[2].m_Pos = vec2(X1, Y1);
+	aVertices[2].m_Tex = vec2(1.0f, 0.0f);
+	aVertices[3].m_Pos = vec2(X0, Y1);
+	aVertices[3].m_Tex = vec2(0.0f, 0.0f);
+	for(auto &Vertex : aVertices)
+		Vertex.m_Color = CCommandBuffer::SColor{255, 255, 255, 255};
+
+#ifndef BACKEND_GL_MODERN_API
+	glVertexPointer(2, GL_FLOAT, sizeof(CCommandBuffer::SVertex), (char *)aVertices);
+	glTexCoordPointer(2, GL_FLOAT, sizeof(CCommandBuffer::SVertex), (char *)aVertices + sizeof(float) * 2);
+	glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(CCommandBuffer::SVertex), (char *)aVertices + sizeof(float) * 4);
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	glEnableClientState(GL_COLOR_ARRAY);
+	glDrawArrays(GL_QUADS, 0, 4);
+#endif
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_RenderTarget_Readback(const CCommandBuffer::SCommand_RenderTarget_Readback *pCommand)
+{
+	if(pCommand->m_TargetId < 0 || (size_t)pCommand->m_TargetId >= m_vRenderTargets.size() || pCommand->m_pImage == nullptr)
+		return;
+
+	const SOpenGLRenderTarget &Target = m_vRenderTargets[pCommand->m_TargetId];
+	if(Target.m_Framebuffer == 0 || Target.m_Width <= 0 || Target.m_Height <= 0)
+		return;
+
+	const int w = Target.m_Width;
+	const int h = Target.m_Height;
+
+	// we allocate one more row to use when we are flipping the texture
+	unsigned char *pPixelData = (unsigned char *)malloc((size_t)w * (h + 1) * 4);
+	unsigned char *pTempRow = pPixelData + w * h * 4;
+
+	GLint Alignment;
+	GLint PreviousFramebuffer;
+	glGetIntegerv(GL_PACK_ALIGNMENT, &Alignment);
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &PreviousFramebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, Target.m_Framebuffer);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pPixelData);
+	glPixelStorei(GL_PACK_ALIGNMENT, Alignment);
+	glBindFramebuffer(GL_FRAMEBUFFER, PreviousFramebuffer);
+
+	// flip the pixel because opengl works from bottom left corner
+	for(int y = 0; y < h / 2; y++)
+	{
+		mem_copy(pTempRow, pPixelData + y * w * 4, w * 4);
+		mem_copy(pPixelData + y * w * 4, pPixelData + (h - y - 1) * w * 4, w * 4);
+		mem_copy(pPixelData + (h - y - 1) * w * 4, pTempRow, w * 4);
+	}
+
+	pCommand->m_pImage->m_Width = w;
+	pCommand->m_pImage->m_Height = h;
+	pCommand->m_pImage->m_Format = CImageInfo::FORMAT_RGBA;
+	pCommand->m_pImage->m_pData = pPixelData;
+}
+
 void CCommandProcessorFragment_OpenGL::Cmd_ReadPixel(const CCommandBuffer::SCommand_TrySwapAndReadPixel *pCommand)
 {
 	// get size of viewport
@@ -1098,6 +1283,24 @@ ERunCommandReturnTypes CCommandProcessorFragment_OpenGL::RunCommand(const CComma
 		break;
 	case CCommandBuffer::CMD_RENDER_TEX3D:
 		Cmd_RenderTex3D(static_cast<const CCommandBuffer::SCommand_RenderTex3D *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_RENDER_TARGET_CREATE:
+		Cmd_RenderTarget_Create(static_cast<const CCommandBuffer::SCommand_RenderTarget_Create *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_RENDER_TARGET_DESTROY:
+		Cmd_RenderTarget_Destroy(static_cast<const CCommandBuffer::SCommand_RenderTarget_Destroy *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_RENDER_TARGET_BEGIN:
+		Cmd_RenderTarget_Begin(static_cast<const CCommandBuffer::SCommand_RenderTarget_Begin *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_RENDER_TARGET_END:
+		Cmd_RenderTarget_End(static_cast<const CCommandBuffer::SCommand_RenderTarget_End *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_RENDER_TARGET_DRAW:
+		Cmd_RenderTarget_Draw(static_cast<const CCommandBuffer::SCommand_RenderTarget_Draw *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_RENDER_TARGET_READBACK:
+		Cmd_RenderTarget_Readback(static_cast<const CCommandBuffer::SCommand_RenderTarget_Readback *>(pBaseCommand));
 		break;
 	case CCommandBuffer::CMD_TRY_SWAP_AND_READ_PIXEL:
 		Cmd_ReadPixel(static_cast<const CCommandBuffer::SCommand_TrySwapAndReadPixel *>(pBaseCommand));
@@ -1341,11 +1544,22 @@ bool CCommandProcessorFragment_OpenGL2::DoAnalyzeStep(size_t CheckCount, size_t 
 
 	int w = aViewport[2];
 	int h = aViewport[3];
+	if(w <= 0 || h <= 0 || CheckCount == 0 || SingleImageSize < 3)
+		return false;
+	if(CheckCount > std::numeric_limits<size_t>::max() / SingleImageSize)
+		return false;
 
-	size_t PixelDataSize = (size_t)w * h * 3;
-	if(PixelDataSize == 0)
+	const size_t Width = (size_t)w;
+	const size_t Height = (size_t)h;
+	if(Width > std::numeric_limits<size_t>::max() / Height / 3)
+		return false;
+	const size_t PixelDataSize = Width * Height * 3;
+	const size_t FakeTextureDataSize = SingleImageSize * CheckCount;
+	if(PixelDataSize < 3 || FakeTextureDataSize < 3)
 		return false;
 	uint8_t *pPixelData = (uint8_t *)malloc(PixelDataSize);
+	if(pPixelData == nullptr)
+		return false;
 
 	// fetch the pixels
 	GLint Alignment;
@@ -1360,6 +1574,8 @@ bool CCommandProcessorFragment_OpenGL2::DoAnalyzeStep(size_t CheckCount, size_t 
 	int HeightTile = h / 16;
 	int StartX = WidthTile / 2;
 	int StartY = HeightTile / 2;
+	const size_t MaxPixelOffset = PixelDataSize - 3;
+	const size_t MaxFakeTextureOffset = FakeTextureDataSize - 3;
 	for(size_t d = 0; d < CheckCount; ++d)
 	{
 		int CurX = (int)d % 16;
@@ -1368,10 +1584,8 @@ bool CCommandProcessorFragment_OpenGL2::DoAnalyzeStep(size_t CheckCount, size_t 
 		int CheckX = StartX + CurX * WidthTile;
 		int CheckY = StartY + CurY * HeightTile;
 
-		ptrdiff_t OffsetPixelData = (CheckY * (w * 3)) + (CheckX * 3);
-		ptrdiff_t OffsetFakeTexture = SingleImageSize * d;
-		OffsetPixelData = std::clamp<ptrdiff_t>(OffsetPixelData, 0, (ptrdiff_t)PixelDataSize);
-		OffsetFakeTexture = std::clamp<ptrdiff_t>(OffsetFakeTexture, 0, (ptrdiff_t)(SingleImageSize * CheckCount));
+		const size_t OffsetPixelData = minimum((size_t)CheckY * (size_t)w * 3 + (size_t)CheckX * 3, MaxPixelOffset);
+		const size_t OffsetFakeTexture = minimum(SingleImageSize * d, MaxFakeTextureOffset);
 		uint8_t *pPixel = pPixelData + OffsetPixelData;
 		uint8_t *pPixelTex = aFakeTexture + OffsetFakeTexture;
 		for(size_t i = 0; i < 3; ++i)
@@ -1824,7 +2038,9 @@ void CCommandProcessorFragment_OpenGL2::Cmd_RenderTex3D(const CCommandBuffer::SC
 			pProgram = m_pPrimitive3DProgramTextured;
 		}
 		else
+		{
 			pProgram = m_pPrimitive3DProgram;
+		}
 
 		UseProgram(pProgram);
 
@@ -2084,7 +2300,9 @@ void CCommandProcessorFragment_OpenGL2::Cmd_RenderTileLayer(const CCommandBuffer
 		pProgram = m_pTileProgramTextured;
 	}
 	else
+	{
 		pProgram = m_pTileProgram;
+	}
 
 	UseProgram(pProgram);
 

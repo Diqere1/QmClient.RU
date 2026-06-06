@@ -3,8 +3,6 @@
 #include "menus.h"
 #include "skins7.h"
 
-#include <algorithm>
-
 #include <base/math.h>
 #include <base/system.h>
 
@@ -30,13 +28,14 @@
 #include <game/client/ui_scrollregion.h>
 #include <game/localization.h>
 
+#include <algorithm>
 #include <vector>
 
 using namespace FontIcons;
 
 void CMenus::RenderSettingsTee7(CUIRect MainView)
 {
-	CUIRect SkinPreview, NormalSkinPreview, RedTeamSkinPreview, BlueTeamSkinPreview, Buttons, QuickSearch, DirectoryButton, RefreshButton, SaveDeleteButton, EditTextureButton, TabBars, TabBar, LeftTab, RightTab;
+	CUIRect SkinPreview, NormalSkinPreview, RedTeamSkinPreview, BlueTeamSkinPreview, Buttons, QuickSearch, DirectoryButton, RefreshButton, SaveDeleteButton, EditTextureButton, TabBars, TabBar, LeftTab, RightTab, InfoRow;
 	static bool s_Tee7TransitionInitialized = false;
 	static bool s_PrevTee7Dummy = false;
 	static bool s_PrevTee7Custom = false;
@@ -102,9 +101,15 @@ void CMenus::RenderSettingsTee7(CUIRect MainView)
 				m_SkinNameInput.Append(m_pSelectedSkin->m_aName);
 			}
 			else
+			{
 				m_SkinNameInput.Set(m_pSelectedSkin->m_aName);
+			}
 		}
 	}
+
+	TabBars.HSplitTop(8.0f, nullptr, &TabBars);
+	TabBars.HSplitTop(28.0f, &InfoRow, &TabBars);
+	RenderSettingsTeeIdentity(InfoRow, nullptr);
 
 	if(!s_Tee7TransitionInitialized)
 	{

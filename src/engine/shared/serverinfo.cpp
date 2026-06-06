@@ -3,11 +3,10 @@
 #include "json.h"
 
 #include <base/math.h>
+#include <base/str.h>
 #include <base/system.h>
 
 #include <engine/external/json-parser/json.h>
-
-#include <cstdio>
 
 static bool IsAllowedHex(char c)
 {
@@ -35,7 +34,8 @@ bool ParseCrc(unsigned int *pResult, const char *pString)
 			return true;
 		}
 	}
-	return sscanf(pString, "%08x", pResult) != 1;
+	*pResult = str_toulong_base(pString, 16);
+	return false;
 }
 
 bool CServerInfo2::FromJson(CServerInfo2 *pOut, const json_value *pJson)

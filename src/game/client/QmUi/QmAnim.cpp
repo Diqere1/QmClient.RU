@@ -158,10 +158,12 @@ void CUiV2AnimationRuntime::StartQueuedTracks(const STrackKey &Key, float StartV
 
 void CUiV2AnimationRuntime::CompleteTrack(const STrackKey &Key, const SActiveTrack &Track)
 {
-	m_Values[Key] = Track.m_Target;
-	m_CompletedEvents.push_back({Key.m_NodeKey, Key.m_Property, Track.m_TrackId});
+	const float Target = Track.m_Target;
+	const uint32_t TrackId = Track.m_TrackId;
+	m_Values[Key] = Target;
+	m_CompletedEvents.push_back({Key.m_NodeKey, Key.m_Property, TrackId});
 	m_ActiveTracks.erase(Key);
-	StartQueuedTracks(Key, Track.m_Target);
+	StartQueuedTracks(Key, Target);
 }
 
 float CUiV2AnimationRuntime::CurrentValueFor(const STrackKey &Key, float DefaultValue) const
@@ -358,7 +360,7 @@ void CUiV2AnimationRuntime::Advance(float Dt)
 
 bool CUiV2AnimationRuntime::HasActiveAnimation(uint64_t NodeKey, EUiAnimProperty Property) const
 {
-	return m_ActiveTracks.find({NodeKey, Property}) != m_ActiveTracks.end();
+	return m_ActiveTracks.contains({NodeKey, Property});
 }
 
 int CUiV2AnimationRuntime::ActiveTrackCount() const

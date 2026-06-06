@@ -207,7 +207,7 @@ public:
 	};
 };
 
-class CCommunity
+class CCommunity // NOLINT(bugprone-exception-escape)
 {
 	friend class CServerBrowser;
 
