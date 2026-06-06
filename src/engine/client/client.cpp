@@ -42,6 +42,7 @@
 #include <engine/shared/protocol.h>
 #include <engine/shared/protocol7.h>
 #include <engine/shared/protocol_ex.h>
+#include <engine/shared/client_brand.h>
 #include <engine/shared/protocolglue.h>
 #include <engine/shared/rust_version.h>
 #include <engine/shared/snapshot.h>
@@ -311,6 +312,10 @@ void CClient::SendInfo(int Conn)
 	MsgVer.AddString(GameClient()->DDNetVersionStr());
 	SendMsg(Conn, &MsgVer, MSGFLAG_VITAL);
 
+#if defined(CONF_QM_LIVE_CLIENT)
+	SendQmLiveObserverRequest(Conn);
+#endif
+
 	if(IsSixup())
 	{
 		CMsgPacker Msg(NETMSG_INFO, true);
@@ -325,16 +330,102 @@ void CClient::SendInfo(int Conn)
 	Msg.AddString(GameClient()->NetVersion());
 	Msg.AddString(m_aPassword);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	SendKcpCapability(Conn);
+}
+
+void CClient::SendKcpCapability(int Conn)
+{
+	if(Conn != CONN_MAIN)
+		return;
+	CMsgPacker Msg(NETMSG_KCP_CAPABLE, true);
+	Msg.AddInt(1); // negotiation version
+	Msg.AddInt(NET_MAX_PACKETSIZE);
+	Msg.AddInt(NET_MAX_PAYLOAD);
+	Msg.AddInt(Conn == CONN_DUMMY ? 1 : 0);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	if(g_Config.m_Debug)
+	{
+		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "sent kcp capability", gs_ClientNetworkPrintColor);
+	}
+
+	m_KcpNegotiationPending = true;
+	m_KcpNegotiationStartTime = time_get();
+}
+
+void CClient::SendKcpProbe(int Conn)
+{
+	if(Conn != CONN_MAIN || !m_aNetClient[Conn].IsKcpActive())
+		return;
+	CMsgPacker Msg(NETMSG_KCP_CAPABLE, true);
+	Msg.AddInt(1);
+	Msg.AddInt(NET_MAX_PACKETSIZE);
+	Msg.AddInt(NET_MAX_PAYLOAD);
+	Msg.AddInt(0);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+}
+
+void CClient::SendQmLiveObserverRequest(int Conn)
+{
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn != CONN_MAIN)
+		return;
+
+	CMsgPacker Msg(NETMSG_QM_LIVE_OBSERVER_REQUEST, true);
+	Msg.AddInt(QM_LIVE_OBSERVER_PROTOCOL_VERSION);
+	Msg.AddInt(SERVERCAP_LIVE_OBSERVER | SERVERCAP_LIVE_DIRECTOR);
+	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
+	m_LiveObserverSession.StartRequest();
+	m_LiveObserverRequestTime = time_get();
+#else
+	(void)Conn;
+#endif
+}
+
+void CClient::EnableQmLiveCompatDirector(EQmLiveDenyReason Reason, const char *pReasonText)
+{
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.CompatDirectorActive() || m_LiveObserverSession.Accepted())
+		return;
+
+	m_LiveObserverSession.StartCompatDirector(Reason, pReasonText);
+	m_LiveObserverRequestTime = 0;
+
+	char aBuf[128];
+	str_format(aBuf, sizeof(aBuf), "live observer fallback: %s", m_LiveObserverSession.DenyReasonText());
+	m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+
+	if(m_LiveObserverSession.ReadyPending())
+	{
+		m_LiveObserverSession.SetReadyPending(false);
+		SendReady(CONN_MAIN);
+	}
+#else
+	(void)Reason;
+	(void)pReasonText;
+#endif
 }
 
 void CClient::SendEnterGame(int Conn)
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn == CONN_MAIN && m_LiveObserverSession.Accepted())
+		return;
+#endif
+
 	CMsgPacker Msg(NETMSG_ENTERGAME, true);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
 }
 
 void CClient::SendReady(int Conn)
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Conn == CONN_MAIN && m_LiveObserverSession.RequestPending())
+	{
+		m_LiveObserverSession.SetReadyPending(true);
+		return;
+	}
+#endif
+
 	CMsgPacker Msg(NETMSG_READY, true);
 	SendMsg(Conn, &Msg, MSGFLAG_VITAL | MSGFLAG_FLUSH);
 }
@@ -482,8 +573,48 @@ int CClient::PendingResendCount() const
 	return m_aNetClient[g_Config.m_ClDummy].PendingResendCount();
 }
 
+#if defined(CONF_QM_LIVE_CLIENT)
+void CClient::SendQmLiveObserverInputAck()
+{
+	constexpr int Conn = CONN_MAIN;
+	const int PredTick = m_aPredTick[Conn];
+	if(PredTick <= 0)
+		return;
+
+	const int64_t Now = time_get();
+
+	CMsgPacker Msg(NETMSG_INPUT, true);
+	Msg.AddInt(m_aAckGameTick[Conn]);
+	Msg.AddInt(PredTick);
+	// Keep the normal snapshot ack and input-timing loop alive without sending gameplay input.
+	Msg.AddInt(0);
+
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_Tick = PredTick;
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictedTime = m_PredictedTime.Get(Now);
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictionMargin = PredictionMargin() * time_freq() / 1000;
+	if(g_Config.m_TcSmoothPredictionMargin)
+		m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictionMargin = m_PredictedTime.GetMargin(Now);
+	m_aInputs[Conn][m_aCurrentInput[Conn]].m_Time = Now;
+
+	m_aCurrentInput[Conn]++;
+	m_aCurrentInput[Conn] %= 200;
+
+	SendMsg(Conn, &Msg, MSGFLAG_FLUSH);
+	if(m_aNetClient[Conn].IsKcpActive())
+		SendMsg(Conn, &Msg, MSGFLAG_FLUSH);
+}
+#endif
+
 void CClient::SendInput()
 {
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.Accepted())
+	{
+		SendQmLiveObserverInputAck();
+		return;
+	}
+#endif
+
 	int64_t Now = time_get();
 
 	if(m_aPredTick[g_Config.m_ClDummy] <= 0)
@@ -539,6 +670,8 @@ void CClient::SendInput()
 			m_aCurrentInput[i] %= 200;
 
 			SendMsg(i, &Msg, MSGFLAG_FLUSH);
+			if(i == CONN_MAIN && m_aNetClient[i].IsKcpActive())
+				SendMsg(i, &Msg, MSGFLAG_FLUSH);
 			// ugly workaround for dummy. we need to send input with dummy to prevent
 			// prediction time resets. but if we do it too often, then it's
 			// impossible to use grenade with frozen dummy that gets hammered...
@@ -884,6 +1017,10 @@ void CClient::Connect(const char *pAddress, const char *pPassword)
 	}
 
 	m_CanReceiveServerCapabilities = true;
+#if defined(CONF_QM_LIVE_CLIENT)
+	m_LiveObserverSession.Reset();
+	m_LiveObserverRequestTime = 0;
+#endif
 
 	m_Sixup = OnlySixup;
 	if(m_Sixup)
@@ -929,6 +1066,15 @@ void CClient::DisconnectWithReason(const char *pReason)
 	mem_zero(m_aRconPassword, sizeof(m_aRconPassword));
 	m_MapDetails = std::nullopt;
 	m_ServerSentCapabilities = false;
+	m_ServerCapabilities = {};
+	m_KcpNegotiationPending = false;
+	m_KcpNegotiated = false;
+	m_KcpNegotiationStartTime = 0;
+	m_KcpNegotiationConv = 0;
+#if defined(CONF_QM_LIVE_CLIENT)
+	m_LiveObserverSession.Reset();
+	m_LiveObserverRequestTime = 0;
+#endif
 	m_UseTempRconCommands = 0;
 	m_ExpectedRconCommands = -1;
 	m_GotRconCommands = 0;
@@ -973,6 +1119,20 @@ void CClient::Disconnect()
 	}
 }
 
+void CClient::DropCurrentServerConnection()
+{
+	if(m_State == IClient::STATE_OFFLINE || m_State == IClient::STATE_DEMOPLAYBACK)
+	{
+		m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "not connected", gs_ClientNetworkErrPrintColor);
+		return;
+	}
+
+	static constexpr const char *pReason = "abnormal disconnect";
+	m_aNetClient[CONN_DUMMY].Drop(pReason);
+	m_aNetClient[CONN_MAIN].Drop(pReason);
+	DisconnectWithReason(pReason);
+}
+
 bool CClient::DummyConnected() const
 {
 	return m_DummyConnected;
@@ -990,6 +1150,12 @@ bool CClient::DummyConnectingDelayed() const
 
 void CClient::DummyConnect()
 {
+	if(QmLiveDirectorActive())
+	{
+		log_info("client", "Dummy connection is disabled for QmLive director.");
+		return;
+	}
+
 	if(m_aNetClient[CONN_MAIN].State() != NETSTATE_ONLINE)
 	{
 		log_info("client", "Not online.");
@@ -1057,6 +1223,8 @@ void CClient::DummyDisconnect(const char *pReason)
 
 bool CClient::DummyAllowed() const
 {
+	if(QmLiveDirectorActive())
+		return false;
 	return m_ServerCapabilities.m_AllowDummy;
 }
 
@@ -1744,6 +1912,16 @@ static CServerCapabilities GetServerCapabilities(int Version, int Flags, bool Si
 	{
 		Result.m_SyncWeaponInput = Flags & SERVERCAPFLAG_SYNCWEAPONINPUT;
 	}
+	if(Version >= 6)
+	{
+		Result.m_Kcp = Flags & SERVERCAPFLAG_KCP;
+	}
+	if(Version >= 7)
+	{
+		Result.m_LiveObserver = Flags & SERVERCAP_LIVE_OBSERVER;
+		Result.m_LiveDirector = Flags & SERVERCAP_LIVE_DIRECTOR;
+		Result.m_LiveReplay = Flags & SERVERCAP_LIVE_REPLAY;
+	}
 	return Result;
 }
 
@@ -1828,6 +2006,89 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 			m_ServerCapabilities = GetServerCapabilities(Version, Flags, IsSixup());
 			m_CanReceiveServerCapabilities = false;
 			m_ServerSentCapabilities = true;
+			if(m_ServerCapabilities.m_Kcp && !m_KcpNegotiated && !m_KcpNegotiationPending)
+			{
+				SendKcpCapability(Conn);
+			}
+		}
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_KCP_ACCEPT)
+		{
+			const int Version = Unpacker.GetInt();
+			const int Conv = Unpacker.GetInt();
+			if(Unpacker.Error() || Version != 1 || Conv <= 0)
+			{
+				return;
+			}
+			if(!m_aNetClient[Conn].ActivateKcp((uint32_t)Conv))
+			{
+				m_KcpNegotiationPending = false;
+				m_KcpNegotiated = false;
+				m_KcpNegotiationConv = 0;
+				if(g_Config.m_Debug)
+				{
+					m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "kcp negotiation accepted but activation failed", gs_ClientNetworkErrPrintColor);
+				}
+				return;
+			}
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiated = true;
+			m_KcpNegotiationConv = Conv;
+			SendKcpProbe(Conn);
+			if(g_Config.m_Debug)
+			{
+				char aBuf[128];
+				str_format(aBuf, sizeof(aBuf), "kcp negotiation accepted conv=%d", Conv);
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+			}
+		}
+		else if(Conn == CONN_MAIN && Msg == NETMSG_KCP_FALLBACK)
+		{
+			const char *pReason = Unpacker.GetString(CUnpacker::SANITIZE_CC);
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiated = false;
+			m_KcpNegotiationConv = 0;
+			m_aNetClient[Conn].DeactivateKcp();
+			if(g_Config.m_Debug)
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "kcp negotiation fallback reason='%s'", pReason);
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", aBuf, gs_ClientNetworkPrintColor);
+			}
+		}
+#if defined(CONF_QM_LIVE_CLIENT)
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_QM_LIVE_OBSERVER_ACCEPT)
+		{
+			const int Capabilities = Unpacker.GetInt();
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			m_LiveObserverSession.Accept(Capabilities);
+			m_LiveObserverRequestTime = 0;
+			if(m_LiveObserverSession.ReadyPending())
+			{
+				m_LiveObserverSession.SetReadyPending(false);
+				SendReady(CONN_MAIN);
+			}
+		}
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_QM_LIVE_OBSERVER_DENY)
+		{
+			const EQmLiveDenyReason Reason = QmLiveDenyReasonFromInt(Unpacker.GetInt());
+			const char *pReasonText = Unpacker.GetString(CUnpacker::SANITIZE_CC);
+			if(Unpacker.Error())
+			{
+				return;
+			}
+			EnableQmLiveCompatDirector(Reason, pReasonText);
+		}
+#endif
+		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CLIENT_BRANDS)
+		{
+			GameClient()->OnClientBrandsMessage(&Unpacker);
 		}
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_MAP_CHANGE)
 		{
@@ -2006,6 +2267,13 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 		else if(Conn == CONN_MAIN && (pPacket->m_Flags & NET_CHUNKFLAG_VITAL) != 0 && Msg == NETMSG_CON_READY)
 		{
 			GameClient()->OnConnected();
+#if defined(CONF_QM_LIVE_CLIENT)
+			if(m_LiveObserverSession.Accepted())
+			{
+				// Live observers do not get a game-layer ReadyToEnter because the server never creates a CPlayer.
+				EnterGame(CONN_MAIN);
+			}
+#endif
 			if(m_DummyReconnectOnReload)
 			{
 				m_DummySendConnInfo = true;
@@ -2868,6 +3136,15 @@ void CClient::PumpNetwork()
 			SetLoadingStateDetail(IClient::LOADING_STATE_DETAIL_INITIAL);
 			SendInfo(CONN_MAIN);
 		}
+		if(m_KcpNegotiationPending && !m_KcpNegotiated && time_get() - m_KcpNegotiationStartTime > time_freq() * 3)
+		{
+			m_KcpNegotiationPending = false;
+			m_KcpNegotiationStartTime = 0;
+			if(g_Config.m_Debug)
+			{
+				m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "kcp negotiation timed out, using legacy udp", gs_ClientNetworkPrintColor);
+			}
+		}
 
 		// progress on dummy connect when the connection is online
 		if(m_DummySendConnInfo && m_aNetClient[CONN_DUMMY].State() == NETSTATE_ONLINE)
@@ -2981,6 +3258,13 @@ void CClient::UpdateDemoIntraTimers()
 void CClient::Update()
 {
 	PumpNetwork();
+
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(m_LiveObserverSession.RequestPending() && m_LiveObserverRequestTime != 0 && time_get() > m_LiveObserverRequestTime + time_freq() * 5)
+	{
+		EnableQmLiveCompatDirector(EQmLiveDenyReason::UNSUPPORTED, "no accept");
+	}
+#endif
 
 	if(State() == IClient::STATE_DEMOPLAYBACK)
 	{
@@ -3874,6 +4158,12 @@ void CClient::Con_Disconnect(IConsole::IResult *pResult, void *pUserData)
 {
 	CClient *pSelf = (CClient *)pUserData;
 	pSelf->Disconnect();
+}
+
+void CClient::Con_QmTimeoutDisconnect(IConsole::IResult *pResult, void *pUserData)
+{
+	CClient *pSelf = (CClient *)pUserData;
+	pSelf->DropCurrentServerConnection();
 }
 
 void CClient::Con_DummyConnect(IConsole::IResult *pResult, void *pUserData)
@@ -5025,6 +5315,7 @@ void CClient::RegisterCommands()
 	m_pConsole->Register("minimize", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Minimize, this, "Minimize the client");
 	m_pConsole->Register("connect", "r[host|ip]", CFGFLAG_CLIENT, Con_Connect, this, "Connect to the specified host/ip");
 	m_pConsole->Register("disconnect", "", CFGFLAG_CLIENT, Con_Disconnect, this, "Disconnect from the server");
+	m_pConsole->Register("qm_timeout_disconnect", "", CFGFLAG_CLIENT, Con_QmTimeoutDisconnect, this, "静默断开当前服务器连接，用于保留 Tee 超时保护");
 	m_pConsole->Register("ping", "", CFGFLAG_CLIENT, Con_Ping, this, "Ping the current server");
 	m_pConsole->Register("screenshot", "", CFGFLAG_CLIENT | CFGFLAG_STORE, Con_Screenshot, this, "Take a screenshot");
 	m_pConsole->Register("net_reset", "", CFGFLAG_CLIENT, ConNetReset, this, "Rebinds the client's listening address and port");
@@ -5623,6 +5914,16 @@ int main(int argc, const char **argv)
 		pFuturePerfFileLogger->Set(log_logger_noop());
 	}
 
+#if defined(CONF_FAMILY_WINDOWS)
+	if(g_Config.m_QmProcessHighPriority)
+	{
+		if(SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS))
+			log_info("client", "applied Windows high priority class");
+		else
+			log_error("client", "failed to apply Windows high priority class (error=%lu)", GetLastError());
+	}
+#endif
+
 	// Register protocol and file extensions
 #if defined(CONF_FAMILY_WINDOWS)
 	pClient->ShellRegister();
@@ -5966,7 +6267,7 @@ int CClient::UdpConnectivity(int NetType)
 			NewConnectivity = CONNECTIVITY_REACHABLE;
 			break;
 		default:
-			dbg_assert(0, "invalid connectivity value");
+			log_warn("client", "Invalid connectivity value");
 			return CONNECTIVITY_UNKNOWN;
 		}
 		Connectivity = std::max(Connectivity, NewConnectivity);

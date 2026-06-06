@@ -36,7 +36,7 @@ def main() -> int:
         results = [sync_result]
     else:
         results = run_checks(args.prefer)
-    failed = [result for result in results if not result.ok]
+    failed = [result for result in results if not result.ok and result.blocking]
 
     print("治理文档一致性检查")
     for result in results:

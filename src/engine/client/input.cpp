@@ -12,11 +12,14 @@
 #include <engine/graphics.h>
 #include <engine/input.h>
 #include <engine/keys.h>
+#include <engine/shared/qm_ime_policy.h>
 #include <engine/shared/config.h>
 
 #include <game/client/components/qmclient/perf_logging.h>
 
 #include <SDL.h>
+
+#include <algorithm>
 
 // support older SDL version (pre 2.0.6)
 #ifndef SDL_JOYSTICK_AXIS_MIN
@@ -106,12 +109,20 @@ CInput::CInput()
 
 	m_CompositionCursor = 0;
 	m_CandidateSelectedIndex = -1;
+	m_CandidatePageStart = 0;
+	m_CandidatePageSize = 0;
+	m_CandidateTotalCount = 0;
 
 	m_aDropFile[0] = '\0';
 }
 
 void CInput::Init()
 {
+	SDL_SetHint(SDL_HINT_IME_INTERNAL_EDITING, "0");
+	SDL_SetHint(SDL_HINT_IME_SHOW_UI, QmImeShouldUseSystemCandidateUi() ? "1" : "0");
+#ifdef SDL_HINT_IME_SUPPORT_EXTENDED_TEXT
+	SDL_SetHint(SDL_HINT_IME_SUPPORT_EXTENDED_TEXT, "1");
+#endif
 	StopTextInput();
 
 	m_pGraphics = Kernel()->RequestInterface<IEngineGraphics>();
@@ -374,6 +385,10 @@ void CInput::StopTextInput()
 	m_CompositionString = "";
 	m_CompositionCursor = 0;
 	m_vCandidates.clear();
+	m_CandidateSelectedIndex = -1;
+	m_CandidatePageStart = 0;
+	m_CandidatePageSize = 0;
+	m_CandidateTotalCount = 0;
 }
 
 void CInput::EnsureScreenKeyboardShown()
@@ -756,6 +771,11 @@ int CInput::Update()
 		case SDL_TEXTINPUT:
 			m_CompositionString = "";
 			m_CompositionCursor = 0;
+			m_vCandidates.clear();
+			m_CandidateSelectedIndex = -1;
+			m_CandidatePageStart = 0;
+			m_CandidatePageSize = 0;
+			m_CandidateTotalCount = 0;
 			AddTextEvent(Event.text.text);
 			break;
 
@@ -822,8 +842,14 @@ int CInput::Update()
 			{
 #if SDL_VERSION_ATLEAST(2, 0, 18)
 			case SDL_WINDOWEVENT_DISPLAY_CHANGED:
-				Graphics()->SwitchWindowScreen(Event.display.data1, false);
+			{
+				const int DisplayIndex = Event.window.data1;
+				if(DisplayIndex >= 0 && DisplayIndex < Graphics()->GetNumScreens())
+					Graphics()->SwitchWindowScreen(DisplayIndex, false);
+				else
+					log_warn("gfx", "Ignoring invalid display index from SDL_WINDOWEVENT_DISPLAY_CHANGED: %d", DisplayIndex);
 				break;
+			}
 #endif
 			case SDL_WINDOWEVENT_MOVED:
 				Graphics()->Move(Event.window.data1, Event.window.data2);
@@ -897,6 +923,9 @@ int CInput::Update()
 
 void CInput::ProcessSystemMessage(SDL_SysWMmsg *pMsg)
 {
+	if(pMsg == nullptr)
+		return;
+
 #if defined(CONF_FAMILY_WINDOWS)
 	// Todo SDL: remove this after SDL2 supports IME candidates
 	if(pMsg->subsystem == SDL_SYSWM_WINDOWS && pMsg->msg.win.msg == WM_IME_NOTIFY)
@@ -908,23 +937,40 @@ void CInput::ProcessSystemMessage(SDL_SysWMmsg *pMsg)
 		{
 			HWND WindowHandle = pMsg->msg.win.hwnd;
 			HIMC ImeContext = ImmGetContext(WindowHandle);
+			if(ImeContext == nullptr)
+				break;
+
 			DWORD Size = ImmGetCandidateListW(ImeContext, 0, nullptr, 0);
 			LPCANDIDATELIST pCandidateList = nullptr;
 			if(Size > 0)
 			{
 				pCandidateList = (LPCANDIDATELIST)malloc(Size);
-				Size = ImmGetCandidateListW(ImeContext, 0, pCandidateList, Size);
+				if(pCandidateList != nullptr)
+					Size = ImmGetCandidateListW(ImeContext, 0, pCandidateList, Size);
+				else
+					Size = 0;
 			}
 			m_vCandidates.clear();
+			m_CandidatePageStart = 0;
+			m_CandidatePageSize = 0;
+			m_CandidateTotalCount = 0;
 			if(pCandidateList && Size > 0)
 			{
-				m_vCandidates.reserve(std::min(pCandidateList->dwCount - pCandidateList->dwPageStart, pCandidateList->dwPageSize));
-				for(DWORD i = pCandidateList->dwPageStart; i < pCandidateList->dwCount && (int)m_vCandidates.size() < (int)pCandidateList->dwPageSize; i++)
+				const DWORD PageStart = std::min(pCandidateList->dwPageStart, pCandidateList->dwCount);
+				const DWORD PageEnd = std::min(pCandidateList->dwCount, PageStart + pCandidateList->dwPageSize);
+				m_CandidatePageStart = (int)PageStart;
+				m_CandidatePageSize = (int)pCandidateList->dwPageSize;
+				m_CandidateTotalCount = (int)pCandidateList->dwCount;
+				m_vCandidates.reserve(PageEnd - PageStart);
+				for(DWORD i = PageStart; i < PageEnd; i++)
 				{
 					LPCWSTR pCandidate = (LPCWSTR)((DWORD_PTR)pCandidateList + pCandidateList->dwOffset[i]);
 					m_vCandidates.push_back(windows_wide_to_utf8(pCandidate).value_or("<invalid candidate>"));
 				}
-				m_CandidateSelectedIndex = pCandidateList->dwSelection - pCandidateList->dwPageStart;
+				if(pCandidateList->dwSelection >= PageStart && pCandidateList->dwSelection < PageEnd)
+					m_CandidateSelectedIndex = pCandidateList->dwSelection - PageStart;
+				else
+					m_CandidateSelectedIndex = -1;
 			}
 			else
 			{
@@ -937,6 +983,9 @@ void CInput::ProcessSystemMessage(SDL_SysWMmsg *pMsg)
 		case IMN_CLOSECANDIDATE:
 			m_vCandidates.clear();
 			m_CandidateSelectedIndex = -1;
+			m_CandidatePageStart = 0;
+			m_CandidatePageSize = 0;
+			m_CandidateTotalCount = 0;
 			break;
 		}
 	}

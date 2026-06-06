@@ -1284,7 +1284,7 @@ float CMenus::LayoutTClientHudCacheSection(CUIRect &CurrentColumn, bool Render)
 	}
 	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
 	if(Render && g_Config.m_TcRenderCursorSpec)
-		Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+		Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("自由旁观光标不透明度"), 0, 100);
 	if(Render)
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcNotifyWhenLast, Localize("Notify when only one tee is still alive:"), &g_Config.m_TcNotifyWhenLast, &CurrentColumn, LineSize);
 	else
@@ -1339,7 +1339,7 @@ float CMenus::RenderTClientHudInteractiveLayer(CUIRect &CurrentColumn)
 	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcRenderCursorSpec, Localize("Show the cursor while free spectating"), &g_Config.m_TcRenderCursorSpec, &CurrentColumn, LineSize);
 	CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
 	if(g_Config.m_TcRenderCursorSpec)
-		Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+		Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("自由旁观光标不透明度"), 0, 100);
 	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcNotifyWhenLast, Localize("Notify when only one tee is still alive:"), &g_Config.m_TcNotifyWhenLast, &CurrentColumn, LineSize);
 	CurrentColumn.HSplitTop(LineSize + MarginSmall, &NotificationConfig, &CurrentColumn);
 	if(g_Config.m_TcNotifyWhenLast)
@@ -2225,9 +2225,14 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			CurrentColumn.HSplitTop(MarginSmall, nullptr, &CurrentColumn);
 
 			if(Render)
-				DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAutoVoteWhenFar, Localize("Automatically vote no on map changes"), &g_Config.m_TcAutoVoteWhenFar, &CurrentColumn, LineSize);
+			{
+				static std::vector<CButtonContainer> s_vAutoMapVoteButtons = {{}, {}, {}};
+				int AutoMapVote = std::clamp(g_Config.m_TcAutoVoteWhenFar, 0, 2);
+				if(DoLine_RadioMenu(CurrentColumn, Localize("Auto map vote"), s_vAutoMapVoteButtons, {Localize("Off"), Localize("Auto agree vote"), Localize("Auto reject vote")}, {0, 2, 1}, AutoMapVote))
+					g_Config.m_TcAutoVoteWhenFar = AutoMapVote;
+			}
 			else
-				CurrentColumn.HSplitTop(LineSize, nullptr, &CurrentColumn);
+				CurrentColumn.HSplitTop(LineSize + 2.0f, nullptr, &CurrentColumn);
 			CurrentColumn.HSplitTop(LineSize, Render ? &Button : &TmpRect, &CurrentColumn);
 			if(Render)
 				Ui()->DoScrollbarOption(&g_Config.m_TcAutoVoteWhenFarTime, &g_Config.m_TcAutoVoteWhenFarTime, &Button, Localize("Minimum time"), 1, 20, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, Localize(" min"));
@@ -2683,7 +2688,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			CurrentColumn.HSplitTop(LineSize, Render ? &Button : &TmpRect, &CurrentColumn);
 			if(Render && g_Config.m_TcRenderCursorSpec)
 			{
-				Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+				Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("自由旁观光标不透明度"), 0, 100);
 			}
 
 			if(Render)
@@ -2771,7 +2776,7 @@ void CMenus::RenderSettingsTClientSettings(CUIRect MainView, bool PrewarmOnly)
 			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcRenderCursorSpec, Localize("Show the cursor while free spectating"), &g_Config.m_TcRenderCursorSpec, &CurrentColumn, LineSize);
 			CurrentColumn.HSplitTop(LineSize, &Button, &CurrentColumn);
 			if(g_Config.m_TcRenderCursorSpec)
-				Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("Free spectate cursor opacity"), 0, 100);
+				Ui()->DoScrollbarOption(&g_Config.m_TcRenderCursorSpecAlpha, &g_Config.m_TcRenderCursorSpecAlpha, &Button, Localize("自由旁观光标不透明度"), 0, 100);
 
 			DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcNotifyWhenLast, Localize("Notify when only one tee is still alive:"), &g_Config.m_TcNotifyWhenLast, &CurrentColumn, LineSize);
 			CUIRect NotificationConfig;
@@ -3478,7 +3483,7 @@ bool CMenus::PrewarmSettingsRuntimeCaches(CUIRect MainView)
 		{
 			const bool ResourcesReady = PrewarmSettingsPageResources(JobPage, PageTab, ContentView);
 			const bool PageReady = PrewarmSettingsPageRuntimeCache(ContentView, JobPage, PageTab, Job.m_ScrollY, ResourcesReady);
-			m_aSettingsPagePrewarmed[Slot] = ResourcesReady && PageReady;
+			m_aSettingsPagePrewarmed[Slot] = SettingsPageCanUsePageFbo(JobPage, SETTINGS_ASSETS, -1, PageTab) ? (ResourcesReady && PageReady) : ResourcesReady;
 			if(m_aSettingsPagePrewarmed[Slot])
 				++m_SettingsStartupWarmupCursor;
 		}
@@ -4133,7 +4138,7 @@ void CMenus::RenderSettingsTClientWarList(CUIRect MainView)
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarList, Localize("Enable warlist"), &g_Config.m_TcWarList, &Column2, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListChat, Localize("Colors in chat"), &g_Config.m_TcWarListChat, &Column2, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListScoreboard, Localize("Colors in scoreboard"), &g_Config.m_TcWarListScoreboard, &Column2, LineSize);
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListSpectate, Localize("Colors in spectate select"), &g_Config.m_TcWarListSpectate, &Column2, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListSpectate, Localize("旁观选择中显示颜色"), &g_Config.m_TcWarListSpectate, &Column2, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcWarListShowClan, Localize("Show clan if war"), &g_Config.m_TcWarListShowClan, &Column2, LineSize);
 		LogTClientPerfStageEx("tclient_warlist", "filter", ETClientSettingsPerfStage::INTERACTIVE_LAYER, FilterTimer.ElapsedMs());
 	}
@@ -5106,7 +5111,7 @@ void CMenus::RenderSettingsTClientProfiles(CUIRect MainView)
 		MainView.HSplitTop(LineSize, &Options, &MainView);
 
 		Options.VSplitLeft(150.0f, &Button, &Options);
-		if(DoButton_CheckBox(&m_Dummy, Localize("Dummy"), m_Dummy, &Button))
+		if(DoButton_CheckBox(&m_Dummy, Localize("分身"), m_Dummy, &Button))
 			m_Dummy = 1 - m_Dummy;
 
 		Options.VSplitLeft(150.0f, &Button, &Options);

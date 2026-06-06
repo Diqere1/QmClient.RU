@@ -97,6 +97,7 @@ MACRO_CONFIG_INT(ClShowVotesAfterVoting, cl_show_votes_after_voting, 0, 0, 1, CF
 MACRO_CONFIG_INT(ClShowLocalTimeAlways, cl_show_local_time_always, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "始终显示当地时间")
 MACRO_CONFIG_INT(ClShowfps, cl_showfps, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内 FPS ")
 MACRO_CONFIG_INT(ClShowpred, cl_showpred, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内预测时间（以毫秒为单位）")
+MACRO_CONFIG_INT(ClShowPacketLoss, cl_show_packet_loss, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "显示游戏内丢包率")
 MACRO_CONFIG_INT(ClScoreboardPointsLegacy, cl_scoreboard_points, 0, 0, 1, CFGFLAG_CLIENT, "旧版记分牌设置")
 MACRO_CONFIG_INT(ClScoreboardSortModeLegacy, cl_scoreboard_sort_mode, 0, 0, 1, CFGFLAG_CLIENT, "旧版记分牌设置")
 MACRO_CONFIG_INT(ClSmtcEnableLegacy, cl_smtc_enable, 1, 0, 1, CFGFLAG_CLIENT, "旧版系统媒体传输控制集成设置")
@@ -234,7 +235,7 @@ MACRO_CONFIG_STR(ClDummy7SkinEyes, dummy7_skin_eyes, protocol7::MAX_SKIN_ARRAY_S
 // MACRO_CONFIG_INT(ClCensorChat, cl_censor_chat, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Toggles chat censoring")
 // MACRO_CONFIG_STR(ClCensorUrl, cl_censor_url, 100, "https://info.ddnet.org/censor.json", CFGFLAG_CLIENT | CFGFLAG_SAVE, "URL used to download words to censor (must start with https://)")
 
-MACRO_CONFIG_INT(UiPage, ui_page, 6, 6, 14, CFGFLAG_CLIENT | CFGFLAG_SAVE, "界面页面")
+MACRO_CONFIG_INT(UiPage, ui_page, 6, 6, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "界面页面")
 MACRO_CONFIG_INT(UiSettingsPage, ui_settings_page, 0, 0, 14, CFGFLAG_CLIENT | CFGFLAG_SAVE, "界面设置页面")
 MACRO_CONFIG_INT(UiToolboxPage, ui_toolbox_page, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "工具箱页面")
 MACRO_CONFIG_STR(UiServerAddress, ui_server_address, 1024, "localhost:8303", CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "界面服务器地址")
@@ -246,6 +247,7 @@ MACRO_CONFIG_COL(UiColor, ui_color, 0xE4A046AF, CFGFLAG_CLIENT | CFGFLAG_SAVE | 
 MACRO_CONFIG_COL(ClMenuPanelColor, cl_menu_panel_color, 0x242D1F, CFGFLAG_CLIENT | CFGFLAG_SAVE, "菜单主面板底色")
 MACRO_CONFIG_INT(ClMenuPanelOpacity, cl_menu_panel_opacity, 72, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "菜单主面板透明度")
 MACRO_CONFIG_INT(ClMenuPanelElevatedOpacity, cl_menu_panel_elevated_opacity, 84, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "菜单强调面板透明度")
+MACRO_CONFIG_INT(ClSettingsTabbarOpacity, cl_settings_tabbar_opacity, 84, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "设置页右侧设置栏透明度")
 
 MACRO_CONFIG_INT(UiColorizePing, ui_colorize_ping, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "高亮显示 ping 值")
 MACRO_CONFIG_INT(UiColorizeGametype, ui_colorize_gametype, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "高亮显示游戏类型")
@@ -288,6 +290,8 @@ MACRO_CONFIG_INT(SvTournamentMode, sv_tournament_mode, 0, 0, 1, CFGFLAG_SERVER, 
 MACRO_CONFIG_INT(SvSpamprotection, sv_spamprotection, 1, 0, 1, CFGFLAG_SERVER, "刷屏保护：防止切换队伍、聊天、换皮肤、表情和投票的刷屏")
 
 MACRO_CONFIG_INT(SvSpectatorSlots, sv_spectator_slots, 0, 0, SERVER_MAX_CLIENTS, CFGFLAG_SERVER, "为观众保留的槽位数")
+MACRO_CONFIG_INT(SvQmLiveObserver, sv_qm_live_observer, 1, 0, 1, CFGFLAG_SERVER, "允许 QmLiveClient 以隐藏只读 observer 连接")
+MACRO_CONFIG_INT(SvQmLiveMaxObservers, sv_qm_live_max_observers, 4, 0, SERVER_MAX_CLIENTS, CFGFLAG_SERVER, "最多允许的 QmLive observer 连接数")
 MACRO_CONFIG_INT(SvInactiveKickTime, sv_inactivekick_time, 0, 0, 1000, CFGFLAG_SERVER, "处理不活跃玩家前等待的时间（单位：分钟）")
 MACRO_CONFIG_INT(SvInactiveKick, sv_inactivekick, 0, 0, 2, CFGFLAG_SERVER, "如何处理不活跃玩家（0 = 移到观众，1 = 移到空闲观众槽位/踢出，2 = 踢出）")
 
@@ -743,6 +747,18 @@ MACRO_CONFIG_STR(SvBannedVersions, sv_banned_versions, 128, "", CFGFLAG_SERVER, 
 // netlimit
 MACRO_CONFIG_INT(SvNetlimit, sv_netlimit, 0, 0, 10000, CFGFLAG_SERVER, "Netlimit：允许客户端使用的最大流量（以kb/s为单位）")
 MACRO_CONFIG_INT(SvNetlimitAlpha, sv_netlimit_alpha, 50, 1, 100, CFGFLAG_SERVER, "Netlimit：指数移动平均线的 Alpha")
+
+// KCP transport migration. Legacy clients stay on UDP and upgraded clients can fall back per session.
+MACRO_CONFIG_INT(SvKcp, sv_kcp, 1, 0, 1, CFGFLAG_SERVER, "启用 UDP 上层 KCP 传输协商（旧客户端保持 legacy UDP，可热关闭回退）")
+MACRO_CONFIG_INT(SvKcpRequired, sv_kcp_required, 0, 0, 1, CFGFLAG_SERVER, "要求支持 KCP 的客户端才能升级会话（灰度期保持关闭以允许 fallback）")
+MACRO_CONFIG_INT(SvKcpDebug, sv_kcp_debug, 0, 0, 1, CFGFLAG_SERVER, "输出 KCP 协商、fallback 和会话生命周期调试日志")
+MACRO_CONFIG_INT(SvKcpStats, sv_kcp_stats, 0, 0, 1, CFGFLAG_SERVER, "启用 KCP/legacy 传输统计查询与采样输出")
+
+// Server-side weak network simulation for transport regression tests.
+MACRO_CONFIG_INT(SvNetFakeLoss, sv_net_fake_loss, 0, 0, 100, CFGFLAG_SERVER, "弱网测试：服务端收包随机丢包百分比")
+MACRO_CONFIG_INT(SvNetFakeJitter, sv_net_fake_jitter, 0, 0, 1000, CFGFLAG_SERVER, "弱网测试：服务端收包随机抖动范围（毫秒）")
+MACRO_CONFIG_INT(SvNetFakeRtt, sv_net_fake_rtt, 0, 0, 2000, CFGFLAG_SERVER, "弱网测试：服务端收包模拟 RTT（毫秒，单向延迟取一半）")
+MACRO_CONFIG_INT(SvNetFakeReorder, sv_net_fake_reorder, 0, 0, 100, CFGFLAG_SERVER, "弱网测试：服务端收包额外乱序概率百分比")
 
 MACRO_CONFIG_INT(SvConnlimit, sv_connlimit, 5, 0, 100, CFGFLAG_SERVER, "Connlimit：一个IP在一段时间内允许的连接数")
 MACRO_CONFIG_INT(SvConnlimitTime, sv_connlimit_time, 20, 0, 1000, CFGFLAG_SERVER, "Connlimit：IP连接数统计时间")

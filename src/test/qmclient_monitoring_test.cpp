@@ -197,6 +197,7 @@ TEST(QmMonitoringHelpers, DeviceMetricsDefaultToUnavailable)
 	EXPECT_FALSE(Perf.m_DeviceSampleAvailable);
 	EXPECT_FLOAT_EQ(Perf.m_GpuUtilPct, -1.0f);
 	EXPECT_FLOAT_EQ(Perf.m_GpuDedicatedVramMb, -1.0f);
+	EXPECT_FLOAT_EQ(Perf.m_GpuDedicatedVramBudgetMb, -1.0f);
 	EXPECT_FLOAT_EQ(Perf.m_GpuSharedVramMb, -1.0f);
 	EXPECT_FLOAT_EQ(Perf.m_DiskReadMbPerSec, -1.0f);
 }
@@ -226,12 +227,14 @@ TEST(QmMonitoringHelpers, DevicePerfSnapshotCacheReturnsConsistentVersionedSnaps
 	SQmDevicePerfSample First;
 	First.m_GpuUtilPct = 11.0f;
 	First.m_GpuDedicatedVramMb = 101.0f;
+	First.m_GpuDedicatedVramBudgetMb = 2048.0f;
 	First.m_Available = true;
 	const SQmDevicePerfSnapshot FirstSnapshot = Cache.Publish(First);
 
 	SQmDevicePerfSample Second;
 	Second.m_GpuUtilPct = 27.5f;
 	Second.m_GpuDedicatedVramMb = 205.0f;
+	Second.m_GpuDedicatedVramBudgetMb = 4096.0f;
 	Second.m_GpuSharedVramMb = 17.0f;
 	Second.m_DiskReadMbPerSec = 3.5f;
 	Second.m_Available = true;
@@ -242,6 +245,7 @@ TEST(QmMonitoringHelpers, DevicePerfSnapshotCacheReturnsConsistentVersionedSnaps
 	EXPECT_EQ(Read.m_Version, Published.m_Version);
 	EXPECT_FLOAT_EQ(Read.m_Sample.m_GpuUtilPct, Second.m_GpuUtilPct);
 	EXPECT_FLOAT_EQ(Read.m_Sample.m_GpuDedicatedVramMb, Second.m_GpuDedicatedVramMb);
+	EXPECT_FLOAT_EQ(Read.m_Sample.m_GpuDedicatedVramBudgetMb, Second.m_GpuDedicatedVramBudgetMb);
 	EXPECT_FLOAT_EQ(Read.m_Sample.m_GpuSharedVramMb, Second.m_GpuSharedVramMb);
 	EXPECT_FLOAT_EQ(Read.m_Sample.m_DiskReadMbPerSec, Second.m_DiskReadMbPerSec);
 	EXPECT_EQ(Read.m_Sample.m_Available, Second.m_Available);
@@ -259,6 +263,7 @@ TEST(QmMonitoringHelpers, DevicePerfSnapshotCacheKeepsSampleAndVersionConsistent
 			SQmDevicePerfSample Sample;
 			Sample.m_GpuUtilPct = (float)Version;
 			Sample.m_GpuDedicatedVramMb = (float)Version * 2.0f;
+			Sample.m_GpuDedicatedVramBudgetMb = (float)Version * 4.0f;
 			Sample.m_Available = true;
 			Cache.Publish(Sample);
 		}
@@ -272,7 +277,8 @@ TEST(QmMonitoringHelpers, DevicePerfSnapshotCacheKeepsSampleAndVersionConsistent
 			if(Snapshot.m_Version == 0)
 				continue;
 			if(Snapshot.m_Sample.m_GpuUtilPct != (float)Snapshot.m_Version ||
-				Snapshot.m_Sample.m_GpuDedicatedVramMb != (float)Snapshot.m_Version * 2.0f)
+				Snapshot.m_Sample.m_GpuDedicatedVramMb != (float)Snapshot.m_Version * 2.0f ||
+				Snapshot.m_Sample.m_GpuDedicatedVramBudgetMb != (float)Snapshot.m_Version * 4.0f)
 			{
 				MismatchCount.fetch_add(1, std::memory_order_relaxed);
 			}
@@ -335,6 +341,32 @@ TEST(QmMonitoringHelpers, PerfConfigDefaultsUseLowThresholdWithoutJsonToggle)
 
 	EXPECT_NE(Source.find("MACRO_CONFIG_INT(QmPerfDebugThresholdMs, qm_perf_debug_threshold_ms, 4, 1, 1000"), std::string::npos);
 	EXPECT_EQ(Source.find("MACRO_CONFIG_INT(QmPerfJson, qm_perf_json, 0, 0, 1"), std::string::npos);
+}
+
+TEST(QmMonitoringHelpers, ProcessHighPriorityConfigExistsAndDefaultsOff)
+{
+	std::ifstream File("src/engine/shared/config_variables_qmclient.h");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("MACRO_CONFIG_INT(QmProcessHighPriority, qm_process_high_priority, 0, 0, 1"), std::string::npos);
+	EXPECT_NE(Source.find("MACRO_CONFIG_INT(QmAssetsPreviewBudgetMbOverride, qm_assets_preview_budget_mb_override, 0, 0, 16384"), std::string::npos);
+	EXPECT_NE(Source.find("MACRO_CONFIG_INT(QmAssetsPreviewBudgetPercent, qm_assets_preview_budget_percent, 8, 0, 100"), std::string::npos);
+}
+
+TEST(QmMonitoringHelpers, WindowsStartupPriorityHookIsOptionalAndGuarded)
+{
+	std::ifstream File("src/engine/client/client.cpp");
+	ASSERT_TRUE(File.good());
+	std::stringstream Buffer;
+	Buffer << File.rdbuf();
+	const std::string Source = Buffer.str();
+
+	EXPECT_NE(Source.find("#if defined(CONF_FAMILY_WINDOWS)"), std::string::npos);
+	EXPECT_NE(Source.find("if(g_Config.m_QmProcessHighPriority)"), std::string::npos);
+	EXPECT_NE(Source.find("SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS)"), std::string::npos);
 }
 
 TEST(QmMonitoringHelpers, PerfLoggingAlwaysEmitsJsonPayload)

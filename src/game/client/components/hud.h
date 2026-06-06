@@ -28,6 +28,7 @@ struct SScoreInfo
 		m_TextRankContainerIndex.Reset();
 		m_TextScoreContainerIndex.Reset();
 		m_RoundRectQuadContainerIndex = -1;
+		m_RoundRectCorners = -1;
 		m_OptionalNameTextContainerIndex.Reset();
 		m_aScoreText[0] = 0;
 		m_aRankText[0] = 0;
@@ -43,6 +44,7 @@ struct SScoreInfo
 	char m_aRankText[16];
 	char m_aPlayerNameText[MAX_NAME_LENGTH];
 	int m_RoundRectQuadContainerIndex;
+	int m_RoundRectCorners;
 	STextContainerIndex m_OptionalNameTextContainerIndex;
 
 	bool m_Initialized;
@@ -77,14 +79,20 @@ class CHud : public CComponent
 		float m_FpsTargetY = 0.0f;
 		float m_PredTargetX = 0.0f;
 		float m_PredTargetY = 0.0f;
+		float m_LossTargetX = 0.0f;
+		float m_LossTargetY = 0.0f;
 		float m_FpsTargetAlpha = 0.0f;
 		float m_PredTargetAlpha = 0.0f;
+		float m_LossTargetAlpha = 0.0f;
 		float m_LastFpsWidth = 0.0f;
 		float m_LastPredWidth = 0.0f;
+		float m_LastLossWidth = 0.0f;
 		char m_aLastFpsText[16] = {0};
 		char m_aLastPredText[64] = {0};
+		char m_aLastLossText[16] = {0};
 		bool m_FpsPositionInitialized = false;
 		bool m_PredPositionInitialized = false;
+		bool m_LossPositionInitialized = false;
 		bool m_AlphaInitialized = false;
 
 		void Reset()
@@ -93,14 +101,20 @@ class CHud : public CComponent
 			m_FpsTargetY = 0.0f;
 			m_PredTargetX = 0.0f;
 			m_PredTargetY = 0.0f;
+			m_LossTargetX = 0.0f;
+			m_LossTargetY = 0.0f;
 			m_FpsTargetAlpha = 0.0f;
 			m_PredTargetAlpha = 0.0f;
+			m_LossTargetAlpha = 0.0f;
 			m_LastFpsWidth = 0.0f;
 			m_LastPredWidth = 0.0f;
+			m_LastLossWidth = 0.0f;
 			m_aLastFpsText[0] = '\0';
 			m_aLastPredText[0] = '\0';
+			m_aLastLossText[0] = '\0';
 			m_FpsPositionInitialized = false;
 			m_PredPositionInitialized = false;
+			m_LossPositionInitialized = false;
 			m_AlphaInitialized = false;
 		}
 	};
@@ -262,6 +276,7 @@ class CHud : public CComponent
 	void RenderDummyActions();
 	void RenderKeyStatus();
 	void RenderMovementInformation();
+	void RenderJumpHint();
 	void RenderMapProgressBar();
 
 	void UpdateMovementInformationTextContainer(STextContainerIndex &TextContainer, float FontSize, float Value, float &PrevValue);

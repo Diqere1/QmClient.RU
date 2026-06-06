@@ -23,10 +23,11 @@ public:
 
 	bool Enabled() const { return m_Enabled; }
 	bool CanEnable() const;
-	void Toggle();
-	void Enable();
+	void Toggle(bool PreserveHeldInput = false);
+	void Enable(bool PreserveHeldInput = false);
 	void Disable();
 	bool ConsumeKillCommand();
+	bool ConsumeSpectatorCommand();
 	bool ConsumePracticeChatCommand(int Team, const char *pLine);
 	void ResetPracticeToAnchor();
 
@@ -133,6 +134,9 @@ private:
 	bool ResolveParticipantInputs(int LocalClientId, int DummyClientId, int &LocalInputConn, int &DummyInputConn) const;
 	int CurrentLocalPracticeId() const;
 	bool ResolvePracticeRoles(int &LocalClientId, int &DummyClientId) const;
+	bool IsPracticeServerPauseActive() const;
+	void ShiftPracticeWorldTicks(int TickDelta);
+	void FreezePracticeWorldForServerPause();
 	void UpdateGhostData();
 	void UpdateGhostForClientId(int ClientId, SGhostData &Ghost);
 	int ApplyVisualFastInputPrediction(int FinalTickRegular, int LocalClientId, int DummyClientId, int LocalInputConn, int DummyInputConn);
@@ -145,11 +149,13 @@ private:
 	void TrackFireSound(int ClientId, CCharacter *pChar);
 	static int WeaponFireSound(int Weapon);
 	void MaybePlayHammerHitEffect(CCharacter *pChar);
+	void StandbyCharacter(CCharacter *pChar) const;
 	void RenderGhost(const SGhostData &Ghost, float Alpha) const;
 	void ReleaseBufferedInputState();
 	void CaptureServerReleasedFireStates();
 	void ReleaseBufferedActionInputState();
 	void CapturePracticeInputFilterStates();
+	void PreserveCurrentPracticeInputFilterStates();
 	void FilterPracticeInput(CNetObj_PlayerInput &Input, int InputConn, bool Commit);
 
 	void EchoPractice(const char *pFormat, ...) const;

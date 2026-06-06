@@ -1,0 +1,6 @@
+#ifndef GAME_CLIENT_COMPONENTS_TCLIENT_VERSION_COMPARE_H
+#define GAME_CLIENT_COMPONENTS_TCLIENT_VERSION_COMPARE_H
+
+bool IsRemoteVersionNewer(const char *pRemoteVersion, const char *pLocalVersion);
+
+#endif // GAME_CLIENT_COMPONENTS_TCLIENT_VERSION_COMPARE_H

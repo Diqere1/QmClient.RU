@@ -232,6 +232,10 @@ public:
 	float m_Y = 0.0f;
 	float m_MaxCharacterHeight = 0.0f;
 	float m_LongestLineWidth = 0.0f;
+	bool m_CalculateVisualBoundingBox = false;
+	bool m_HasVisualBoundingBox = false;
+	float m_VisualTop = 0.0f;
+	float m_VisualBottom = 0.0f;
 
 	float m_FontSize = 0.0f;
 	float m_AlignedFontSize = 0.0f;
@@ -291,6 +295,9 @@ struct STextSizeProperties
 	float *m_pHeight = nullptr;
 	float *m_pAlignedFontSize = nullptr;
 	float *m_pMaxCharacterHeightInLine = nullptr;
+	// Optional glyph fill bounds relative to the cursor start Y, excluding outline atlas padding.
+	float *m_pVisualTop = nullptr;
+	float *m_pVisualBottom = nullptr;
 	int *m_pLineCount = nullptr;
 };
 

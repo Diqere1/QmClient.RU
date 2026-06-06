@@ -2,10 +2,14 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include "flow.h"
 
+#include <base/log.h>
+
 #include <engine/graphics.h>
 
 #include <game/layers.h>
 #include <game/mapitems.h>
+
+#include <limits>
 
 CFlow::CFlow()
 {
@@ -42,11 +46,39 @@ void CFlow::Init()
 	m_pCells = nullptr;
 
 	CMapItemLayerTilemap *pTilemap = Layers()->GameLayer();
+	if(pTilemap == nullptr || pTilemap->m_Width <= 0 || pTilemap->m_Height <= 0 || m_Spacing <= 0 ||
+		pTilemap->m_Width > std::numeric_limits<int>::max() / 32 ||
+		pTilemap->m_Height > std::numeric_limits<int>::max() / 32)
+	{
+		m_Width = 0;
+		m_Height = 0;
+		return;
+	}
 	m_Width = pTilemap->m_Width * 32 / m_Spacing;
 	m_Height = pTilemap->m_Height * 32 / m_Spacing;
+	if(m_Width <= 0 || m_Height <= 0 || (size_t)m_Width > std::numeric_limits<size_t>::max() / (size_t)m_Height)
+	{
+		m_Width = 0;
+		m_Height = 0;
+		return;
+	}
 
 	// allocate and clear
-	m_pCells = (CCell *)calloc((size_t)m_Width * m_Height, sizeof(CCell));
+	const size_t CellCount = (size_t)m_Width * (size_t)m_Height;
+	if(CellCount > std::numeric_limits<size_t>::max() / sizeof(CCell))
+	{
+		m_Width = 0;
+		m_Height = 0;
+		return;
+	}
+	m_pCells = (CCell *)calloc(CellCount, sizeof(CCell));
+	if(m_pCells == nullptr)
+	{
+		log_error("flow", "Failed to allocate flow grid.");
+		m_Width = 0;
+		m_Height = 0;
+		return;
+	}
 	for(int y = 0; y < m_Height; y++)
 		for(int x = 0; x < m_Width; x++)
 			m_pCells[y * m_Width + x].m_Vel = vec2(0.0f, 0.0f);

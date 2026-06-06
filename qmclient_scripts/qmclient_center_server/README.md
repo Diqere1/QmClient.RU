@@ -91,13 +91,19 @@ https://api.github.com/repos/wxj881027/QmClient/releases/latest
 {
   "server_address": "1.2.3.4:8303",
   "auth_token": "....",
+  "client_type": "qm",
+  "client_id": "qm314a5af9fb19ffc659077aa05e4a2689",
   "timestamp": 1739436900,
   "players": [
-    { "player_id": 3, "dummy": false },
-    { "player_id": 8, "dummy": true }
+    { "player_name": "Q1menG", "dummy": false },
+    { "player_name": "Q1menG dummy", "dummy": true, "client_type": "arg" }
   ]
 }
 ```
+
+- `client_type` 支持 `qm` / `arg`，兼容别名 `qmclient` / `arghena`。
+- 老客户端不发送 `client_type` 时默认按 `qm` 处理。
+- 在线识别不再使用 DDNet 槽位 `player_id`，避免玩家退出后槽位复用导致误识别。
 
 返回：
 
@@ -117,7 +123,14 @@ https://api.github.com/repos/wxj881027/QmClient/releases/latest
   "users": [
     {
       "server_address": "1.2.3.4:8303",
-      "player_id": 3,
+      "player_name": "Q1menG",
+      "dummy": false,
+      "client_type": "qm",
+      "type": "qm",
+      "client_id": "qm314a5af9fb19ffc659077aa05e4a2689",
+      "foot_particles_enabled": true,
+      "remote_particles_enabled": true,
+      "voice_supported": true,
       "updated_at": 1739436900
     }
   ]
@@ -134,6 +147,8 @@ https://api.github.com/repos/wxj881027/QmClient/releases/latest
 - `RATE_LIMIT_PER_MIN` 默认 `120`
 - `REQUIRE_IP_BIND` 默认 `1`（token 绑定请求 IP）
 - `TRUST_PROXY` 默认 `0`（反代场景可设为 `1`）
+- `MAX_CLIENT_ID_LEN` 默认 `64`
+- `MAX_PLAYER_NAME_LEN` 默认 `32`
 - `CLIENT_LATEST_VERSION` 默认 `2.36.0`
 - `CLIENT_RELEASE_OWNER` 默认 `wxj881027`
 - `CLIENT_RELEASE_REPO` 默认 `QmClient`

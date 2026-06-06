@@ -16,7 +16,6 @@ namespace
 			return &json_value_none;
 		return json_object_get(pObject, pName);
 	}
-
 	bool JsonReadBoolean(const json_value *pValue, bool &OutValue)
 	{
 		if(!pValue)
@@ -39,8 +38,22 @@ namespace
 		}
 		return false;
 	}
+	EClientBrand JsonReadClientBrand(const json_value *pEntry)
+	{
+		const json_value *pClientType = JsonObjectField(pEntry, "client_type");
+		if(pClientType == &json_value_none)
+			pClientType = JsonObjectField(pEntry, "type");
+		if(pClientType == &json_value_none || pClientType->type != json_string)
+			return EClientBrand::QM;
 
-}
+		const char *pType = pClientType->u.string.ptr;
+		if(str_comp_nocase(pType, "arg") == 0 || str_comp_nocase(pType, "arghena") == 0)
+			return EClientBrand::ARG;
+		if(str_comp_nocase(pType, "qm") == 0 || str_comp_nocase(pType, "qmclient") == 0 || str_comp_nocase(pType, "q1meng") == 0)
+			return EClientBrand::QM;
+		return EClientBrand::QM;
+	}
+} // namespace
 
 bool ParseQmClientUsersJson(const json_value *pRoot, const char *pServerAddress, SQmClientUsersParseResult &OutResult)
 {
@@ -77,13 +90,12 @@ bool ParseQmClientUsersJson(const json_value *pRoot, const char *pServerAddress,
 		if(pServerAddressField == &json_value_none || pServerAddressField->type != json_string)
 			continue;
 
-		const json_value *pPlayerId = JsonObjectField(pEntry, "player_id");
-		if(pPlayerId == &json_value_none)
-			pPlayerId = JsonObjectField(pEntry, "id");
-		if(pPlayerId == &json_value_none || (pPlayerId->type != json_integer && pPlayerId->type != json_double))
+		const json_value *pPlayerName = JsonObjectField(pEntry, "player_name");
+		if(pPlayerName == &json_value_none)
+			pPlayerName = JsonObjectField(pEntry, "name");
+		if(pPlayerName == &json_value_none || pPlayerName->type != json_string || pPlayerName->u.string.ptr[0] == '\0')
 			continue;
 
-		const int ClientId = json_int_get(pPlayerId);
 		bool Dummy = false;
 		const json_value *pDummy = JsonObjectField(pEntry, "dummy");
 		if(pDummy != &json_value_none)
@@ -112,7 +124,8 @@ bool ParseQmClientUsersJson(const json_value *pRoot, const char *pServerAddress,
 			continue;
 
 		SQmClientRecognitionMark &Mark = OutResult.m_vLocalServerMarks.emplace_back();
-		Mark.m_ClientId = ClientId;
+		Mark.m_Name = pPlayerName->u.string.ptr;
+		Mark.m_ClientBrand = JsonReadClientBrand(pEntry);
 
 		const json_value *pQidField = JsonObjectField(pEntry, "qid");
 		if(pQidField != &json_value_none && pQidField->type == json_string)

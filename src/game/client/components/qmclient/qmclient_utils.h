@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include <engine/shared/client_brand.h>
+
 typedef struct _json_value json_value;
 
 struct SQmClientServerDistribution
@@ -15,10 +17,11 @@ struct SQmClientServerDistribution
 
 struct SQmClientRecognitionMark
 {
-	int m_ClientId = -1;
+	std::string m_Name;
 	bool m_FootParticlesEnabled = false;
 	bool m_RemoteParticlesEnabled = false;
 	bool m_VoiceSupported = false;
+	EClientBrand m_ClientBrand = EClientBrand::QM;
 	std::string m_Qid;
 };
 

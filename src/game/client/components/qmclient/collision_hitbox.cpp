@@ -1,7 +1,12 @@
 #include "collision_hitbox.h"
 
-#include <base/math.h>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <vector>
 
+#include <base/log.h>
+#include <base/math.h>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 
@@ -15,10 +20,7 @@
 #include <game/gamecore.h>
 #include <game/mapitems.h>
 
-#include <algorithm>
-#include <cmath>
-#include <vector>
-
+// 地图层类型
 enum class HitboxLayer
 {
 	GAME,
@@ -76,6 +78,8 @@ public:
 				const int Index = y * pLayer->m_Width + x;
 				const int IndexOut = y * Size.x + x;
 				const auto Tile = pTiles[Index].m_Index;
+
+				// 按优先级设置碰撞类型
 				if(Tile == TILE_SOLID || Tile == TILE_NOHOOK)
 				{
 					if(pData[IndexOut] < HITBOX_SOLID)
@@ -101,7 +105,9 @@ public:
 	}
 };
 
+// 地图层顺序
 static constexpr CHitboxLayer HITBOX_LAYERS[] = {{HitboxLayer::GAME}, {HitboxLayer::FRONT}};
+static constexpr size_t MAX_HITBOX_MAP_TILES = 4096 * 4096;
 
 float CCollisionHitbox::HitboxAlpha() const
 {
@@ -295,12 +301,9 @@ bool CCollisionHitbox::GetProjectileRenderPosition(const CProjectileData &Projec
 
 void CCollisionHitbox::OnMapLoad()
 {
-	if(m_pMapData)
-	{
-		delete[] m_pMapData;
-		m_pMapData = nullptr;
-	}
+	m_vMapData.clear();
 
+	// 查找有效的图层并计算尺寸
 	std::vector<const CHitboxLayer *> vValidLayers;
 	m_MapDataSize = {0, 0};
 	for(const auto &Layer : HITBOX_LAYERS)
@@ -317,17 +320,34 @@ void CCollisionHitbox::OnMapLoad()
 	if(m_MapDataSize.x <= 0 || m_MapDataSize.y <= 0)
 		return;
 
-	m_pMapData = new int[m_MapDataSize.x * m_MapDataSize.y]();
-	for(int i = 0; i < m_MapDataSize.x * m_MapDataSize.y; ++i)
-		m_pMapData[i] = HITBOX_NONE;
+	const size_t MapWidth = (size_t)m_MapDataSize.x;
+	const size_t MapHeight = (size_t)m_MapDataSize.y;
+	if(MapWidth > std::numeric_limits<size_t>::max() / MapHeight)
+	{
+		log_warn("collision_hitbox", "Map size overflow for hitbox cache: %dx%d", m_MapDataSize.x, m_MapDataSize.y);
+		m_MapDataSize = {0, 0};
+		return;
+	}
+	const size_t NumTiles = MapWidth * MapHeight;
+	if(NumTiles > MAX_HITBOX_MAP_TILES)
+	{
+		log_warn("collision_hitbox", "Map too large for hitbox cache: %dx%d", m_MapDataSize.x, m_MapDataSize.y);
+		m_MapDataSize = {0, 0};
+		return;
+	}
 
+	m_vMapData.assign(NumTiles, HITBOX_NONE);
+
+	// 填充碰撞数据
 	for(const auto *pLayer : vValidLayers)
-		pLayer->SetData(GameClient(), m_pMapData, m_MapDataSize);
+	{
+		pLayer->SetData(GameClient(), m_vMapData.data(), m_MapDataSize);
+	}
 }
 
 void CCollisionHitbox::RenderTileHitboxes()
 {
-	if(!m_pMapData)
+	if(m_vMapData.empty())
 		return;
 
 	const float Scale = 32.0f;
@@ -343,6 +363,7 @@ void CCollisionHitbox::RenderTileHitboxes()
 	int EndY = (int)(ScreenY1 / Scale) + 1;
 	int EndX = (int)(ScreenX1 / Scale) + 1;
 
+	// 限制渲染范围避免性能问题
 	int MaxScale = 12;
 	if(EndX - StartX > Graphics()->ScreenWidth() / MaxScale || EndY - StartY > Graphics()->ScreenHeight() / MaxScale)
 	{
@@ -357,7 +378,7 @@ void CCollisionHitbox::RenderTileHitboxes()
 	auto GetTile = [&](int x, int y) -> int {
 		if(x < 0 || x >= m_MapDataSize.x || y < 0 || y >= m_MapDataSize.y)
 			return HITBOX_NONE;
-		return m_pMapData[y * m_MapDataSize.x + x];
+		return m_vMapData[y * m_MapDataSize.x + x];
 	};
 
 	Graphics()->TextureClear();
@@ -371,31 +392,51 @@ void CCollisionHitbox::RenderTileHitboxes()
 			if(Type == HITBOX_NONE)
 				continue;
 
+			// 只检查freeze与death类型
 			ColorRGBA RgbaColor;
-			if(Type == HITBOX_FREEZE || Type == HITBOX_DFREEZE)
-				RgbaColor = FreezeColor(Alpha);
-			else if(Type == HITBOX_DEATH)
-				RgbaColor = ColorRGBA(0.0f, 0.0f, 0.0f, Alpha);
-			else
-				continue;
 
+			if(Type == HITBOX_FREEZE || Type == HITBOX_DFREEZE)
+			{
+				RgbaColor = FreezeColor(Alpha);
+			}
+			else if(Type == HITBOX_DEATH)
+			{
+				RgbaColor = ColorRGBA(0.0f, 0.0f, 0.0f, Alpha);
+			}
+			else
+			{
+				continue; // 跳过其他类型
+			}
+
+			// 设置颜色
 			Graphics()->SetColor(RgbaColor);
 
+			// 计算tile边界
 			float TileX = x * Scale;
 			float TileY = y * Scale;
-			bool LeftNeighbor = GetTile(x - 1, y) == Type;
-			bool RightNeighbor = GetTile(x + 1, y) == Type;
-			bool TopNeighbor = GetTile(x, y - 1) == Type;
-			bool BottomNeighbor = GetTile(x, y + 1) == Type;
 
+			// 检查邻居 - 只有当邻居不是相同类型时才绘制边界
+			// 这样就能绘制出最外层的线，表示碰撞发生的边界
+			bool LeftNeighbor = (GetTile(x - 1, y) == Type);
+			bool RightNeighbor = (GetTile(x + 1, y) == Type);
+			bool TopNeighbor = (GetTile(x, y - 1) == Type);
+			bool BottomNeighbor = (GetTile(x, y + 1) == Type);
+
+			// 绘制边框线（只绘制最外层边界）
+			// 当Tee的圆形碰撞体积与这些边界相交时，就会触发效果
 			IGraphics::CLineItem aLines[4];
 			int NumLines = 0;
+
+			// 上边 - Tee从上方接触此边界时会被freeze
 			if(!TopNeighbor)
 				aLines[NumLines++] = IGraphics::CLineItem(TileX, TileY, TileX + Scale, TileY);
+			// 下边 - Tee从下方接触此边界时会被freeze
 			if(!BottomNeighbor)
 				aLines[NumLines++] = IGraphics::CLineItem(TileX, TileY + Scale, TileX + Scale, TileY + Scale);
+			// 左边 - Tee从左侧接触此边界时会被freeze
 			if(!LeftNeighbor)
 				aLines[NumLines++] = IGraphics::CLineItem(TileX, TileY, TileX, TileY + Scale);
+			// 右边 - Tee从右侧接触此边界时会被freeze
 			if(!RightNeighbor)
 				aLines[NumLines++] = IGraphics::CLineItem(TileX + Scale, TileY, TileX + Scale, TileY + Scale);
 
@@ -430,17 +471,22 @@ void CCollisionHitbox::RenderTeeHitboxes()
 	{
 		const int ClientId = Player.ClientId();
 		const auto &Char = GameClient()->m_Snap.m_aCharacters[ClientId];
-		if(!Char.m_Active || !Player.m_Active || Player.m_Team < 0)
+		if(!Char.m_Active || !Player.m_Active)
+			continue;
+		if(Player.m_Team < 0)
 			continue;
 		if(!ShouldRenderClient(ClientId))
 			continue;
+
+		// 检查是否在屏幕范围内
 		if(!(Player.m_RenderPos.x >= ScreenX0 && Player.m_RenderPos.x <= ScreenX1 &&
 			   Player.m_RenderPos.y >= ScreenY0 && Player.m_RenderPos.y <= ScreenY1))
 			continue;
 
-		float PlayerAlpha = Alpha;
-		if(GameClient()->IsOtherTeam(ClientId))
+		float PlayerAlpha = Alpha * GameClient()->LiveObserverClientAlpha(ClientId);
+		if(PlayerAlpha >= Alpha && GameClient()->IsOtherTeam(ClientId))
 			PlayerAlpha *= (float)g_Config.m_ClShowOthersAlpha / 100.0f;
+
 		if(PlayerAlpha <= 0.0f)
 			continue;
 
@@ -448,6 +494,7 @@ void CCollisionHitbox::RenderTeeHitboxes()
 		if(HitboxModeEnabled())
 			DrawCircleOutline(Position, CCharacterCore::PhysicalSize(), TeeColor(ClientId, PlayerAlpha), 36);
 
+		// Freeze: center sample (tile-based)
 		const int Index = Collision()->GetPureMapIndex(Position);
 		const int Tile = Collision()->GetTileIndex(Index);
 		const int FrontTile = Collision()->GetFrontTileIndex(Index);
@@ -456,6 +503,7 @@ void CCollisionHitbox::RenderTeeHitboxes()
 		const float FreezeAlpha = FreezeHit ? PlayerAlpha : PlayerAlpha * 0.35f;
 		DrawCross(Position, PointSize, FreezeColor(FreezeAlpha));
 
+		// Death: 4-point samples (collision-based)
 		const vec2 DeathOffsets[4] = {
 			{SampleOffset, SampleOffset},
 			{SampleOffset, -SampleOffset},
@@ -483,7 +531,7 @@ void CCollisionHitbox::RenderPickupHitboxes()
 	float ScreenX0, ScreenY0, ScreenX1, ScreenY1;
 	Graphics()->GetScreen(&ScreenX0, &ScreenY0, &ScreenX1, &ScreenY1);
 
-	const float PickupRadius = 14.0f + 6.0f;
+	const float PickupRadius = 14.0f + 6.0f; // pickup phys size + extra collision size
 	const ColorRGBA ShieldColor(1.0f, 1.0f, 0.0f, Alpha);
 
 	const bool IsSuper = GameClient()->IsLocalCharSuper();
@@ -511,7 +559,7 @@ void CCollisionHitbox::RenderPickupHitboxes()
 			continue;
 
 		if(Data.m_Pos.x + PickupRadius < ScreenX0 || Data.m_Pos.x - PickupRadius > ScreenX1 ||
-			Data.m_Pos.y + PickupRadius < ScreenY0 || Data.m_Pos.y - PickupRadius > ScreenY1)
+		   Data.m_Pos.y + PickupRadius < ScreenY0 || Data.m_Pos.y - PickupRadius > ScreenY1)
 			continue;
 
 		DrawBoxOutline(Data.m_Pos, PickupRadius, ShieldColor);
@@ -543,8 +591,8 @@ void CCollisionHitbox::RenderHammerHitboxes()
 			continue;
 		HitPosition += RenderDelta;
 
-		float PlayerAlpha = Alpha;
-		if(GameClient()->IsOtherTeam(ClientId))
+		float PlayerAlpha = Alpha * GameClient()->LiveObserverClientAlpha(ClientId);
+		if(PlayerAlpha >= Alpha && GameClient()->IsOtherTeam(ClientId))
 			PlayerAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
 		if(PlayerAlpha <= 0.0f)
 			continue;
@@ -593,8 +641,12 @@ void CCollisionHitbox::RenderProjectileHitboxes()
 			continue;
 
 		float ProjectileAlpha = Alpha;
-		if(Data.m_ExtraInfo && Data.m_Owner >= 0 && GameClient()->IsOtherTeam(Data.m_Owner))
-			ProjectileAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		if(Data.m_ExtraInfo && Data.m_Owner >= 0)
+		{
+			ProjectileAlpha *= GameClient()->LiveObserverClientAlpha(Data.m_Owner);
+			if(ProjectileAlpha >= Alpha && GameClient()->IsOtherTeam(Data.m_Owner))
+				ProjectileAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		}
 		if(ProjectileAlpha <= 0.0f)
 			continue;
 
@@ -628,8 +680,12 @@ void CCollisionHitbox::RenderLaserHitboxes()
 			continue;
 
 		float LaserAlpha = Alpha;
-		if(Data.m_ExtraInfo && Data.m_Owner >= 0 && GameClient()->IsOtherTeam(Data.m_Owner))
-			LaserAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		if(Data.m_ExtraInfo && Data.m_Owner >= 0)
+		{
+			LaserAlpha *= GameClient()->LiveObserverClientAlpha(Data.m_Owner);
+			if(LaserAlpha >= Alpha && GameClient()->IsOtherTeam(Data.m_Owner))
+				LaserAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
+		}
 		if(LaserAlpha <= 0.0f)
 			continue;
 
@@ -668,8 +724,8 @@ void CCollisionHitbox::RenderHookHitboxes()
 		if(!IsLineOnScreen(StartPosition, HookPosition, CCharacterCore::PhysicalSize()))
 			continue;
 
-		float HookAlpha = Alpha;
-		if(GameClient()->IsOtherTeam(ClientId))
+		float HookAlpha = Alpha * GameClient()->LiveObserverClientAlpha(ClientId);
+		if(HookAlpha >= Alpha && GameClient()->IsOtherTeam(ClientId))
 			HookAlpha *= g_Config.m_ClShowOthersAlpha / 100.0f;
 		if(HookAlpha <= 0.0f)
 			continue;
@@ -727,13 +783,28 @@ void CCollisionHitbox::OnRender()
 	Graphics()->MapScreen(aPoints[0], aPoints[1], aPoints[2], aPoints[3]);
 
 	if(LegacyMode || g_Config.m_QmHitboxShowMap)
+	{
+		// 绘制地图tile的碰撞体积
 		RenderTileHitboxes();
+	}
+
 	if(LegacyMode || g_Config.m_QmHitboxShowTees)
+	{
+		// 绘制Tee的碰撞体积
 		RenderTeeHitboxes();
+	}
+
 	if(LegacyMode || g_Config.m_QmHitboxShowPickups)
+	{
+		// 绘制盾牌拾取的碰撞体积
 		RenderPickupHitboxes();
+	}
+
 	if(HitboxMode && g_Config.m_QmHitboxShowWeapons)
+	{
+		// 绘制武器交互范围
 		RenderWeaponHitboxes();
+	}
 
 	Graphics()->MapScreen(SavedScreenX0, SavedScreenY0, SavedScreenX1, SavedScreenY1);
 }

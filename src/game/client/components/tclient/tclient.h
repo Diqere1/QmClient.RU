@@ -126,7 +126,6 @@ class CTClient : public CComponent
 	float m_FinishTextTimeout = 0.0f;
 	void DoFinishCheck();
 	const char *CurrentCommunityIdForFinishCheck() const;
-	bool IsAxiomCommunity() const;
 	void ResetAxiomAutoLoginState();
 	void UpdateAxiomAutoLogin();
 	void HandleAxiomAutoLoginMessage(const char *pText);
@@ -335,14 +334,14 @@ public:
 	bool HasFreezeWakeupPopups() const;
 	void RenderFreezeWakeupPopups();
 
-	std::shared_ptr<CHttpRequest> m_pTClientInfoTask = nullptr;
+	std::shared_ptr<CHttpRequest> m_pQmClientUpdateInfoTask = nullptr;
 	std::shared_ptr<CHttpRequest> m_pUpdateExeTask = nullptr;
-	void FetchTClientInfo();
-	void FinishTClientInfo();
-	void ResetTClientInfoTask();
-	bool NeedUpdate();
-	void RequestUpdateCheckAndUpdate();
-	bool IsUpdateChecking() const { return m_pTClientInfoTask && !m_pTClientInfoTask->Done(); }
+	void FetchQmClientUpdateInfo();
+	void FinishQmClientUpdateInfo();
+	void ResetQmClientUpdateInfoTask();
+	bool NeedQmClientUpdate();
+	void RequestQmClientUpdateCheckAndUpdate();
+	bool IsUpdateChecking() const { return m_pQmClientUpdateInfoTask && !m_pQmClientUpdateInfoTask->Done(); }
 	bool IsUpdateDownloading() const { return m_pUpdateExeTask && !m_pUpdateExeTask->Done(); }
 
 	void RenderMiniVoteHud(bool HudEditorPreview = false);
@@ -350,11 +349,11 @@ public:
 	void RenderCtfFlag(vec2 Pos, float Alpha);
 
 	bool ChatDoSpecId(const char *pInput);
-	bool InfoTaskDone() const { return m_pTClientInfoTask && m_pTClientInfoTask->State() == EHttpState::DONE; }
-	bool m_FetchedTClientInfo = false;
-	bool m_AutoUpdateAfterCheck = false;
+	bool InfoTaskDone() const { return m_pQmClientUpdateInfoTask && m_pQmClientUpdateInfoTask->State() == EHttpState::DONE; }
+	bool m_FetchedQmClientUpdateInfo = false;
+	bool m_QmClientAutoUpdateAfterCheck = false;
 	char m_aUpdateExeTmp[64] = "";
-	char m_aVersionStr[32] = "0";
+	char m_aQmClientLatestVersionStr[32] = "0";
 
 	Regex m_RegexChatIgnore;
 
@@ -381,6 +380,7 @@ public:
 	bool TryRemoveLocalSaveForLoadCommand(const char *pLine);
 	bool IsGoresMapProgressEnabled() const;
 	bool ShouldHideGoresGuides(bool ManualGuideVisible = false) const;
+	bool IsAxiomCommunity() const;
 	bool HasGoresMapProgress(int Dummy = 0) const
 	{
 		const int Idx = Dummy < 0 ? 0 : (Dummy >= NUM_DUMMIES ? NUM_DUMMIES - 1 : Dummy);

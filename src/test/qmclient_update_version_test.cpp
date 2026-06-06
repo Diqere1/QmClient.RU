@@ -1,0 +1,29 @@
+#include <game/client/components/qmclient/update_version.h>
+
+#include <gtest/gtest.h>
+
+TEST(QmClientUpdateVersion, TreatsHigherRemoteVersionAsUpdate)
+{
+	EXPECT_TRUE(IsQmClientRemoteVersionNewer("2.62.6", "2.62.5"));
+	EXPECT_TRUE(IsQmClientRemoteVersionNewer("v2.62.6", "2.62.5"));
+}
+
+TEST(QmClientUpdateVersion, DoesNotTreatEqualOrLowerRemoteVersionAsUpdate)
+{
+	EXPECT_FALSE(IsQmClientRemoteVersionNewer("2.62.5", "2.62.5"));
+	EXPECT_FALSE(IsQmClientRemoteVersionNewer("2.62.4", "2.62.5"));
+	EXPECT_FALSE(IsQmClientRemoteVersionNewer("v2.62.4 ", " 2.62.5"));
+}
+
+TEST(QmClientUpdateVersion, SupportsCompactAndFourPartVersions)
+{
+	EXPECT_FALSE(IsQmClientRemoteVersionNewer("2.62", "2.62.0"));
+	EXPECT_TRUE(IsQmClientRemoteVersionNewer("2.62.5.1", "2.62.5.0"));
+}
+
+TEST(QmClientUpdateVersion, IgnoresInvalidOrOverflowingRemoteVersions)
+{
+	EXPECT_FALSE(IsQmClientRemoteVersionNewer("2.62-beta", "2.62.4"));
+	EXPECT_FALSE(IsQmClientRemoteVersionNewer("999999999999.1", "2.62.4"));
+	EXPECT_FALSE(IsQmClientRemoteVersionNewer(nullptr, "2.62.4"));
+}

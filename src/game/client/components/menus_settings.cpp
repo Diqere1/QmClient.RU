@@ -299,7 +299,7 @@ namespace
 			Telemetry.m_aLastWaitReason,
 			Telemetry.m_aDynamicDecision,
 			SettingsSkinBackgroundRequestBlockReasonName(gs_TeeSettingsPageState.m_LastRequestBudgetBlockReason));
-		QmPerfLogPayload("perf/skin-preview-cache", aPayload, pClient, "settings:tee");
+		QmPerfLogPayload("perf/settings-skin-source", aPayload, pClient, "settings:tee");
 		gs_TeeListDrainPerfSession.m_Active = false;
 	}
 
@@ -885,7 +885,7 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	}
 
 	static CButtonContainer s_DummyTabButton;
-	if(DoButton_MenuTab(&s_DummyTabButton, Localize("Dummy"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
+	if(DoButton_MenuTab(&s_DummyTabButton, Localize("分身"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
 	{
 		m_Dummy = true;
 	}
@@ -1059,7 +1059,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	MainView.HSplitTop(20.0f, &TabBar, &MainView);
 	TabBar.VSplitMid(&TabBar, &ChangeInfo, 20.f);
 	const char *pPlayerTabLabel = Localize("Player");
-	const char *pDummyTabLabel = Localize("Dummy");
+	const char *pDummyTabLabel = Localize("分身");
 	const char *pProfilesTabLabel = Localize("Profiles");
 	const float TabFontSize = TabBar.h * CUi::ms_FontmodHeight;
 	float PlayerDummyTabWidth = maximum(90.0f,
@@ -2229,7 +2229,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 			AdmissionTelemetry.m_RenderFrameTimeMs,
 			AdmissionTelemetry.m_AdmissionUnderfed ? 1 : 0,
 			AdmissionTelemetry.m_UnderfedStreak);
-		QmPerfLogPayload("perf/skin-preview-cache", aPayload, Client(), "settings:tee");
+		QmPerfLogPayload("perf/settings-skin-source", aPayload, Client(), "settings:tee");
 		gs_TeeSettingsPageState.m_LastLoggedVisibleCount = (int)vVisibleSkinIndices.size();
 		gs_TeeSettingsPageState.m_LastLoggedVisibleReadyCount = VisibleReadyCount;
 		gs_TeeSettingsPageState.m_LastLoggedScrollActive = FrameContext.m_ScrollActive;
@@ -2293,7 +2293,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 				Telemetry.m_RenderFrameTimeMs,
 				Telemetry.m_AdmissionUnderfed ? 1 : 0,
 				Telemetry.m_UnderfedStreak);
-			QmPerfLogPayload("perf/skin-preview-cache", aPayload, Client(), "settings:tee");
+			QmPerfLogPayload("perf/settings-skin-source", aPayload, Client(), "settings:tee");
 			gs_TeeListDrainPerfSession.m_TotalRequested += (uint64_t)maximum(0, RequestedDelta);
 			gs_TeeListDrainPerfSession.m_TotalAdmitted += (uint64_t)maximum(0, Telemetry.m_AdmittedDelta);
 			gs_TeeListDrainPerfSession.m_TotalStarted += (uint64_t)maximum(0, Telemetry.m_StartedDelta);
@@ -2328,7 +2328,7 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 				(int)SkinStats.m_NumLoading,
 				Telemetry.m_RealInflight,
 				CountFuseLimit);
-			QmPerfLogPayload("perf/skin-preview-cache", aPayload, Client(), "settings:tee");
+			QmPerfLogPayload("perf/settings-skin-source", aPayload, Client(), "settings:tee");
 		}
 	}
 	const int NewSelected = s_ListBox.DoEnd();
@@ -2658,21 +2658,26 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	static CButtonContainer s_UiColorResetId;
-	DoLine_ColorPicker(&s_UiColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("UI Color"), &g_Config.m_UiColor, color_cast<ColorRGBA>(ColorHSLA(0xE4A046AFU, true)), false, nullptr, true);
+	DoLine_ColorPicker(&s_UiColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("界面颜色"), &g_Config.m_UiColor, color_cast<ColorRGBA>(ColorHSLA(0xE4A046AFU, true)), false, nullptr, true);
 	static CButtonContainer s_MenuPanelColorResetId;
 	const unsigned OldMenuPanelColor = g_Config.m_ClMenuPanelColor;
-	DoLine_ColorPicker(&s_MenuPanelColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("Menu panel color"), &g_Config.m_ClMenuPanelColor, color_cast<ColorRGBA>(ColorHSLA(CConfig::ms_ClMenuPanelColor)), false, nullptr, false);
+	DoLine_ColorPicker(&s_MenuPanelColorResetId, 25.0f, 13.0f, 2.0f, &MainView, Localize("菜单面板颜色"), &g_Config.m_ClMenuPanelColor, color_cast<ColorRGBA>(ColorHSLA(CConfig::ms_ClMenuPanelColor)), false, nullptr, false);
 	if(OldMenuPanelColor != g_Config.m_ClMenuPanelColor)
 		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	MainView.HSplitTop(20.0f, &Button, &MainView);
-	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelOpacity, &g_Config.m_ClMenuPanelOpacity, &Button, Localize("Menu panel opacity"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelOpacity, &g_Config.m_ClMenuPanelOpacity, &Button, Localize("菜单面板透明度"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
 		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
 
 	MainView.HSplitTop(2.0f, nullptr, &MainView);
 	MainView.HSplitTop(20.0f, &Button, &MainView);
-	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelElevatedOpacity, &g_Config.m_ClMenuPanelElevatedOpacity, &Button, Localize("Menu panel elevated opacity"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClMenuPanelElevatedOpacity, &g_Config.m_ClMenuPanelElevatedOpacity, &Button, Localize("菜单强调面板透明度"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
+		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
+
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(Ui()->DoScrollbarOption(&g_Config.m_ClSettingsTabbarOpacity, &g_Config.m_ClSettingsTabbarOpacity, &Button, Localize("设置栏透明度"), 0, 100, &CUi::ms_LinearScrollbarScale, 0u, "%"))
 		InvalidateSettingsRuntimeCaches(ESettingsInvalidationReason::CONFIG_HASH_CHANGED);
 
 	// Backend list
@@ -4098,13 +4103,23 @@ void CMenus::RenderSettings(CUIRect MainView)
 
 	// render background
 	CUIRect Button, TabBar, RestartBar;
-	const float TabBarWidth = std::clamp(MainView.w * 0.16f, 132.0f, 168.0f);
-	MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
-	MainView.VSplitRight(10.0f, &MainView, nullptr);
-	TabBar.Draw(MenuPanelElevatedColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	MainView.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
-	const float ContentMargin = 10.0f;
-	MainView.Margin(ContentMargin, &MainView);
+	const bool UseNewSettingsUi = g_Config.m_QmNewUi != 0;
+	if(UseNewSettingsUi)
+	{
+		const float TabBarWidth = std::clamp(MainView.w * 0.16f, 132.0f, 168.0f);
+		MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
+		MainView.VSplitRight(10.0f, &MainView, nullptr);
+		TabBar.Draw(SettingsTabbarColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		MainView.Draw(MenuPanelColor(), IGraphics::CORNER_ALL, ui_token::radius::CARD);
+		MainView.Margin(10.0f, &MainView);
+	}
+	else
+	{
+		const float TabBarWidth = std::clamp(MainView.w * 0.14f, 108.0f, 120.0f);
+		MainView.VSplitRight(TabBarWidth, &MainView, &TabBar);
+		MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
+		MainView.Margin(std::clamp(MainView.w * 0.02f, 12.0f, 20.0f), &MainView);
+	}
 
 	const bool NeedRestart = m_NeedRestartGraphics || m_NeedRestartSound || m_NeedRestartUpdate;
 	if(NeedRestart)
@@ -4113,9 +4128,17 @@ void CMenus::RenderSettings(CUIRect MainView)
 		MainView.HSplitBottom(10.0f, &MainView, nullptr);
 	}
 
-	TabBar.Margin(10.0f, &TabBar);
-	TabBar.HSplitTop(38.0f, &Button, &TabBar);
-	Ui()->DoLabel(&Button, Localize("Settings"), ui_token::font::HEADLINE_LG, TEXTALIGN_MC);
+	if(UseNewSettingsUi)
+	{
+		TabBar.Margin(10.0f, &TabBar);
+		TabBar.HSplitTop(38.0f, &Button, &TabBar);
+		Ui()->DoLabel(&Button, Localize("Settings"), ui_token::font::HEADLINE_LG, TEXTALIGN_MC);
+	}
+	else
+	{
+		TabBar.HSplitTop(50.0f, &Button, &TabBar);
+		Button.Draw(ms_ColorTabbarActive, IGraphics::CORNER_BR, 10.0f);
+	}
 
 	PrepareSettingsTabLabelCache(MainView.w);
 	PrepareLanguagePageCache(MainView.w);
@@ -4138,17 +4161,27 @@ void CMenus::RenderSettings(CUIRect MainView)
 		{
 			if(!SettingsPageVisibleInRightTabBar(i))
 				continue;
-			TabBar.HSplitTop(10.0f, nullptr, &TabBar);
-			TabBar.HSplitTop(26.0f, &Button, &TabBar);
 			const bool Active = g_Config.m_UiSettingsPage == i;
-			if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], g_Config.m_UiSettingsPage == i, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
-				g_Config.m_UiSettingsPage = i;
-			if(Active)
+			if(UseNewSettingsUi)
 			{
-				CUIRect Accent = Button;
-				Accent.VSplitLeft(3.0f, &Accent, nullptr);
-				Accent.HMargin(5.0f, &Accent);
-				Accent.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_ALL, 2.0f);
+				TabBar.HSplitTop(10.0f, nullptr, &TabBar);
+				TabBar.HSplitTop(26.0f, &Button, &TabBar);
+				if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
+					g_Config.m_UiSettingsPage = i;
+				if(Active)
+				{
+					CUIRect Accent = Button;
+					Accent.VSplitLeft(3.0f, &Accent, nullptr);
+					Accent.HMargin(5.0f, &Accent);
+					Accent.Draw(ui_token::color::ACCENT_PRIMARY, IGraphics::CORNER_ALL, 2.0f);
+				}
+			}
+			else
+			{
+				TabBar.HSplitTop(10.0f, nullptr, &TabBar);
+				TabBar.HSplitTop(26.0f, &Button, &TabBar);
+				if(DoButton_MenuTab(&m_aSettingsTabButtons[i], m_apSettingsTabs[i], Active, &Button, IGraphics::CORNER_R, &m_aAnimatorsSettingsTab[i], nullptr, nullptr, nullptr, 10.0f, nullptr, &m_aSettingsTabLabelElements[i]))
+					g_Config.m_UiSettingsPage = i;
 			}
 		}
 
@@ -4689,7 +4722,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudHealthAmmo, Localize("Show health, shields and ammo"), &g_Config.m_ClShowhudHealthAmmo, &LeftView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudScore, Localize("Show score"), &g_Config.m_ClShowhudScore, &LeftView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowLocalTimeAlways, Localize("Show local time always"), &g_Config.m_ClShowLocalTimeAlways, &LeftView, LineSize);
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClSpecCursor, Localize("Show spectator cursor"), &g_Config.m_ClSpecCursor, &LeftView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClSpecCursor, Localize("显示旁观光标"), &g_Config.m_ClSpecCursor, &LeftView, LineSize);
 
 		// Settings of the HUD element for votes
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowVotesAfterVoting, Localize("Show votes window after voting"), &g_Config.m_ClShowVotesAfterVoting, &LeftView, LineSize);
@@ -4713,7 +4746,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		RightView.HSplitTop(MarginSmall, nullptr, &RightView);
 
 		// Switches of various DDRace HUD elements
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowIds, Localize("Show client IDs (scoreboard, chat, spectator)"), &g_Config.m_ClShowIds, &RightView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowIds, Localize("显示客户端 ID（计分板、聊天、旁观）"), &g_Config.m_ClShowIds, &RightView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudDDRace, Localize("Show DDRace HUD"), &g_Config.m_ClShowhudDDRace, &RightView, LineSize);
 		if(g_Config.m_ClShowhudDDRace)
 		{
@@ -4726,7 +4759,7 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		}
 
 		// Eye with a number of spectators
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudSpectatorCount, Localize("Show number of spectators"), &g_Config.m_ClShowhudSpectatorCount, &RightView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudSpectatorCount, Localize("显示旁观者数量"), &g_Config.m_ClShowhudSpectatorCount, &RightView, LineSize);
 
 		// Switch for dummy actions display
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowhudDummyActions, Localize("显示分身操作"), &g_Config.m_ClShowhudDummyActions, &RightView, LineSize);
@@ -4781,6 +4814,12 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowChatFriends, Localize("Show only chat messages from friends"), &g_Config.m_ClShowChatFriends, &LeftView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClShowChatTeamMembersOnly, Localize("Show only chat messages from team members"), &g_Config.m_ClShowChatTeamMembersOnly, &LeftView, LineSize);
 		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmChatSaveDraft, Localize("Save unsent chat draft"), &g_Config.m_QmChatSaveDraft, &LeftView, LineSize);
+		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_QmChatLogAutoSave, Localize("自动保存聊天记录"), &g_Config.m_QmChatLogAutoSave, &LeftView, LineSize);
+		if(g_Config.m_QmChatLogAutoSave)
+		{
+			LeftView.HSplitTop(LineSize, &Button, &LeftView);
+			Ui()->DoScrollbarOption(&g_Config.m_QmChatLogKeepDays, &g_Config.m_QmChatLogKeepDays, &Button, Localize("聊天记录保留天数"), 0, 3650, &CUi::ms_LinearScrollbarScale, 0, Localize("天"));
+		}
 
 		if(DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClChatOld, Localize("Use old chat style"), &g_Config.m_ClChatOld, &LeftView, LineSize))
 			GameClient()->m_Chat.RebuildChat();
@@ -5265,8 +5304,35 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 
 		// ***** Name Plate Dummy Preview ***** //
 		RightView.HSplitBottom(LineSize, &RightView, &Button);
-		if(DoButton_CheckBox(&m_DummyNamePlatePreview, g_Config.m_ClDummy ? Localize("Preview player's name plate") : Localize("Preview dummy's name plate"), m_DummyNamePlatePreview, &Button))
+		if(DoButton_CheckBox(&m_DummyNamePlatePreview, g_Config.m_ClDummy ? Localize("预览玩家的名牌") : Localize("预览分身的名牌"), m_DummyNamePlatePreview, &Button))
 			m_DummyNamePlatePreview = !m_DummyNamePlatePreview;
+
+		RightView.HSplitBottom(LineSize, &RightView, &Button);
+		const bool NameplateFreeMoveEnabled = g_Config.m_QmNameplateFreeMove != 0 || g_Config.m_QmNameplateFreeMoveX != 0 || g_Config.m_QmNameplateFreeMoveY != 0;
+		if(DoButton_CheckBox(&g_Config.m_QmNameplateFreeMove, Localize("自由调整布局"), NameplateFreeMoveEnabled, &Button))
+		{
+			const int NewValue = NameplateFreeMoveEnabled ? 0 : 1;
+			g_Config.m_QmNameplateFreeMove = NewValue;
+			g_Config.m_QmNameplateFreeMoveX = 0;
+			g_Config.m_QmNameplateFreeMoveY = 0;
+		}
+
+		RightView.HSplitBottom(LineSize, &RightView, &Button);
+		static CButtonContainer s_NameplateResetLayoutButton;
+		if(DoButton_Menu(&s_NameplateResetLayoutButton, Localize("重置布局"), 0, &Button))
+		{
+			g_Config.m_QmNameplateKeysOffsetX = 0;
+			g_Config.m_QmNameplateKeysOffsetY = 0;
+			g_Config.m_QmNameplateCoordsOffsetX = 0;
+			g_Config.m_QmNameplateCoordsOffsetY = 0;
+			g_Config.m_QmNameplateHookOffsetX = 0;
+			g_Config.m_QmNameplateHookOffsetY = 0;
+			g_Config.m_QmNameplateClanOffsetX = 0;
+			g_Config.m_QmNameplateClanOffsetY = 0;
+			g_Config.m_QmNameplateNameOffsetX = 0;
+			g_Config.m_QmNameplateNameOffsetY = 0;
+		}
+		RightView.HSplitBottom(MarginSmall, &RightView, nullptr);
 
 		int Dummy = g_Config.m_ClDummy != (m_DummyNamePlatePreview ? 1 : 0);
 

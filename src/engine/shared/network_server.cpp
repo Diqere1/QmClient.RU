@@ -12,6 +12,8 @@
 #include <engine/shared/packer.h>
 #include <engine/shared/protocol.h>
 
+#include <algorithm>
+
 const int g_DummyMapCrc = 0xD6909B17;
 const unsigned char g_aDummyMapData[] = {
 	0x44, 0x41, 0x54, 0x41, 0x04, 0x00, 0x00, 0x00, 0xFA, 0x00, 0x00, 0x00,
@@ -38,6 +40,18 @@ const unsigned char g_aDummyMapData[] = {
 	0x78, 0x9C, 0x63, 0x64, 0x60, 0x60, 0x60, 0x44, 0xC2, 0x00, 0x00, 0x38,
 	0x00, 0x05};
 
+const char *NetTransportName(ENetTransport Transport)
+{
+	switch(Transport)
+	{
+	case ENetTransport::LEGACY:
+		return "legacy";
+	case ENetTransport::KCP:
+		return "kcp";
+	}
+	return "unknown";
+}
+
 bool CNetServer::Open(NETADDR BindAddr, CNetBan *pNetBan, int MaxClients, int MaxClientsPerIp)
 {
 	// zero out the whole structure
@@ -59,6 +73,9 @@ bool CNetServer::Open(NETADDR BindAddr, CNetBan *pNetBan, int MaxClients, int Ma
 	m_VConnFirst = 0;
 
 	secure_random_fill(m_aSecurityTokenSeed, sizeof(m_aSecurityTokenSeed));
+	secure_random_fill(&m_FakeNetSeed, sizeof(m_FakeNetSeed));
+	if(m_FakeNetSeed == 0)
+		m_FakeNetSeed = 1;
 
 	for(auto &Slot : m_aSlots)
 		Slot.m_Connection.Init(m_Socket, true);
@@ -90,6 +107,10 @@ void CNetServer::Close()
 	{
 		return;
 	}
+	for(int i = 0; i < MaxClients(); ++i)
+	{
+		DeactivateKcp(i);
+	}
 	net_udp_close(m_Socket);
 	m_Socket = nullptr;
 }
@@ -101,6 +122,7 @@ void CNetServer::Drop(int ClientId, const char *pReason)
 	if(m_pfnDelClient)
 		m_pfnDelClient(ClientId, pReason, m_pUser);
 
+	DeactivateKcp(ClientId);
 	m_aSlots[ClientId].m_Connection.Disconnect(pReason);
 }
 
@@ -108,14 +130,124 @@ void CNetServer::Update()
 {
 	for(int i = 0; i < MaxClients(); i++)
 	{
-		m_aSlots[i].m_Connection.Update();
-		if(m_aSlots[i].m_Connection.State() == CNetConnection::EState::ERROR &&
-			(!m_aSlots[i].m_Connection.m_TimeoutProtected ||
-				!m_aSlots[i].m_Connection.m_TimeoutSituation))
+		CSlot &Slot = m_aSlots[i];
+		if(Slot.m_Transport == ENetTransport::KCP)
 		{
-			Drop(i, m_aSlots[i].m_Connection.ErrorString());
+			Slot.m_Kcp.Update();
+			Slot.m_TransportStats = Slot.m_Kcp.Stats();
+			if(Slot.m_Kcp.TimedOut(g_Config.m_ConnTimeout))
+			{
+				if(!Slot.m_Connection.m_TimeoutProtected)
+				{
+					Drop(i, "KCP timeout");
+					continue;
+				}
+
+				// Preserve timeout-protected tees on KCP the same way legacy UDP does.
+				Slot.m_Connection.SetTimedOut("Timeout");
+				DeactivateKcp(i);
+			}
+		}
+
+		Slot.m_Connection.Update();
+		if(Slot.m_Connection.State() == CNetConnection::EState::ERROR &&
+			(!Slot.m_Connection.m_TimeoutProtected ||
+				!Slot.m_Connection.m_TimeoutSituation))
+		{
+			Drop(i, Slot.m_Connection.ErrorString());
 		}
 	}
+}
+
+SNetTransportStats CNetServer::ClientTransportStats(int ClientId) const
+{
+	const CSlot &Slot = m_aSlots[ClientId];
+	SNetTransportStats Stats = Slot.m_Transport == ENetTransport::KCP ? Slot.m_Kcp.Stats() : Slot.m_TransportStats;
+	if(Slot.m_Transport == ENetTransport::LEGACY)
+	{
+		Stats.m_LossPermille = (int)std::clamp(Slot.m_Connection.PacketLoss() * 10.0f, 0.0f, 1000.0f);
+		Stats.m_ResendCount = Slot.m_Connection.PendingResendCount();
+		Stats.m_RttMs = -1;
+		Stats.m_SendQueueDepth = Stats.m_ResendCount;
+	}
+	Stats.m_SessionCount = KcpSessionCount();
+	return Stats;
+}
+
+int CNetServer::KcpSessionCount() const
+{
+	int Count = 0;
+	for(int ClientId = 0; ClientId < MaxClients(); ++ClientId)
+	{
+		if(m_aSlots[ClientId].m_Transport == ENetTransport::KCP &&
+			m_aSlots[ClientId].m_Connection.State() != CNetConnection::EState::OFFLINE &&
+			m_aSlots[ClientId].m_Connection.State() != CNetConnection::EState::ERROR)
+		{
+			++Count;
+		}
+	}
+	return Count;
+}
+
+bool CNetServer::KcpConvInUse(uint32_t Conv) const
+{
+	if(Conv == 0)
+		return true;
+	for(int ClientId = 0; ClientId < MaxClients(); ++ClientId)
+	{
+		const CSlot &Slot = m_aSlots[ClientId];
+		if(Slot.m_PendingKcpConv == Conv)
+			return true;
+		if(Slot.m_Kcp.IsActive() && Slot.m_Kcp.Conv() == Conv)
+			return true;
+	}
+	return false;
+}
+
+uint32_t CNetServer::NewKcpConv()
+{
+	for(int Attempts = 0; Attempts < 32; ++Attempts)
+	{
+		uint32_t Conv;
+		secure_random_fill(&Conv, sizeof(Conv));
+		Conv &= 0x7fffffffu;
+		Conv |= 1u;
+		if(!KcpConvInUse(Conv))
+			return Conv;
+	}
+	return 0;
+}
+
+bool CNetServer::ActivateKcp(int ClientId, uint32_t Conv)
+{
+	dbg_assert(ClientId >= 0 && ClientId < MaxClients(), "invalid client id");
+	CSlot &Slot = m_aSlots[ClientId];
+	if(!m_Socket || Slot.m_Connection.State() == CNetConnection::EState::OFFLINE || Slot.m_Connection.State() == CNetConnection::EState::ERROR)
+		return false;
+	if(!Slot.m_Kcp.Init(m_Socket, *Slot.m_Connection.PeerAddress(), Conv))
+		return false;
+	Slot.m_Transport = ENetTransport::KCP;
+	Slot.m_TransportStats = Slot.m_Kcp.Stats();
+	Slot.m_PendingKcpConv = 0;
+	Slot.m_Connection.SetPacketOutput(CNetKcpSession::PacketOutput, &Slot.m_Kcp);
+	return true;
+}
+
+void CNetServer::PrepareKcpUpgrade(int ClientId, uint32_t Conv)
+{
+	dbg_assert(ClientId >= 0 && ClientId < MaxClients(), "invalid client id");
+	m_aSlots[ClientId].m_PendingKcpConv = Conv;
+}
+
+void CNetServer::DeactivateKcp(int ClientId)
+{
+	dbg_assert(ClientId >= 0 && ClientId < MaxClients(), "invalid client id");
+	CSlot &Slot = m_aSlots[ClientId];
+	Slot.m_Connection.SetPacketOutput(nullptr, nullptr);
+	Slot.m_Kcp.Reset();
+	Slot.m_Transport = ENetTransport::LEGACY;
+	Slot.m_TransportStats = {};
+	Slot.m_PendingKcpConv = 0;
 }
 
 SECURITY_TOKEN CNetServer::GetGlobalToken()
@@ -246,6 +378,7 @@ int CNetServer::TryAcceptClient(NETADDR &Addr, SECURITY_TOKEN SecurityToken, boo
 
 	// init connection slot
 	m_aSlots[Slot].m_Connection.DirectInit(Addr, SecurityToken, Token, Sixup);
+	DeactivateKcp(Slot);
 
 	if(VanillaAuth)
 	{
@@ -582,6 +715,227 @@ static bool IsDDNetControlMsg(const CNetPacketConstruct *pPacket)
 	return false;
 }
 
+bool CNetServer::FakeNetEnabled() const
+{
+	return g_Config.m_SvNetFakeLoss > 0 ||
+	       g_Config.m_SvNetFakeJitter > 0 ||
+	       g_Config.m_SvNetFakeRtt > 0 ||
+	       g_Config.m_SvNetFakeReorder > 0;
+}
+
+uint32_t CNetServer::FakeNetRandom()
+{
+	m_FakeNetSeed = m_FakeNetSeed * 1103515245u + 12345u;
+	return m_FakeNetSeed;
+}
+
+bool CNetServer::FakeNetChance(int Percent)
+{
+	if(Percent <= 0)
+		return false;
+	if(Percent >= 100)
+		return true;
+	return (int)(FakeNetRandom() % 100) < Percent;
+}
+
+int CNetServer::FakeNetDelayMs()
+{
+	int DelayMs = std::max(0, g_Config.m_SvNetFakeRtt / 2);
+	const int JitterMs = std::max(0, g_Config.m_SvNetFakeJitter);
+	if(JitterMs > 0)
+	{
+		const int Spread = JitterMs * 2 + 1;
+		DelayMs += (int)(FakeNetRandom() % Spread) - JitterMs;
+	}
+	return std::max(0, DelayMs);
+}
+
+bool CNetServer::FakeNetPopReadyPacket(NETADDR *pAddr, unsigned char *pData, int *pBytes)
+{
+	if(m_vFakeNetDelayedPackets.empty())
+		return false;
+
+	const int64_t Now = time_get();
+	int Best = -1;
+	int64_t BestTime = 0;
+	for(size_t i = 0; i < m_vFakeNetDelayedPackets.size(); ++i)
+	{
+		const int64_t DeliverTime = m_vFakeNetDelayedPackets[i].m_DeliverTime;
+		if(DeliverTime > Now)
+			continue;
+		if(Best == -1 || DeliverTime < BestTime)
+		{
+			Best = (int)i;
+			BestTime = DeliverTime;
+		}
+	}
+
+	if(Best < 0)
+		return false;
+
+	CFakeNetDelayedPacket Packet = m_vFakeNetDelayedPackets[Best];
+	m_vFakeNetDelayedPackets.erase(m_vFakeNetDelayedPackets.begin() + Best);
+	*pAddr = Packet.m_Addr;
+	*pBytes = Packet.m_DataSize;
+	mem_copy(pData, Packet.m_aData, Packet.m_DataSize);
+	return true;
+}
+
+bool CNetServer::FakeNetQueuePacket(const NETADDR &Addr, const unsigned char *pData, int Bytes, int64_t DeliverTime)
+{
+	if((int)m_vFakeNetDelayedPackets.size() >= NET_FAKE_MAX_DELAYED_PACKETS)
+	{
+		++m_FakeNetDropped;
+		return false;
+	}
+
+	CFakeNetDelayedPacket Packet;
+	Packet.m_Addr = Addr;
+	Packet.m_DataSize = Bytes;
+	Packet.m_DeliverTime = DeliverTime;
+	mem_copy(Packet.m_aData, pData, Bytes);
+	m_vFakeNetDelayedPackets.push_back(Packet);
+	++m_FakeNetDelayed;
+	return true;
+}
+
+bool CNetServer::FakeNetFilterPacket(const NETADDR &Addr, const unsigned char *pData, int Bytes)
+{
+	if(!FakeNetEnabled())
+		return false;
+
+	if(FakeNetChance(g_Config.m_SvNetFakeLoss))
+	{
+		++m_FakeNetDropped;
+		return true;
+	}
+
+	int DelayMs = FakeNetDelayMs();
+	if(FakeNetChance(g_Config.m_SvNetFakeReorder))
+	{
+		DelayMs += std::max(1, g_Config.m_SvNetFakeJitter);
+	}
+	if(DelayMs <= 0)
+		return false;
+
+	const int64_t DeliverTime = time_get() + (int64_t)DelayMs * time_freq() / 1000;
+	return FakeNetQueuePacket(Addr, pData, Bytes, DeliverTime);
+}
+
+int CNetServer::GetKcpClientSlot(uint32_t Conv, const NETADDR &Addr)
+{
+	for(int i = 0; i < MaxClients(); ++i)
+	{
+		CSlot &Slot = m_aSlots[i];
+		if(Slot.m_Transport != ENetTransport::KCP || !Slot.m_Kcp.IsActive() || Slot.m_Kcp.Conv() != Conv)
+			continue;
+		if(Slot.m_Kcp.IsPeerAddress(Addr) || Slot.m_Kcp.IsPeerAddressNoPort(Addr))
+			return i;
+	}
+	return -1;
+}
+
+int CNetServer::GetPendingKcpClientSlot(uint32_t Conv, const NETADDR &Addr)
+{
+	for(int i = 0; i < MaxClients(); ++i)
+	{
+		CSlot &Slot = m_aSlots[i];
+		if(Slot.m_PendingKcpConv != Conv)
+			continue;
+		if(Slot.m_Connection.State() == CNetConnection::EState::OFFLINE || Slot.m_Connection.State() == CNetConnection::EState::ERROR)
+			continue;
+		if(net_addr_comp_noport(Slot.m_Connection.PeerAddress(), &Addr) == 0)
+			return i;
+	}
+	return -1;
+}
+
+bool CNetServer::FeedKcpPacket(const NETADDR &Addr, const unsigned char *pData, int Bytes)
+{
+	uint32_t Conv;
+	if(!CNetKcpSession::UnpackHeader(pData, Bytes, &Conv, nullptr, nullptr))
+		return false;
+
+	int ClientId = GetKcpClientSlot(Conv, Addr);
+	if(ClientId < 0)
+	{
+		ClientId = GetPendingKcpClientSlot(Conv, Addr);
+		if(ClientId >= 0 && !ActivateKcp(ClientId, Conv))
+		{
+			DeactivateKcp(ClientId);
+			return false;
+		}
+	}
+	if(ClientId < 0)
+		return false;
+
+	CSlot &Slot = m_aSlots[ClientId];
+	if(!Slot.m_Kcp.Input(Addr, pData, Bytes, true))
+		return false;
+
+	if(Slot.m_Connection.UpdatePeerAddressForRebind(Addr))
+	{
+		Slot.m_Kcp.SetPeerAddress(Addr);
+	}
+	Slot.m_TransportStats = Slot.m_Kcp.Stats();
+	return true;
+}
+
+bool CNetServer::FetchKcpChunk(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken)
+{
+	for(int ClientId = 0; ClientId < MaxClients(); ++ClientId)
+	{
+		CSlot &Slot = m_aSlots[ClientId];
+		if(Slot.m_Transport != ENetTransport::KCP || !Slot.m_Kcp.IsActive())
+			continue;
+
+		const int Size = Slot.m_Kcp.PeekSize();
+		if(Size <= 0 || Size > NET_MAX_PACKETSIZE)
+			continue;
+
+		unsigned char *pData = m_RecvUnpacker.m_aBuffer;
+		const int Bytes = Slot.m_Kcp.Recv(pData, sizeof(m_RecvUnpacker.m_aBuffer));
+		if(Bytes <= 0)
+			continue;
+
+		bool Sixup = Slot.m_Connection.m_Sixup;
+		SECURITY_TOKEN Token;
+		*pResponseToken = NET_SECURITY_TOKEN_UNKNOWN;
+		if(CNetBase::UnpackPacket(pData, Bytes, &m_RecvUnpacker.m_Data, Sixup, &Token, pResponseToken) != 0)
+			continue;
+
+		NETADDR Addr = *Slot.m_Connection.PeerAddress();
+		if(m_RecvUnpacker.m_Data.m_Flags & NET_PACKETFLAG_CONNLESS)
+		{
+			pChunk->m_Flags = NETSENDFLAG_CONNLESS;
+			pChunk->m_ClientId = -1;
+			pChunk->m_Address = Addr;
+			pChunk->m_DataSize = m_RecvUnpacker.m_Data.m_DataSize;
+			pChunk->m_pData = m_RecvUnpacker.m_Data.m_aChunkData;
+			if(m_RecvUnpacker.m_Data.m_Flags & NET_PACKETFLAG_EXTENDED)
+			{
+				pChunk->m_Flags |= NETSENDFLAG_EXTENDED;
+				mem_copy(pChunk->m_aExtraData, m_RecvUnpacker.m_Data.m_aExtraData, sizeof(pChunk->m_aExtraData));
+			}
+			return true;
+		}
+
+		if(m_RecvUnpacker.m_Data.m_Flags & NET_PACKETFLAG_CONTROL)
+			OnConnCtrlMsg(Addr, ClientId, m_RecvUnpacker.m_Data.m_aChunkData[0], m_RecvUnpacker.m_Data);
+
+		if(Slot.m_Connection.Feed(&m_RecvUnpacker.m_Data, &Addr, Token, *pResponseToken))
+		{
+			if(m_RecvUnpacker.m_Data.m_DataSize)
+			{
+				m_RecvUnpacker.Start(&Addr, &Slot.m_Connection, ClientId);
+				if(m_RecvUnpacker.FetchChunk(pChunk))
+					return true;
+			}
+		}
+	}
+	return false;
+}
+
 /*
 	TODO: chopp up this function into smaller working parts
 */
@@ -590,14 +944,29 @@ int CNetServer::Recv(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken)
 	while(true)
 	{
 		NETADDR Addr;
+		unsigned char aFakeNetData[NET_MAX_PACKETSIZE];
+		int FakeNetBytes = 0;
 
 		// check for a chunk
 		if(m_RecvUnpacker.FetchChunk(pChunk))
 			return 1;
+		if(FetchKcpChunk(pChunk, pResponseToken))
+			return 1;
 
 		// TODO: empty the recvinfo
 		unsigned char *pData;
-		int Bytes = net_udp_recv(m_Socket, &Addr, &pData);
+		int Bytes;
+		if(FakeNetPopReadyPacket(&Addr, aFakeNetData, &FakeNetBytes))
+		{
+			pData = aFakeNetData;
+			Bytes = FakeNetBytes;
+		}
+		else
+		{
+			Bytes = net_udp_recv(m_Socket, &Addr, &pData);
+			if(Bytes > 0 && FakeNetFilterPacket(Addr, pData, Bytes))
+				continue;
+		}
 
 		// no more packets for now
 		if(Bytes <= 0)
@@ -609,6 +978,12 @@ int CNetServer::Recv(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken)
 		{
 			// banned, reply with a message
 			CNetBase::SendControlMsg(m_Socket, &Addr, 0, NET_CTRLMSG_CLOSE, aBuf, str_length(aBuf) + 1, NET_SECURITY_TOKEN_UNSUPPORTED);
+			continue;
+		}
+
+		if(CNetKcpSession::IsKcpPacket(pData, Bytes))
+		{
+			FeedKcpPacket(Addr, pData, Bytes);
 			continue;
 		}
 
@@ -683,6 +1058,59 @@ int CNetServer::Recv(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken)
 
 int CNetServer::Send(CNetChunk *pChunk)
 {
+	if(pChunk->m_Flags & NETSENDFLAG_CONNLESS)
+		return SendLegacy(pChunk);
+	return SendClient(pChunk);
+}
+
+int CNetServer::SendClient(CNetChunk *pChunk)
+{
+	dbg_assert(
+		pChunk->m_ClientId >= 0 && pChunk->m_ClientId < MaxClients(),
+		"Invalid pChunk->m_ClientId: %d",
+		pChunk->m_ClientId);
+
+	switch(m_aSlots[pChunk->m_ClientId].m_Transport)
+	{
+	case ENetTransport::LEGACY:
+		return SendLegacy(pChunk);
+	case ENetTransport::KCP:
+	{
+		CSlot &Slot = m_aSlots[pChunk->m_ClientId];
+		if(!g_Config.m_SvKcp || !Slot.m_Kcp.IsActive())
+		{
+			DeactivateKcp(pChunk->m_ClientId);
+			return SendLegacy(pChunk);
+		}
+		if((pChunk->m_Flags & NETSENDFLAG_VITAL) == 0)
+		{
+			return SendLegacyBypass(pChunk);
+		}
+		if(Slot.m_Kcp.PendingSegments() >= NET_KCP_MAX_PENDING_SEGMENTS)
+		{
+			if(g_Config.m_SvKcpDebug)
+				dbg_msg("netserver", "kcp queue full for client %d", pChunk->m_ClientId);
+			return -1;
+		}
+
+		int Flags = 0;
+		if(pChunk->m_Flags & NETSENDFLAG_VITAL)
+			Flags = NET_CHUNKFLAG_VITAL;
+		const int Result = Slot.m_Connection.QueueChunk(Flags, pChunk->m_DataSize, pChunk->m_pData);
+		if(Result == 0 && (pChunk->m_Flags & NETSENDFLAG_FLUSH))
+		{
+			Slot.m_Connection.Flush();
+			Slot.m_Kcp.Flush();
+		}
+		Slot.m_TransportStats = Slot.m_Kcp.Stats();
+		return Result;
+	}
+	}
+	return -1;
+}
+
+int CNetServer::SendLegacy(CNetChunk *pChunk)
+{
 	if(pChunk->m_DataSize >= NET_MAX_PAYLOAD)
 	{
 		dbg_msg("netserver", "packet payload too big. %d. dropping packet", pChunk->m_DataSize);
@@ -715,6 +1143,37 @@ int CNetServer::Send(CNetChunk *pChunk)
 	return 0;
 }
 
+int CNetServer::SendLegacyBypass(CNetChunk *pChunk)
+{
+	if(pChunk->m_DataSize >= NET_MAX_PAYLOAD)
+	{
+		dbg_msg("netserver", "packet payload too big. %d. dropping packet", pChunk->m_DataSize);
+		return -1;
+	}
+
+	dbg_assert(
+		pChunk->m_ClientId >= 0 && pChunk->m_ClientId < MaxClients(),
+		"Invalid pChunk->m_ClientId: %d",
+		pChunk->m_ClientId);
+
+	CNetPacketConstruct Construct;
+	mem_zero(&Construct, sizeof(Construct));
+	Construct.m_Ack = m_aSlots[pChunk->m_ClientId].m_Connection.AckSequence();
+	Construct.m_NumChunks = 1;
+	Construct.m_DataSize = 0;
+
+	CNetChunkHeader Header;
+	Header.m_Flags = 0;
+	Header.m_Size = pChunk->m_DataSize;
+	Header.m_Sequence = -1;
+	unsigned char *pChunkData = Header.Pack(Construct.m_aChunkData, m_aSlots[pChunk->m_ClientId].m_Connection.m_Sixup ? 6 : 4);
+	mem_copy(pChunkData, pChunk->m_pData, pChunk->m_DataSize);
+	Construct.m_DataSize = (int)(pChunkData + pChunk->m_DataSize - Construct.m_aChunkData);
+
+	CNetBase::SendPacket(m_Socket, const_cast<NETADDR *>(m_aSlots[pChunk->m_ClientId].m_Connection.PeerAddress()), &Construct, m_aSlots[pChunk->m_ClientId].m_Connection.SecurityToken(), m_aSlots[pChunk->m_ClientId].m_Connection.m_Sixup);
+	return 0;
+}
+
 void CNetServer::SendTokenSixup(NETADDR &Addr, SECURITY_TOKEN Token)
 {
 	unsigned char aRequestTokenBuf[NET_TOKENREQUEST_DATASIZE] = {};
@@ -736,6 +1195,8 @@ bool CNetServer::HasErrored(int ClientId)
 void CNetServer::ResumeOldConnection(int ClientId, int OrigId)
 {
 	m_aSlots[ClientId].m_Connection.ResumeConnection(ClientAddr(OrigId), m_aSlots[OrigId].m_Connection.SeqSequence(), m_aSlots[OrigId].m_Connection.AckSequence(), m_aSlots[OrigId].m_Connection.SecurityToken(), m_aSlots[OrigId].m_Connection.ResendBuffer(), m_aSlots[OrigId].m_Connection.m_Sixup);
+	DeactivateKcp(ClientId);
+	DeactivateKcp(OrigId);
 	m_aSlots[OrigId].m_Connection.Reset();
 }
 

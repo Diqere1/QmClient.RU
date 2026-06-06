@@ -168,6 +168,7 @@ option(SECURITY_COMPILER_FLAGS "Whether to set security-relevant compiler flags 
 option(QM_DISABLE_PARALLEL_COMPILE "Disable /MP for compiler warnings-sensitive gates" OFF)
 option(QM_MSVC_ANALYZE "Enable MSVC /analyze static analysis (Windows only)" OFF)
 option(QM_STRICT_WARNINGS "Treat compiler warnings as errors" OFF)
+option(QM_BUILD_ICON_ATLAS "Build QmClient Tabler PNG icon atlas from SVG sources" ON)
 
 if(TARGET_OS STREQUAL "android")
   set(DISCORD OFF)
@@ -947,7 +948,7 @@ add_dependencies(rust-bridge-shared generate_protocol)
 list(APPEND TARGETS_OWN rust-bridge-shared)
 
 set(CARGO_BUILD_ENV CARGO_TARGET_DIR=${PROJECT_BINARY_DIR} DDNET_TEST_NO_LINK=1)
-set(CARGO_TEST_ENV CARGO_TARGET_DIR=${PROJECT_BINARY_DIR} "DDNET_TEST_LIBRARIES_FILE=${PROJECT_BINARY_DIR}/rust_test_libraries.txt")
+set(CARGO_TEST_ENV --unset=DDNET_TEST_NO_LINK CARGO_TARGET_DIR=${PROJECT_BINARY_DIR} "DDNET_TEST_LIBRARIES_FILE=${PROJECT_BINARY_DIR}/rust_test_libraries.txt")
 if(APPLE)
   list(APPEND CARGO_BUILD_ENV MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
   list(APPEND CARGO_TEST_ENV MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
@@ -1590,6 +1591,53 @@ set(EXPECTED_DATA
   languages/traditional_chinese.txt
   languages/turkish.txt
   languages/ukrainian.txt
+  qmclient/icons/qm_icons_1x.json
+  qmclient/icons/qm_icons_1x.png
+  qmclient/icons/qm_icons_2x.json
+  qmclient/icons/qm_icons_2x.png
+  qmclient/icons/qm_icons_4x.json
+  qmclient/icons/qm_icons_4x.png
+  qmclient/icons/README.md
+  qmclient/languages/index.txt
+  qmclient/languages/arabic.txt
+  qmclient/languages/azerbaijani.txt
+  qmclient/languages/belarusian.txt
+  qmclient/languages/bosnian.txt
+  qmclient/languages/brazilian_portuguese.txt
+  qmclient/languages/bulgarian.txt
+  qmclient/languages/catalan.txt
+  qmclient/languages/chuvash.txt
+  qmclient/languages/czech.txt
+  qmclient/languages/danish.txt
+  qmclient/languages/dutch.txt
+  qmclient/languages/english.txt
+  qmclient/languages/esperanto.txt
+  qmclient/languages/estonian.txt
+  qmclient/languages/finnish.txt
+  qmclient/languages/french.txt
+  qmclient/languages/galician.txt
+  qmclient/languages/german.txt
+  qmclient/languages/greek.txt
+  qmclient/languages/hungarian.txt
+  qmclient/languages/italian.txt
+  qmclient/languages/japanese.txt
+  qmclient/languages/korean.txt
+  qmclient/languages/kyrgyz.txt
+  qmclient/languages/norwegian.txt
+  qmclient/languages/persian.txt
+  qmclient/languages/polish.txt
+  qmclient/languages/portuguese.txt
+  qmclient/languages/README.txt
+  qmclient/languages/romanian.txt
+  qmclient/languages/russian.txt
+  qmclient/languages/serbian.txt
+  qmclient/languages/serbian_cyrillic.txt
+  qmclient/languages/slovak.txt
+  qmclient/languages/spanish.txt
+  qmclient/languages/swedish.txt
+  qmclient/languages/traditional_chinese.txt
+  qmclient/languages/turkish.txt
+  qmclient/languages/ukrainian.txt
   mapres/basic_freeze.png
   mapres/bg_cloud1.png
   mapres/bg_cloud2.png
@@ -1972,7 +2020,7 @@ set(EXPECTED_DATA
   wordlist.txt
 )
 
-set_glob(DATA GLOB_RECURSE "cfg;chai;frag;json;map;otf;png;rcss;rml;rules;ttc;ttf;txt;vert;wv" data ${EXPECTED_DATA})
+set_glob(DATA GLOB_RECURSE "cfg;chai;frag;json;map;md;otf;png;rcss;rml;rules;ttc;ttf;txt;vert;wv" data ${EXPECTED_DATA})
 
 ########################################################################
 # COPY DATA AND SHARED LIBS
@@ -2132,6 +2180,30 @@ add_custom_command(OUTPUT "src/generated/wordlist.h"
     scripts/wordlist.py
 )
 
+file(GLOB QM_ICON_ATLAS_SVG_SOURCES
+  datasrc/qm_icons/tabler/*.svg
+)
+add_custom_target(qm-icon-atlas
+  COMMAND ${Python3_EXECUTABLE}
+    scripts/qm_build_icon_atlas.py
+    --source datasrc/qm_icons/tabler
+    --output data/qmclient/icons
+    --sizes 1 2 4
+    --base-size 24
+    --padding 4
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  DEPENDS
+    scripts/qm_build_icon_atlas.py
+    ${QM_ICON_ATLAS_SVG_SOURCES}
+  COMMENT "Building QmClient Tabler icon PNG atlases"
+)
+
+if(QM_BUILD_ICON_ATLAS)
+  if(TARGET sync_runtime_data)
+    add_dependencies(sync_runtime_data qm-icon-atlas)
+  endif()
+endif()
+
 ########################################################################
 # SHARED
 ########################################################################
@@ -2211,6 +2283,7 @@ set_src(ENGINE_INTERFACE GLOB src/engine
 set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   assertion_logger.cpp
   assertion_logger.h
+  client_brand.h
   compression.cpp
   compression.h
   config.cpp
@@ -2268,6 +2341,7 @@ set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   network_conn.cpp
   network_console.cpp
   network_console_conn.cpp
+  network_kcp.cpp
   network_server.cpp
   network_stun.cpp
   packer.cpp
@@ -2279,6 +2353,10 @@ set_src(ENGINE_SHARED GLOB_RECURSE src/engine/shared
   protocol_ex_msgs.h
   protocolglue.cpp
   protocolglue.h
+  qm_live_observer_session.cpp
+  qm_live_observer_session.h
+  qm_live_protocol.cpp
+  qm_live_protocol.h
   ringbuffer.cpp
   ringbuffer.h
   serverinfo.cpp
@@ -2309,6 +2387,12 @@ set_src(ENGINE_EXTERNAL GLOB src/engine/external
   tinyexpr.cpp
   tinyexpr.h
 )
+set(ENGINE_EXTERNAL_KCP
+  src/engine/external/kcp/ikcp.c
+  src/engine/external/kcp/ikcp.h
+  src/engine/external/kcp/LICENSE
+)
+list(APPEND ENGINE_EXTERNAL ${ENGINE_EXTERNAL_KCP})
 # RNNoise must be compiled in for normal developer builds so the in-client
 # noise suppression selector is real, not a build-time placeholder. Keep the
 # generated rnnoise_data.* model files vendored together with the official
@@ -2551,6 +2635,18 @@ if(CLIENT)
     QmUi/QmAnimCurves.h
     QmUi/QmAnimResolve.cpp
     QmUi/QmAnimResolve.h
+    QmUi/QmLayout.cpp
+    QmUi/QmLayout.h
+    QmUi/QmLegacy.cpp
+    QmUi/QmLegacy.h
+    QmUi/QmMotion.h
+    QmUi/QmRender.cpp
+    QmUi/QmRender.h
+    QmUi/QmRt.cpp
+    QmUi/QmRt.h
+    QmUi/QmTheme.h
+    QmUi/QmTree.cpp
+    QmUi/QmTree.h
     QmUi/UiButtons.cpp
     QmUi/UiButtons.h
     QmUi/UiContainers.h
@@ -2563,16 +2659,6 @@ if(CLIENT)
     QmUi/UiNavigation.h
     QmUi/UiOverlays.h
     QmUi/UiTokens.h
-    QmUi/QmLayout.cpp
-    QmUi/QmLayout.h
-    QmUi/QmLegacy.cpp
-    QmUi/QmLegacy.h
-    QmUi/QmRender.cpp
-    QmUi/QmRender.h
-    QmUi/QmRt.cpp
-    QmUi/QmRt.h
-    QmUi/QmTree.cpp
-    QmUi/QmTree.h
     animstate.cpp
     animstate.h
     component.cpp
@@ -2703,6 +2789,8 @@ if(CLIENT)
     components/qmclient/translate_parse.h
     components/qmclient/translate_ui_settings.cpp
     components/qmclient/translate_ui_settings.h
+    components/qmclient/update_version.cpp
+    components/qmclient/update_version.h
     components/qmclient/voice_capture_pipeline.cpp
     components/qmclient/voice_capture_pipeline.h
     components/qmclient/voice_component.cpp
@@ -2711,6 +2799,8 @@ if(CLIENT)
     components/qmclient/voice_core.h
     components/qmclient/voice_utils.cpp
     components/qmclient/voice_utils.h
+    components/qmclient/weapon_trajectory.cpp
+    components/qmclient/weapon_trajectory.h
     components/race_demo.cpp
     components/race_demo.h
     components/scoreboard.cpp
@@ -2721,8 +2811,6 @@ if(CLIENT)
     components/settings_runtime_cache.h
     components/settings_resource_jobs.cpp
     components/settings_resource_jobs.h
-    components/settings_skin_preview_cache.cpp
-    components/settings_skin_preview_cache.h
     components/settings_warmup.cpp
     components/settings_warmup.h
     components/skins.cpp
@@ -2737,6 +2825,8 @@ if(CLIENT)
     components/statboard.h
     components/system_media_controls.cpp
     components/system_media_controls.h
+    components/tclient/background_particles.cpp
+    components/tclient/background_particles.h
     components/tclient/bg_draw.cpp
     components/tclient/bg_draw.h
     components/tclient/bg_draw_file.cpp
@@ -2787,6 +2877,10 @@ if(CLIENT)
     laser_data.h
     lineinput.cpp
     lineinput.h
+    live/live_director.cpp
+    live/live_director.h
+    live/live_replay_buffer.cpp
+    live/live_replay_buffer.h
     pickup_data.cpp
     pickup_data.h
     prediction/entities/character.cpp
@@ -2809,6 +2903,14 @@ if(CLIENT)
     prediction/gameworld.h
     projectile_data.cpp
     projectile_data.h
+    qm_command_router.cpp
+    qm_command_router.h
+    qm_icon_manager.cpp
+    qm_icon_manager.h
+    qm_ime_candidate_popup.cpp
+    qm_ime_candidate_popup.h
+    qm_ime_manager.cpp
+    qm_ime_manager.h
     race.cpp
     race.h
     render.cpp
@@ -2929,6 +3031,13 @@ if(CLIENT)
     render_map.cpp
     render_map.h
   )
+  set(GAME_LIVE_CLIENT
+    ${PROJECT_SOURCE_DIR}/src/game/client/live/live_director.cpp
+    ${PROJECT_SOURCE_DIR}/src/game/client/live/live_director.h
+    ${PROJECT_SOURCE_DIR}/src/game/client/live/live_replay_buffer.cpp
+    ${PROJECT_SOURCE_DIR}/src/game/client/live/live_replay_buffer.h
+  )
+  list(REMOVE_ITEM GAME_CLIENT ${GAME_LIVE_CLIENT})
   set(GAME_GENERATED_CLIENT
     src/generated/checksum.cpp
     src/generated/client_data.cpp
@@ -2937,6 +3046,7 @@ if(CLIENT)
     src/generated/client_data7.h
   )
   set(CLIENT_SRC ${ENGINE_CLIENT} ${PLATFORM_CLIENT} ${GAME_CLIENT} ${GAME_EDITOR} ${GAME_MAP} ${GAME_GENERATED_CLIENT})
+  set(LIVE_CLIENT_SRC ${CLIENT_SRC} ${GAME_LIVE_CLIENT})
 
   set(DEPS_CLIENT ${DEPS} ${GLEW_DEP} ${WAVPACK_DEP})
 
@@ -2970,6 +3080,61 @@ if(CLIENT)
     else()
       list(APPEND LIBS_CLIENT ${CMAKE_DL_LIBS})
     endif()
+  endif()
+
+  add_library(game-client-common INTERFACE)
+  target_link_libraries(game-client-common INTERFACE ${LIBS_CLIENT})
+
+  # Silence warnings from ChaiScript
+  target_include_directories(game-client-common SYSTEM INTERFACE
+    ${PROJECT_SOURCE_DIR}/src/engine/external/chaiscript)
+
+  target_include_directories(game-client-common SYSTEM INTERFACE
+    ${FREETYPE_INCLUDE_DIRS}
+    ${GLEW_INCLUDE_DIRS}
+    ${OGG_INCLUDE_DIRS}
+    ${OPUSFILE_INCLUDE_DIRS}
+    ${OPUS_INCLUDE_DIRS}
+    ${PNG_INCLUDE_DIRS}
+    ${SDL2_INCLUDE_DIRS}
+    ${WAVPACK_INCLUDE_DIRS}
+    ${FFMPEG_INCLUDE_DIRS}
+    ${WebP_INCLUDE_DIRS}
+    ${DISCORDSDK_INCLUDE_DIRS}
+
+    ${VULKAN_INCLUDE_DIRS}
+
+    ${PLATFORM_CLIENT_INCLUDE_DIRS}
+  )
+
+  set(PARAMS "${WAVPACK_INCLUDE_DIRS};${WAVPACK_INCLUDE_DIRS}")
+  if(NOT(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS STREQUAL PARAMS))
+    unset(WAVPACK_OPEN_FILE_INPUT_EX CACHE)
+  endif()
+  set(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS "${PARAMS}" CACHE INTERNAL "")
+
+  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES} ${WAVPACK_INCLUDE_DIRS})
+  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES} ${WAVPACK_LIBRARIES})
+  check_symbol_exists(WavpackOpenFileInputEx wavpack.h WAVPACK_OPEN_FILE_INPUT_EX)
+  check_symbol_exists(WavpackCloseFile wavpack.h WAVPACK_CLOSE_FILE)
+  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES})
+  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES})
+
+  if(WAVPACK_OPEN_FILE_INPUT_EX)
+    target_compile_definitions(game-client-common INTERFACE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
+  endif()
+
+  if(WAVPACK_CLOSE_FILE)
+    target_compile_definitions(game-client-common INTERFACE CONF_WAVPACK_CLOSE_FILE)
+  endif()
+
+  if(GLEW_BUNDLED)
+    target_compile_definitions(game-client-common INTERFACE CONF_GLEW_HAS_CONTEXT_INIT)
+  endif()
+
+  if(VULKAN)
+    target_compile_definitions(game-client-common INTERFACE CONF_BACKEND_VULKAN)
+    target_compile_definitions(engine-shared PRIVATE CONF_BACKEND_VULKAN)
   endif()
 
   if(TARGET_OS STREQUAL "windows")
@@ -3020,7 +3185,12 @@ if(CLIENT)
   set_property(TARGET game-client
       PROPERTY OUTPUT_NAME ${CLIENT_EXECUTABLE}
   )
-  target_link_libraries(game-client ${LIBS_CLIENT})
+  target_link_libraries(game-client game-client-common)
+  if(STEAMAPI_RUNTIME_FILE)
+    add_custom_command(TARGET game-client POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${STEAMAPI_RUNTIME_FILE}" "$<TARGET_FILE_DIR:game-client>/${STEAMAPI_RUNTIME_FILE_NAME}"
+      COMMENT "Copying official Steam API runtime")
+  endif()
   if(MSVC)
     target_compile_options(game-client PRIVATE /bigobj) # TClient, required for ChaiScript
     target_link_options(game-client PRIVATE /ENTRY:mainCRTStartup)
@@ -3037,60 +3207,8 @@ if(CLIENT)
     target_compile_options(game-client PRIVATE -Wa,-mbig-obj) # TClient, required for ChaiScript
   endif()
 
-  # Silence warnings from ChaiScript
-  target_include_directories(game-client SYSTEM PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/engine/external/chaiscript)
-
-  target_include_directories(game-client SYSTEM PRIVATE
-    ${FREETYPE_INCLUDE_DIRS}
-    ${GLEW_INCLUDE_DIRS}
-    ${OGG_INCLUDE_DIRS}
-    ${OPUSFILE_INCLUDE_DIRS}
-    ${OPUS_INCLUDE_DIRS}
-    ${PNG_INCLUDE_DIRS}
-    ${SDL2_INCLUDE_DIRS}
-    ${WAVPACK_INCLUDE_DIRS}
-    ${FFMPEG_INCLUDE_DIRS}
-    ${WebP_INCLUDE_DIRS}
-    ${DISCORDSDK_INCLUDE_DIRS}
-
-    ${VULKAN_INCLUDE_DIRS}
-
-    ${PLATFORM_CLIENT_INCLUDE_DIRS}
-  )
-
   if(STEAMAPI_KIND STREQUAL SHARED OR DISCORD_DYNAMIC)
     set_own_rpath(game-client)
-  endif()
-
-  set(PARAMS "${WAVPACK_INCLUDE_DIRS};${WAVPACK_INCLUDE_DIRS}")
-  if(NOT(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS STREQUAL PARAMS))
-    unset(WAVPACK_OPEN_FILE_INPUT_EX CACHE)
-  endif()
-  set(WAVPACK_OPEN_FILE_INPUT_EX_PARAMS "${PARAMS}" CACHE INTERNAL "")
-
-  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES} ${WAVPACK_INCLUDE_DIRS})
-  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES} ${WAVPACK_LIBRARIES})
-  check_symbol_exists(WavpackOpenFileInputEx wavpack.h WAVPACK_OPEN_FILE_INPUT_EX)
-  check_symbol_exists(WavpackCloseFile wavpack.h WAVPACK_CLOSE_FILE)
-  set(CMAKE_REQUIRED_INCLUDES ${ORIGINAL_CMAKE_REQUIRED_INCLUDES})
-  set(CMAKE_REQUIRED_LIBRARIES ${ORIGINAL_CMAKE_REQUIRED_LIBRARIES})
-
-  if(WAVPACK_OPEN_FILE_INPUT_EX)
-    target_compile_definitions(game-client PRIVATE CONF_WAVPACK_OPEN_FILE_INPUT_EX)
-  endif()
-
-  if(WAVPACK_CLOSE_FILE)
-    target_compile_definitions(game-client PRIVATE CONF_WAVPACK_CLOSE_FILE)
-  endif()
-
-  if(GLEW_BUNDLED)
-    target_compile_definitions(game-client PRIVATE CONF_GLEW_HAS_CONTEXT_INIT)
-  endif()
-
-  if(VULKAN)
-    target_compile_definitions(game-client PRIVATE CONF_BACKEND_VULKAN)
-    target_compile_definitions(engine-shared PRIVATE CONF_BACKEND_VULKAN)
   endif()
 
   if(TARGET sync_runtime_data)
@@ -3099,6 +3217,65 @@ if(CLIENT)
 
   list(APPEND TARGETS_OWN game-client)
   list(APPEND TARGETS_LINK game-client)
+
+  if(NOT TARGET_OS STREQUAL "android")
+    if(TARGET_OS STREQUAL "windows")
+      set(VERSION_EXECUTABLE "QmLiveClient")
+      set(VERSION_COMPANY "QmLiveClient Team")
+      configure_file("other/versioninfo/versioninfo.rc.in" "live_client.versioninfo.rc")
+      configure_file("other/manifest/live_client.manifest.in" "live_client.manifest")
+      set(LIVE_CLIENT_VERSIONINFO "${CMAKE_CURRENT_BINARY_DIR}/live_client.versioninfo.rc")
+      if(NOT MINGW)
+        set(LIVE_CLIENT_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/live_client.manifest")
+      else()
+        set(LIVE_CLIENT_MANIFEST "other/manifest/client.rc")
+      endif()
+    else()
+      set(LIVE_CLIENT_VERSIONINFO)
+      set(LIVE_CLIENT_MANIFEST)
+    endif()
+
+    add_executable(game-live-client WIN32
+      ${LIVE_CLIENT_SRC}
+      ${CLIENT_ICON}
+      ${LIVE_CLIENT_VERSIONINFO}
+      ${LIVE_CLIENT_MANIFEST}
+      ${DEPS_CLIENT}
+      $<TARGET_OBJECTS:engine-gfx>
+      $<TARGET_OBJECTS:engine-shared>
+      $<TARGET_OBJECTS:game-shared>
+      $<TARGET_OBJECTS:rust-bridge-shared>
+    )
+    set_property(TARGET game-live-client
+        PROPERTY OUTPUT_NAME QmLiveClient
+    )
+    target_link_libraries(game-live-client game-client-common)
+    target_compile_definitions(game-live-client PRIVATE CONF_QM_LIVE_CLIENT)
+    if(STEAMAPI_RUNTIME_FILE)
+      add_custom_command(TARGET game-live-client POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${STEAMAPI_RUNTIME_FILE}" "$<TARGET_FILE_DIR:game-live-client>/${STEAMAPI_RUNTIME_FILE_NAME}"
+        COMMENT "Copying official Steam API runtime for QmLiveClient")
+    endif()
+    if(MSVC)
+      target_compile_options(game-live-client PRIVATE /bigobj)
+      target_link_options(game-live-client PRIVATE /ENTRY:mainCRTStartup)
+    endif()
+
+    if(WIN32 AND NOT MSVC)
+      target_compile_options(game-live-client PRIVATE -Wa,-mbig-obj)
+    endif()
+
+    if(STEAMAPI_KIND STREQUAL SHARED OR DISCORD_DYNAMIC)
+      set_own_rpath(game-live-client)
+    endif()
+
+    if(TARGET sync_runtime_data)
+      add_dependencies(game-live-client sync_runtime_data)
+    endif()
+
+    list(APPEND TARGETS_OWN game-live-client)
+    list(APPEND TARGETS_LINK game-live-client)
+  endif()
 endif()
 
 
@@ -3231,6 +3408,9 @@ if(SERVER)
     ${LIBS}
   )
 
+  add_library(game-server-common INTERFACE)
+  target_link_libraries(game-server-common INTERFACE ${LIBS_SERVER})
+
   add_library(game-server-without-main OBJECT
       ${DEPS}
       ${SERVER_SRC}
@@ -3241,7 +3421,7 @@ if(SERVER)
   set_property(TARGET game-server-without-main
       PROPERTY OUTPUT_NAME ${SERVER_EXECUTABLE}
   )
-  target_link_libraries(game-server-without-main ${LIBS_SERVER})
+  target_link_libraries(game-server-without-main game-server-common)
   list(APPEND TARGETS_OWN game-server-without-main)
   list(APPEND TARGETS_LINK game-server-without-main)
 
@@ -3272,9 +3452,64 @@ if(SERVER)
   set_property(TARGET game-server
       PROPERTY OUTPUT_NAME ${SERVER_EXECUTABLE}
   )
-  target_link_libraries(game-server ${LIBS_SERVER})
+  target_link_libraries(game-server game-server-common)
   list(APPEND TARGETS_OWN game-server)
   list(APPEND TARGETS_LINK game-server)
+
+  if(TARGET_OS STREQUAL "windows")
+    set(VERSION_EXECUTABLE "QmLiveServer")
+    set(VERSION_COMPANY "${CLIENT_EXECUTABLE} Team")
+    configure_file("other/versioninfo/versioninfo.rc.in" "live_server.versioninfo.rc")
+    set(LIVE_SERVER_VERSIONINFO "${CMAKE_CURRENT_BINARY_DIR}/live_server.versioninfo.rc")
+  else()
+    set(LIVE_SERVER_VERSIONINFO)
+  endif()
+
+  add_library(game-live-server-without-main OBJECT
+      ${DEPS}
+      ${SERVER_SRC}
+      $<TARGET_OBJECTS:engine-shared>
+      $<TARGET_OBJECTS:game-shared>
+      $<TARGET_OBJECTS:rust-bridge-shared>
+  )
+  set_property(TARGET game-live-server-without-main
+      PROPERTY OUTPUT_NAME QmLiveServer
+  )
+  target_compile_definitions(game-live-server-without-main PRIVATE CONF_QM_LIVE_SERVER)
+  target_link_libraries(game-live-server-without-main game-server-common)
+  list(APPEND TARGETS_OWN game-live-server-without-main)
+  list(APPEND TARGETS_LINK game-live-server-without-main)
+
+  if(TARGET_OS STREQUAL "android")
+    add_library(game-live-server SHARED
+      ${DEPS}
+      $<TARGET_OBJECTS:game-live-server-without-main>
+      "${PROJECT_SOURCE_DIR}/src/engine/server/main.cpp"
+      ${SERVER_ICON}
+      ${LIVE_SERVER_VERSIONINFO}
+      $<TARGET_OBJECTS:engine-shared>
+      $<TARGET_OBJECTS:game-shared>
+      $<TARGET_OBJECTS:rust-bridge-shared>
+    )
+  else()
+    add_executable(game-live-server
+      ${DEPS}
+      "${PROJECT_SOURCE_DIR}/src/engine/server/main.cpp"
+      ${SERVER_ICON}
+      ${LIVE_SERVER_VERSIONINFO}
+      $<TARGET_OBJECTS:game-live-server-without-main>
+      $<TARGET_OBJECTS:engine-shared>
+      $<TARGET_OBJECTS:game-shared>
+      $<TARGET_OBJECTS:rust-bridge-shared>
+    )
+  endif()
+  set_property(TARGET game-live-server
+      PROPERTY OUTPUT_NAME QmLiveServer
+  )
+  target_compile_definitions(game-live-server PRIVATE CONF_QM_LIVE_SERVER)
+  target_link_libraries(game-live-server game-server-common)
+  list(APPEND TARGETS_OWN game-live-server)
+  list(APPEND TARGETS_LINK game-live-server)
 
   if(TARGET_OS AND TARGET_OS STREQUAL "mac")
     set(SERVER_LAUNCHER_SRC src/macos/server.mm)
@@ -3294,10 +3529,18 @@ if(CMAKE_GENERATOR MATCHES ".*Makefiles.*")
     add_custom_target(${CLIENT_EXECUTABLE})
     add_dependencies(${CLIENT_EXECUTABLE} game-client)
   endif()
+  if(TARGET game-live-client)
+    add_custom_target(QmLiveClient)
+    add_dependencies(QmLiveClient game-live-client)
+  endif()
 
   if(TARGET game-server)
     add_custom_target(${SERVER_EXECUTABLE})
     add_dependencies(${SERVER_EXECUTABLE} game-server)
+  endif()
+  if(TARGET game-live-server)
+    add_custom_target(QmLiveServer)
+    add_dependencies(QmLiveServer game-live-server)
   endif()
 endif()
 
@@ -3413,7 +3656,10 @@ add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/src/generated/checksum.cpp
 if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
   set_src(TESTS GLOB src/test
     QmAnimTest.cpp
+    QmDummyCommandTest.cpp
+    QmIconAtlasTest.cpp
     QmLayoutTest.cpp
+    QmUiTokensTest.cpp
     aio_test.cpp
     assets_editor_layout_test.cpp
     assets_preview_scale_test.cpp
@@ -3435,6 +3681,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     git_revision_test.cpp
     hash_test.cpp
     huffman_test.cpp
+    image_test.cpp
     io_test.cpp
     jobs_test.cpp
     json_test.cpp
@@ -3454,7 +3701,10 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     prng_test.cpp
     qm_chat_interactions_test.cpp
     qm_hud_notifications_test.cpp
+    qm_new_ui_menu_branch_test.cpp
+    qm_live_client_test.cpp
     qm_modes_test.cpp
+    qmclient_update_version_test.cpp
     QmUiTokensTest.cpp
     qmclient_monitoring_test.cpp
     score_test.cpp
@@ -3464,7 +3714,6 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     serverbrowser_test.cpp
     serverinfo_test.cpp
     settings_warmup_test.cpp
-    settings_skin_preview_cache_test.cpp
     skin_transition_test.cpp
     skins_test.cpp
     render_target_test.cpp
@@ -3501,7 +3750,6 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/game/client/components/settings_runtime_cache.cpp
     src/game/client/components/settings_resource_jobs.cpp
     src/game/client/components/settings_warmup.cpp
-    src/game/client/components/settings_skin_preview_cache.cpp
     src/game/client/QmUi/QmAnim.cpp
     src/game/client/QmUi/QmLayout.cpp
     src/game/client/components/assets_resource_registry.cpp
@@ -3509,7 +3757,10 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     src/generated/client_data7.h
     src/game/client/components/qmclient/hud_notification_rules.cpp
     src/game/client/components/qmclient/monitoring_device_perf.cpp
+    src/game/client/live/live_director.cpp
+    src/game/client/live/live_replay_buffer.cpp
     src/game/client/components/qmclient/modes.cpp
+    src/game/client/components/qmclient/update_version.cpp
     src/game/client/components/qmclient/qmclient_utils.cpp
     src/game/client/components/qmclient/translate_parse.cpp
     src/game/client/components/qmclient/voice_capture_pipeline.cpp
@@ -3534,8 +3785,12 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     $<TARGET_OBJECTS:engine-shared>
     $<TARGET_OBJECTS:game-shared>
     $<TARGET_OBJECTS:rust-bridge-shared>
+    src/generated/client_data.h
+    src/generated/client_data7.h
+    src/generated/data_types.h
     ${DEPS}
   )
+  add_dependencies(${TARGET_TESTRUNNER} generate_protocol)
   target_link_libraries(${TARGET_TESTRUNNER} ${PNG_LIBRARIES} ${WebP_LIBRARIES} ${GTEST_LIBRARIES} ${LIBS_SERVER})
   target_include_directories(${TARGET_TESTRUNNER} SYSTEM PRIVATE
     ${GTEST_INCLUDE_DIRS}
@@ -4252,10 +4507,10 @@ foreach(target ${TARGETS_OWN})
   if(TEST_MYSQL)
     target_compile_definitions(${target} PRIVATE CONF_TEST_MYSQL)
   endif()
-  if(AUTOUPDATE)
+  if(AUTOUPDATE AND NOT "${target}" STREQUAL "game-live-client")
     target_compile_definitions(${target} PRIVATE CONF_AUTOUPDATE)
   endif()
-  if(INFORM_UPDATE)
+  if(INFORM_UPDATE AND NOT "${target}" STREQUAL "game-live-client")
     target_compile_definitions(${target} PRIVATE CONF_INFORM_UPDATE)
   endif()
   # if(STEAM)

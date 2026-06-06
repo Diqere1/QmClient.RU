@@ -1,4 +1,5 @@
 #include <game/client/components/settings_resource_jobs.h>
+#include <game/client/components/assets_preview_scale.h>
 #include <game/client/components/menus.h>
 
 #include <base/system.h>
@@ -296,12 +297,18 @@ bool SettingsRuntimeWarmupShouldRun(bool WarmupEnabled, bool SettingsPageVisible
 		!SettingsScrollActive;
 }
 
-SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, int PostScrollRecoveryFrames)
+SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, bool JumpScrollActive, int PostScrollRecoveryFrames)
 {
 	SSettingsResourceFrameContext Context;
 	Context.m_ScrollActive = PersistentScrollActive || ImmediateScrollInput;
+	Context.m_JumpScrollActive = JumpScrollActive;
 	Context.m_PostScrollRecoveryFrames = PostScrollRecoveryFrames;
 	return Context;
+}
+
+SSettingsResourceFrameContext SettingsBuildFrameContext(bool PersistentScrollActive, bool ImmediateScrollInput, int PostScrollRecoveryFrames)
+{
+	return SettingsBuildFrameContext(PersistentScrollActive, ImmediateScrollInput, false, PostScrollRecoveryFrames);
 }
 
 int SettingsSkinFinalizeMaxPerFrame(bool TeeSettingsActive)
@@ -850,35 +857,6 @@ const char *SettingsSkinEffectiveFrameContextName(const SSettingsResourceFrameCo
 	return "idle_visible";
 }
 
-bool SettingsSkinPreviewObligationCanAdmitNewSource(bool CountGateReached, int ActiveSources, int MaxSources)
-{
-	(void)CountGateReached;
-	(void)ActiveSources;
-	(void)MaxSources;
-	return true;
-}
-
-bool SettingsSkinPreviewObligationRaisesSourcePriority(bool HasPendingPreviewObligation, bool StablePreviewAlreadyExists)
-{
-	return HasPendingPreviewObligation && !StablePreviewAlreadyExists;
-}
-
-bool SettingsSkinPreviewObligationShouldPin(bool InVisibleRange, bool StablePreviewAlreadyExists, bool CountGateReached)
-{
-	(void)CountGateReached;
-	return InVisibleRange && !StablePreviewAlreadyExists;
-}
-
-bool SettingsSkinPreviewObligationShouldPin(const SSettingsSkinPreviewObligationState &State)
-{
-	return SettingsSkinPreviewObligationShouldPin(State.m_Visible, State.m_HasStablePreview, State.m_CountGateReached);
-}
-
-bool SettingsSkinSourceFallbackShouldPin(bool SourceLoaded, bool CachedPreviewReady)
-{
-	return SourceLoaded && !CachedPreviewReady;
-}
-
 size_t SettingsSkinSourceBytesEstimate(int Width, int Height, int PixelCopies)
 {
 	if(Width <= 0 || Height <= 0 || PixelCopies <= 0)
@@ -889,11 +867,6 @@ size_t SettingsSkinSourceBytesEstimate(int Width, int Height, int PixelCopies)
 bool SettingsSkinResidencyShouldReclaim(bool BytesBudgetExceeded, bool CountFuseExceeded)
 {
 	return BytesBudgetExceeded || CountFuseExceeded;
-}
-
-bool SettingsSkinResidencyShouldReclaimSourceBeforeStablePreview(bool BytesBudgetExceeded, bool HasStablePreview)
-{
-	return BytesBudgetExceeded && HasStablePreview;
 }
 
 const char *SettingsWorkshopCatalogSourceName(ESettingsWorkshopCatalogSource Source)
@@ -950,6 +923,28 @@ bool SettingsAssetPreviewShouldDeferFinalize(int FinalizedThisFrame, double Elap
 	       (FinalizedThisFrame > 0 && ElapsedMs >= MaxFinalizeMsPerFrame);
 }
 
+bool SettingsAssetWorkAllowedWhileWindowInactive(bool WindowActive, bool HighPriority)
+{
+	(void)HighPriority;
+	return WindowActive;
+}
+
+bool SettingsAssetPreviewResidentTextureSatisfiesRequest(bool TextureValid, size_t ResidentBytes, int RequestedTextureSize)
+{
+	if(!TextureValid)
+		return false;
+	if(RequestedTextureSize <= 0)
+		return true;
+	return ResidentBytes >= PreviewTextureSizeBytesEstimate(RequestedTextureSize);
+}
+
+bool SettingsAssetPreviewDecodeStartNeeded(bool DecodeJobActive, bool TextureValid, size_t ResidentBytes, int RequestedTextureSize, bool HasReadyImage)
+{
+	if(DecodeJobActive || HasReadyImage)
+		return false;
+	return !SettingsAssetPreviewResidentTextureSatisfiesRequest(TextureValid, ResidentBytes, RequestedTextureSize);
+}
+
 bool SettingsAssetPreviewShouldPrioritizeVisibleRange(int Index, int FirstVisibleIndex, int LastVisibleIndex)
 {
 	return FirstVisibleIndex >= 0 && LastVisibleIndex >= FirstVisibleIndex && Index >= FirstVisibleIndex && Index <= LastVisibleIndex;
@@ -974,7 +969,7 @@ bool SettingsResourceCanUseHighPriorityBudget(int StartedThisFrame, int NormalBu
 
 int SettingsResourceFrameStageBudget(const SSettingsResourceFrameContext &Context, ESettingsResourcePriority Priority, int NormalBudget, int ScrollActiveVisibleBudget)
 {
-	if(!Context.m_ScrollActive)
+	if(!Context.m_ScrollActive && !Context.m_JumpScrollActive)
 		return std::max(0, NormalBudget);
 	if(Priority != ESettingsResourcePriority::VISIBLE)
 		return 0;
@@ -1003,7 +998,7 @@ int SettingsScrollInteractionRecovery(bool ScrollActiveThisFrame, int PreviousCo
 
 int SettingsResourceSharedHeavyBudget(const SSettingsResourceFrameContext &Context, int NormalBudget, int RecoveryBudget)
 {
-	if(Context.m_ScrollActive)
+	if(Context.m_ScrollActive || Context.m_JumpScrollActive)
 		return 0;
 	if(Context.m_PostScrollRecoveryFrames > 0)
 		return std::max(0, RecoveryBudget);
@@ -1036,11 +1031,22 @@ bool SettingsResourceOversizedUploadAllowed(const SSettingsResourceFrameContext 
 {
 	if(ItemBytes <= MaxBytesPerFrame)
 		return false;
-	return !Context.m_ScrollActive &&
-	       Context.m_PostScrollRecoveryFrames == 0 &&
-	       !PageSwitchActive &&
-	       Priority == ESettingsResourcePriority::VISIBLE &&
-	       OversizedUploadsThisFrame == 0;
+	(void)Context;
+	(void)PageSwitchActive;
+	(void)Priority;
+	(void)OversizedUploadsThisFrame;
+	(void)MaxBytesPerFrame;
+	return false;
+}
+
+size_t SettingsAssetPreviewResidentBudgetBytes(size_t OverrideMb, int Percent, float GpuBudgetMb)
+{
+	return PreviewBudgetBytes(OverrideMb, Percent, GpuBudgetMb);
+}
+
+int SettingsAssetPreviewBudgetedTextureSize(int MaxTextureSize, int MinTextureSize, size_t TextureBudgetBytes, size_t CurrentTextureMemoryBytes, size_t ResidentPreviewBytes)
+{
+	return ComputePreviewBudgetedTextureSize(MaxTextureSize, MinTextureSize, TextureBudgetBytes, CurrentTextureMemoryBytes, ResidentPreviewBytes);
 }
 
 std::string SettingsAssetPreviewHandleKey(const SSettingsAssetPreviewHandle &Handle)
@@ -1080,7 +1086,8 @@ bool SettingsPageCanUsePageFbo(int Page, int AssetsPage, int DynamicPreviewPage,
 {
 	const bool IsTClientSettingsPage = Page == CMenus::SETTINGS_TCLIENT && Tab == 0;
 	const bool IsTeeSettingsPage = Page == CMenus::SETTINGS_TEE || Page == CMenus::SETTINGS_PLAYER;
-	return Page >= 0 && Page != AssetsPage && Page != DynamicPreviewPage && !IsTClientSettingsPage && !IsTeeSettingsPage;
+	const bool IsSystemSettingsPage = Page == CMenus::SETTINGS_GRAPHICS;
+	return Page >= 0 && Page != AssetsPage && Page != DynamicPreviewPage && !IsTClientSettingsPage && !IsTeeSettingsPage && !IsSystemSettingsPage;
 }
 
 const char *SettingsWarmupBudgetStopMissReasonName(ESettingsWarmupStopReason StopReason)

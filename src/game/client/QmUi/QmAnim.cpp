@@ -2,6 +2,10 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include "QmAnim.h"
 
+#include "QmMotion.h"
+
+#include <engine/shared/config.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -191,60 +195,63 @@ float CUiV2AnimationRuntime::GetValue(uint64_t NodeKey, EUiAnimProperty Property
 
 bool CUiV2AnimationRuntime::RequestAnimation(const SUiAnimRequest &Request)
 {
-	const STrackKey Key{Request.m_NodeKey, Request.m_Property};
+	SUiAnimRequest EffectiveRequest = Request;
+	EffectiveRequest.m_Transition = qm_motion::ApplyMotionLevel(Request.m_Transition, g_Config.m_QmUiMotionLevel);
+
+	const STrackKey Key{EffectiveRequest.m_NodeKey, EffectiveRequest.m_Property};
 	const float BaseValue = CurrentValueFor(Key, 0.0f);
 	auto ItActive = m_ActiveTracks.find(Key);
 	if(ItActive == m_ActiveTracks.end())
 	{
-		StartTrack(Key, Request, BaseValue);
+		StartTrack(Key, EffectiveRequest, BaseValue);
 		return true;
 	}
 
 	SActiveTrack &Active = ItActive->second;
-	switch(Request.m_Transition.m_Interrupt)
+	switch(EffectiveRequest.m_Transition.m_Interrupt)
 	{
 	case EUiAnimInterruptPolicy::REPLACE:
 	{
 		m_QueuedTracks.erase(Key);
-		StartTrack(Key, Request, Active.m_Current);
+		StartTrack(Key, EffectiveRequest, Active.m_Current);
 		return true;
 	}
 	case EUiAnimInterruptPolicy::QUEUE:
 	{
-		m_QueuedTracks[Key].push_back(Request);
+		m_QueuedTracks[Key].push_back(EffectiveRequest);
 		return true;
 	}
 	case EUiAnimInterruptPolicy::KEEP_HIGHER_PRIORITY:
 	{
-		if(Active.m_Transition.m_Priority > Request.m_Transition.m_Priority)
+		if(Active.m_Transition.m_Priority > EffectiveRequest.m_Transition.m_Priority)
 			return false;
 		m_QueuedTracks.erase(Key);
-		StartTrack(Key, Request, Active.m_Current);
+		StartTrack(Key, EffectiveRequest, Active.m_Current);
 		return true;
 	}
 	case EUiAnimInterruptPolicy::MERGE_TARGET:
 	{
-		if(Active.m_Transition.m_Priority > Request.m_Transition.m_Priority)
+		if(Active.m_Transition.m_Priority > EffectiveRequest.m_Transition.m_Priority)
 			return false;
-		const bool RequestIsTween = Request.m_Transition.m_Driver == EUiAnimDriver::TWEEN;
-		if(RequestIsTween && Request.m_Transition.m_DurationSec <= 0.0f && Request.m_Transition.m_DelaySec <= 0.0f)
+		const bool RequestIsTween = EffectiveRequest.m_Transition.m_Driver == EUiAnimDriver::TWEEN;
+		if(RequestIsTween && EffectiveRequest.m_Transition.m_DurationSec <= 0.0f && EffectiveRequest.m_Transition.m_DelaySec <= 0.0f)
 		{
-			const uint32_t TrackId = Request.m_TrackId != 0 ? Request.m_TrackId : Active.m_TrackId;
-			m_Values[Key] = Request.m_Target;
+			const uint32_t TrackId = EffectiveRequest.m_TrackId != 0 ? EffectiveRequest.m_TrackId : Active.m_TrackId;
+			m_Values[Key] = EffectiveRequest.m_Target;
 			m_CompletedEvents.push_back({Key.m_NodeKey, Key.m_Property, TrackId});
 			m_ActiveTracks.erase(Key);
-			StartQueuedTracks(Key, Request.m_Target);
+			StartQueuedTracks(Key, EffectiveRequest.m_Target);
 			return true;
 		}
 
 		if(Active.m_Transition.m_Driver == EUiAnimDriver::SPRING)
 		{
-			Active.m_Target = Request.m_Target;
-			Active.m_Transition.m_Priority = Request.m_Transition.m_Priority;
+			Active.m_Target = EffectiveRequest.m_Target;
+			Active.m_Transition.m_Priority = EffectiveRequest.m_Transition.m_Priority;
 			if(!RequestIsTween)
-				Active.m_Transition.m_Spring = Request.m_Transition.m_Spring;
+				Active.m_Transition.m_Spring = EffectiveRequest.m_Transition.m_Spring;
 			Active.m_RestTimerSec = 0.0f;
-			Active.m_TrackId = Request.m_TrackId != 0 ? Request.m_TrackId : Active.m_TrackId;
+			Active.m_TrackId = EffectiveRequest.m_TrackId != 0 ? EffectiveRequest.m_TrackId : Active.m_TrackId;
 			return true;
 		}
 
@@ -254,12 +261,12 @@ bool CUiV2AnimationRuntime::RequestAnimation(const SUiAnimRequest &Request)
 		float NewStart = Current;
 		if(std::abs(Denominator) > 1e-6f)
 		{
-			NewStart = (Current - Progress * Request.m_Target) / Denominator;
+			NewStart = (Current - Progress * EffectiveRequest.m_Target) / Denominator;
 		}
 		Active.m_Start = NewStart;
-		Active.m_Target = Request.m_Target;
-		Active.m_Transition.m_Priority = Request.m_Transition.m_Priority;
-		Active.m_TrackId = Request.m_TrackId != 0 ? Request.m_TrackId : Active.m_TrackId;
+		Active.m_Target = EffectiveRequest.m_Target;
+		Active.m_Transition.m_Priority = EffectiveRequest.m_Transition.m_Priority;
+		Active.m_TrackId = EffectiveRequest.m_TrackId != 0 ? EffectiveRequest.m_TrackId : Active.m_TrackId;
 		return true;
 	}
 	}

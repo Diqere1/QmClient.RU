@@ -462,7 +462,8 @@ void CInfoMessages::OnRender()
 		Showfps = 0;
 #endif
 	const float StartX = Width - 10.0f;
-	float StartY = 30.0f + (Showfps ? 100.0f : 0.0f) + (g_Config.m_ClShowpred && Client()->State() != IClient::STATE_DEMOPLAYBACK ? 100.0f : 0.0f);
+	const bool HasTopRightTextInfo = (g_Config.m_ClShowpred || g_Config.m_ClShowPacketLoss) && Client()->State() != IClient::STATE_DEMOPLAYBACK;
+	float StartY = 30.0f + (Showfps ? 100.0f : 0.0f) + (HasTopRightTextInfo ? 100.0f : 0.0f);
 
 	float y = StartY;
 	for(int i = 1; i <= MAX_INFOMSGS; i++)
@@ -482,13 +483,11 @@ void CInfoMessages::OnRender()
 
 		if(InfoMsg.m_Type == EType::TYPE_KILL && g_Config.m_ClShowKillMessages)
 		{
-			Graphics()->DrawRect(StartX - 545.0f, y + 2.0f, 535.0f, ROW_HEIGHT - 4.0f, ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(0.80f), IGraphics::CORNER_ALL, ui_token::radius::BASE);
 			RenderKillMsg(InfoMsg, StartX, y);
 			y += ROW_HEIGHT;
 		}
 		else if(InfoMsg.m_Type == EType::TYPE_FINISH && g_Config.m_ClShowFinishMessages)
 		{
-			Graphics()->DrawRect(StartX - 545.0f, y + 2.0f, 535.0f, ROW_HEIGHT - 4.0f, ui_token::color::SURFACE_GLASS.WithMultipliedAlpha(0.80f), IGraphics::CORNER_ALL, ui_token::radius::BASE);
 			RenderFinishMsg(InfoMsg, StartX, y);
 			y += ROW_HEIGHT;
 		}

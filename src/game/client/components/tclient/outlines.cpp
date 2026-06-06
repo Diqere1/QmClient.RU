@@ -1,5 +1,7 @@
 #include "outlines.h"
 
+#include <base/log.h>
+
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 
@@ -7,6 +9,8 @@
 #include <game/client/gameclient.h>
 #include <game/client/render.h>
 #include <game/mapitems.h>
+
+#include <limits>
 
 // The order of this is the order of priority for outlines
 enum
@@ -35,23 +39,31 @@ class COutLineLayer
 private:
 	CMapItemLayerTilemap *GetLayer(CGameClient *pThis) const
 	{
-		if(m_Type == OutlineLayer::GAME)
+		switch(m_Type)
+		{
+		case OutlineLayer::GAME:
 			return pThis->Layers()->GameLayer();
-		if(m_Type == OutlineLayer::FRONT)
+		case OutlineLayer::FRONT:
 			return pThis->Layers()->FrontLayer();
-		if(m_Type == OutlineLayer::TELE)
+		case OutlineLayer::TELE:
 			return pThis->Layers()->TeleLayer();
-		dbg_assert(false, "Invalid value for m_Type");
+		default:
+			return nullptr;
+		}
 	}
 	int GetLayerData(CGameClient *pThis) const
 	{
-		if(m_Type == OutlineLayer::GAME)
+		switch(m_Type)
+		{
+		case OutlineLayer::GAME:
 			return pThis->Layers()->GameLayer()->m_Data;
-		if(m_Type == OutlineLayer::FRONT)
+		case OutlineLayer::FRONT:
 			return pThis->Layers()->FrontLayer()->m_Front;
-		if(m_Type == OutlineLayer::TELE)
+		case OutlineLayer::TELE:
 			return pThis->Layers()->TeleLayer()->m_Tele;
-		dbg_assert(false, "Invalid value for m_Type");
+		default:
+			return -1;
+		}
 	}
 
 public:
@@ -71,7 +83,11 @@ public:
 	void SetData(CGameClient *pThis, int *pData, const ivec2 &Size) const
 	{
 		const auto *pLayer = GetLayer(pThis);
+		if(!pLayer)
+			return;
 		const auto *pTiles = (CTile *)pThis->Layers()->Map()->GetData(GetLayerData(pThis));
+		if(!pTiles)
+			return;
 		for(int y = 0; y < pLayer->m_Height; ++y)
 		{
 			for(int x = 0; x < pLayer->m_Width; ++x)
@@ -107,14 +123,11 @@ public:
 
 // The order of this determines order of priority into the one map (tele + freeze = tele)
 static constexpr COutLineLayer OUTLINE_LAYERS[] = {{OutlineLayer::TELE}, {OutlineLayer::GAME}, {OutlineLayer::FRONT}};
+static constexpr size_t MAX_OUTLINE_MAP_TILES = 4096 * 4096;
 
 void COutlines::OnMapLoad()
 {
-	if(m_pMapData)
-	{
-		delete[] m_pMapData;
-		m_pMapData = nullptr;
-	}
+	m_vMapData.clear();
 
 	// Find valid layers and size
 	std::vector<const COutLineLayer *> vValidOutlineLayers;
@@ -131,18 +144,35 @@ void COutlines::OnMapLoad()
 	}
 	if(m_MapDataSize.x <= 0 || m_MapDataSize.y <= 0)
 		return;
-	m_pMapData = new int[m_MapDataSize.x * m_MapDataSize.y]();
+
+	const size_t MapWidth = (size_t)m_MapDataSize.x;
+	const size_t MapHeight = (size_t)m_MapDataSize.y;
+	if(MapWidth > std::numeric_limits<size_t>::max() / MapHeight)
+	{
+		log_warn("outlines", "Map size overflow for outline cache: %dx%d", m_MapDataSize.x, m_MapDataSize.y);
+		m_MapDataSize = {0, 0};
+		return;
+	}
+	const size_t NumTiles = MapWidth * MapHeight;
+	if(NumTiles > MAX_OUTLINE_MAP_TILES)
+	{
+		log_warn("outlines", "Map too large for outline cache: %dx%d", m_MapDataSize.x, m_MapDataSize.y);
+		m_MapDataSize = {0, 0};
+		return;
+	}
+
+	m_vMapData.assign(NumTiles, OUTLINE_NONE);
 
 	// Do it
 	for(const auto *pLayer : vValidOutlineLayers)
 	{
-		pLayer->SetData(GameClient(), m_pMapData, m_MapDataSize);
+		pLayer->SetData(GameClient(), m_vMapData.data(), m_MapDataSize);
 	}
 }
 
 void COutlines::OnRender()
 {
-	if(!m_pMapData)
+	if(m_vMapData.empty())
 		return;
 	if(GameClient()->m_MapLayersBackground.m_OnlineOnly && Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
@@ -173,7 +203,7 @@ void COutlines::OnRender()
 	auto GetTile = [&](int x, int y) {
 		x = std::clamp(x, 0, m_MapDataSize.x - 1);
 		y = std::clamp(y, 0, m_MapDataSize.y - 1);
-		return m_pMapData[y * m_MapDataSize.x + x];
+		return m_vMapData[y * m_MapDataSize.x + x];
 	};
 
 	Graphics()->TextureClear();
@@ -189,9 +219,9 @@ void COutlines::OnRender()
 			class COutlineConfig
 			{
 			public:
-				const int &m_Enable;
-				const int &m_Width;
-				const unsigned int &m_Color;
+				int m_Enable;
+				int m_Width;
+				unsigned int m_Color;
 			};
 			const COutlineConfig Config = [&]() -> COutlineConfig {
 				if(Type == OUTLINE_SOLID)
@@ -208,7 +238,13 @@ void COutlines::OnRender()
 					return {g_Config.m_TcOutlineKill, g_Config.m_TcOutlineWidthKill, g_Config.m_TcOutlineColorKill};
 				if(Type == OUTLINE_TELE)
 					return {g_Config.m_TcOutlineTele, g_Config.m_TcOutlineWidthTele, g_Config.m_TcOutlineColorTele};
-				dbg_assert(false, "Invalid value for Type at %d, %d/%d, %d", x, y, m_MapDataSize.x, m_MapDataSize.y);
+				static bool s_InvalidOutlineTypeWarned = false;
+				if(!s_InvalidOutlineTypeWarned)
+				{
+					s_InvalidOutlineTypeWarned = true;
+					log_warn("outlines", "Invalid outline type %d at %d,%d on %dx%d map", Type, x, y, m_MapDataSize.x, m_MapDataSize.y);
+				}
+				return {0, 0, 0};
 			}();
 			if(!Config.m_Enable || Config.m_Width <= 0)
 				continue;

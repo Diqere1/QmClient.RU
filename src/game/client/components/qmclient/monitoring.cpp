@@ -675,6 +675,7 @@ void CQmMonitoring::UpdatePerformanceMetrics(SQmPerformanceMetrics &Perf)
 		const SQmDevicePerfSample DeviceSample = CachedDevicePerfSample(true, NewDeviceSample);
 		Perf.m_GpuUtilPct = DeviceSample.m_GpuUtilPct;
 		Perf.m_GpuDedicatedVramMb = DeviceSample.m_GpuDedicatedVramMb;
+		Perf.m_GpuDedicatedVramBudgetMb = DeviceSample.m_GpuDedicatedVramBudgetMb;
 		Perf.m_GpuSharedVramMb = DeviceSample.m_GpuSharedVramMb;
 		Perf.m_DiskReadMbPerSec = DeviceSample.m_DiskReadMbPerSec;
 		Perf.m_DeviceSampleAvailable = DeviceSample.m_Available;
@@ -683,9 +684,10 @@ void CQmMonitoring::UpdatePerformanceMetrics(SQmPerformanceMetrics &Perf)
 		{
 			char aPayload[384];
 			str_format(aPayload, sizeof(aPayload),
-				"event=sample gpu_util_percent=%.3f gpu_dedicated_vram_mb=%.3f gpu_shared_vram_mb=%.3f cpu_process_percent=%.3f cpu_total_percent=%.3f memory_process_mb=%.3f disk_read_mb_s=%.3f sample_available=%d",
+				"event=sample gpu_util_percent=%.3f gpu_dedicated_vram_mb=%.3f gpu_dedicated_vram_budget_mb=%.3f gpu_shared_vram_mb=%.3f cpu_process_percent=%.3f cpu_total_percent=%.3f memory_process_mb=%.3f disk_read_mb_s=%.3f sample_available=%d",
 				Perf.m_GpuUtilPct,
 				Perf.m_GpuDedicatedVramMb,
+				Perf.m_GpuDedicatedVramBudgetMb,
 				Perf.m_GpuSharedVramMb,
 				Perf.m_CpuUsagePct,
 				Perf.m_TotalCpuUsagePct,
@@ -701,6 +703,7 @@ void CQmMonitoring::UpdatePerformanceMetrics(SQmPerformanceMetrics &Perf)
 		(void)CachedDevicePerfSample(false, NewDeviceSample);
 		Perf.m_GpuUtilPct = -1.0f;
 		Perf.m_GpuDedicatedVramMb = -1.0f;
+		Perf.m_GpuDedicatedVramBudgetMb = -1.0f;
 		Perf.m_GpuSharedVramMb = -1.0f;
 		Perf.m_DiskReadMbPerSec = -1.0f;
 		Perf.m_DeviceSampleAvailable = false;

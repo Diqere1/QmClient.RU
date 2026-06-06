@@ -82,6 +82,7 @@ struct SQmPerformanceMetrics
 	float m_MemoryUsageMb = -1.0f;
 	float m_GpuUtilPct = -1.0f;
 	float m_GpuDedicatedVramMb = -1.0f;
+	float m_GpuDedicatedVramBudgetMb = -1.0f;
 	float m_GpuSharedVramMb = -1.0f;
 	float m_DiskReadMbPerSec = -1.0f;
 	float m_PredictionTimeMs = 0.0f;
@@ -96,6 +97,7 @@ struct SQmDevicePerfSample
 {
 	float m_GpuUtilPct = -1.0f;
 	float m_GpuDedicatedVramMb = -1.0f;
+	float m_GpuDedicatedVramBudgetMb = -1.0f;
 	float m_GpuSharedVramMb = -1.0f;
 	float m_DiskReadMbPerSec = -1.0f;
 	bool m_Available = false;

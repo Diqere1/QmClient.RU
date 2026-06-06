@@ -10,6 +10,7 @@
 
 #include <array>
 #include <optional>
+#include <vector>
 
 class CHuffman;
 class CNetBan;
@@ -62,6 +63,27 @@ enum
 	NETSTATE_ONLINE,
 };
 
+enum class ENetTransport
+{
+	LEGACY,
+	KCP,
+};
+
+struct SNetTransportStats
+{
+	int m_RttMs = -1;
+	int m_LossPermille = 0;
+	int m_ResendCount = 0;
+	int m_JitterMs = 0;
+	int m_SnapshotDelayMs = 0;
+	int m_SendQueueDepth = 0;
+	int m_RecvQueueDepth = 0;
+	int m_BandwidthDown = 0;
+	int m_BandwidthUp = 0;
+	int m_SessionCount = 0;
+	int64_t m_SessionId = 0;
+};
+
 enum
 {
 	NET_MAX_PACKETSIZE = 1400,
@@ -95,10 +117,17 @@ enum
 	NET_CONN_BUFFERSIZE = 1024 * 32,
 
 	NET_CONNLIMIT_IPS = 16,
+	NET_FAKE_MAX_DELAYED_PACKETS = 1024,
+	NET_KCP_HEADER_SIZE = 9,
+	NET_KCP_MTU = NET_MAX_PACKETSIZE - NET_KCP_HEADER_SIZE,
+	NET_KCP_SOFT_PENDING_SEGMENTS = 192,
+	NET_KCP_MAX_PENDING_SEGMENTS = 384,
 
 	NET_TOKENCACHE_ADDRESSEXPIRY = 64,
 	NET_TOKENCACHE_PACKETEXPIRY = 5,
 };
+
+const char *NetTransportName(ENetTransport Transport);
 enum
 {
 	NET_TOKEN_MAX = 0xffffffff,
@@ -174,6 +203,66 @@ public:
 	unsigned char m_aChunkData[NET_MAX_PAYLOAD];
 	unsigned char m_aExtraData[NET_CONNLESS_EXTRA_SIZE];
 };
+
+struct IKCPCB;
+
+class CNetKcpSession
+{
+	IKCPCB *m_pKcp = nullptr;
+	NETSOCKET m_Socket = nullptr;
+	NETADDR m_PeerAddr = {};
+	uint32_t m_Conv = 0;
+	int64_t m_LastInputTime = 0;
+	int64_t m_LastOutputTime = 0;
+	uint64_t m_BytesSent = 0;
+	uint64_t m_BytesRecv = 0;
+	uint64_t m_PacketsSent = 0;
+	uint64_t m_PacketsRecv = 0;
+	uint64_t m_FastRetransmits = 0;
+	uint64_t m_TimeoutRetransmits = 0;
+	int m_LastXmit = 0;
+	int m_LastRttMs = -1;
+	int m_LastJitterMs = 0;
+	int m_LastWindow = 0;
+
+	static int KcpOutput(const char *pData, int DataSize, IKCPCB *pKcp, void *pUser);
+	void ApplyTuning();
+	void UpdateStats();
+
+public:
+	CNetKcpSession() = default;
+	~CNetKcpSession();
+	CNetKcpSession(const CNetKcpSession &) = delete;
+	CNetKcpSession &operator=(const CNetKcpSession &) = delete;
+	CNetKcpSession(CNetKcpSession &&Other) noexcept;
+	CNetKcpSession &operator=(CNetKcpSession &&Other) noexcept;
+
+	bool Init(NETSOCKET Socket, const NETADDR &PeerAddr, uint32_t Conv);
+	void Reset();
+	bool IsActive() const { return m_pKcp != nullptr; }
+	uint32_t Conv() const { return m_Conv; }
+	const NETADDR *PeerAddress() const { return &m_PeerAddr; }
+	void SetPeerAddress(const NETADDR &PeerAddr);
+	bool IsPeerAddress(const NETADDR &Addr) const;
+	bool IsPeerAddressNoPort(const NETADDR &Addr) const;
+
+	static bool IsKcpPacket(const unsigned char *pData, int DataSize);
+	static bool UnpackHeader(const unsigned char *pData, int DataSize, uint32_t *pConv, const unsigned char **ppPayload, int *pPayloadSize);
+	static int PacketOutput(void *pUser, CNetPacketConstruct *pPacket, SECURITY_TOKEN SecurityToken, bool Sixup);
+
+	bool Input(const NETADDR &Addr, const unsigned char *pData, int DataSize, bool AllowRebind);
+	int Send(const void *pData, int DataSize);
+	int SendPacket(CNetPacketConstruct *pPacket, SECURITY_TOKEN SecurityToken, bool Sixup);
+	int Recv(void *pData, int MaxSize);
+	int PeekSize() const;
+	void Update();
+	void Flush();
+	bool TimedOut(int TimeoutSeconds) const;
+	int PendingSegments() const;
+	SNetTransportStats Stats() const;
+};
+
+typedef int (*NETFUNC_PACKETOUTPUT)(void *pUser, CNetPacketConstruct *pPacket, SECURITY_TOKEN SecurityToken, bool Sixup);
 
 enum class CONNECTIVITY
 {
@@ -256,6 +345,8 @@ private:
 	char m_aErrorString[256];
 
 	CNetPacketConstruct m_Construct;
+	NETFUNC_PACKETOUTPUT m_pfnPacketOutput = nullptr;
+	void *m_pPacketOutputUser = nullptr;
 
 	NETADDR m_aConnectAddrs[16];
 	int m_NumConnectAddrs;
@@ -298,12 +389,15 @@ public:
 	int Connect(const NETADDR *pAddr, int NumAddrs);
 	int Connect7(const NETADDR *pAddr, int NumAddrs);
 	void Disconnect(const char *pReason);
+	void Drop(const char *pReason);
+	void SetTimedOut(const char *pReason);
 
 	int Update();
 	int Flush();
 
 	int Feed(CNetPacketConstruct *pPacket, NETADDR *pAddr, SECURITY_TOKEN SecurityToken = NET_SECURITY_TOKEN_UNSUPPORTED, SECURITY_TOKEN ResponseToken = NET_SECURITY_TOKEN_UNSUPPORTED);
 	int QueueChunk(int Flags, int DataSize, const void *pData);
+	void SetPacketOutput(NETFUNC_PACKETOUTPUT pfnPacketOutput, void *pUser);
 
 	const char *ErrorString();
 	void SignalResend();
@@ -330,10 +424,12 @@ public:
 	int SeqSequence() const { return m_Sequence; }
 	int SecurityToken() const { return m_SecurityToken; }
 	float PacketLoss() const;
+	int PendingResendCount() const;
 	CStaticRingBuffer<CNetChunkResend, NET_CONN_BUFFERSIZE> *ResendBuffer() { return &m_Buffer; }
 	const CStaticRingBuffer<CNetChunkResend, NET_CONN_BUFFERSIZE> *ResendBuffer() const { return &m_Buffer; }
 
 	void ResumeConnection(const NETADDR *pAddr, int Sequence, int Ack, SECURITY_TOKEN SecurityToken, CStaticRingBuffer<CNetChunkResend, NET_CONN_BUFFERSIZE> *pResendBuffer, bool Sixup);
+	bool UpdatePeerAddressForRebind(const NETADDR &Addr);
 
 	// anti spoof
 	void DirectInit(const NETADDR &Addr, SECURITY_TOKEN SecurityToken, SECURITY_TOKEN Token, bool Sixup);
@@ -407,6 +503,10 @@ class CNetServer
 	{
 	public:
 		CNetConnection m_Connection;
+		ENetTransport m_Transport = ENetTransport::LEGACY;
+		CNetKcpSession m_Kcp;
+		SNetTransportStats m_TransportStats;
+		uint32_t m_PendingKcpConv = 0;
 	};
 
 	struct CSpamConn
@@ -439,6 +539,19 @@ class CNetServer
 
 	CNetRecvUnpacker m_RecvUnpacker;
 
+	struct CFakeNetDelayedPacket
+	{
+		NETADDR m_Addr;
+		int m_DataSize;
+		int64_t m_DeliverTime;
+		unsigned char m_aData[NET_MAX_PACKETSIZE];
+	};
+
+	std::vector<CFakeNetDelayedPacket> m_vFakeNetDelayedPackets;
+	uint32_t m_FakeNetSeed = 1;
+	uint64_t m_FakeNetDropped = 0;
+	uint64_t m_FakeNetDelayed = 0;
+
 	void OnTokenCtrlMsg(NETADDR &Addr, int ControlMsg, const CNetPacketConstruct &Packet);
 	int OnSixupCtrlMsg(NETADDR &Addr, CNetChunk *pChunk, int ControlMsg, const CNetPacketConstruct &Packet, SECURITY_TOKEN &ResponseToken, SECURITY_TOKEN Token);
 	void OnPreConnMsg(NETADDR &Addr, CNetPacketConstruct &Packet);
@@ -446,6 +559,20 @@ class CNetServer
 	bool ClientExists(const NETADDR &Addr) { return GetClientSlot(Addr) != -1; }
 	int GetClientSlot(const NETADDR &Addr);
 	void SendControl(NETADDR &Addr, int ControlMsg, const void *pExtra, int ExtraSize, SECURITY_TOKEN SecurityToken);
+	int SendLegacy(CNetChunk *pChunk);
+	int SendClient(CNetChunk *pChunk);
+	bool FetchKcpChunk(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken);
+	bool FeedKcpPacket(const NETADDR &Addr, const unsigned char *pData, int Bytes);
+	int GetKcpClientSlot(uint32_t Conv, const NETADDR &Addr);
+	int GetPendingKcpClientSlot(uint32_t Conv, const NETADDR &Addr);
+	bool KcpConvInUse(uint32_t Conv) const;
+	bool FakeNetEnabled() const;
+	uint32_t FakeNetRandom();
+	bool FakeNetChance(int Percent);
+	int FakeNetDelayMs();
+	bool FakeNetPopReadyPacket(NETADDR *pAddr, unsigned char *pData, int *pBytes);
+	bool FakeNetQueuePacket(const NETADDR &Addr, const unsigned char *pData, int Bytes, int64_t DeliverTime);
+	bool FakeNetFilterPacket(const NETADDR &Addr, const unsigned char *pData, int Bytes);
 
 	int TryAcceptClient(NETADDR &Addr, SECURITY_TOKEN SecurityToken, bool VanillaAuth = false, bool Sixup = false, SECURITY_TOKEN Token = 0);
 	int NumClientsWithAddr(NETADDR Addr);
@@ -463,6 +590,7 @@ public:
 	//
 	int Recv(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken);
 	int Send(CNetChunk *pChunk);
+	int SendLegacyBypass(CNetChunk *pChunk);
 	void Update();
 
 	//
@@ -477,6 +605,19 @@ public:
 	CNetBan *NetBan() const { return m_pNetBan; }
 	int NetType() const { return net_socket_type(m_Socket); }
 	int MaxClients() const { return m_MaxClients; }
+	ENetTransport ClientTransport(int ClientId) const { return m_aSlots[ClientId].m_Transport; }
+	const char *ClientTransportName(int ClientId) const { return NetTransportName(ClientTransport(ClientId)); }
+	SNetTransportStats ClientTransportStats(int ClientId) const;
+	int KcpSessionCount() const;
+	uint32_t NewKcpConv();
+	void PrepareKcpUpgrade(int ClientId, uint32_t Conv);
+	bool ActivateKcp(int ClientId, uint32_t Conv);
+	void DeactivateKcp(int ClientId);
+	bool IsKcpPending(int ClientId) const { return m_aSlots[ClientId].m_PendingKcpConv != 0; }
+	bool IsKcpActive(int ClientId) const { return m_aSlots[ClientId].m_Transport == ENetTransport::KCP && m_aSlots[ClientId].m_Kcp.IsActive(); }
+	int FakeNetQueueDepth() const { return (int)m_vFakeNetDelayedPackets.size(); }
+	uint64_t FakeNetDroppedPackets() const { return m_FakeNetDropped; }
+	uint64_t FakeNetDelayedPackets() const { return m_FakeNetDelayed; }
 
 	void SendTokenSixup(NETADDR &Addr, SECURITY_TOKEN Token);
 
@@ -573,8 +714,14 @@ class CNetClient
 	CNetConnection m_Connection;
 	CNetRecvUnpacker m_RecvUnpacker;
 	CNetTokenCache m_TokenCache;
+	ENetTransport m_Transport = ENetTransport::LEGACY;
+	CNetKcpSession m_Kcp;
+	SNetTransportStats m_TransportStats;
 
 	CStun *m_pStun = nullptr;
+
+	bool FetchKcpChunk(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken, bool Sixup);
+	int SendLegacyBypass(CNetChunk *pChunk);
 
 public:
 	NETSOCKET m_Socket = nullptr;
@@ -584,6 +731,7 @@ public:
 
 	// connection state
 	void Disconnect(const char *pReason);
+	void Drop(const char *pReason);
 	void Connect(const NETADDR *pAddr, int NumAddrs);
 	void Connect7(const NETADDR *pAddr, int NumAddrs);
 
@@ -596,6 +744,12 @@ public:
 	int Flush();
 
 	void ResetErrorString();
+	bool ActivateKcp(uint32_t Conv);
+	void DeactivateKcp();
+	bool IsKcpActive() const { return m_Transport == ENetTransport::KCP && m_Kcp.IsActive(); }
+	ENetTransport Transport() const { return m_Transport; }
+	const char *TransportName() const { return NetTransportName(m_Transport); }
+	SNetTransportStats TransportStats() const;
 
 	// error and state
 	int NetType() const { return net_socket_type(m_Socket); }
@@ -633,6 +787,7 @@ public:
 	static void SendControlMsgWithToken7(NETSOCKET Socket, NETADDR *pAddr, TOKEN Token, int Ack, int ControlMsg, TOKEN MyToken, bool Extended);
 	static void SendPacketConnless(NETSOCKET Socket, NETADDR *pAddr, const void *pData, int DataSize, bool Extended, unsigned char aExtra[NET_CONNLESS_EXTRA_SIZE]);
 	static void SendPacketConnlessWithToken7(NETSOCKET Socket, NETADDR *pAddr, const void *pData, int DataSize, SECURITY_TOKEN Token, SECURITY_TOKEN ResponseToken);
+	static int PackPacket(unsigned char *pBuffer, int BufferSize, CNetPacketConstruct *pPacket, SECURITY_TOKEN SecurityToken, bool Sixup = false);
 	static void SendPacket(NETSOCKET Socket, NETADDR *pAddr, CNetPacketConstruct *pPacket, SECURITY_TOKEN SecurityToken, bool Sixup = false);
 
 	static std::optional<int> UnpackPacketFlags(unsigned char *pBuffer, int Size);

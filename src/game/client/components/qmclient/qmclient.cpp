@@ -1594,6 +1594,8 @@ void CQmClient::SendQmClientPlayerData()
 	JsonWriter.WriteStrValue(aServerAddress);
 	JsonWriter.WriteAttribute("auth_token");
 	JsonWriter.WriteStrValue(m_aQmClientAuthToken);
+	JsonWriter.WriteAttribute("client_type");
+	JsonWriter.WriteStrValue("qm");
 	JsonWriter.WriteAttribute("machine_hash");
 	JsonWriter.WriteStrValue(m_aQmClientMachineHash);
 	JsonWriter.WriteAttribute("timestamp");
@@ -1612,8 +1614,8 @@ void CQmClient::SendQmClientPlayerData()
 			continue;
 
 		JsonWriter.BeginObject();
-		JsonWriter.WriteAttribute("player_id");
-		JsonWriter.WriteIntValue(ClientId);
+		JsonWriter.WriteAttribute("player_name");
+		JsonWriter.WriteStrValue(GameClient()->m_aClients[ClientId].m_aName);
 		JsonWriter.WriteAttribute("dummy");
 		JsonWriter.WriteBoolValue(Dummy == 1);
 		JsonWriter.WriteAttribute("foot_particles_enabled");
@@ -1722,9 +1724,16 @@ void CQmClient::FinishQmClientUsers()
 		m_QmClientDistributionSuccessLatched = true;
 		for(const auto &Mark : Result.m_vLocalServerMarks)
 		{
-			GameClient()->MarkQ1menGSyncClient(Mark.m_ClientId, ExpireTick, Mark.m_FootParticlesEnabled, Mark.m_RemoteParticlesEnabled, Mark.m_Qid.c_str());
-			if(Mark.m_VoiceSupported)
-				GameClient()->MarkQmVoiceSupportedClient(Mark.m_ClientId, ExpireTick);
+			for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+			{
+				if(!GameClient()->m_aClients[ClientId].m_Active || str_comp(GameClient()->m_aClients[ClientId].m_aName, Mark.m_Name.c_str()) != 0)
+					continue;
+
+				GameClient()->MarkQ1menGSyncClient(ClientId, ExpireTick, Mark.m_FootParticlesEnabled, Mark.m_RemoteParticlesEnabled, Mark.m_Qid.c_str(), Mark.m_ClientBrand);
+				if(Mark.m_VoiceSupported)
+					GameClient()->MarkQmVoiceSupportedClient(ClientId, ExpireTick);
+				break;
+			}
 		}
 		return;
 	}

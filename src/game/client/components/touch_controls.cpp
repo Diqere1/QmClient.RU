@@ -48,7 +48,7 @@ static constexpr const char *const CONFIGURATION_FILENAME = "touch_controls.json
 /* This is required for the localization script to find the labels of the default bind buttons specified in the configuration file:
 Localizable("Move left") Localizable("Move right") Localizable("Jump") Localizable("Prev. weapon") Localizable("Next weapon")
 Localizable("Zoom out") Localizable("Default zoom") Localizable("Zoom in") Localizable("Scoreboard") Localizable("Chat") Localizable("Team chat")
-Localizable("Vote yes") Localizable("Vote no") Localizable("Toggle dummy")
+Localizable("Vote yes") Localizable("Vote no") Localizable("切换分身")
 */
 
 CTouchControls::CTouchButton::CTouchButton(CTouchControls *pTouchControls) :
@@ -507,7 +507,7 @@ void CTouchControls::CEmoticonTouchButtonBehavior::OnDeactivate(bool ByFinger)
 // Spectate button: keeps the spectate menu open, next touch in spectate menu will close it again.
 CTouchControls::CButtonLabel CTouchControls::CSpectateTouchButtonBehavior::GetLabel() const
 {
-	return {CButtonLabel::EType::LOCALIZED, Localizable("Spectator mode")};
+	return {CButtonLabel::EType::LOCALIZED, Localizable("旁观模式")};
 }
 
 void CTouchControls::CSpectateTouchButtonBehavior::OnDeactivate(bool ByFinger)

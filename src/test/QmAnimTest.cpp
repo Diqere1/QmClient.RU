@@ -1,5 +1,7 @@
 #include "test.h"
 
+#include <engine/shared/config.h>
+
 #include <game/client/QmUi/QmAnim.h>
 #include <game/client/QmUi/QmAnimCurves.h>
 
@@ -10,6 +12,7 @@ namespace
 {
 void AdvanceFor(CUiV2AnimationRuntime &Runtime, float Seconds)
 {
+	g_Config.m_QmUiMotionLevel = 2;
 	const float Dt = 1.0f / 60.0f;
 	int Steps = static_cast<int>(Seconds / Dt) + 1;
 	for(int i = 0; i < Steps; ++i)
@@ -18,6 +21,7 @@ void AdvanceFor(CUiV2AnimationRuntime &Runtime, float Seconds)
 
 SUiAnimRequest MakeRequest(uint64_t NodeKey, EUiAnimProperty Property, float Target, float DurationSec, int Priority, EUiAnimInterruptPolicy Interrupt, uint32_t TrackId)
 {
+	g_Config.m_QmUiMotionLevel = 2;
 	SUiAnimRequest Request;
 	Request.m_NodeKey = NodeKey;
 	Request.m_Property = Property;
@@ -175,6 +179,7 @@ namespace
 {
 SUiAnimRequest MakeSpringRequest(uint64_t NodeKey, EUiAnimProperty Property, float Target, uint32_t TrackId)
 {
+	g_Config.m_QmUiMotionLevel = 2;
 	SUiAnimRequest Request;
 	Request.m_NodeKey = NodeKey;
 	Request.m_Property = Property;
@@ -267,6 +272,7 @@ namespace
 {
 SUiAnimRequest MakeTweenRequest(uint64_t NodeKey, EUiAnimProperty Property, float Target, float DurationSec, EEasing Easing, uint32_t TrackId)
 {
+	g_Config.m_QmUiMotionLevel = 2;
 	SUiAnimRequest Request;
 	Request.m_NodeKey = NodeKey;
 	Request.m_Property = Property;

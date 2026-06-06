@@ -3,56 +3,111 @@
 #include <base/math.h>
 #include <base/system.h>
 
-bool ConvertToRgba(uint8_t *pDest, const CImageInfo &SourceImage)
+#include <limits>
+
+static bool CalculateImageBufferSize(size_t Width, size_t Height, size_t PixelSize, size_t &Size)
 {
-	if(SourceImage.m_Format == CImageInfo::FORMAT_RGBA)
+	if(Width == 0 || Height == 0 || PixelSize == 0)
 	{
-		mem_copy(pDest, SourceImage.m_pData, SourceImage.DataSize());
-		return true;
-	}
-	else
-	{
-		const size_t SrcChannelCount = CImageInfo::PixelSize(SourceImage.m_Format);
-		const size_t DstChannelCount = CImageInfo::PixelSize(CImageInfo::FORMAT_RGBA);
-		for(size_t Y = 0; Y < SourceImage.m_Height; ++Y)
-		{
-			for(size_t X = 0; X < SourceImage.m_Width; ++X)
-			{
-				size_t ImgOffsetSrc = (Y * SourceImage.m_Width * SrcChannelCount) + (X * SrcChannelCount);
-				size_t ImgOffsetDest = (Y * SourceImage.m_Width * DstChannelCount) + (X * DstChannelCount);
-				if(SourceImage.m_Format == CImageInfo::FORMAT_RGB)
-				{
-					mem_copy(&pDest[ImgOffsetDest], &SourceImage.m_pData[ImgOffsetSrc], SrcChannelCount);
-					pDest[ImgOffsetDest + 3] = 255;
-				}
-				else if(SourceImage.m_Format == CImageInfo::FORMAT_RA)
-				{
-					pDest[ImgOffsetDest + 0] = SourceImage.m_pData[ImgOffsetSrc];
-					pDest[ImgOffsetDest + 1] = SourceImage.m_pData[ImgOffsetSrc];
-					pDest[ImgOffsetDest + 2] = SourceImage.m_pData[ImgOffsetSrc];
-					pDest[ImgOffsetDest + 3] = SourceImage.m_pData[ImgOffsetSrc + 1];
-				}
-				else if(SourceImage.m_Format == CImageInfo::FORMAT_R)
-				{
-					pDest[ImgOffsetDest + 0] = 255;
-					pDest[ImgOffsetDest + 1] = 255;
-					pDest[ImgOffsetDest + 2] = 255;
-					pDest[ImgOffsetDest + 3] = SourceImage.m_pData[ImgOffsetSrc];
-				}
-				else
-				{
-					dbg_assert_failed("SourceImage.m_Format invalid");
-				}
-			}
-		}
+		Size = 0;
 		return false;
 	}
+	if(Width > std::numeric_limits<size_t>::max() / Height)
+	{
+		Size = 0;
+		return false;
+	}
+	const size_t PixelCount = Width * Height;
+	if(PixelCount > std::numeric_limits<size_t>::max() / PixelSize)
+	{
+		Size = 0;
+		return false;
+	}
+	Size = PixelCount * PixelSize;
+	return true;
+}
+
+static bool ConvertToRgbaImpl(uint8_t *pDest, const CImageInfo &SourceImage, bool &AlreadyRgba)
+{
+	AlreadyRgba = false;
+	if(pDest == nullptr || SourceImage.m_pData == nullptr || SourceImage.m_Width == 0 || SourceImage.m_Height == 0)
+		return false;
+
+	if(SourceImage.m_Format == CImageInfo::FORMAT_RGBA)
+	{
+		size_t SourceDataSize = 0;
+		if(!SourceImage.DataSize(SourceDataSize))
+			return false;
+		mem_copy(pDest, SourceImage.m_pData, SourceDataSize);
+		AlreadyRgba = true;
+		return true;
+	}
+	if(SourceImage.m_Format != CImageInfo::FORMAT_RGB && SourceImage.m_Format != CImageInfo::FORMAT_RA && SourceImage.m_Format != CImageInfo::FORMAT_R)
+		return false;
+
+	const size_t SrcChannelCount = CImageInfo::PixelSize(SourceImage.m_Format);
+	const size_t DstChannelCount = CImageInfo::PixelSize(CImageInfo::FORMAT_RGBA);
+	for(size_t Y = 0; Y < SourceImage.m_Height; ++Y)
+	{
+		for(size_t X = 0; X < SourceImage.m_Width; ++X)
+		{
+			size_t ImgOffsetSrc = (Y * SourceImage.m_Width * SrcChannelCount) + (X * SrcChannelCount);
+			size_t ImgOffsetDest = (Y * SourceImage.m_Width * DstChannelCount) + (X * DstChannelCount);
+			if(SourceImage.m_Format == CImageInfo::FORMAT_RGB)
+			{
+				mem_copy(&pDest[ImgOffsetDest], &SourceImage.m_pData[ImgOffsetSrc], SrcChannelCount);
+				pDest[ImgOffsetDest + 3] = 255;
+			}
+			else if(SourceImage.m_Format == CImageInfo::FORMAT_RA)
+			{
+				pDest[ImgOffsetDest + 0] = SourceImage.m_pData[ImgOffsetSrc];
+				pDest[ImgOffsetDest + 1] = SourceImage.m_pData[ImgOffsetSrc];
+				pDest[ImgOffsetDest + 2] = SourceImage.m_pData[ImgOffsetSrc];
+				pDest[ImgOffsetDest + 3] = SourceImage.m_pData[ImgOffsetSrc + 1];
+			}
+			else if(SourceImage.m_Format == CImageInfo::FORMAT_R)
+			{
+				pDest[ImgOffsetDest + 0] = 255;
+				pDest[ImgOffsetDest + 1] = 255;
+				pDest[ImgOffsetDest + 2] = 255;
+				pDest[ImgOffsetDest + 3] = SourceImage.m_pData[ImgOffsetSrc];
+			}
+			else
+			{
+				dbg_assert_failed("SourceImage.m_Format invalid");
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool ConvertToRgba(uint8_t *pDest, const CImageInfo &SourceImage)
+{
+	bool AlreadyRgba = false;
+	return ConvertToRgbaImpl(pDest, SourceImage, AlreadyRgba) && AlreadyRgba;
 }
 
 bool ConvertToRgbaAlloc(uint8_t *&pDest, const CImageInfo &SourceImage)
 {
-	pDest = static_cast<uint8_t *>(malloc(SourceImage.m_Width * SourceImage.m_Height * CImageInfo::PixelSize(CImageInfo::FORMAT_RGBA)));
-	return ConvertToRgba(pDest, SourceImage);
+	pDest = nullptr;
+
+	size_t DestDataSize = 0;
+	if(!CalculateImageBufferSize(SourceImage.m_Width, SourceImage.m_Height, CImageInfo::PixelSize(CImageInfo::FORMAT_RGBA), DestDataSize))
+		return false;
+
+	pDest = static_cast<uint8_t *>(malloc(DestDataSize));
+	if(pDest == nullptr)
+		return false;
+
+	bool AlreadyRgba = false;
+	if(!ConvertToRgbaImpl(pDest, SourceImage, AlreadyRgba))
+	{
+		free(pDest);
+		pDest = nullptr;
+		return false;
+	}
+	return AlreadyRgba;
 }
 
 bool ConvertToRgba(CImageInfo &Image)
@@ -60,8 +115,11 @@ bool ConvertToRgba(CImageInfo &Image)
 	if(Image.m_Format == CImageInfo::FORMAT_RGBA)
 		return true;
 
-	uint8_t *pRgbaData;
+	uint8_t *pRgbaData = nullptr;
 	ConvertToRgbaAlloc(pRgbaData, Image);
+	if(pRgbaData == nullptr)
+		return false;
+
 	free(Image.m_pData);
 	Image.m_pData = pRgbaData;
 	Image.m_Format = CImageInfo::FORMAT_RGBA;
@@ -162,17 +220,31 @@ void DilateImage(uint8_t *pImageBuff, int w, int h)
 void DilateImage(const CImageInfo &Image)
 {
 	dbg_assert(Image.m_Format == CImageInfo::FORMAT_RGBA, "Dilate requires RGBA format");
+	if(Image.m_pData == nullptr || Image.m_Width == 0 || Image.m_Height == 0)
+		return;
 	DilateImage(Image.m_pData, Image.m_Width, Image.m_Height);
 }
 
 void DilateImageSub(uint8_t *pImageBuff, int w, int h, int x, int y, int SubWidth, int SubHeight)
 {
+	if(pImageBuff == nullptr || w <= 0 || h <= 0 || x < 0 || y < 0 || SubWidth <= 0 || SubHeight <= 0 || x + SubWidth > w || y + SubHeight > h)
+		return;
+
 	uint8_t *apBuffer[2] = {nullptr, nullptr};
 
-	const size_t ImageSize = (size_t)SubWidth * SubHeight * sizeof(uint8_t) * DILATE_BPP;
+	size_t ImageSize = 0;
+	if(!CalculateImageBufferSize(SubWidth, SubHeight, DILATE_BPP, ImageSize))
+		return;
 	apBuffer[0] = (uint8_t *)malloc(ImageSize);
 	apBuffer[1] = (uint8_t *)malloc(ImageSize);
 	uint8_t *pBufferOriginal = (uint8_t *)malloc(ImageSize);
+	if(apBuffer[0] == nullptr || apBuffer[1] == nullptr || pBufferOriginal == nullptr)
+	{
+		free(apBuffer[0]);
+		free(apBuffer[1]);
+		free(pBufferOriginal);
+		return;
+	}
 
 	for(int Y = 0; Y < SubHeight; ++Y)
 	{
@@ -258,10 +330,10 @@ static void ResizeImage(const uint8_t *pSourceImage, uint32_t SW, uint32_t SH, u
 {
 	for(int y = 0; y < (int)H; ++y)
 	{
-		float v = (float)y / (float)(H - 1);
+		const float v = H > 1 ? (float)y / (float)(H - 1) : 0.0f;
 		for(int x = 0; x < (int)W; ++x)
 		{
-			float u = (float)x / (float)(W - 1);
+			const float u = W > 1 ? (float)x / (float)(W - 1) : 0.0f;
 			uint8_t aSample[4];
 			SampleBicubic(pSourceImage, u, v, SW, SH, BPP, aSample);
 			mem_copy(&pDestinationImage[x * BPP + ((W * BPP) * y)], aSample, BPP);
@@ -271,7 +343,17 @@ static void ResizeImage(const uint8_t *pSourceImage, uint32_t SW, uint32_t SH, u
 
 uint8_t *ResizeImage(const uint8_t *pImageData, int Width, int Height, int NewWidth, int NewHeight, int BPP)
 {
-	uint8_t *pTmpData = (uint8_t *)malloc((size_t)NewWidth * NewHeight * BPP);
+	if(pImageData == nullptr || Width <= 0 || Height <= 0 || NewWidth <= 0 || NewHeight <= 0 || BPP <= 0)
+		return nullptr;
+
+	size_t DataSize = 0;
+	if(!CalculateImageBufferSize(NewWidth, NewHeight, BPP, DataSize))
+		return nullptr;
+
+	uint8_t *pTmpData = (uint8_t *)malloc(DataSize);
+	if(pTmpData == nullptr)
+		return nullptr;
+
 	ResizeImage(pImageData, Width, Height, pTmpData, NewWidth, NewHeight, BPP);
 	return pTmpData;
 }
@@ -279,6 +361,9 @@ uint8_t *ResizeImage(const uint8_t *pImageData, int Width, int Height, int NewWi
 void ResizeImage(CImageInfo &Image, int NewWidth, int NewHeight)
 {
 	uint8_t *pNewData = ResizeImage(Image.m_pData, Image.m_Width, Image.m_Height, NewWidth, NewHeight, Image.PixelSize());
+	if(pNewData == nullptr)
+		return;
+
 	free(Image.m_pData);
 	Image.m_pData = pNewData;
 	Image.m_Width = NewWidth;

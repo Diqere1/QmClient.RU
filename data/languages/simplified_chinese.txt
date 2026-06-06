@@ -3726,6 +3726,15 @@ Execute before connecting
 Voting
 == 投票
 
+Auto map vote
+== 自动地图投票
+
+Auto agree vote
+== 自动同意投票
+
+Auto reject vote
+== 自动拒绝投票
+
 Automatically vote no on map changes
 == 自动投票反对地图变更
 
@@ -7360,3 +7369,99 @@ Map Progress: --
 
 Tee 0.7
 == Tee 0.7
+
+Cube
+== 方块
+
+Heart
+== 爱心
+
+Sphere
+== 球体
+
+Pyramid
+== 金字塔
+
+Diamond
+== 钻石
+
+Ring
+== 圆环
+
+Star
+== 星形
+
+Crescent
+== 月牙
+
+Mixed
+== 混合
+
+Particle count
+== 粒子数量
+
+Particle alpha
+== 粒子透明度
+
+Min size
+== 最小尺寸
+
+Max size
+== 最大尺寸
+
+Particle speed
+== 粒子速度
+
+Particle depth
+== 粒子深度
+
+View margin
+== 视野外边距
+
+Fade in
+== 淡入
+
+Fade out
+== 淡出
+
+Push radius
+== 推动半径
+
+Push strength
+== 推动强度
+
+Particle color
+== 粒子颜色
+
+Custom
+== 自定义
+
+Random
+== 随机
+
+Particle glow
+== 粒子辉光
+
+Glow alpha
+== 辉光透明度
+
+Glow offset
+== 辉光偏移
+
+Particle trail
+== 粒子拖尾
+
+Particle pulse
+== 粒子脉冲
+
+Pulse strength
+== 脉冲强度
+
+Pulse speed
+== 脉冲速度
+
+Particle twinkle
+== 粒子闪烁
+
+Twinkle strength
+== 闪烁强度

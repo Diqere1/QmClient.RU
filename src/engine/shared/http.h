@@ -186,15 +186,19 @@ public:
 	{
 		m_Type = REQUEST::POST;
 		m_BodyLength = DataLength;
+		free(m_pBody);
 		m_pBody = (unsigned char *)malloc(std::max((size_t)1, DataLength));
-		mem_copy(m_pBody, pData, DataLength);
+		if(m_pBody != nullptr && DataLength > 0)
+			mem_copy(m_pBody, pData, DataLength);
 	}
 	void PostJson(const char *pJson)
 	{
 		m_Type = REQUEST::POST_JSON;
 		m_BodyLength = str_length(pJson);
-		m_pBody = (unsigned char *)malloc(m_BodyLength);
-		mem_copy(m_pBody, pJson, m_BodyLength);
+		free(m_pBody);
+		m_pBody = (unsigned char *)malloc(std::max((size_t)1, m_BodyLength));
+		if(m_pBody != nullptr && m_BodyLength > 0)
+			mem_copy(m_pBody, pJson, m_BodyLength);
 	}
 	void Header(const char *pNameColonValue);
 	void HeaderString(const char *pName, const char *pValue)

@@ -35,6 +35,9 @@
 using namespace std::chrono_literals;
 
 static constexpr int SKIN_QUEUE_INTERVAL_UNITS_PER_SECOND = 10;
+#if defined(CONF_QM_LIVE_CLIENT)
+static constexpr size_t LIVE_OBSERVER_SKINS_LOADED_MAX = 96;
+#endif
 
 static int SettingsSkinDecodeJobWorkerBudget()
 {
@@ -56,7 +59,7 @@ static void LogSkinSettingsResourcePerf(const char *pJob, int Count, int Budget,
 	LogSettingsResourcePerf(CMenus::SETTINGS_TEE, pJob, Count, Budget, Remaining, Reason, DurationMs);
 }
 
-static void LogSettingsSkinPreviewEvictEvent(const char *pSkinName, const char *pReason)
+static void LogSettingsSkinSourceEvictEvent(const char *pSkinName, const char *pReason)
 {
 	if(g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0)
 		return;
@@ -64,10 +67,10 @@ static void LogSettingsSkinPreviewEvictEvent(const char *pSkinName, const char *
 	str_format(aPayload, sizeof(aPayload), "event=evict skin=%s artifact=source reason=%s",
 		pSkinName != nullptr ? pSkinName : "",
 		pReason != nullptr ? pReason : "none");
-	QmPerfLogPayload("perf/skin-preview-cache", aPayload);
+	QmPerfLogPayload("perf/settings-skin-source", aPayload);
 }
 
-static void LogSettingsSkinPreviewSourceStageEvent(const char *pEvent, const char *pSkinName, int Width, int Height, int ByteCount, double DurationMs, int Uploads = -1)
+static void LogSettingsSkinSourceStageEvent(const char *pEvent, const char *pSkinName, int Width, int Height, int ByteCount, double DurationMs, int Uploads = -1)
 {
 	if(g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0)
 		return;
@@ -93,7 +96,7 @@ static void LogSettingsSkinPreviewSourceStageEvent(const char *pEvent, const cha
 			ByteCount,
 			DurationMs);
 	}
-	QmPerfLogPayload("perf/skin-preview-cache", aPayload);
+	QmPerfLogPayload("perf/settings-skin-source", aPayload);
 }
 
 static const char *SettingsResourcePriorityName(ESettingsResourcePriority Priority)
@@ -131,7 +134,7 @@ static void LogSettingsSkinSourceRequestEvent(const char *pSkinName, ESettingsRe
 		pSkinName != nullptr ? pSkinName : "",
 		SettingsResourcePriorityName(Priority),
 		SkinStateName(State));
-	QmPerfLogPayload("perf/skin-preview-cache", aPayload);
+	QmPerfLogPayload("perf/settings-skin-source", aPayload);
 }
 
 static void LogSettingsSkinSourceWaitEvent(const char *pSkinName, const char *pReason, int RemainingUploads, int MaxUploads)
@@ -144,10 +147,10 @@ static void LogSettingsSkinSourceWaitEvent(const char *pSkinName, const char *pR
 		pReason != nullptr ? pReason : "none",
 		RemainingUploads,
 		MaxUploads);
-	QmPerfLogPayload("perf/skin-preview-cache", aPayload);
+	QmPerfLogPayload("perf/settings-skin-source", aPayload);
 }
 
-static void LogSettingsSkinPreviewWarmupEvent(const char *pEvent, const char *pExtra = nullptr)
+static void LogSettingsSkinSourceWarmupEvent(const char *pEvent, const char *pExtra = nullptr)
 {
 	if(g_Config.m_QmPerfDebug == 0 && g_Config.m_QmPerfLogfile == 0)
 		return;
@@ -156,7 +159,7 @@ static void LogSettingsSkinPreviewWarmupEvent(const char *pEvent, const char *pE
 		str_format(aPayload, sizeof(aPayload), "event=%s %s", pEvent != nullptr ? pEvent : "warmup", pExtra);
 	else
 		str_format(aPayload, sizeof(aPayload), "event=%s", pEvent != nullptr ? pEvent : "warmup");
-	QmPerfLogPayload("perf/skin-preview-cache", aPayload);
+	QmPerfLogPayload("perf/settings-skin-source", aPayload);
 }
 
 static ESettingsWarmupMissReason SettingsResourceMissReason(ESettingsWarmupStopReason StopReason)
@@ -243,7 +246,7 @@ static void LogSettingsSkinFrameCapEvent(const CGameClient *pGameClient)
 		FinalizeCap,
 		VisibleLoadCap,
 		NormalLoadCap);
-	QmPerfLogPayload("perf/skin-preview-cache", aPayload, pGameClient != nullptr ? pGameClient->Client() : nullptr, "settings:tee");
+	QmPerfLogPayload("perf/settings-skin-source", aPayload, pGameClient != nullptr ? pGameClient->Client() : nullptr, "settings:tee");
 }
 
 static int SettingsSkinMaxPerFrame(const CGameClient *pGameClient)
@@ -898,7 +901,7 @@ void CSkins::LoadSkinFinish(CSkinContainer *pSkinContainer, const CSkinLoadData 
 	SkinIt->second->m_SettingsSourceApproxBytes = SettingsSkinSourceBytesEstimate((int)Data.m_Info.m_Width, (int)Data.m_Info.m_Height, 2);
 	SkinIt->second->m_pSkin = std::make_unique<CSkin>(std::move(Skin));
 	pSkinContainer->SetState(CSkinContainer::EState::LOADED, BackgroundTracked ? ESettingsResourcePriority::BACKGROUND : ESettingsResourcePriority::VISIBLE);
-	LogSettingsSkinPreviewSourceStageEvent("upload_done", pSkinContainer->Name(), Data.m_Info.m_Width, Data.m_Info.m_Height, (int)SkinIt->second->m_SettingsSourceApproxBytes, std::chrono::duration<double, std::milli>(time_get_nanoseconds() - UploadStart).count(), SETTINGS_SKIN_SOURCE_TEXTURE_UPLOADS);
+	LogSettingsSkinSourceStageEvent("upload_done", pSkinContainer->Name(), Data.m_Info.m_Width, Data.m_Info.m_Height, (int)SkinIt->second->m_SettingsSourceApproxBytes, std::chrono::duration<double, std::milli>(time_get_nanoseconds() - UploadStart).count(), SETTINGS_SKIN_SOURCE_TEXTURE_UPLOADS);
 }
 
 void CSkins::LoadSkinDirect(const char *pName)
@@ -1019,6 +1022,15 @@ void CSkins::UpdateForSettingsWarmup()
 	// throttle so the blocking preload actually advances before the menu appears.
 	m_ContainerUpdateTime.reset();
 	OnUpdate();
+}
+
+size_t CSkins::LoadedSkinLimit() const
+{
+#if defined(CONF_QM_LIVE_CLIENT)
+	if(Client()->QmLiveDirectorActive())
+		return minimum((size_t)g_Config.m_ClSkinsLoadedMax, LIVE_OBSERVER_SKINS_LOADED_MAX);
+#endif
+	return (size_t)g_Config.m_ClSkinsLoadedMax;
 }
 
 void CSkins::PrepareSettingsThroughputForFrame()
@@ -1350,7 +1362,7 @@ void CSkins::UpdateUnloadSkins(CSkinLoadingStats &Stats)
 		}
 		if(pSkinContainer->m_State == CSkinContainer::EState::LOADED)
 		{
-			LogSettingsSkinPreviewEvictEvent(pSkinContainer->Name(), BytesBudgetExceeded ? "bytes_budget" : "queue_count");
+			LogSettingsSkinSourceEvictEvent(pSkinContainer->Name(), BytesBudgetExceeded ? "bytes_budget" : "queue_count");
 			pSkinContainer->m_pSkin->m_OriginalSkin.Unload(Graphics());
 			pSkinContainer->m_pSkin->m_ColorableSkin.Unload(Graphics());
 			pSkinContainer->m_pSkin = nullptr;
@@ -1359,7 +1371,7 @@ void CSkins::UpdateUnloadSkins(CSkinLoadingStats &Stats)
 		}
 		else
 		{
-			LogSettingsSkinPreviewEvictEvent(pSkinContainer->Name(), "queue_count");
+			LogSettingsSkinSourceEvictEvent(pSkinContainer->Name(), "queue_count");
 			Stats.m_NumPending--;
 		}
 		Stats.m_NumUnloaded++;
@@ -2089,7 +2101,7 @@ bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool Progressi
 
 	char aWarmupRequest[128];
 	str_format(aWarmupRequest, sizeof(aWarmupRequest), "dummy=%d selected=%s visible_total=%d", Dummy, vNames.front().c_str(), VisibleTotal);
-	LogSettingsSkinPreviewWarmupEvent("warmup_request", aWarmupRequest);
+	LogSettingsSkinSourceWarmupEvent("warmup_request", aWarmupRequest);
 
 	PrewarmByNames(vNames, true);
 
@@ -2101,7 +2113,7 @@ bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool Progressi
 			       (ProgressiveListReady ? ProgressiveEntriesReady : m_vPendingSkinListMergeNames.empty());
 	if(!ListReady)
 	{
-		LogSettingsSkinPreviewWarmupEvent("warmup_miss", "reason=list_pending");
+		LogSettingsSkinSourceWarmupEvent("warmup_miss", "reason=list_pending");
 		return false;
 	}
 
@@ -2109,7 +2121,7 @@ bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool Progressi
 	const bool DefaultReady = pDefaultContainer != nullptr && pDefaultContainer->State() == CSkinContainer::EState::LOADED;
 	if(!DefaultReady)
 	{
-		LogSettingsSkinPreviewWarmupEvent("warmup_miss", "reason=default_loading");
+		LogSettingsSkinSourceWarmupEvent("warmup_miss", "reason=default_loading");
 		return false;
 	}
 
@@ -2145,12 +2157,12 @@ bool CSkins::PrewarmPlayerPreviewReady(int Dummy, int MaxEntries, bool Progressi
 	str_format(aWarmupGate, sizeof(aWarmupGate),
 		"dummy=%d selected_ready=%d visible_ready_count=%d visible_total=%d source_loaded_count=%d preview_ready_count=0 restore_queue_count=0",
 		Dummy, SelectedReady ? 1 : 0, VisibleReadyCount, VisibleTotal, SourceLoadedCount);
-	LogSettingsSkinPreviewWarmupEvent("warmup_gate", aWarmupGate);
+	LogSettingsSkinSourceWarmupEvent("warmup_gate", aWarmupGate);
 	if(!SelectedReady || VisibleReadyCount < VisibleTotal)
 	{
 		char aWarmupMiss[96];
 		str_format(aWarmupMiss, sizeof(aWarmupMiss), "dummy=%d reason=%s", Dummy, pMissReason);
-		LogSettingsSkinPreviewWarmupEvent("warmup_miss", aWarmupMiss);
+		LogSettingsSkinSourceWarmupEvent("warmup_miss", aWarmupMiss);
 		return false;
 	}
 	return true;
@@ -2745,7 +2757,7 @@ void CSkins::CSkinLoadJob::Run()
 	}
 	if(PrepareSkinData(m_aName, m_Data))
 	{
-		LogSettingsSkinPreviewSourceStageEvent("decode_done", m_aName, m_Data.m_Info.m_Width, m_Data.m_Info.m_Height, (int)FileSize, std::chrono::duration<double, std::milli>(time_get_nanoseconds() - DecodeStart).count());
+		LogSettingsSkinSourceStageEvent("decode_done", m_aName, m_Data.m_Info.m_Width, m_Data.m_Info.m_Height, (int)FileSize, std::chrono::duration<double, std::milli>(time_get_nanoseconds() - DecodeStart).count());
 	}
 }
 

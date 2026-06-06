@@ -1,0 +1,61 @@
+{
+  "atlas": {
+    "height": 96,
+    "image": "qmclient/icons/qm_icons_1x.png",
+    "padding": 4,
+    "width": 96
+  },
+  "icons": {
+    "chevron-down": {
+      "h": 24,
+      "w": 24,
+      "x": 4,
+      "y": 4
+    },
+    "close": {
+      "h": 24,
+      "w": 24,
+      "x": 36,
+      "y": 68
+    },
+    "eye": {
+      "h": 24,
+      "w": 24,
+      "x": 68,
+      "y": 4
+    },
+    "eye-off": {
+      "h": 24,
+      "w": 24,
+      "x": 36,
+      "y": 4
+    },
+    "plus": {
+      "h": 24,
+      "w": 24,
+      "x": 4,
+      "y": 36
+    },
+    "search": {
+      "h": 24,
+      "w": 24,
+      "x": 36,
+      "y": 36
+    },
+    "star": {
+      "h": 24,
+      "w": 24,
+      "x": 68,
+      "y": 36
+    },
+    "trash": {
+      "h": 24,
+      "w": 24,
+      "x": 4,
+      "y": 68
+    }
+  },
+  "scale": 1,
+  "source": "Tabler Icons SVG, rendered at build time",
+  "version": 1
+}

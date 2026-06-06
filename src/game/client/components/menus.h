@@ -91,11 +91,12 @@ public:
 	int DoButton_Toggle(const void *pId, int Checked, const CUIRect *pRect, bool Active, unsigned Flags = BUTTONFLAG_LEFT);
 	int DoButton_Menu(CButtonContainer *pButtonContainer, const char *pText, int Checked, const CUIRect *pRect, unsigned Flags = BUTTONFLAG_LEFT, const char *pImageName = nullptr, int Corners = IGraphics::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, ColorRGBA Color = ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f));
 	int DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pText, int Checked, const CUIRect *pRect, int Corners, SUIAnimator *pAnimator = nullptr, const ColorRGBA *pDefaultColor = nullptr, const ColorRGBA *pActiveColor = nullptr, const ColorRGBA *pHoverColor = nullptr, float EdgeRounding = 10.0f, const CCommunityIcon *pCommunityIcon = nullptr, CUIElement *pTextUiElement = nullptr);
-	// feat-004: modern menu tab. No lift / height-grow; hover/active painted
-	// with feat-003 tokens via the v2 anim runtime (color-based transitions).
+	// feat-004: modern menu tab. No lift / height-grow; default hover/active
+	// states are tinted by ui_color via the v2 anim runtime.
 	int DoMenuTabV2(CButtonContainer *pButtonContainer, const char *pText, bool Active, const CUIRect *pRect, int Corners = IGraphics::CORNER_T, const ColorRGBA *pCustomDefault = nullptr, const ColorRGBA *pCustomActive = nullptr, const ColorRGBA *pCustomHover = nullptr, const CCommunityIcon *pCommunityIcon = nullptr);
 	ColorRGBA MenuPanelColor(float AlphaScale = 1.0f) const;
 	ColorRGBA MenuPanelElevatedColor(float AlphaScale = 1.0f) const;
+	ColorRGBA SettingsTabbarColor(float AlphaScale = 1.0f) const;
 
 	int DoButton_CheckBox_Common(const void *pId, const char *pText, const char *pBoxText, const CUIRect *pRect, unsigned Flags);
 	int DoButton_CheckBox(const void *pId, const char *pText, int Checked, const CUIRect *pRect);
@@ -197,12 +198,15 @@ public:
 
 		char m_aName[IO_MAX_PATH_LENGTH];
 		char m_aDisplayName[IO_MAX_PATH_LENGTH] = "";
+		char m_aAuthor[128] = "";
 		std::shared_ptr<IJob> m_pDecodeJob;
 		EPreviewState m_PreviewState = PREVIEW_STATE_UNLOADED;
 		CImageInfo m_PreviewImage;
 		unsigned m_PreviewEpoch = 0;
 		size_t m_PreviewListIndex = 0;
 		size_t m_PreviewBytes = 0;
+		int m_PreviewRequestedTextureSize = 0;
+		size_t m_PreviewResidentBytes = 0;
 		bool m_PreviewResized = false;
 		bool m_PreviewHighPriority = false;
 
@@ -215,11 +219,14 @@ public:
 			m_PreviewEpoch(Other.m_PreviewEpoch),
 			m_PreviewListIndex(Other.m_PreviewListIndex),
 			m_PreviewBytes(Other.m_PreviewBytes),
+			m_PreviewRequestedTextureSize(Other.m_PreviewRequestedTextureSize),
+			m_PreviewResidentBytes(Other.m_PreviewResidentBytes),
 			m_PreviewResized(Other.m_PreviewResized),
 			m_PreviewHighPriority(Other.m_PreviewHighPriority)
 		{
 			str_copy(m_aName, Other.m_aName);
 			str_copy(m_aDisplayName, Other.m_aDisplayName);
+			str_copy(m_aAuthor, Other.m_aAuthor);
 			if(Other.m_PreviewImage.m_pData != nullptr)
 				m_PreviewImage = Other.m_PreviewImage.DeepCopy();
 		}
@@ -232,6 +239,7 @@ public:
 			m_RenderTexture = Other.m_RenderTexture;
 			str_copy(m_aName, Other.m_aName);
 			str_copy(m_aDisplayName, Other.m_aDisplayName);
+			str_copy(m_aAuthor, Other.m_aAuthor);
 			m_pDecodeJob = Other.m_pDecodeJob;
 			m_PreviewState = Other.m_PreviewState;
 			m_PreviewImage.Free();
@@ -240,6 +248,8 @@ public:
 			m_PreviewEpoch = Other.m_PreviewEpoch;
 			m_PreviewListIndex = Other.m_PreviewListIndex;
 			m_PreviewBytes = Other.m_PreviewBytes;
+			m_PreviewRequestedTextureSize = Other.m_PreviewRequestedTextureSize;
+			m_PreviewResidentBytes = Other.m_PreviewResidentBytes;
 			m_PreviewResized = Other.m_PreviewResized;
 			m_PreviewHighPriority = Other.m_PreviewHighPriority;
 			return *this;
@@ -1482,7 +1492,7 @@ protected:
 	void PopupCancelRemoveFriend();
 	void RenderServerbrowserTabBar(CUIRect TabBar);
 	void RenderServerbrowserToolBox(CUIRect ToolBox);
-	void RenderServerbrowser(CUIRect MainView);
+	void RenderServerbrowser(CUIRect MainView, bool DrawBackground);
 	template<typename F>
 	bool PrintHighlighted(const char *pName, F &&PrintFn);
 	CTeeRenderInfo GetTeeRenderInfo(vec2 Size, const char *pSkinName, bool CustomSkinColors, int CustomSkinColorBody, int CustomSkinColorFeet) const;
@@ -1586,7 +1596,7 @@ public:
 
 	bool IsActive() const { return m_MenuActive; }
 	bool IsSettingsPageActive() const;
-	SSettingsResourceFrameContext SettingsResourceFrameContext() const { return {m_SettingsScrollActive, m_SettingsPostScrollRecoveryFrames, m_SettingsHighPrioritySettled}; }
+	SSettingsResourceFrameContext SettingsResourceFrameContext() const { return {m_SettingsScrollActive, false, m_SettingsPostScrollRecoveryFrames, m_SettingsHighPrioritySettled}; }
 	void SetActive(bool Active);
 
 	void OnInterfacesInit(CGameClient *pClient) override;

@@ -534,7 +534,7 @@ const char *CPieMenu::GetOptionName(EMenuOption Option) const
 	case EMenuOption::MENTION: return Localize("Mention");
 	case EMenuOption::COPY_SKIN: return Localize("Copy skin");
 	case EMenuOption::SWAP: return Localize("Swap");
-	case EMenuOption::SPECTATE: return Localize("Spectate");
+	case EMenuOption::SPECTATE: return Localize("旁观");
 	default: return "";
 	}
 }
