@@ -1016,9 +1016,7 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		return 0;
 	}
 
-	const bool QmManualDummyInputActive =
-		m_QmDummyInputForceSend ||
-		qm_dummy_command::HasHeldInput(m_DummyInput);
+	const bool QmManualDummyInputActive = m_QmCommandRouter.HasManualDummyInput();
 
 	if(!g_Config.m_ClDummyHammer || QmManualDummyInputActive)
 	{
